@@ -95,11 +95,7 @@
   .color-tile{width:44px;height:44px}
   #hostGear{width:36px;height:36px;font-size:16px}
   #myDealMini{width:40px;height:60px;font-size:12px}
-  .usericon rect,
-  .seaticon rect{
-    rx:10 !important;
-    ry:10 !important;
-  }  h1{font-size:14px; margin-right:4px;}   /* タイトル小さめ */
+  h1{font-size:14px; margin-right:4px;}   /* タイトル小さめ */
   header{gap:6px; padding:8px;}          /* スペース縮小 */
   .small{font-size:10px; gap:4px;}       /* 補助テキストをさらに小さく */
   #myRoomBadge{white-space:nowrap;}      /* 強制的に改行しない */
@@ -412,10 +408,19 @@
       back.title = `${def.label}デッキをめくる`;
       back.addEventListener('click', ()=> advanceDeckGuarded(deckId));
 
-      const face = document.createElement('div');
-      face.className = 'deck-face';
-      face.dataset.role = 'face';
-      face.textContent = '';
+const face = document.createElement('div');
+face.className = 'deck-face';
+face.dataset.role = 'face';
+face.textContent = '';
+
+// ▼追加：クリックで拡大表示
+face.addEventListener('click', ()=>{
+  if (face.textContent){                // 文字があるときのみ
+    dealCardFace.textContent = face.textContent;
+    show(dealViewer, true);             // 既存の拡大仕様を利用
+  }
+});
+
 
       const label = document.createElement('div');
       label.className = 'deck-label';
@@ -543,10 +548,13 @@ function applyFillAndText(elGroup, colorName){
       g.setAttribute('class','seaticon');
       g.setAttribute('data-uid', uid);
 
-      const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      box.setAttribute('width', 24);
-      box.setAttribute('height', 24);
-      g.appendChild(box);
+const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
+box.setAttribute('width', 24);
+box.setAttribute('height', 24);
+box.setAttribute('rx', 10);   // ← 角丸を属性で付与（スマホでも確実）
+box.setAttribute('ry', 10);
+g.appendChild(box);
+
 
       const label = document.createElementNS('http://www.w3.org/2000/svg','text');
       label.setAttribute('x', 12);
@@ -618,10 +626,13 @@ function applyFillAndText(elGroup, colorName){
       g.setAttribute('class','usericon');
       g.setAttribute('data-uid', uid);
 
-      const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      box.setAttribute('width', 24);
-      box.setAttribute('height', 24);
-      g.appendChild(box);
+const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
+box.setAttribute('width', 24);
+box.setAttribute('height', 24);
+box.setAttribute('rx', 10);   // ← こちらにも同様に
+box.setAttribute('ry', 10);
+g.appendChild(box);
+
 
       const label = document.createElementNS('http://www.w3.org/2000/svg','text');
       label.setAttribute('x', 12);
