@@ -1137,34 +1137,63 @@ function makeEquipIcon(name, colorName){
     state.unsub.push(off);
   }
 
-  // ====== ホスト設定（スタート→カード配布） ======
-  const DEAL_CARDS = ['ああ','いい','ええ','かか','きき','すす','ちち','もも','ええ','じじ'];
+// ====== 正体カード定義 ======
+const ROLE_CARDS = {
+  raider:  ['ああ','いい','うう','ええ','おお','かかか','ききき','くくく','けけけ'],
+  shadow:  ['さささ','ししし','すすす','せせせ','そそそ','たたた','ちちち','つつつ','ててて'],
+  citizen: ['ままま','みみみ','むむむ','めめめ','ももも','ががが'],
+};
 
-  async function hostStartIfNotStarted(){
-    const startedRef = ref(db, `rooms/${state.code}/game/started`);
-    const startedSnap = await get(startedRef);
-    if (startedSnap.val()) return; // 既にスタート済み
+// 人数ごとの役職割り当て
+const ROLE_DISTRIBUTION = {
+  1: { raider:0, shadow:0, citizen:1 },
+  2: { raider:1, shadow:1, citizen:0 },
+  3: { raider:2, shadow:1, citizen:0 },
+  4: { raider:2, shadow:2, citizen:0 },
+  5: { raider:2, shadow:2, citizen:1 },
+  6: { raider:2, shadow:2, citizen:2 },
+  7: { raider:2, shadow:2, citizen:3 },
+  8: { raider:3, shadow:3, citizen:2 },
+  9: { raider:3, shadow:3, citizen:3 },
+ 10: { raider:3, shadow:3, citizen:4 },
+};
 
-    // 参加者一覧
-    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-    const ps = psSnap.val() || {};
-    const uids = Object.keys(ps);
-    if (uids.length === 0) return;
+async function hostStartIfNotStarted(){
+  const startedRef = ref(db, `rooms/${state.code}/game/started`);
+  const startedSnap = await get(startedRef);
+  if (startedSnap.val()) return;
 
-    // ランダムに配布（必要なら繰り返し）
-    const shuffled = [...DEAL_CARDS].sort(()=> Math.random()-0.5);
-    const assign = {};
-    uids.forEach((uid, i)=>{
-      assign[uid] = shuffled[i % shuffled.length];
-    });
+  // 参加者
+  const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+  const ps = psSnap.val() || {};
+  const uids = Object.keys(ps);
+  if (uids.length === 0) return;
 
-    const updates = {};
-    updates[`rooms/${state.code}/deal/v1/cards`] = assign;
-    updates[`rooms/${state.code}/deal/v1/at`] = Date.now();
-    updates[`rooms/${state.code}/game/started`] = true;
+  const dist = ROLE_DISTRIBUTION[uids.length];
+  if (!dist) return;
 
-    await update(ref(db), updates);
-  }
+  // 各役職ごとにシャッフル
+  function shuffle(arr){ return [...arr].sort(()=>Math.random()-0.5); }
+  const raiders  = shuffle(ROLE_CARDS.raider).slice(0, dist.raider);
+  const shadows  = shuffle(ROLE_CARDS.shadow).slice(0, dist.shadow);
+  const citizens = shuffle(ROLE_CARDS.citizen).slice(0, dist.citizen);
+
+  const selected = shuffle([...raiders, ...shadows, ...citizens]);
+
+  // 参加者に割り当て
+  const assign = {};
+  uids.forEach((uid, i)=>{
+    assign[uid] = selected[i];
+  });
+
+  const updates = {};
+  updates[`rooms/${state.code}/deal/v1/cards`] = assign;
+  updates[`rooms/${state.code}/deal/v1/at`] = Date.now();
+  updates[`rooms/${state.code}/game/started`] = true;
+
+  await update(ref(db), updates);
+}
+
 
   // 自分のカード購読
 function observeMyDeal(){
