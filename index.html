@@ -14,17 +14,18 @@
   .join-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .join-box input{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px}
   .btn{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
-  .btn.ghost{background:#f8f8f8;color:#111}
-  .pill{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:2px 8px;font-size:12px;margin-left:6px}
-  .right{margin-left:auto}
   .hidden{display:none !important}
 
   /* 図形（②） */
   html,body{height:100%}
   #art{display:block;margin:auto;max-width:96vmin;height:auto}
   .shape{fill:#fff;stroke:#111;stroke-width:0.8;stroke-linejoin:round;stroke-linecap:round}
-  .room-line{font-size:14px}
-  .code-link{ text-decoration: underline; cursor: pointer; }
+
+  /* アイコン */
+  .usericon rect{fill:#fff;stroke:#111;stroke-width:0.8;rx:6;ry:6}
+  .usericon text{font-size:12px;font-weight:700;dominant-baseline:middle;text-anchor:middle}
+  .usericon{cursor:grab}
+  .usericon.dragging{cursor:grabbing;opacity:.85}
 </style>
 </head>
 <body>
@@ -41,19 +42,11 @@
     <button id="btnJoin" class="btn">入室</button>
   </section>
 
-  <!-- ルーム情報（チャットは廃止） -->
+  <!-- ルーム（情報表示は削除、退室ボタンも削除） -->
   <section id="roomPanel" class="hidden">
-    <div class="room-line">
-      部屋コード：<span id="roomBadge" class="code-link"></span>
-      <span class="pill">参加者 <span id="memberCount">0</span> 人</span>
-      <span class="pill right">あなた：<span id="selfName"></span></span>
-    </div>
     <div style="margin-top:10px;">
       <!-- 図形②：左に狭い長方形＋右に星形（中央六角形＋外周五角形6） -->
       <svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
-    </div>
-    <div style="margin-top:10px;display:flex;gap:8px;">
-      <button id="btnLeave" class="btn ghost">退室</button>
     </div>
   </section>
 </main>
@@ -62,10 +55,10 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
   import {
-    getDatabase, ref, set, onValue, onDisconnect, remove
+    getDatabase, ref, set, onValue, onDisconnect, remove, get, update
   } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-  /* あなたの Firebase 設定（そのまま利用） */
+  /* Firebase 設定（そのまま） */
   const firebaseConfig = {
     apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
     authDomain: "shadowraiders-a2dbc.firebaseapp.com",
@@ -88,10 +81,6 @@
   const btnJoin       = document.getElementById('btnJoin');
 
   const roomPanel     = document.getElementById('roomPanel');
-  const roomBadge     = document.getElementById('roomBadge');
-  const memberCountEl = document.getElementById('memberCount');
-  const selfNameEl    = document.getElementById('selfName');
-  const btnLeave      = document.getElementById('btnLeave');
 
   // --- 状態 ---
   const state = {
@@ -99,7 +88,11 @@
     name: "",
     code: "",
     joined: false,
-    unsub: [] // リスナー解除
+    unsub: [],           // リスナー解除
+    rectBBox: null,      // 左長方形の位置（SVG座標）
+    draggingUid: null,   // 今ドラッグ中のアイコン UID
+    isPointerDown: false,
+    dragOffset: {x:0,y:0}
   };
 
   // --- ユーティリティ ---
@@ -119,87 +112,7 @@
     return NAME_RE.test(c) ? c : randomLetter();
   }
 
-  function buildRoomLink(code){
-    const url = new URL(location.href);
-    url.searchParams.set('room', code);
-    return url.toString();
-  }
-
   function show(el, yes){ el.classList.toggle('hidden', !yes); }
-
-  // --- 入室処理（チャット無し／参加者だけ管理） ---
-  async function join(){
-    const name = normalizeName(nameInput.value);
-    const code = (codeInput.value || "").trim() || random4();
-
-    state.name = name;
-    state.code = code;
-
-    // 参加者登録（部屋が無ければ初回作成）
-    const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
-    await set(meRef, { name, at: Date.now() });
-    onDisconnect(meRef).remove();
-
-    // UI
-    selfNameEl.textContent = name;
-    roomBadge.textContent = code;
-    roomBadge.onclick = ()=>{
-      const link = buildRoomLink(code);
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(link).then(()=> alert('招待リンクをコピーしました'));
-      } else {
-        prompt('コピーできない場合はこのテキストをコピーしてください', link);
-      }
-    };
-    headerInfo.innerHTML = `コード：<span class="code-link">${code}</span>　/　あなた：${name}`;
-
-    show(joinPanel, false);
-    show(roomPanel, true);
-
-    // 参加者数の監視
-    const membersRef = ref(db, `rooms/${code}/participants`);
-    const offMembers = onValue(membersRef, (snap)=>{
-      const obj = snap.val() || {};
-      memberCountEl.textContent = Object.keys(obj).length;
-    });
-    state.unsub.push(offMembers);
-
-    state.joined = true;
-
-    // 図形②を描く
-    drawFigure2();
-  }
-
-  // --- 退室処理 ---
-  async function leave(){
-    if (!state.joined) return;
-    const { code } = state;
-
-    // 参加者から削除
-    await remove(ref(db, `rooms/${code}/participants/${state.uid}`));
-
-    // リスナー解除
-    state.unsub.forEach(off => off && off());
-    state.unsub = [];
-
-    // UI 戻す
-    show(roomPanel, false);
-    show(joinPanel, true);
-    state.joined = false;
-  }
-
-  // --- 事件 ---
-  btnJoin.onclick = join;
-  btnLeave.onclick = leave;
-
-  // URL パラメータで事前入力（任意）
-  try{
-    const qs = new URLSearchParams(location.search);
-    const qRoom = (qs.get('room')||'').trim();
-    const qName = (qs.get('name')||'').trim();
-    if (qRoom) codeInput.value = qRoom.slice(0, 12);
-    if (qName) nameInput.value = qName.slice(0, 1);
-  }catch(_e){}
 
   // === 図形②：左に狭い長方形＋右に星形（中央六角形＋外周五角形6） ===
   function drawFigure2(){
@@ -271,7 +184,7 @@
     // 左の長方形
     const starBox = g.getBBox();
     const rectH = starBox.height;
-    const rectW = rectH * rectScale;
+    const rectW = rectH * 0.40;
     const rectX = starBox.x - gap - rectW;
     const rectY = starBox.y;
 
@@ -281,7 +194,13 @@
     rect.setAttribute('width', rectW);
     rect.setAttribute('height', rectH);
     rect.setAttribute('class','shape');
+    rect.setAttribute('id','leftRect');
     svg.appendChild(rect);
+
+    // アイコン用レイヤ
+    const iconsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
+    iconsLayer.setAttribute('id','icons');
+    svg.appendChild(iconsLayer);
 
     // viewBox 調整
     (function fit(){
@@ -290,7 +209,228 @@
         [box.x-pad, box.y-pad, box.width+pad*2, box.height+pad*2].join(' ')
       );
     })();
+
+    // 左長方形の BBox を記録（SVG座標）
+    state.rectBBox = {
+      x: rectX, y: rectY, w: rectW, h: rectH
+    };
+
+    // クリックで自分のアイコンを「一度だけ」配置
+    rect.addEventListener('click', onRectClickOnce);
   }
+
+  // SVG座標に変換
+  function toSvgCoords(svg, clientX, clientY){
+    const pt = svg.createSVGPoint();
+    pt.x = clientX; pt.y = clientY;
+    const m = svg.getScreenCTM();
+    if (!m) return {x:0,y:0};
+    const inv = m.inverse();
+    const sp = pt.matrixTransform(inv);
+    return {x: sp.x, y: sp.y};
+  }
+
+  // 矩形内に収める
+  function clampToRect(x, y){
+    const r = state.rectBBox;
+    const w = 28, h = 20; // アイコンのサイズ相当（半分余白で調整）
+    const minX = r.x + 4;
+    const maxX = r.x + r.w - w - 4;
+    const minY = r.y + 4;
+    const maxY = r.y + r.h - h - 4;
+    return {
+      x: Math.min(maxX, Math.max(minX, x)),
+      y: Math.min(maxY, Math.max(minY, y))
+    };
+  }
+
+  // 左長方形クリック：自分のアイコンを1回だけ作成
+  async function onRectClickOnce(ev){
+    const svg = document.getElementById('art');
+    const rectEl = document.getElementById('leftRect');
+    if (!svg || !rectEl) return;
+
+    // 既に自分のアイコンがあるか？
+    const myIconRef = ref(db, `rooms/${state.code}/icons/${state.uid}`);
+    const snap = await get(myIconRef);
+    if (snap.exists()) {
+      // 2回目以降は何もしない
+      return;
+    }
+
+    // クリック位置（SVG座標）
+    const p = toSvgCoords(svg, ev.clientX, ev.clientY);
+    const pos = clampToRect(p.x - 14, p.y - 10); // 中心ずれ補正
+
+    await set(myIconRef, {
+      name: state.name,
+      x: pos.x,
+      y: pos.y,
+      placedAt: Date.now()
+    });
+  }
+
+  // アイコン要素の生成＆更新
+  function renderOrUpdateIcon(uid, data){
+    const svg = document.getElementById('art');
+    const layer = document.getElementById('icons');
+    if (!svg || !layer || !data) return;
+
+    let g = layer.querySelector(`g[data-uid="${uid}"]`);
+    if (!g){
+      g = document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','usericon');
+      g.setAttribute('data-uid', uid);
+
+      const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      box.setAttribute('width', 28);
+      box.setAttribute('height', 20);
+      g.appendChild(box);
+
+      const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+      label.setAttribute('x', 14);
+      label.setAttribute('y', 10);
+      label.textContent = (data.name || '?');
+      g.appendChild(label);
+
+      // ドラッグ可能（誰でも）
+      g.addEventListener('pointerdown', (e)=>{
+        e.preventDefault();
+        state.isPointerDown = true;
+        state.draggingUid = uid;
+        g.classList.add('dragging');
+        const p = toSvgCoords(svg, e.clientX, e.clientY);
+        const gx = parseFloat(g.getAttribute('data-x') || data.x || 0);
+        const gy = parseFloat(g.getAttribute('data-y') || data.y || 0);
+        state.dragOffset.x = p.x - gx;
+        state.dragOffset.y = p.y - gy;
+        g.setPointerCapture(e.pointerId);
+      });
+
+      g.addEventListener('pointerup', (e)=>{
+        if (!state.isPointerDown) return;
+        state.isPointerDown = false;
+        g.classList.remove('dragging');
+        g.releasePointerCapture(e.pointerId);
+        // 位置確定は pointermove 内の throttle でDB反映済み
+      });
+
+      g.addEventListener('pointercancel', ()=>{
+        state.isPointerDown = false;
+        g.classList.remove('dragging');
+      });
+
+      svg.addEventListener('pointermove', throttle((e)=>{
+        if (!state.isPointerDown || state.draggingUid !== uid) return;
+        const p = toSvgCoords(svg, e.clientX, e.clientY);
+        const pos = clampToRect(p.x - state.dragOffset.x, p.y - state.dragOffset.y);
+        // ローカル即時反映
+        g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+        g.setAttribute('data-x', pos.x);
+        g.setAttribute('data-y', pos.y);
+        // DB反映
+        update(ref(db, `rooms/${state.code}/icons/${uid}`), { x: pos.x, y: pos.y });
+      }, 40), { passive: true });
+
+      layer.appendChild(g);
+    }
+
+    // 名前更新（他者の名前変更等に対応）
+    const text = g.querySelector('text');
+    if (text && text.textContent !== (data.name || '?')) {
+      text.textContent = (data.name || '?');
+    }
+
+    // 位置更新（他クライアントの移動を反映）
+    if (!(state.isPointerDown && state.draggingUid === uid)) {
+      g.setAttribute('transform', `translate(${data.x},${data.y})`);
+      g.setAttribute('data-x', data.x);
+      g.setAttribute('data-y', data.y);
+    }
+  }
+
+  // throttle
+  function throttle(fn, ms){
+    let t = 0, lastArgs = null;
+    return function(...args){
+      const now = Date.now();
+      if (now - t >= ms){
+        t = now;
+        fn.apply(this, args);
+      } else {
+        lastArgs = args;
+        clearTimeout(throttle._tid);
+        throttle._tid = setTimeout(()=>{
+          t = Date.now();
+          fn.apply(this, lastArgs);
+          lastArgs = null;
+        }, ms - (now - t));
+      }
+    };
+  }
+
+  // --- 入室処理（参加者登録＋図形＋アイコン同期） ---
+  async function join(){
+    const name = normalizeName(nameInput.value);
+    const code = (codeInput.value || "").trim() || random4();
+
+    state.name = name;
+    state.code = code;
+
+    // 参加者登録（部屋が無ければ初回作成）※表示は不要だが在室管理は継続
+    const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
+    await set(meRef, { name, at: Date.now() });
+    onDisconnect(meRef).remove();
+
+    headerInfo.textContent = ''; // 表示は削除のまま
+    show(joinPanel, false);
+    show(roomPanel, true);
+
+    // 図形②を描く（左長方形クリックを受け取れるように先に描画）
+    drawFigure2();
+
+    // アイコン同期
+    const iconsRef = ref(db, `rooms/${code}/icons`);
+    const offIcons = onValue(iconsRef, (snap)=>{
+      const data = snap.val() || {};
+      Object.entries(data).forEach(([uid, icon])=>{
+        renderOrUpdateIcon(uid, icon);
+      });
+      // 削除に対応（存在しないものを消す）
+      const layer = document.getElementById('icons');
+      if (layer){
+        [...layer.querySelectorAll('g.usericon')].forEach(el=>{
+          const uid = el.getAttribute('data-uid');
+          if (!(uid in data)){
+            el.remove();
+          }
+        });
+      }
+    });
+    state.unsub.push(offIcons);
+
+    state.joined = true;
+  }
+
+  // --- 退室処理（ボタン表示はないが、タブを閉じたら在室削除） ---
+  // 明示ボタンは削除要件のため非表示。ページ離脱時に自分の参加者ノードのみ削除。
+  window.addEventListener('beforeunload', ()=>{
+    if (state.joined) {
+      remove(ref(db, `rooms/${state.code}/participants/${state.uid}`));
+    }
+  });
+
+  // --- 事件 ---
+  btnJoin.onclick = join;
+
+  // URL パラメータで事前入力（任意）
+  try{
+    const qs = new URLSearchParams(location.search);
+    const qRoom = (qs.get('room')||'').trim();
+    const qName = (qs.get('name')||'').trim();
+    if (qRoom) codeInput.value = qRoom.slice(0, 12);
+    if (qName) nameInput.value = qName.slice(0, 1);
+  }catch(_e){}
 </script>
 </body>
 </html>
