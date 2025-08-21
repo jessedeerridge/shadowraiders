@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>オンラインルーム（色選択＋配布＋図形②＋山札）</title>
+<title>オンラインルーム（図形②＋山札＋色選択＋配布）</title>
 <style>
   :root { --gap:10px; }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
@@ -29,15 +29,16 @@
   .usericon.dragging{cursor:grabbing;opacity:.85}
 
   /* 右側の席アイコン（正方形＋角丸） */
-  .seaticon rect{stroke:#111;stroke-width:0.8;rx:6;ry:6}
+  .seaticon rect{fill:#fff;stroke:#111;stroke-width:0.8;rx:6;ry:6}
   .seaticon text{font-size:12px;font-weight:700;dominant-baseline:middle;text-anchor:middle}
 
   /* 7部屋のヒット領域（通常は透明、クリック時だけフラッシュ） */
   .roomhit{fill:transparent;stroke:none;pointer-events:auto}
   .roomhit.flash{fill:#eee;transition:fill 60ms}
 
-  /* 山札UI（右の図形の真下に） */
-  .decks{display:flex;gap:16px;justify-content:flex-start;align-items:flex-start;margin-top:12px;margin-left:40px}
+  /* 山札UI（右図形の真下に横並び） */
+  .decks-wrap{display:flex;justify-content:center}
+  .decks{display:flex;gap:16px;justify-content:flex-start;align-items:flex-start;margin-top:12px}
   .deck{display:flex;flex-direction:column;align-items:center;gap:8px}
   .deck-back,.deck-face{
     width:80px;height:110px;border:1px solid #111;border-radius:10px;
@@ -47,7 +48,7 @@
   .deck-back.disabled{opacity:.35;cursor:not-allowed;filter:grayscale(1)}
   .deck-back.green{background:#c7f5c1;}
   .deck-back.white{background:#ffffff;}
-  .deck-back.black{background:#cfcfcf;} /* 真っ黒にするなら #000; color:#fff; に変更 */
+  .deck-back.black{background:#000;color:#fff;}
   .deck-label{font-size:12px;opacity:.8}
 
   /* ダイス欄 */
@@ -55,65 +56,38 @@
   .dicebtn{padding:8px 10px;border:1px solid #ddd;border-radius:10px;background:#fafafa;cursor:pointer}
   .diceres{font-weight:700}
 
-  /* ホスト用 右クリック風ポップ */
+  /* ホスト用 設定マーク（左下固定） */
+  #hostGear{position:fixed;left:14px;bottom:14px;z-index:2147483600;
+    width:44px;height:44px;border-radius:50%;border:1px solid #ddd;background:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px}
+  #hostPanel{position:fixed;left:66px;bottom:14px;z-index:2147483601;
+    border:1px solid #111;border-radius:12px;background:#fff;box-shadow:0 6px 20px rgba(0,0,0,.16);
+    padding:10px;display:flex;gap:10px;align-items:center}
+  #hostPanel button{padding:8px 12px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
+
+  /* 汎用モーダル */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:2147483602}
+  .modal-panel{background:#fff;border:1px solid #111;border-radius:14px;box-shadow:0 10px 26px rgba(0,0,0,.2);padding:16px}
+
+  /* 色選択ポップ */
+  #colorModal .color-grid{display:grid;grid-template-columns:repeat(5, 64px);gap:10px;justify-content:center}
+  .color-tile{width:64px;height:64px;border:1px solid #111;border-radius:10px;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .color-tile .label{position:absolute;left:6px;bottom:4px;font-size:11px;background:rgba(255,255,255,.7);padding:1px 4px;border-radius:6px}
+  .color-tile .owner{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900}
+  .color-tile.taken-by-others{filter:grayscale(1) brightness(.8);cursor:not-allowed}
+  .color-tile.mine{outline:3px solid #111}
+
+  /* 自分用：配られたカード（右下に小さな黒裏） */
+  #myDealMini{position:fixed;right:16px;bottom:16px;width:60px;height:90px;border-radius:10px;border:1px solid #000;background:#000;color:#fff;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2147483600}
+  #dealViewer .deal-card{min-width:240px;min-height:360px;border:1px solid #111;border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:42px;font-weight:900;padding:20px}
+
+  /* ホスト削除ポップ（既存） */
   .popover{
     position:fixed;z-index:2147483600;background:#fff;border:1px solid #111;border-radius:10px;
     padding:6px 10px;box-shadow:0 6px 16px rgba(0,0,0,.12);display:flex;gap:10px;align-items:center
   }
   .popover button{padding:6px 10px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
-
-  /* --- 色選択ポップ --- */
-  .overlay{
-    position:fixed;inset:0;background:rgba(0,0,0,.08);backdrop-filter:saturate(1.2) blur(2px);
-    display:flex;align-items:center;justify-content:center;z-index:2147483601;
-  }
-.overlay .color-modal{            /* ← ダイアログは操作可能 */
-  pointer-events:auto;
-}
-  
-  .color-modal{
-    width:min(640px,90vw);border:1px solid #111;border-radius:16px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.16);
-    padding:14px 16px;display:flex;flex-direction:column;gap:12px;
-  }
-  .color-grid{
-    display:grid;grid-template-columns:repeat(5,1fr);gap:10px;
-  }
-  .chip{
-    height:68px;border:1px solid #111;border-radius:12px;display:grid;place-items:center;position:relative;cursor:pointer;
-    user-select:none;font-weight:800;font-size:18px;
-  }
-  .chip.disabled{opacity:.35;cursor:not-allowed}
-  .chip .label{position:absolute;bottom:6px;right:8px;font-size:10px;font-weight:600;opacity:.8}
-  .chip .owner{font-size:22px;}
-
-  /* --- 設定ギア（ホストのみ） --- */
-  .gear{
-    position:fixed;left:10px;bottom:10px;width:42px;height:42px;border-radius:50%;
-    border:1px solid #111;background:#fff;display:grid;place-items:center;cursor:pointer;z-index:2147483602;
-    box-shadow:0 6px 16px rgba(0,0,0,.12);
-  }
-  .settings{
-    position:fixed;left:10px;bottom:60px;border:1px solid #111;border-radius:14px;background:#fff;z-index:2147483602;
-    padding:10px;box-shadow:0 8px 24px rgba(0,0,0,.16);min-width:200px;
-  }
-  .settings .row{display:flex;justify-content:space-between;gap:8px;align-items:center;margin:6px 0}
-  .settings button{padding:8px 12px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
-
-  /* --- 配られたカード（各参加者の画面右下） --- */
-  .mycard-dock{
-    position:fixed;right:12px;bottom:12px;z-index:2147483601;
-  }
-  .card-small{
-    width:54px;height:76px;border-radius:10px;border:1px solid #000;background:#000;color:#fff;display:grid;place-items:center;
-    font-weight:800;cursor:pointer;user-select:none;
-  }
-  .card-modal{
-    position:fixed;inset:0;background:rgba(0,0,0,.2);display:flex;align-items:center;justify-content:center;z-index:2147483603;
-  }
-  .card-modal .card-face{
-    width:220px;height:300px;border:2px solid #111;border-radius:18px;background:#fff;display:grid;place-items:center;
-    font-size:42px;font-weight:900;box-shadow:0 12px 28px rgba(0,0,0,.25);
-  }
 </style>
 </head>
 <body>
@@ -146,33 +120,35 @@
       <span class="diceres" id="resD4">-</span>
     </div>
 
-    <!-- ▼ 右画像の下：山札（緑・白・黒の3デッキを横並び） -->
-    <div id="decks" class="decks" aria-label="山札（左から緑・白・黒）"></div>
+    <!-- ▼ 右図形の真下：山札 -->
+    <div class="decks-wrap"><div id="decks" class="decks" aria-label="山札（左から緑・白・黒）"></div></div>
   </section>
 </main>
 
-<!-- カラー選択オーバーレイ -->
-<div id="colorOverlay" class="overlay hidden" role="dialog" aria-modal="true">
-  <div class="color-modal">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:900;">色を選んでください（2行×5列）</div>
-      <div id="colorLockNotice" class="small"></div>
-    </div>
-    <div id="colorGrid" class="color-grid"></div>
-    <div class="small" style="opacity:.75">※ 他のプレイヤーが選択済みの色は選べません。選んだあともホストが「スタート」を押すまでこの画面のままです。</div>
+<!-- ホスト設定マークとパネル -->
+<button id="hostGear" class="hidden" title="設定">⚙️</button>
+<div id="hostPanel" class="hidden">
+  <span>ホスト設定</span>
+  <button id="btnStart">スタート</button>
+</div>
+
+<!-- 自分用 ミニカード（配布後） -->
+<div id="myDealMini" class="hidden" title="カードを開く">裏</div>
+
+<!-- カード拡大ビューア -->
+<div id="dealViewer" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-panel">
+    <div class="deal-card" id="dealCardFace">？</div>
   </div>
 </div>
 
-<!-- 設定（ホストのみ） -->
-<div id="gear" class="gear hidden" title="設定（ホスト）">⚙️</div>
-<div id="settings" class="settings hidden">
-  <div class="row"><div>ゲーム状態：</div><div id="gameStateText" style="font-weight:800;">未開始</div></div>
-  <div class="row"><button id="btnStart">スタート</button><span class="small" id="startHint">全員にカードを1枚ずつ配ります</span></div>
-</div>
-
-<!-- 自分の配られたカード：右下 -->
-<div id="myCardDock" class="mycard-dock hidden">
-  <div id="mySmallCard" class="card-small" title="クリックで拡大表示">裏</div>
+<!-- 色選択モーダル -->
+<div id="colorModal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-panel">
+    <h2 style="margin:0 0 12px;font-size:16px">色を選んでください（2行×5列）</h2>
+    <div class="color-grid" id="colorGrid"></div>
+    <div style="margin-top:10px;font-size:12px;opacity:.8">※ 他プレイヤーが選択済みの色は選べません。ホストがスタートを押すまでこの画面のまま。</div>
+  </div>
 </div>
 
 <!-- Firebase（v9 モジュール） -->
@@ -211,15 +187,16 @@
   const resD6         = document.getElementById('resD6');
   const resD4         = document.getElementById('resD4');
 
-  const colorOverlay  = document.getElementById('colorOverlay');
-  const colorGrid     = document.getElementById('colorGrid');
-  const colorLockNotice = document.getElementById('colorLockNotice');
-  const gearEl        = document.getElementById('gear');
-  const settingsEl    = document.getElementById('settings');
+  const hostGear      = document.getElementById('hostGear');
+  const hostPanel     = document.getElementById('hostPanel');
   const btnStart      = document.getElementById('btnStart');
-  const gameStateText = document.getElementById('gameStateText');
-  const myCardDock    = document.getElementById('myCardDock');
-  const mySmallCard   = document.getElementById('mySmallCard');
+
+  const colorModal    = document.getElementById('colorModal');
+  const colorGrid     = document.getElementById('colorGrid');
+
+  const myDealMini    = document.getElementById('myDealMini');
+  const dealViewer    = document.getElementById('dealViewer');
+  const dealCardFace  = document.getElementById('dealCardFace');
 
   // --- 状態 ---
   const state = {
@@ -233,11 +210,7 @@
     isPointerDown: false,
     dragOffset: {x:0,y:0},
     isHost: false,
-    myColorKey: null,
-    users: {},        // uid -> {color}
-    colors: {},       // colorKey -> {uid,name}
-    game: { started:false },
-    myHand: null,
+    started: false,
   };
 
   // --- ユーティリティ ---
@@ -249,7 +222,6 @@
     const c = t[0]; return NAME_RE.test(c) ? c : randomLetter();
   }
   function show(el, yes){ el.classList.toggle('hidden', !yes); }
-  function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
   // ===== ヘッダ表示・コピー =====
   function updateHeader(){
@@ -530,27 +502,16 @@
     return {x: sp.x, y: sp.y};
   }
 
-  // ===== 席アイコン描画（色適用） =====
-  function seatTextColorFor(colorKey){
-    // 黒・緑(両方)・紫・青・赤 → 白文字、それ以外 → 黒文字
-    const whiteText = new Set(['black','green','green2','purple','blue','red']);
-    return whiteText.has(colorKey) ? '#fff' : '#111';
+  // ===== 席アイコン描画（色反映） =====
+  function applyFillAndText(elGroup, colorName){
+    const box = elGroup.querySelector('rect');
+    const label = elGroup.querySelector('text');
+    const {bg, text} = colorToStyle(colorName);
+    if (box){ box.setAttribute('fill', bg); }
+    if (label){ label.setAttribute('fill', text); }
   }
-  const COLOR_DEF = [
-    { key:'red',    label:'赤',    css:'#e53935' },
-    { key:'blue',   label:'青',    css:'#1e88e5' },
-    { key:'black',  label:'黒',    css:'#111111' },
-    { key:'green',  label:'緑',    css:'#43a047' },
-    { key:'white',  label:'白',    css:'#ffffff' },
-    { key:'green2', label:'緑',    css:'#2e7d32' }, // 2つ目の緑
-    { key:'purple', label:'紫',    css:'#8e24aa' },
-    { key:'aqua',   label:'水色',  css:'#26c6da' },
-    { key:'orange', label:'オレンジ', css:'#fb8c00' },
-    { key:'yellow', label:'黄色',  css:'#fdd835' },
-  ];
-  const COLOR_MAP = Object.fromEntries(COLOR_DEF.map(c=>[c.key,c]));
 
-  function renderOrUpdateSeat(uid, data){
+  function renderOrUpdateSeat(uid, data, userColorsMap){
     const svg = document.getElementById('art');
     const layer = document.getElementById('seats');
     if (!svg || !layer || !data) return;
@@ -564,15 +525,12 @@
       const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
       box.setAttribute('width', 24);
       box.setAttribute('height', 24);
-      // 初期は白
-      box.setAttribute('fill', '#fff');
       g.appendChild(box);
 
       const label = document.createElementNS('http://www.w3.org/2000/svg','text');
       label.setAttribute('x', 12);
       label.setAttribute('y', 12);
       label.textContent = (data.name || '?');
-      label.setAttribute('fill', '#111');
       g.appendChild(label);
 
       // ホスト削除ポップ
@@ -585,18 +543,9 @@
     const text = g.querySelector('text');
     if (text && text.textContent !== (data.name || '?')) text.textContent = (data.name || '?');
 
-    // 色適用（users/uid/color を参照）
-    const myU = state.users[uid] || {};
-    const colorKey = myU.color || null;
-    const rect = g.querySelector('rect');
-    if (rect){
-      const fillCss = colorKey ? (COLOR_MAP[colorKey]?.css || '#fff') : '#fff';
-      rect.setAttribute('fill', fillCss);
-    }
-    if (text){
-      const tColor = colorKey ? seatTextColorFor(colorKey) : '#111';
-      text.setAttribute('fill', tColor);
-    }
+    // 色適用（参加者カラー）
+    const colorName = userColorsMap?.[uid] || null;
+    if (colorName) applyFillAndText(g, colorName);
 
     // 位置更新
     g.setAttribute('transform', `translate(${data.x},${data.y})`);
@@ -637,7 +586,7 @@
     await set(myIconRef, { name: state.name, x: pos.x, y: pos.y, placedAt: Date.now() });
   }
 
-  function renderOrUpdateIcon(uid, data){
+  function renderOrUpdateIcon(uid, data, userColorsMap){
     const svg = document.getElementById('art');
     const layer = document.getElementById('icons');
     if (!svg || !layer || !data) return;
@@ -700,7 +649,11 @@
 
     // 名前更新
     const text = g.querySelector('text');
-    if (text && text.textContent !== (data.name || '?')) text.textContent = (data.name || '?');
+    if (text && text.textContent !== (data.name || '?')) text.textContent = (data.name || '?' );
+
+    // 色適用（参加者カラー）
+    const colorName = userColorsMap?.[uid] || null;
+    if (colorName) applyFillAndText(g, colorName);
 
     // 自分がドラッグ中はリモート更新を抑止
     if (!(state.isPointerDown && state.draggingUid === uid)) {
@@ -722,30 +675,140 @@
     };
   }
 
+  // ====== 色選択 ======
+  const COLOR_LIST = [
+    { id:'red',     name:'赤',    bg:'#e53935' },
+    { id:'blue',    name:'青',    bg:'#1e88e5' },
+    { id:'black',   name:'黒',    bg:'#000000' },
+    { id:'green1',  name:'緑',    bg:'#43a047' },
+    { id:'white',   name:'白',    bg:'#ffffff', border:'#111' },
+    { id:'green2',  name:'緑',    bg:'#43a047' }, // 指示通り2つ目の緑
+    { id:'purple',  name:'紫',    bg:'#8e24aa' },
+    { id:'cyan',    name:'水色',  bg:'#26c6da' },
+    { id:'orange',  name:'オレンジ', bg:'#fb8c00' },
+    { id:'yellow',  name:'黄色',  bg:'#fdd835' },
+  ];
+  function colorToStyle(colorName){
+    // 背景と文字色の組合せ規定
+    const darkText = ['赤','青','黒','緑','紫']; // これらは白文字
+    const item = COLOR_LIST.find(c => c.name===colorName || c.id===colorName) || null;
+    const bg = item?.bg || '#fff';
+    const label = item?.name || '';
+    const needWhite = darkText.includes(label) || ['red','blue','black','green1','green2','purple'].includes(item?.id);
+    return { bg, text: needWhite ? '#fff' : '#111' };
+  }
+  function renderColorGrid(claims){
+    colorGrid.innerHTML = '';
+    COLOR_LIST.forEach(c=>{
+      const tile = document.createElement('div');
+      tile.className = 'color-tile';
+      tile.style.background = c.bg;
+      if (c.border) tile.style.borderColor = c.border;
+      const label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = c.name;
+      tile.appendChild(label);
+
+      const claim = claims?.[c.id] || null;
+      if (claim){
+        const o = document.createElement('div');
+        o.className = 'owner';
+        o.textContent = claim.name || '?';
+        tile.appendChild(o);
+        if (claim.uid !== state.uid){
+          tile.classList.add('taken-by-others');
+        }else{
+          tile.classList.add('mine');
+        }
+      }
+
+      tile.addEventListener('click', async ()=>{
+        if (state.started) return;
+        // 既に他者が取っていれば何もしない
+        const snap = await get(ref(db, `rooms/${state.code}/colors/${c.id}`));
+        const cur = snap.val();
+        if (cur && cur.uid && cur.uid !== state.uid) return;
+
+        // 自分が持っている別色の解放
+        const colorsSnap = await get(ref(db, `rooms/${state.code}/colors`));
+        const all = colorsSnap.val() || {};
+        const mine = Object.entries(all).find(([id, v])=> v?.uid === state.uid);
+        if (mine) await remove(ref(db, `rooms/${state.code}/colors/${mine[0]}`));
+
+        // この色にセット
+        await set(ref(db, `rooms/${state.code}/colors/${c.id}`), { uid: state.uid, name: state.name, at: Date.now() });
+        // 参加者カラーにも保存
+        await update(ref(db, `rooms/${state.code}/participants/${state.uid}`), { color: c.name });
+      });
+
+      colorGrid.appendChild(tile);
+    });
+  }
+
+  function observeColors(){
+    const colorsRef = ref(db, `rooms/${state.code}/colors`);
+    const off = onValue(colorsRef, (snap)=>{
+      const claims = snap.val() || {};
+      renderColorGrid(claims);
+    });
+    state.unsub.push(off);
+  }
+
+  // ====== ホスト設定（スタート→カード配布） ======
+  const DEAL_CARDS = ['ああ','いい','ええ','かか','きき','すす','ちち','もも','ええ','じじ'];
+
+  async function hostStartIfNotStarted(){
+    const startedRef = ref(db, `rooms/${state.code}/game/started`);
+    const startedSnap = await get(startedRef);
+    if (startedSnap.val()) return; // 既にスタート済み
+
+    // 参加者一覧
+    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+    const ps = psSnap.val() || {};
+    const uids = Object.keys(ps);
+    if (uids.length === 0) return;
+
+    // ランダムに配布（必要なら繰り返し）
+    const shuffled = [...DEAL_CARDS].sort(()=> Math.random()-0.5);
+    const assign = {};
+    uids.forEach((uid, i)=>{
+      assign[uid] = shuffled[i % shuffled.length];
+    });
+
+    const updates = {};
+    updates[`rooms/${state.code}/deal/v1/cards`] = assign;
+    updates[`rooms/${state.code}/deal/v1/at`] = Date.now();
+    updates[`rooms/${state.code}/game/started`] = true;
+
+    await update(ref(db), updates);
+  }
+
+  // 自分のカード購読
+  function observeMyDeal(){
+    const myRef = ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`);
+    const off = onValue(myRef, (snap)=>{
+      const val = snap.val();
+      const has = !!val;
+      show(myDealMini, has);
+      if (has){
+        myDealMini.onclick = ()=>{
+          dealCardFace.textContent = String(val);
+          show(dealViewer, true);
+        };
+      }else{
+        myDealMini.onclick = null;
+      }
+    });
+    state.unsub.push(off);
+  }
+
   // ===== ホスト管理 & 削除ポップ =====
   async function becomeHostIfVacant(){
     const hostRef = ref(db, `rooms/${state.code}/host`);
     await runTransaction(hostRef, cur => cur ?? state.uid);
     const snap = await get(hostRef);
     state.isHost = (snap.val() === state.uid);
-    updateHostUI();
- updateGameUI(); 
-  }
-
-  function updateHostUI(){
-    show(gearEl, state.isHost);
-    show(settingsEl, false);
-  }
-
-  // ホストの変化を購読（譲渡など）
-  function watchHost(){
-    const hostRef = ref(db, `rooms/${state.code}/host`);
-    const off = onValue(hostRef, (snap)=>{
-      state.isHost = (snap.val() === state.uid);
-      updateHostUI();
-  updateGameUI(); 
-    });
-    state.unsub.push(off);
+    show(hostGear, state.isHost);
   }
 
   let popEl = null;
@@ -778,146 +841,6 @@
     }
   }
 
-  // ===== 色選択ポップ =====
-  function buildColorGrid(){
-    colorGrid.innerHTML = '';
-    for (const c of COLOR_DEF){
-      const cell = document.createElement('div');
-      cell.className = 'chip';
-      cell.style.background = c.css;
-      const ownerSpan = document.createElement('div');
-      ownerSpan.className = 'owner';
-      ownerSpan.textContent = ''; // 所有者の一文字
-      ownerSpan.style.color = seatTextColorFor(c.key);
-      const label = document.createElement('div');
-      label.className = 'label';
-      label.textContent = c.label;
-      cell.appendChild(ownerSpan);
-      cell.appendChild(label);
-      cell.dataset.key = c.key;
-      cell.addEventListener('click', ()=> chooseColor(c.key));
-      colorGrid.appendChild(cell);
-    }
-  }
-
-  async function chooseColor(colorKey){
-    // 開始後は変更不可
-    const gameSnap = await get(ref(db, `rooms/${state.code}/game/started`));
-    const started = !!gameSnap.val();
-    if (started) return;
-
-    // 既に他人が保持していれば不可（トランザクション）
-    const slotRef = ref(db, `rooms/${state.code}/colors/${colorKey}`);
-    let ok = false;
-    await runTransaction(slotRef, cur => {
-      if (cur && cur.uid && cur.uid !== state.uid) return cur; // 埋まっている
-      return { uid: state.uid, name: state.name, at: Date.now() };
-    }).then(res => {
-      ok = !!res.committed;
-    });
-
-    if (!ok) return;
-
-    // 自分が他の色を持っていれば解放（単純検索）
-    const allSnap = await get(ref(db, `rooms/${state.code}/colors`));
-    const all = allSnap.val() || {};
-    const entries = Object.entries(all);
-    for (const [k, v] of entries){
-      if (k !== colorKey && v?.uid === state.uid){
-        await remove(ref(db, `rooms/${state.code}/colors/${k}`));
-      }
-    }
-
-    // users/uid/color に反映
-    await set(ref(db, `rooms/${state.code}/users/${state.uid}`), { color: colorKey, name: state.name, at: Date.now() });
-  }
-
-  function applyColorGridState(){
-    // 取り込み
-    const gridCells = colorGrid.querySelectorAll('.chip');
-    gridCells.forEach(cell => {
-      const key = cell.dataset.key;
-      const taken = state.colors[key];
-      const ownerEl = cell.querySelector('.owner');
-      ownerEl.textContent = taken ? (taken.name || '?') : '';
-      // 文字色（背景次第）
-      ownerEl.style.color = seatTextColorFor(key);
-      // 自分ではない所有者がいれば disabled
-      const disabled = !!taken && taken.uid !== state.uid;
-      cell.classList.toggle('disabled', disabled);
-    });
-  }
-
-  // ===== ゲーム開始＆配布 =====
-  const CARD_POOL = ['ああ','いい','ええ','かか','きき','すす','ちち','もも','ええ','じじ'];
-
-  function shuffle(a){
-    for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
-    return a;
-  }
-
-  async function startGame(){
-    // すでに開始済なら何もしない
-    const gRef = ref(db, `rooms/${state.code}/game/started`);
-    const gSnap = await get(gRef);
- if (gSnap.val()) {
-   // 残骸をリセットして続行できるようにする
-   await set(ref(db, `rooms/${state.code}/hands`), null);
-   await set(gRef, false);
- }
-    // 参加者一覧を取得
-    const pSnap = await get(ref(db, `rooms/${state.code}/participants`));
-    const participants = pSnap.val() || {};
-    const uids = Object.keys(participants);
- if (uids.length === 0) {
-   // 少なくともホスト自身には配る
-   uids.push(state.uid);
- }
-    // カードプールをシャッフル
-    const pool = shuffle([...CARD_POOL]);
-
-    // 各参加者に1枚ずつ配布（人数>プールならループ）
-    const handsRef = ref(db, `rooms/${state.code}/hands`);
-    const now = Date.now();
-    let i = 0;
-    for (const uid of uids){
-      const card = pool[i % pool.length];
-      i++;
-      await set(ref(handsRef, uid), { card, at: now });
-    }
-
-    // startedフラグを立て、色ロック
-    await set(gRef, true);
-    await set(ref(db, `rooms/${state.code}/game/colorLock`), true);
-  }
-
-  // ===== 設定UI =====
-  gearEl.addEventListener('click', ()=>{
-    settingsEl.classList.toggle('hidden');
-  });
-  btnStart.addEventListener('click', startGame);
-
-  function updateGameUI(){
-    gameStateText.textContent = state.game.started ? '開始済' : '未開始';
-    btnStart.disabled = state.game.started || !state.isHost;
-    colorLockNotice.textContent = state.game.started ? 'ゲーム開始：色はロックされています' : '';
-  }
-
-  // ===== 自分のカードUI =====
-  mySmallCard.addEventListener('click', ()=>{
-    if (!state.myHand) return;
-    const modal = document.createElement('div');
-    modal.className = 'card-modal';
-    const cardFace = document.createElement('div');
-    cardFace.className = 'card-face';
-    cardFace.textContent = state.myHand.card || '';
-    modal.appendChild(cardFace);
-    modal.addEventListener('click', (e)=>{
-      if (e.target === modal) modal.remove();
-    });
-    document.body.appendChild(modal);
-  });
-
   // ===== 入室処理 =====
   async function join(){
     const name = normalizeName(nameInput.value);
@@ -933,7 +856,6 @@
 
     // ホスト就任（空いていれば）
     await becomeHostIfVacant();
-    watchHost();
 
     updateHeader();
     show(joinPanel, false);
@@ -944,9 +866,13 @@
 
     // 左長方形アイコンの同期
     const iconsRef = ref(db, `rooms/${code}/icons`);
-    const offIcons = onValue(iconsRef, (snap)=>{
+    const offIcons = onValue(iconsRef, async (snap)=>{
       const data = snap.val() || {};
-      Object.entries(data).forEach(([uid, icon])=> renderOrUpdateIcon(uid, icon));
+      // 参加者カラーを取得して反映
+      const psSnap = await get(ref(db, `rooms/${code}/participants`));
+      const ps = psSnap.val() || {};
+      const colorMap = Object.fromEntries(Object.entries(ps).map(([uid, v])=> [uid, v?.color || null]));
+      Object.entries(data).forEach(([uid, icon])=> renderOrUpdateIcon(uid, icon, colorMap));
       const layer = document.getElementById('icons');
       if (layer){
         [...layer.querySelectorAll('g.usericon')].forEach(el=>{
@@ -957,11 +883,16 @@
     });
     state.unsub.push(offIcons);
 
-    // 席アイコンの同期＋自分の部屋/バッジ
+    // 席アイコンの同期＋自分の部屋/バッジ（色反映込み）
     const seatsRef = ref(db, `rooms/${code}/seats`);
-    const offSeats = onValue(seatsRef, (snap)=>{
+    const offSeats = onValue(seatsRef, async (snap)=>{
       const data = snap.val() || {};
-      Object.entries(data).forEach(([uid, seat])=> renderOrUpdateSeat(uid, seat));
+      // 参加者カラー
+      const psSnap = await get(ref(db, `rooms/${code}/participants`));
+      const ps = psSnap.val() || {};
+      const colorMap = Object.fromEntries(Object.entries(ps).map(([uid, v])=> [uid, v?.color || null]));
+
+      Object.entries(data).forEach(([uid, seat])=> renderOrUpdateSeat(uid, seat, colorMap));
       const layer = document.getElementById('seats');
       if (layer){
         [...layer.querySelectorAll('g.seaticon')].forEach(el=>{
@@ -976,54 +907,6 @@
     });
     state.unsub.push(offSeats);
 
-    // users（色）を購読 → 席色に反映
-    const usersRef = ref(db, `rooms/${code}/users`);
-    const offUsers = onValue(usersRef, (snap)=>{
-      state.users = snap.val() || {};
-      // 座席の色更新には seats の再描画が必要（軽く全件再適用）
-      const layer = document.getElementById('seats');
-      if (layer){
-        [...layer.querySelectorAll('g.seaticon')].forEach(el=>{
-          const uid = el.getAttribute('data-uid');
-          const seatDataSnap = null; // 最小限、transformは維持し、色だけ塗り替える
-          // 直塗り
-          const rect = el.querySelector('rect');
-          const text = el.querySelector('text');
-          const colorKey = (state.users[uid]?.color) || null;
-          const fillCss = colorKey ? (COLOR_MAP[colorKey]?.css || '#fff') : '#fff';
-          if (rect) rect.setAttribute('fill', fillCss);
-          if (text) text.setAttribute('fill', colorKey ? seatTextColorFor(colorKey) : '#111');
-        });
-      }
-    });
-    state.unsub.push(offUsers);
-
-    // 色スロットの購読 → グリッド更新
-    const colorsRef = ref(db, `rooms/${code}/colors`);
-    const offColors = onValue(colorsRef, (snap)=>{
-      state.colors = snap.val() || {};
-      applyColorGridState();
-    });
-    state.unsub.push(offColors);
-
-    // ゲーム状態の購読（開始フラグ）
-    const gameRef = ref(db, `rooms/${code}/game`);
-    const offGame = onValue(gameRef, (snap)=>{
-      state.game = { started: false, ...(snap.val() || {}) };
-      updateGameUI();
-      // 開始後は色選択を閉じる
-      show(colorOverlay, !state.game.started);
-    });
-    state.unsub.push(offGame);
-
-    // 自分の手札の購読
-    const myHandRef = ref(db, `rooms/${code}/hands/${state.uid}`);
-    const offHand = onValue(myHandRef, (snap)=>{
-      state.myHand = snap.val() || null;
-      show(myCardDock, !!state.myHand);
-    });
-    state.unsub.push(offHand);
-
     // 山札UI
     setupDecks();
 
@@ -1031,9 +914,33 @@
     rollD6Btn.onclick = ()=>{ resD6.textContent = String(1 + Math.floor(Math.random()*6)); };
     rollD4Btn.onclick = ()=>{ resD4.textContent = String(1 + Math.floor(Math.random()*4)); };
 
-    // 色選択ポップを表示（未開始時）
-    buildColorGrid();
-    show(colorOverlay, true);
+    // 色選択の購読・表示
+    observeColors();
+    // スタート状態監視：モーダル制御
+    const startedRef = ref(db, `rooms/${code}/game/started`);
+    const offStarted = onValue(startedRef, (snap)=>{
+      state.started = !!snap.val();
+      show(colorModal, !state.started); // スタートまでは色ポップのまま
+    });
+    state.unsub.push(offStarted);
+
+    // 自分の配布カード購読
+    observeMyDeal();
+
+    // ホスト設定UI
+    hostGear.onclick = ()=>{
+      hostPanel.classList.toggle('hidden');
+    };
+    btnStart.onclick = async ()=>{
+      if (!state.isHost) return;
+      await hostStartIfNotStarted();
+      hostPanel.classList.add('hidden');
+    };
+
+    // カードビューア：外側クリックで閉じる
+    dealViewer.addEventListener('click', (e)=>{
+      if (e.target === dealViewer) show(dealViewer, false);
+    });
 
     state.joined = true;
   }
