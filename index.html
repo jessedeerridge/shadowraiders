@@ -503,14 +503,13 @@
     return {x: sp.x, y: sp.y};
   }
 
-  // ===== 席アイコン描画（色反映） =====
   function applyFillAndText(elGroup, colorName){
-    const box = elGroup.querySelector('rect');
-    const label = elGroup.querySelector('text');
-    const {bg, text} = colorToStyle(colorName);
-    if (box){ box.setAttribute('fill', bg); }
-    if (label){ label.setAttribute('fill', text); }
-  }
+  const box = elGroup.querySelector('rect');
+  const label = elGroup.querySelector('text');
+  const {bg, text} = colorToStyle(colorName);
+  if (box){ box.style.fill = bg; }     // ← inline style は CSS より強い
+  if (label){ label.style.fill = text; }
+}
 
   function renderOrUpdateSeat(uid, data, userColorsMap){
     const svg = document.getElementById('art');
