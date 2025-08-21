@@ -632,16 +632,42 @@ if (!myHasCard && oldCard){
   }
 
   // ===== 山札 =====
- const DECKS_DEF = {
-  green: { label:'緑', colorClass:'green', cards:['あ','か','た','ら','わ','は'] },
+const DECKS_DEF = {
+  green: {
+    label:'緑',
+    colorClass:'green',
+    cards:[
+      'あなたは シチズン か シャドウ？',
+      'あなたは シチズン か シャドウ？',
+      'あなたは シチズン か レイダー？',
+      'あなたは  シチズン か レイダー？',
+      'あなたは レイダー か シャドウ？',
+      'あなたは レイダー か シャドウ？',
+      'あなたは レイダー？',
+      'あなたは レイダー？',
+      'あなたは レイダー？',
+      'あなたは レイダー？',
+      'あなたは シャドウ？',
+      'あなたは シャドウ？',
+      'あなたは シャドウ？',
+      'あなたは シャドウ？',
+      '正体カードを見せよ',
+      'あなたは シチズン？',
+      'あなたは シチズン？',
+      'あなたは シャドウ？',
+      'あなたは  D / F / G / V / W ?（HP12以上）',
+      'あなたは  A / B / C / E / U ?（HP11以下）',
+    ]
+  },
   white: {
     label:'白',
     colorClass:'white',
     cards:['みみ','きき','ひひ','ぎぎ','しし','りり','にに','ちち','びび','じじ'],
-    equipIdx: [1,2,3,4] // 0始まり → 2,3,4,5番が装備
+    equipIdx: [1,2,3,4]
   },
-  black: { label:'黒', colorClass:'black', cards:['ろ','も','こ','ど','そ','ぼ'] },
+  black: { label:'黒', colorClass:'黒', cards:['ろ','も','こ','ど','そ','ぼ'] },
 };
+
 
   function setupDecks(){
     decksEl.innerHTML = '';
@@ -663,13 +689,30 @@ face.className = 'deck-face';
 face.dataset.role = 'face';
 face.textContent = '';
 
-// ▼追加：クリックで拡大表示
+// ▼ 緑だけ：自分だけ拡大→拡大カードクリックで「参加者選択」ポップ
 face.addEventListener('click', ()=>{
-  if (face.textContent){                // 文字があるときのみ
-    dealCardFace.textContent = face.textContent;
-    show(dealViewer, true);             // 既存の拡大仕様を利用
+  const txt = (face.textContent || '').trim();
+  if (!txt) return;
+
+  if (deckId === 'green'){
+    // 自分だけ拡大（背景も緑）
+    dealCardFace.textContent = txt;
+    dealCardFace.style.background = '#43a047';
+    dealCardFace.style.color = '#fff';
+    show(dealViewer, true);
+
+    // 拡大カードをクリック → 参加者選択ポップ
+    dealCardFace.onclick = ()=> showParticipantSelect(txt);
+  }else{
+    // 通常（白・黒）
+    dealCardFace.textContent = txt;
+    dealCardFace.style.background = '#fff';
+    dealCardFace.style.color = '#111';
+    show(dealViewer, true);
+    dealCardFace.onclick = null;
   }
 });
+
 
 
       const label = document.createElement('div');
@@ -1312,6 +1355,98 @@ function observeReveals(){
   });
   state.unsub.push(off);
 }
+
+  // === 緑カード：参加者選択 → 相手に共有 ===
+function showParticipantSelect(cardText){
+  get(ref(db, `rooms/${state.code}/participants`)).then(snap=>{
+    const ps = snap.val() || {};
+    // モーダル生成
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.innerHTML = `<h3 style="margin:0 0 10px;font-size:16px">誰に見せる？</h3>`;
+    modal.appendChild(panel);
+
+    Object.entries(ps).forEach(([uid,p])=>{
+      if (uid === state.uid) return;
+      const btn = document.createElement('button');
+      btn.textContent = p?.name || '?';
+      btn.className = 'btn';
+      btn.style.margin = '4px';
+      btn.onclick = async ()=>{
+        await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
+          card: cardText, from: state.uid, fromName: state.name, at: Date.now()
+        });
+        document.body.removeChild(modal);
+        show(dealViewer, false);
+      };
+      panel.appendChild(btn);
+    });
+
+    // キャンセル
+    const cancel = document.createElement('button');
+    cancel.textContent = '閉じる';
+    cancel.className = 'btn';
+    cancel.style.marginLeft = '8px';
+    cancel.onclick = ()=> document.body.removeChild(modal);
+    panel.appendChild(cancel);
+
+    document.body.appendChild(modal);
+  });
+}
+
+// === 緑カード：受信監視（自分宛） ===
+function observeGreenShare(){
+  const rcvRef = ref(db, `rooms/${state.code}/greenShare/${state.uid}`);
+  const off = onValue(rcvRef, snap=>{
+    const rec = snap.val();
+    if (!rec || !rec.card) return;
+
+    // 受信者だけ拡大表示（背景緑）
+    dealCardFace.textContent = rec.card;
+    dealCardFace.style.background = '#43a047';
+    dealCardFace.style.color = '#fff';
+    show(dealViewer, true);
+
+    // クリック → はい/いいえ
+    dealCardFace.onclick = ()=> showYesNoPopup(rec.card);
+
+    // 一度読んだら削除
+    remove(rcvRef);
+  });
+  state.unsub.push(off);
+}
+
+// === 緑カード：はい/いいえポップ（受信者が自分の正体に応じて回答） ===
+function showYesNoPopup(cardText){
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  const panel = document.createElement('div');
+  panel.className = 'modal-panel';
+  panel.innerHTML = `
+    <div style="font-weight:700; margin-bottom:12px;">${cardText}</div>
+    <div style="display:flex; gap:10px; justify-content:center;">
+      <button id="btnYes" class="btn">はい</button>
+      <button id="btnNo"  class="btn">いいえ</button>
+    </div>
+  `;
+  modal.appendChild(panel);
+  document.body.appendChild(modal);
+
+  function close(){ document.body.removeChild(modal); show(dealViewer,false); }
+
+  // ここでは“ポップの表示”のみ。実際の正否ロジックやログ保存は任意で拡張可。
+  panel.querySelector('#btnYes').onclick = close;
+  panel.querySelector('#btnNo').onclick  = close;
+}
+
+// === join() 完了後に購読開始 ===
+// 既存の observeReveals() を呼んでいる近くに追加してください：
+/*
+observeReveals();
+observeGreenShare(); // ← これを追加
+*/
 
   
 /* === 4b: 装備所持バーのレンダラ＋購読 === */
