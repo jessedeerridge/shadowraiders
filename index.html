@@ -1327,8 +1327,22 @@ ordered.forEach(cardName=>{
   const c = document.createElement('div');
   c.className = 'equip-card';
   c.textContent = cardName;
+
+  // ★ 正体カードの色分け
+  if (ROLE_CARDS.shadow.includes(cardName)) {
+    c.style.background = '#1e88e5'; // シャドウ＝青
+    c.style.color = '#fff';
+  } else if (ROLE_CARDS.raider.includes(cardName)) {
+    c.style.background = '#e53935'; // レイダー＝赤
+    c.style.color = '#fff';
+  } else if (ROLE_CARDS.citizen.includes(cardName)) {
+    c.style.background = '#fdd835'; // シチズン＝黄
+    c.style.color = '#111';
+  }
+
   holder.appendChild(c);
 });
+
 
 
     bar.appendChild(holder);
