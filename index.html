@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
@@ -7,7 +7,8 @@
 <style>
   html,body{height:100%;margin:0;background:#fff}
   svg{display:block;margin:auto;max-width:96vmin;height:auto}
-  .shape{fill:#fff;stroke:#111;stroke-width:10;stroke-linejoin:round;stroke-linecap:round}
+  /* 線を細く：1px以下 */
+  .shape{fill:#fff;stroke:#111;stroke-width:0.8;stroke-linejoin:round;stroke-linecap:round}
 </style>
 </head>
 <body>
@@ -17,10 +18,8 @@
 const svg = document.getElementById('art');
 const rt3 = Math.sqrt(3);
 
-// ---- パラメータ ----
-const s0 = 48;  // 中央(内側)六角形の一辺
-const s1 = 82;  // 中間(共有辺)六角形の一辺  ※外周五角形の“肩”はここ
-// すべての線分の向きは 0°, +60°, -60° のいずれかに揃う
+const s0 = 48;  // 中央六角形の一辺
+const s1 = 82;  // 中間六角形の一辺
 
 function hexFlat(cx, cy, s){
   const h = (rt3/2)*s;
@@ -46,9 +45,8 @@ const sub=(a,b)=>[a[0]-b[0],a[1]-b[1]];
 const mul=(a,k)=>[a[0]*k,a[1]*k];
 const norm=(v)=>{ const L=Math.hypot(v[0],v[1])||1; return [v[0]/L,v[1]/L]; };
 
-// p + u*t と q + v*s の交点
+// 直線の交点
 function intersectRayRay(p,u,q,v){
-  // 行列 [u, -v] * [t,s]^T = (q - p)
   const A = [[u[0], -v[0]], [u[1], -v[1]]];
   const b = sub(q,p);
   const det = A[0][0]*A[1][1] - A[0][1]*A[1][0];
@@ -56,20 +54,14 @@ function intersectRayRay(p,u,q,v){
   return add(p, mul(u, t));
 }
 
-// 六角形（同心・同向き）
-const H0 = hexFlat(0,0,s0); // 中央・可視
-const H1 = hexFlat(0,0,s1); // 中間・共有（五角形の肩）
+const H0 = hexFlat(0,0,s0);
+const H1 = hexFlat(0,0,s1);
 
-// 中央六角形
 poly(H0);
 
-// 五角形6個：
-//   頂点列 = H0[i] → H0[i+1] → H1[i+1] → TIP → H1[i]
-// ここで TIP は、H1[i] から「前の辺方向」へ、H1[i+1] から「次の辺方向」へ伸ばした
-// 2本の“六角方向レイ”の交点。よって全辺は 0/±60度のいずれかに平行。
 for(let i=0;i<6;i++){
-  const ip = (i+5)%6;       // 前の頂点 index
-  const inx= (i+1)%6;       // 次の頂点 index
+  const ip = (i+5)%6;
+  const inx= (i+1)%6;
   const inx2=(i+2)%6;
 
   const a0 = H0[i];
@@ -77,17 +69,14 @@ for(let i=0;i<6;i++){
   const a1 = H1[i];
   const b1 = H1[inx];
 
-  // 六角の辺方向（0/±60°）をそのまま利用
-  const dirFromA1 = norm( sub(H1[i],   H1[ip]) );   // 前の辺の方向
-  const dirFromB1 = norm( sub(H1[inx2],H1[inx]) );  // 次の辺の方向
+  const dirFromA1 = norm( sub(H1[i],   H1[ip]) );
+  const dirFromB1 = norm( sub(H1[inx2],H1[inx]) );
 
-  // 2本のレイの交点が五角形の先端
   const tip = intersectRayRay(a1, dirFromA1, b1, dirFromB1);
 
   poly([a0, b0, b1, tip, a1]);
 }
 
-// 余白自動調整
 (function fit(){
   const pad = 14;
   const box = svg.getBBox();
