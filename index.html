@@ -91,12 +91,16 @@
   .popover button{padding:6px 10px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
 
 @media (max-width:600px){
-  h1{font-size:16px}
   .deck-back,.deck-face{width:50px;height:69px}
   .color-tile{width:44px;height:44px}
   #hostGear{width:36px;height:36px;font-size:16px}
   #myDealMini{width:40px;height:60px;font-size:12px}
   .usericon rect,.seaticon rect{rx:10;ry:10}
+  h1{font-size:14px; margin-right:4px;}   /* タイトル小さめ */
+  header{gap:6px; padding:8px;}          /* スペース縮小 */
+  .small{font-size:10px; gap:4px;}       /* 補助テキストをさらに小さく */
+  #myRoomBadge{white-space:nowrap;}      /* 強制的に改行しない */
+  #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
 }
 
 
