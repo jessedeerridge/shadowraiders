@@ -3,25 +3,28 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>オンラインルーム（チャット無し＋図形②＋山札）</title>
+<title>オンラインルーム（チャット無し＋図形②＋山札＋ダイス）</title>
 <style>
   :root { --gap:10px; }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
-  header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee}
+  header{display:flex;align-items:center;gap:12px;padding:12px;border-bottom:1px solid #eee}
   h1{margin:0;font-size:18px}
-  .small{font-size:12px;opacity:.75}
-  main{padding:14px;display:grid;gap:16px;max-width:900px;margin:0 auto}
-  .join-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  .join-box input{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px}
-  .btn{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
-  .hidden{display:none !important}
+  .small{font-size:12px;opacity:.85}
+  .right{margin-left:auto}
+  .code-link{ text-decoration: underline; cursor: pointer; }
+  main{padding:14px;display:grid;gap:16px;max-width:1100px;margin:0 auto}
+
+  /* レイアウト：左=SVGキャンバス / 右=デッキ欄 */
+  .stage{display:flex;gap:16px;align-items:flex-start}
+  .canvas-wrap{flex:1;min-width:420px}
+  .sidebar{width:120px;display:flex;flex-direction:column;gap:12px}
 
   /* 図形（②） */
   html,body{height:100%}
   #art{display:block;margin:auto;max-width:96vmin;height:auto}
   .shape{fill:#fff;stroke:#111;stroke-width:0.8;stroke-linejoin:round;stroke-linecap:round}
 
-  /* 左長方形内のユーザーアイコン（2つ前の仕様を維持） */
+  /* 左長方形内のユーザーアイコン（維持） */
   .usericon rect{fill:#fff;stroke:#111;stroke-width:0.8;rx:6;ry:6}
   .usericon text{font-size:12px;font-weight:700;dominant-baseline:middle;text-anchor:middle}
   .usericon{cursor:grab}
@@ -35,30 +38,34 @@
   .roomhit{fill:transparent;stroke:none;pointer-events:auto}
   .roomhit.flash{fill:#eee;transition:fill 60ms}
 
-  /* 山札UI */
-  .decks{display:flex;gap:16px;justify-content:center;align-items:flex-start;margin-top:12px}
-  .deck{display:flex;flex-direction:column;align-items:center;gap:8px}
-  .deck-back{
-    width:70px;height:100px;border:1px solid #111;border-radius:10px;cursor:pointer;
-    display:flex;align-items:center;justify-content:center;font-weight:700;color:#111;
-    user-select:none;
+  /* 山札UI（右サイド） */
+  .deck{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .card-box{
+    width:70px;height:100px;border:1px solid #111;border-radius:10px;display:flex;
+    align-items:center;justify-content:center;font-weight:700;color:#111;user-select:none;
   }
+  .deck-back{cursor:pointer}
   .deck-back.green{background:#c7f5c1;}
   .deck-back.white{background:#ffffff;}
-  .deck-back.black{background:#cfcfcf;} /* 真っ黒にするなら #000; color:#fff; に変更 */
+  .deck-back.black{background:#cfcfcf;} /* 真っ黒にするなら #000;color:#fff; */
+  .deck-face{background:#fff;font-size:20px}
   .deck-label{font-size:12px;opacity:.8}
-  .deck-face{
-    min-width:70px;min-height:40px;border:1px dashed #bbb;border-radius:8px;
-    display:flex;align-items:center;justify-content:center;padding:6px 10px;
-    font-size:16px;font-weight:700;white-space:pre;min-height:44px;
-  }
+  .deck.disabled .deck-back{opacity:.4;cursor:not-allowed}
+
+  /* ダイス（SVG内で描画するが見た目用の共通色） */
+  .dice-box{fill:#fff;stroke:#111;stroke-width:0.8;rx:8;ry:8}
+  .dice-text{font-size:16px;font-weight:800;text-anchor:middle;dominant-baseline:middle}
+  .dice-label{font-size:10px;text-anchor:middle;dominant-baseline:middle;opacity:.8}
 </style>
 </head>
 <body>
 <header>
   <h1>オンラインルーム</h1>
-  <div class="small" id="headerInfo"></div>
-  <div class="small" id="myRoomBadge">部屋：未選択</div>
+  <div class="small right">
+    ルームコード：<span id="roomCode" class="code-link">—</span>　
+    <span id="copyHint" class="small"></span>
+  </div>
+  <div class="small">あなた：<span id="selfNameHdr">—</span>　|　<span id="myRoomBadge">部屋：未選択</span></div>
 </header>
 
 <main>
@@ -69,15 +76,18 @@
     <button id="btnJoin" class="btn">入室</button>
   </section>
 
-  <!-- ルーム -->
+  <!-- ステージ：左=図形 / 右=デッキ -->
   <section id="roomPanel" class="hidden">
-    <div style="margin-top:10px;">
-      <!-- 図形②：左に狭い長方形＋右に星形（中央六角形＋外周五角形6） -->
-      <svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
-    </div>
+    <div class="stage">
+      <div class="canvas-wrap">
+        <svg id="art" viewBox="-220 -230 620 520" aria-label="左に長方形・右に星形＋ダイス"></svg>
+      </div>
 
-    <!-- ▼ 右画像の下：山札 -->
-    <div id="decks" class="decks" aria-label="山札（左から緑・白・黒）"></div>
+      <!-- 右サイド：山札3種（緑・白・黒） -->
+      <aside id="sidebar" class="sidebar" aria-label="山札（右に配置）">
+        <!-- JSで deck 要素を生成 -->
+      </aside>
+    </div>
   </section>
 </main>
 
@@ -104,14 +114,18 @@
   const db  = getDatabase(app);
 
   // --- DOM ---
-  const headerInfo    = document.getElementById('headerInfo');
-  const myRoomBadge   = document.getElementById('myRoomBadge');
   const joinPanel     = document.getElementById('joinPanel');
   const nameInput     = document.getElementById('nameInput');
   const codeInput     = document.getElementById('codeInput');
   const btnJoin       = document.getElementById('btnJoin');
   const roomPanel     = document.getElementById('roomPanel');
-  const decksEl       = document.getElementById('decks');
+  const art           = document.getElementById('art');
+  const sidebarEl     = document.getElementById('sidebar');
+
+  const roomCodeEl    = document.getElementById('roomCode');
+  const copyHintEl    = document.getElementById('copyHint');
+  const selfNameHdrEl = document.getElementById('selfNameHdr');
+  const myRoomBadge   = document.getElementById('myRoomBadge');
 
   // --- 状態 ---
   const state = {
@@ -123,7 +137,8 @@
     rectBBox: null,       // 左長方形の座標
     draggingUid: null,
     isPointerDown: false,
-    dragOffset: {x:0,y:0}
+    dragOffset: {x:0,y:0},
+    myRoomNo: null        // 自分がいる部屋番号（1..7）
   };
 
   // --- ユーティリティ ---
@@ -135,10 +150,15 @@
     const c = t[0]; return NAME_RE.test(c) ? c : randomLetter();
   }
   function show(el, yes){ el.classList.toggle('hidden', !yes); }
+  function buildRoomLink(code){
+    const url = new URL(location.href);
+    url.searchParams.set('room', code);
+    return url.toString();
+  }
 
-  // === 図形②：左長方形＋右星形（7部屋ヒット領域付き） ===
+  // ===== 図形②＋ダイス =====
   function drawFigure2(){
-    const svg = document.getElementById('art');
+    const svg = art;
     if (!svg) return;
     svg.innerHTML = '';
     const rt3 = Math.sqrt(3);
@@ -220,12 +240,12 @@
     rect.setAttribute('id','leftRect');
     svg.appendChild(rect);
 
-    // 左長方形内のアイコン用レイヤ
+    // 左長方形内アイコン用レイヤ
     const iconsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
     iconsLayer.setAttribute('id','icons');
     svg.appendChild(iconsLayer);
 
-    // === 7部屋ヒット層（非表示だがクリック可） ===
+    // === 7部屋ヒット層 ===
     const roomsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
     roomsLayer.setAttribute('id','rooms');
     svg.appendChild(roomsLayer);
@@ -242,21 +262,60 @@
       hitPent.addEventListener('click', onRoomClick);
     }
 
-    // 席アイコン用レイヤ（最前面）
+    // 席アイコン用レイヤ
     const seatsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
     seatsLayer.setAttribute('id','seats');
     svg.appendChild(seatsLayer);
 
-    // viewBox 調整
+    // ===== ダイス（左長方形の「下」に配置） =====
+    const diceLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
+    diceLayer.setAttribute('id','diceLayer');
+    svg.appendChild(diceLayer);
+
+    const diceGap = 10;
+    const baseY  = rectY + rectH + 18;  // 長方形の少し下
+    const dW = 60, dH = 44;
+
+    function makeDice(id, x, y, label){
+      const gD = document.createElementNS('http://www.w3.org/2000/svg','g');
+      gD.setAttribute('data-dice', id);
+
+      const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      box.setAttribute('x', x); box.setAttribute('y', y);
+      box.setAttribute('width', dW); box.setAttribute('height', dH);
+      box.setAttribute('class','dice-box');
+      gD.appendChild(box);
+
+      const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+      txt.setAttribute('x', x + dW/2); txt.setAttribute('y', y + dH/2);
+      txt.setAttribute('class','dice-text'); txt.textContent = '-';
+      txt.setAttribute('id', id + '_v');
+      gD.appendChild(txt);
+
+      const cap = document.createElementNS('http://www.w3.org/2000/svg','text');
+      cap.setAttribute('x', x + dW/2); cap.setAttribute('y', y + dH + 10);
+      cap.setAttribute('class','dice-label'); cap.textContent = label;
+      gD.appendChild(cap);
+
+      gD.style.cursor = 'pointer';
+      gD.addEventListener('click', ()=> rollDice(id));
+
+      diceLayer.appendChild(gD);
+    }
+
+    makeDice('d6', rectX,                 baseY, 'D6');
+    makeDice('d4', rectX + dW + diceGap,  baseY, 'D4');
+
+    // viewBox 調整（ダイス分も含めるため余白広め）
     (function fit(){
-      const pad=14, box=svg.getBBox();
+      const pad=18, box=svg.getBBox();
       svg.setAttribute('viewBox',[box.x-pad, box.y-pad, box.width+pad*2, box.height+pad*2].join(' '));
     })();
 
     // 左長方形の矩形を保持（ドラッグ範囲クランプ用）
     state.rectBBox = { x: rectX, y: rectY, w: rectW, h: rectH };
 
-    // 左長方形クリックで自分アイコンを1回だけ作成（2つ前の仕様維持）
+    // 左長方形クリックで自分アイコンを1回だけ作成
     rect.addEventListener('click', onRectClickOnce);
   }
 
@@ -267,9 +326,18 @@
     black: { label:'黒', colorClass:'black', cards:['ろ','も','こ','ど','そ','ぼ'] },
   };
 
-  // 山札UI生成＆イベント設定
+  // 自分の部屋から使用可否を判定
+  function canUseDeck(deckId, roomNo){
+    if (!roomNo) return false;
+    if (deckId==='green') return (roomNo===6 || roomNo===7);
+    if (deckId==='white') return (roomNo===7 || roomNo===1);
+    if (deckId==='black') return (roomNo===7 || roomNo===2);
+    return false;
+  }
+
+  // 右サイドのデッキUI生成＆購読
   function setupDecks(){
-    decksEl.innerHTML = '';
+    sidebarEl.innerHTML = '';
     ['green','white','black'].forEach(deckId=>{
       const def = DECKS_DEF[deckId];
 
@@ -278,38 +346,54 @@
       wrap.dataset.deck = deckId;
 
       const back = document.createElement('div');
-      back.className = `deck-back ${def.colorClass}`;
+      back.className = `card-box deck-back ${def.colorClass}`;
       back.textContent = '裏';
       back.title = `${def.label}デッキをめくる`;
-      back.addEventListener('click', ()=> advanceDeck(deckId));
+      back.addEventListener('click', ()=> {
+        if (!canUseDeck(deckId, state.myRoomNo)) return;
+        advanceDeck(deckId);
+      });
+
+      const face = document.createElement('div');
+      face.className = 'card-box deck-face';
+      face.dataset.role = 'face';
+      face.textContent = ''; // 初期は空
 
       const label = document.createElement('div');
       label.className = 'deck-label';
       label.textContent = `${def.label}デッキ`;
 
-      const face = document.createElement('div');
-      face.className = 'deck-face';
-      face.dataset.role = 'face';
-      face.textContent = ''; // 初期は空（未めくり）
-
       wrap.appendChild(back);
       wrap.appendChild(face);
       wrap.appendChild(label);
-      decksEl.appendChild(wrap);
+      sidebarEl.appendChild(wrap);
     });
 
-    // DB同期購読
+    // DB同期購読（インデックス→表面に反映）
     const decksRef = ref(db, `rooms/${state.code}/decks`);
     const off = onValue(decksRef, (snap)=>{
       const v = snap.val() || {};
       ['green','white','black'].forEach(id=>{
         const idx = (v[id]?.idx ?? -1);
-        const faceEl = decksEl.querySelector(`.deck[data-deck="${id}"] .deck-face`);
+        const faceEl = sidebarEl.querySelector(`.deck[data-deck="${id}"] .deck-face`);
         const card = (idx >= 0) ? DECKS_DEF[id].cards[idx % DECKS_DEF[id].cards.length] : '';
-        faceEl.textContent = card;
+        if (faceEl) faceEl.textContent = card;
       });
+      // 使用可否の見た目更新
+      refreshDeckLocks();
     });
     state.unsub.push(off);
+
+    refreshDeckLocks();
+  }
+
+  function refreshDeckLocks(){
+    ['green','white','black'].forEach(id=>{
+      const wrap = sidebarEl.querySelector(`.deck[data-deck="${id}"]`);
+      if (!wrap) return;
+      const allow = canUseDeck(id, state.myRoomNo);
+      wrap.classList.toggle('disabled', !allow);
+    });
   }
 
   // デッキを1枚進める（ルーム同期）
@@ -319,12 +403,33 @@
     const snap = await get(deckPath);
     const curIdx = snap.exists() && typeof snap.val().idx === 'number' ? snap.val().idx : -1;
     const nextIdx = (curIdx + 1) % def.cards.length;
-    await set(deckPath, { idx: nextIdx, at: Date.now() });
+    await set(deckPath, { idx: nextIdx, at: Date.now(), by: state.uid });
   }
 
-  // ===== 右側：部屋クリックで席アイコン（最大1つ）＋部屋番号バッジ更新 =====
+  // ===== ダイス（クリックで振る→DB同期） =====
+  async function rollDice(kind){
+    const sides = (kind==='d6'?6:4);
+    const v = 1 + Math.floor(Math.random()*sides);
+    await set(ref(db, `rooms/${state.code}/dice/${kind}`), { value:v, at:Date.now(), by: state.uid });
+    // onValueで全員に反映
+  }
+
+  // ダイス購読→SVG表示更新
+  function setupDiceSubscribe(){
+    const dRef = ref(db, `rooms/${state.code}/dice`);
+    const off = onValue(dRef, (snap)=>{
+      const v = snap.val() || {};
+      const v6 = document.getElementById('d6_v');
+      const v4 = document.getElementById('d4_v');
+      if (v6 && v.d6?.value != null) v6.textContent = String(v.d6.value);
+      if (v4 && v.d4?.value != null) v4.textContent = String(v.d4.value);
+    });
+    state.unsub.push(off);
+  }
+
+  // ===== 部屋クリック：席アイコン（最大1つ）＋部屋番号バッジ更新 =====
   async function onRoomClick(ev){
-    const svg = document.getElementById('art');
+    const svg = art;
     const el = ev.currentTarget;
     const roomNo = Number(el.dataset.room || 0);
 
@@ -337,18 +442,16 @@
 
     // 自分の席を DB に保存（同じ uid のデータを上書き → 常に最大1つ）
     await set(ref(db, `rooms/${state.code}/seats/${state.uid}`), {
-      name: state.name,
-      room: roomNo,
-      x: p.x - 14,   // アイコン中心補正
-      y: p.y - 10,
-      at: Date.now()
+      name: state.name, room: roomNo, x: p.x - 14, y: p.y - 10, at: Date.now()
     });
 
-    // 自分の部屋バッジ更新
+    // ローカル表示も即更新
     myRoomBadge.textContent = `部屋：${roomNo}`;
+    state.myRoomNo = roomNo;
+    refreshDeckLocks();
   }
 
-  // SVG座標に変換（左長方形・部屋クリックの両方で使用）
+  // SVG座標に変換
   function toSvgCoords(svg, clientX, clientY){
     const pt = svg.createSVGPoint();
     pt.x = clientX; pt.y = clientY;
@@ -357,11 +460,10 @@
     return {x: sp.x, y: sp.y};
   }
 
-  // ===== 右側の席アイコン：生成＆更新（全員分） =====
+  // 右側の席アイコン：生成＆更新
   function renderOrUpdateSeat(uid, data){
-    const svg = document.getElementById('art');
     const layer = document.getElementById('seats');
-    if (!svg || !layer || !data) return;
+    if (!layer || !data) return;
 
     let g = layer.querySelector(`g[data-uid="${uid}"]`);
     if (!g){
@@ -382,16 +484,12 @@
 
       layer.appendChild(g);
     }
-
-    // 名前更新
     const text = g.querySelector('text');
     if (text && text.textContent !== (data.name || '?')) text.textContent = (data.name || '?');
-
-    // 位置更新
     g.setAttribute('transform', `translate(${data.x},${data.y})`);
   }
 
-  // ===== 左長方形（2つ前のコードのまま） =====
+  // ===== 左長方形（維持） =====
   function clampToRect(x, y){
     const r = state.rectBBox;
     const w = 28, h = 20;
@@ -399,32 +497,26 @@
     const maxX = r.x + r.w - w - 4;
     const minY = r.y + 4;
     const maxY = r.y + r.h - h - 4;
-    return {
-      x: Math.min(maxX, Math.max(minX, x)),
-      y: Math.min(maxY, Math.max(minY, y))
-    };
+    return { x: Math.min(maxX, Math.max(minX, x)), y: Math.min(maxY, Math.max(minY, y)) };
   }
 
   // 左長方形クリック：自分のアイコンを1回だけ作成
   async function onRectClickOnce(ev){
-    const svg = document.getElementById('art');
     const rectEl = document.getElementById('leftRect');
-    if (!svg || !rectEl) return;
+    if (!art || !rectEl) return;
 
     const myIconRef = ref(db, `rooms/${state.code}/icons/${state.uid}`);
     const snap = await get(myIconRef);
     if (snap.exists()) return; // 2回目以降は無視
 
-    const p = toSvgCoords(svg, ev.clientX, ev.clientY);
+    const p = toSvgCoords(art, ev.clientX, ev.clientY);
     const pos = clampToRect(p.x - 14, p.y - 10);
-
     await set(myIconRef, { name: state.name, x: pos.x, y: pos.y, placedAt: Date.now() });
   }
 
   function renderOrUpdateIcon(uid, data){
-    const svg = document.getElementById('art');
     const layer = document.getElementById('icons');
-    if (!svg || !layer || !data) return;
+    if (!layer || !data) return;
 
     let g = layer.querySelector(`g[data-uid="${uid}"]`);
     if (!g){
@@ -444,34 +536,9 @@
       g.appendChild(label);
 
       // ドラッグ（誰でも可）
-      g.addEventListener('pointerdown', (e)=>{
-        e.preventDefault();
-        state.isPointerDown = true;
-        state.draggingUid = uid;
-        g.classList.add('dragging');
-        const p = toSvgCoords(svg, e.clientX, e.clientY);
-        const gx = parseFloat(g.getAttribute('data-x') || data.x || 0);
-        const gy = parseFloat(g.getAttribute('data-y') || data.y || 0);
-        state.dragOffset.x = p.x - gx;
-        state.dragOffset.y = p.y - gy;
-        g.setPointerCapture(e.pointerId);
-      });
-
-      g.addEventListener('pointerup', (e)=>{
-        if (!state.isPointerDown) return;
-        state.isPointerDown = false;
-        g.classList.remove('dragging');
-        g.releasePointerCapture(e.pointerId);
-      });
-
-      g.addEventListener('pointercancel', ()=>{
-        state.isPointerDown = false;
-        g.classList.remove('dragging');
-      });
-
-      svg.addEventListener('pointermove', throttle((e)=>{
+      art.addEventListener('pointermove', throttle((e)=>{
         if (!state.isPointerDown || state.draggingUid !== uid) return;
-        const p = toSvgCoords(svg, e.clientX, e.clientY);
+        const p = toSvgCoords(art, e.clientX, e.clientY);
         const pos = clampToRect(p.x - state.dragOffset.x, p.y - state.dragOffset.y);
         g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
         g.setAttribute('data-x', pos.x);
@@ -479,14 +546,34 @@
         update(ref(db, `rooms/${state.code}/icons/${uid}`), { x: pos.x, y: pos.y });
       }, 40), { passive: true });
 
+      g.addEventListener('pointerdown', (e)=>{
+        e.preventDefault();
+        state.isPointerDown = true;
+        state.draggingUid = uid;
+        g.classList.add('dragging');
+        const p = toSvgCoords(art, e.clientX, e.clientY);
+        const gx = parseFloat(g.getAttribute('data-x') || data.x || 0);
+        const gy = parseFloat(g.getAttribute('data-y') || data.y || 0);
+        state.dragOffset.x = p.x - gx;
+        state.dragOffset.y = p.y - gy;
+        g.setPointerCapture(e.pointerId);
+      });
+      g.addEventListener('pointerup', (e)=>{
+        if (!state.isPointerDown) return;
+        state.isPointerDown = false;
+        g.classList.remove('dragging');
+        g.releasePointerCapture(e.pointerId);
+      });
+      g.addEventListener('pointercancel', ()=>{
+        state.isPointerDown = false;
+        g.classList.remove('dragging');
+      });
+
       layer.appendChild(g);
     }
 
-    // 名前更新
     const text = g.querySelector('text');
     if (text && text.textContent !== (data.name || '?')) text.textContent = (data.name || '?');
-
-    // 自分がドラッグ中はリモート更新を抑止
     if (!(state.isPointerDown && state.draggingUid === uid)) {
       g.setAttribute('transform', `translate(${data.x},${data.y})`);
       g.setAttribute('data-x', data.x);
@@ -506,7 +593,7 @@
     };
   }
 
-  // --- 入室処理（参加者登録＋図形＋左長方形アイコン同期＋席同期＋山札同期） ---
+  // --- 入室処理（参加者登録＋図形＋左長方形アイコン同期＋席同期＋山札同期＋ダイス同期） ---
   async function join(){
     const name = normalizeName(nameInput.value);
     const code = (codeInput.value || "").trim() || random4();
@@ -519,11 +606,25 @@
     await set(meRef, { name, at: Date.now() });
     onDisconnect(meRef).remove();
 
-    headerInfo.textContent = ''; // 表示は未使用
+    // ヘッダー表示
+    selfNameHdrEl.textContent = name;
+    roomCodeEl.textContent = code;
+    roomCodeEl.onclick = ()=>{
+      const link = buildRoomLink(code);
+      if (navigator.clipboard){
+        navigator.clipboard.writeText(link).then(()=>{
+          copyHintEl.textContent = '招待リンクをコピーしました';
+          setTimeout(()=> copyHintEl.textContent='', 1400);
+        });
+      } else {
+        prompt('コピーできない場合はこのテキストをコピーしてください', link);
+      }
+    };
+
     show(joinPanel, false);
     show(roomPanel, true);
 
-    // 図形（左長方形・部屋ヒット領域・席レイヤ作成）
+    // 図形（左長方形・部屋ヒット領域・席・ダイス）
     drawFigure2();
 
     // 左長方形アイコンの同期
@@ -541,7 +642,7 @@
     });
     state.unsub.push(offIcons);
 
-    // 右側：席アイコンの同期（全員分）＋自分の部屋バッジの同期
+    // 席アイコン同期＋自分の部屋更新
     const seatsRef = ref(db, `rooms/${code}/seats`);
     const offSeats = onValue(seatsRef, (snap)=>{
       const data = snap.val() || {};
@@ -554,19 +655,24 @@
           if (!(uid in data)) el.remove();
         });
       }
-      // 自分の部屋バッジ
+      // 自分の部屋
       const mine = data[state.uid];
+      state.myRoomNo = mine?.room ?? null;
       myRoomBadge.textContent = mine ? `部屋：${mine.room}` : '部屋：未選択';
+      refreshDeckLocks();
     });
     state.unsub.push(offSeats);
 
-    // 山札UIを用意＆同期開始
+    // ダイス購読
+    setupDiceSubscribe();
+
+    // デッキUI＆購読
     setupDecks();
 
     state.joined = true;
   }
 
-  // 離脱時に在室削除（席/山札の状態は残す運用）
+  // 離脱時に在室削除（席/山札/ダイスの状態は残す運用）
   window.addEventListener('beforeunload', ()=>{
     if (state.joined) remove(ref(db, `rooms/${state.code}/participants/${state.uid}`));
   });
