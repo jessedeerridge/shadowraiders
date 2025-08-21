@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>シンプルチャット（入室画面）</title>
+<title>六芒星クリック</title>
 <style>
   :root { --gap:10px; }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
@@ -11,249 +11,175 @@
   h1{margin:0;font-size:18px}
   .small{font-size:12px;opacity:.75}
   main{padding:14px;display:grid;gap:16px;max-width:900px;margin:0 auto}
+
+  /* 入室 */
   .join-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .join-box input{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px}
   .btn{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
   .btn.ghost{background:#f8f8f8;color:#111}
-  .muted{opacity:.65}
   .hidden{display:none !important}
 
-  /* チャット画面 */
-  .room-line{font-size:14px}
-  .wrap{display:grid;grid-template-rows:auto 1fr auto;gap:var(--gap);height:70vh;border:1px solid #eee;border-radius:12px;padding:12px}
-  #msgs{overflow:auto;border:1px solid #eee;border-radius:10px;padding:10px}
-  .msg{display:flex;gap:8px;margin:6px 0;line-height:1.4}
-  .msg .name{flex:0 0 auto;font-weight:700}
-  .msg .text{white-space:pre-wrap;word-break:break-word}
-  .sys{color:#666;font-style:italic}
-  .row{display:flex;gap:8px}
-  .row input[type="text"]{flex:1;padding:10px;border:1px solid #ddd;border-radius:8px}
-  .pill{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:2px 8px;font-size:12px;margin-left:6px}
-  .right{margin-left:auto}
-  .code-link{ text-decoration: underline; cursor: pointer; }
+  /* 六芒星 */
+  .star-wrap{
+    display:grid;
+    place-items:center;
+    height:70vh;
+    border:1px solid #eee;
+    border-radius:12px;
+    padding:12px;
+  }
+  svg{max-width:min(92vw,700px); max-height:60vh;}
+  .cell { cursor:pointer; transition:opacity .1s ease; }
+  .cell:hover { opacity:.85; }
+  /* 着色（視認性のため） */
+  .tri { fill:#f0f4ff; stroke:#99b3ff; }
+  .hex { fill:#fff7e6; stroke:#ffc266; }
+  .label { font-weight:700; font-size:28px; pointer-events:none; }
 </style>
 </head>
 <body>
 <header>
-  <h1>シンプルチャット</h1>
+  <h1>六芒星クリック</h1>
   <div class="small" id="headerInfo"></div>
 </header>
 
 <main>
-  <!-- 入室画面 -->
+  <!-- 名前登録 -->
   <section id="joinPanel" class="join-box">
-    <!-- 名前：1文字のみ（アルファベット/ひらがな/カタカナ/漢字） -->
+    <!-- 名前：1文字のみ（アルファベット/ひらがな/カタカナ/漢字）。未入力なら自動で英字1文字 -->
     <input id="nameInput" placeholder="名前（1文字）" maxlength="1" inputmode="text" />
-    <!-- ルームコード：未入力なら自動で4桁 -->
-    <input id="codeInput" placeholder="ルームコード（例: 1234）" maxlength="12" inputmode="numeric" />
-    <button id="btnJoin" class="btn">入室</button>
+    <button id="btnJoin" class="btn">開始</button>
   </section>
 
-  <!-- チャット画面 -->
-  <section id="chatPanel" class="hidden">
-    <div class="room-line">
-      部屋コード：<span id="roomBadge" class="code-link"></span>
-      <span class="pill">参加者 <span id="memberCount">0</span> 人</span>
-      <span class="pill right">あなた：<span id="selfName"></span></span>
-    </div>
-    <div class="wrap">
-      <div id="msgs"></div>
-      <div class="row">
-        <input id="msgInput" type="text" placeholder="メッセージを入力" />
-        <button id="btnSend" class="btn">送信</button>
-        <button id="btnLeave" class="btn ghost">退室</button>
-      </div>
+  <!-- 六芒星 -->
+  <section id="starPanel" class="hidden">
+    <div class="star-wrap">
+      <svg id="starSvg" viewBox="-100 -100 200 200" aria-label="六芒星" role="img"></svg>
     </div>
   </section>
 </main>
 
-<!-- Firebase（v9 モジュール） -->
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-  import {
-    getDatabase, ref, get, set, push, onValue, onChildAdded, query, limitToLast, onDisconnect, remove
-  } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
-
-  /* あなたの Firebase 設定 */
-  const firebaseConfig = {
-    apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
-    authDomain: "shadowraiders-a2dbc.firebaseapp.com",
-    projectId: "shadowraiders-a2dbc",
-    storageBucket: "shadowraiders-a2dbc.firebasestorage.app",
-    messagingSenderId: "577276689873",
-    appId: "1:577276689873:web:9a13faf90c3d6a791e34f0",
-    measurementId: "G-PKNEPDBVSS"
-  };
-
-  // --- 初期化 ---
-  const app = initializeApp(firebaseConfig);
-  const db  = getDatabase(app);
-
   // --- DOM ---
-  const headerInfo    = document.getElementById('headerInfo');
-  const joinPanel     = document.getElementById('joinPanel');
-  const nameInput     = document.getElementById('nameInput');
-  const codeInput     = document.getElementById('codeInput');
-  const btnJoin       = document.getElementById('btnJoin');
-
-  const chatPanel     = document.getElementById('chatPanel');
-  const roomBadge     = document.getElementById('roomBadge');
-  const memberCountEl = document.getElementById('memberCount');
-  const selfNameEl    = document.getElementById('selfName');
-  const msgsEl        = document.getElementById('msgs');
-  const msgInput      = document.getElementById('msgInput');
-  const btnSend       = document.getElementById('btnSend');
-  const btnLeave      = document.getElementById('btnLeave');
+  const headerInfo = document.getElementById('headerInfo');
+  const joinPanel  = document.getElementById('joinPanel');
+  const nameInput  = document.getElementById('nameInput');
+  const btnJoin    = document.getElementById('btnJoin');
+  const starPanel  = document.getElementById('starPanel');
+  const svg        = document.getElementById('starSvg');
 
   // --- 状態 ---
   const state = {
-    uid: crypto.randomUUID(),
     name: "",
-    code: "",
-    joined: false,
-    unsub: [] // リスナー解除
+    labelEl: null
   };
 
   // --- ユーティリティ ---
   function randomLetter(){
     return String.fromCharCode(65 + Math.floor(Math.random()*26)); // A-Z
   }
-  function random4(){
-    return String(Math.floor(Math.random()*10000)).padStart(4, '0');
-  }
-  // 許可：A-Za-z / ひらがな / カタカナ / CJK(漢字) のいずれか1文字
+  // 許可：A-Za-z / ひらがな / カタカナ / CJK(漢字)
   const NAME_RE = /^[A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]$/;
-
   function normalizeName(raw){
     const t = (raw || "").trim();
     if (!t) return randomLetter();
-    const c = t[0]; // 1文字だけ採用
+    const c = t[0];
     return NAME_RE.test(c) ? c : randomLetter();
   }
-
-  function buildRoomLink(code){
-    const url = new URL(location.href);
-    url.searchParams.set('room', code);
-    return url.toString();
-  }
-
   function show(el, yes){ el.classList.toggle('hidden', !yes); }
 
-  function addMsg(name, text, isSys=false){
-    const row = document.createElement('div');
-    row.className = 'msg';
-    if(isSys) row.classList.add('sys');
-    const nm  = document.createElement('div'); nm.className='name'; nm.textContent = isSys ? '●' : `[${name}]`;
-    const txt = document.createElement('div'); txt.className='text'; txt.textContent = text;
-    row.appendChild(nm); row.appendChild(txt);
-    msgsEl.appendChild(row);
-    msgsEl.scrollTop = msgsEl.scrollHeight;
+  // --- 六芒星生成 ---
+  // 正六角形の外接半径 R と内側六角形の半径 r を使い、6つの小三角形＋中央六角形を作る
+  function buildStar(R = 90, r = 52){
+    // 角度をラジアンで
+    const deg2rad = d => (Math.PI/180) * d;
+    // 正六角形の頂点（外・内）
+    const outer = Array.from({length:6}, (_,i)=>{
+      const ang = deg2rad(60*i - 90); // 上を起点(-90°)に回す
+      return [ R*Math.cos(ang), R*Math.sin(ang) ];
+    });
+    const inner = Array.from({length:6}, (_,i)=>{
+      const ang = deg2rad(60*i - 90);
+      return [ r*Math.cos(ang), r*Math.sin(ang) ];
+    });
+
+    // 中央六角形
+    const hexPts = inner.map(([x,y])=>`${x},${y}`).join(' ');
+    const hex = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    hex.setAttribute('points', hexPts);
+    hex.setAttribute('class','cell hex');
+    hex.dataset.cell = 'center';
+    svg.appendChild(hex);
+
+    // 6つの小三角形（outer[i] と inner[i], inner[(i+1)%6]）
+    for(let i=0;i<6;i++){
+      const p0 = outer[i];
+      const p1 = inner[i];
+      const p2 = inner[(i+1)%6];
+      const tri = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+      tri.setAttribute('points', `${p0[0]},${p0[1]} ${p1[0]},${p1[1]} ${p2[0]},${p2[1]}`);
+      tri.setAttribute('class','cell tri');
+      tri.dataset.cell = `tri-${i}`;
+      svg.appendChild(tri);
+    }
+
+    // 境界線（視認性向上・クリックには影響なし）
+    const outline = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    outline.setAttribute('points', outer.map(([x,y])=>`${x},${y}`).join(' '));
+    outline.setAttribute('fill','none');
+    outline.setAttribute('stroke','#aaa');
+    outline.setAttribute('stroke-width','1.2');
+    svg.appendChild(outline);
   }
 
-  // --- 入室処理 ---
-  async function join(){
-    const name = normalizeName(nameInput.value);
-    const code = (codeInput.value || "").trim() || random4();
+  // SVG座標への変換
+  function toSvgPoint(svgEl, clientX, clientY){
+    const pt = svgEl.createSVGPoint();
+    pt.x = clientX; pt.y = clientY;
+    const ctm = svgEl.getScreenCTM();
+    return pt.matrixTransform(ctm.inverse());
+  }
 
-    state.name = name;
-    state.code = code;
+  // クリック時のラベル配置（常に1つだけ）
+  function placeLabelAt(x, y, text){
+    // 既存を消す
+    if (state.labelEl && state.labelEl.parentNode) {
+      state.labelEl.parentNode.removeChild(state.labelEl);
+    }
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x', x);
+    t.setAttribute('y', y);
+    t.setAttribute('text-anchor','middle');
+    t.setAttribute('dominant-baseline','middle');
+    t.setAttribute('class','label');
+    t.textContent = text;
+    svg.appendChild(t);
+    state.labelEl = t;
+  }
 
-    // 参加者登録（部屋が無ければ初回作成される）
-    const baseRef = ref(db, `rooms/${code}`);
-    const meRef   = ref(db, `rooms/${code}/participants/${state.uid}`);
-    await set(meRef, { name, at: Date.now() });
-    onDisconnect(meRef).remove();
-
-    // UI 切替
-    selfNameEl.textContent = name;
-    roomBadge.textContent = code;
-    roomBadge.onclick = (ev)=>{
-      const link = buildRoomLink(code);
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(link).then(()=> alert('招待リンクをコピーしました'));
-      } else {
-        prompt('コピーできない場合はこのテキストをコピーしてください', link);
-      }
-    };
-    headerInfo.innerHTML = `コード：<span class="code-link" onclick="void(0)">${code}</span>　/　あなた：${name}`;
-
+  // --- イベント ---
+  btnJoin.onclick = () => {
+    state.name = normalizeName(nameInput.value);
+    headerInfo.textContent = `あなた：${state.name}`;
     show(joinPanel, false);
-    show(chatPanel, true);
+    show(starPanel, true);
+    if (!svg.hasChildNodes()) buildStar();
+  };
 
-    // 参加者数の監視
-    const membersRef = ref(db, `rooms/${code}/participants`);
-    const offMembers = onValue(membersRef, (snap)=>{
-      const obj = snap.val() || {};
-      memberCountEl.textContent = Object.keys(obj).length;
-    });
-    state.unsub.push(offMembers);
+  // 六芒星のセルだけ反応
+  svg.addEventListener('click', (e)=>{
+    const target = e.target;
+    if (!(target instanceof SVGElement)) return;
+    if (!target.classList.contains('cell')) return; // クリック対象のみ
+    const p = toSvgPoint(svg, e.clientX, e.clientY);
+    placeLabelAt(p.x, p.y, state.name || '？');
+  });
 
-    // メッセージ監視（最後の100件）
-    const msgsRef = query(ref(db, `rooms/${code}/messages`), limitToLast(100));
-    const offMsgs = onChildAdded(msgsRef, (snap)=>{
-      const v = snap.val();
-      if (!v) return;
-      addMsg(v.name, v.text);
-    });
-    state.unsub.push(offMsgs);
-
-    // システムメッセージ
-    push(ref(db, `rooms/${code}/messages`), {
-      name: 'system', text: `${name} が入室しました`, at: Date.now(), sys: true
-    });
-
-    state.joined = true;
-    msgInput.focus();
-  }
-
-  // --- 退室処理 ---
-  async function leave(){
-    if (!state.joined) return;
-    const { code, name } = state;
-
-    // システムメッセージ
-    push(ref(db, `rooms/${code}/messages`), {
-      name: 'system', text: `${name} が退室しました`, at: Date.now(), sys: true
-    });
-
-    // 参加者から削除
-    await remove(ref(db, `rooms/${code}/participants/${state.uid}`));
-
-    // リスナー解除
-    state.unsub.forEach(off => off && off());
-    state.unsub = [];
-
-    // UI 戻す
-    msgsEl.innerHTML = '';
-    show(chatPanel, false);
-    show(joinPanel, true);
-    state.joined = false;
-  }
-
-  // --- 送信 ---
-  async function send(){
-    const text = (msgInput.value || '').trim();
-    if (!text) return;
-    await push(ref(db, `rooms/${state.code}/messages`), {
-      name: state.name, text, at: Date.now()
-    });
-    msgInput.value = '';
-    msgInput.focus();
-  }
-
-  // --- 事件 ---
-  btnJoin.onclick = join;
-  btnSend.onclick = send;
-  btnLeave.onclick = leave;
-  msgInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') send(); });
-
-  // URL パラメータで事前入力（任意）
+  // URLパラメータで名前を事前入力（任意）
   try{
     const qs = new URLSearchParams(location.search);
-    const qRoom = (qs.get('room')||'').trim();
     const qName = (qs.get('name')||'').trim();
-    if (qRoom) codeInput.value = qRoom.slice(0, 12);
-    if (qName) nameInput.value = qName.slice(0, 1);
+    if (qName) nameInput.value = qName.slice(0,1);
   }catch(_e){}
 </script>
 </body>
