@@ -231,6 +231,9 @@ const state = {
   isHost: false,
   started: false,
   lockScrollOnRect: false,   // ← 追加：左長方形内タッチ中はスクロール禁止
+  localMoveVer: {},          // ★ 追加：自分の移動バージョン管理（uid→ver）
+  dragSettleGuardUid: null,  // ★ 追加：ドロップ直後のエコー抑止
+  dragSettleGuardUntil: 0,   // ★ 追加：抑止の期限(ms)
 };
 
 
@@ -626,7 +629,8 @@ g.appendChild(box);
     const p = toSvgCoords(svg, ev.clientX, ev.clientY);
     const pos = clampToRect(p.x - 12, p.y - 12);
 
-    await set(myIconRef, { name: state.name, x: pos.x, y: pos.y, placedAt: Date.now() });
+await set(myIconRef, { name: state.name, x: pos.x, y: pos.y, placedAt: Date.now(), ver: 1 });
+state.localMoveVer[state.uid] = 1; // ★ 自分の初期verを合わせる
   }
 
   function renderOrUpdateIcon(uid, data, userColorsMap){
@@ -673,14 +677,19 @@ g.appendChild(box);
 
         installGlobalPointerMove(); // ← 全体リスナーを用意
       });
-      g.addEventListener('pointerup', (e)=>{
+g.addEventListener('pointerup', (e)=>{
+  if (!state.isPointerDown) return;
+  state.isPointerDown = false;
 
-        if (!state.isPointerDown) return;
-        state.isPointerDown = false;
-        state.draggingUid = null;            // ★ 追加：必ず解除
-        g.classList.remove('dragging');
-        g.releasePointerCapture(e.pointerId);
-      });
+  // ★ ドロップ直後だけリモートの古いスナップショットを無視
+  state.dragSettleGuardUid = uid;
+  state.dragSettleGuardUntil = Date.now() + 200; // 200ms程度でOK(環境で調整可)
+
+  state.draggingUid = null;            // ★ 解除
+  g.classList.remove('dragging');
+  g.releasePointerCapture(e.pointerId);
+});
+
       g.addEventListener('pointercancel', ()=>{
         state.isPointerDown = false;
         state.draggingUid = null;            // ★ 追加：必ず解除
@@ -706,15 +715,22 @@ g.appendChild(box);
     if (colorName) applyFillAndText(g, colorName);
 
     // 自分がドラッグ中はリモート更新を抑止＋開始直後の“戻り”も抑止
-    const now = Date.now();
-    const draggingNow = (state.isPointerDown && state.draggingUid === uid);
-    const kickGuard = (state.dragKickGuardUid === uid) && (now < (state.dragKickGuardUntil || 0));
+const now = Date.now();
+const draggingNow = (state.isPointerDown && state.draggingUid === uid);
+const kickGuard = (state.dragKickGuardUid === uid) && (now < (state.dragKickGuardUntil || 0));
+const settleGuard = (state.dragSettleGuardUid === uid) && (now < (state.dragSettleGuardUntil || 0));
 
-    if (!(draggingNow || kickGuard)) {
-      g.setAttribute('transform', `translate(${data.x},${data.y})`);
-      g.setAttribute('data-x', data.x);
-      g.setAttribute('data-y', data.y);
-    }
+// ★ リモート/ローカルのバージョン比較（自分のアイコンのみ適用）
+const remoteVer = Number(data.ver || 0);
+const localVer  = Number(state.localMoveVer[uid] || 0);
+const isStaleForMe = (uid === state.uid) && (remoteVer < localVer);
+
+if (!(draggingNow || kickGuard || settleGuard) && !isStaleForMe) {
+  g.setAttribute('transform', `translate(${data.x},${data.y})`);
+  g.setAttribute('data-x', data.x);
+  g.setAttribute('data-y', data.y);
+}
+
   }
 
   function throttle(fn, ms){
@@ -750,7 +766,15 @@ g.appendChild(box);
       g.setAttribute('data-x', pos.x);
       g.setAttribute('data-y', pos.y);
 
-      update(ref(db, `rooms/${state.code}/icons/${state.draggingUid}`), { x: pos.x, y: pos.y });
+const uid = state.draggingUid;
+const nextVer = (state.localMoveVer[uid] || 0) + 1;
+state.localMoveVer[uid] = nextVer;
+
+update(ref(db, `rooms/${state.code}/icons/${uid}`), {
+  x: pos.x,
+  y: pos.y,
+  ver: nextVer               // ★ 連番でエコー順序を担保
+});
     }, { passive: true });
   }
 
