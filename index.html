@@ -774,23 +774,26 @@ if (!(draggingNow || kickGuard || settleGuard) && !isStaleForMe) {
     if (pointerMoveInstalled) return;
     pointerMoveInstalled = true;
 
-    const svg = document.getElementById('art');
-    svg.addEventListener('pointermove', (e)=>{
-      if (!state.isPointerDown || !state.draggingUid) return;
+const svg = document.getElementById('art');
+svg.addEventListener('pointermove', (e)=>{
+  if (!state.isPointerDown || !state.draggingUid) return;
 
-      const layer = document.getElementById('icons');
-      const g = layer && layer.querySelector(`g[data-uid="${state.draggingUid}"]`);
-      if (!g) return;
+  const layer = document.getElementById('icons');
+  const g = layer && layer.querySelector(`g[data-uid="${state.draggingUid}"]`);
+  if (!g) return;
 
-      const p = toSvgCoords(svg, e.clientX, e.clientY);
-      const pos = clampToRect(p.x - state.dragOffset.x, p.y - state.dragOffset.y);
-      g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
-      g.setAttribute('data-x', pos.x);
-      g.setAttribute('data-y', pos.y);
+  const p = toSvgCoords(svg, e.clientX, e.clientY);
+  const pos = clampToRect(p.x - state.dragOffset.x, p.y - state.dragOffset.y);
+  g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+  g.setAttribute('data-x', pos.x);
+  g.setAttribute('data-y', pos.y);
 
-const uid = state.draggingUid;
-const nextVer = (state.localMoveVer[uid] || 0) + 1;
-state.localMoveVer[uid] = nextVer;
+  g.dataset.dragMoved = '1';              // ★ 追加：実移動＝ドラッグ発生
+
+  const uid = state.draggingUid;
+  const nextVer = (state.localMoveVer[uid] || 0) + 1;
+  state.localMoveVer[uid] = nextVer;
+
 
 update(ref(db, `rooms/${state.code}/icons/${uid}`), {
   x: pos.x,
