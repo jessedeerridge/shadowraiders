@@ -107,14 +107,16 @@
   </section>
 
   <!-- ルーム -->
-  <section id="roomPanel" class="hidden">
-    <div style="margin-top:10px;">
-      <!-- 図形②：左に狭い長方形＋右に星形（中央六角形＋外周五角形6） -->
-      <svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
-    </div>
+<section id="roomPanel" class="hidden">
+  <div class="figure-block" style="margin-top:10px;">
+    <!-- 図形②：左に狭い長方形＋右に星形（中央六角形＋外周五角形6） -->
+    <svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
+    <div class="figure-sep" aria-hidden="true"></div>
+  </div>
 
-    <!-- ダイス（左長方形の下／ローカル表示） -->
-    <div class="dicebar" id="diceBar">
+  <!-- ダイス（左長方形の下／ローカル表示） -->
+  <div class="dicebar" id="diceBar">
+
       <button class="dicebtn" id="rollD6">d6 を振る</button>
       <span class="diceres" id="resD6">-</span>
       <button class="dicebtn" id="rollD4">d4 を振る</button>
@@ -504,13 +506,13 @@
   }
 
   // ===== 席アイコン描画（色反映） =====
-  function applyFillAndText(elGroup, colorName){
-    const box = elGroup.querySelector('rect');
-    const label = elGroup.querySelector('text');
-    const {bg, text} = colorToStyle(colorName);
-    if (box){ box.setAttribute('fill', bg); }
-    if (label){ label.setAttribute('fill', text); }
-  }
+function applyFillAndText(elGroup, colorName){
+  const box = elGroup.querySelector('rect');
+  const label = elGroup.querySelector('text');
+  const {bg, text} = colorToStyle(colorName);
+  if (box){ box.style.fill = bg; }     // ← inline style は CSS より強い
+  if (label){ label.style.fill = text; }
+}
 
   function renderOrUpdateSeat(uid, data, userColorsMap){
     const svg = document.getElementById('art');
