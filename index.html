@@ -196,14 +196,19 @@
 <!-- 装備所持バー -->
 <div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
 
-  
-  
+<!-- ☆ 追加：正体カード公開ポップ -->
+<div id="revealPopover" class="popover hidden">
+  <span>この正体カードを公開しますか？</span>
+  <button id="btnReveal">公開する</button>
+</div>
+
 <!-- カード拡大ビューア -->
 <div id="dealViewer" class="modal hidden" role="dialog" aria-modal="true">
   <div class="modal-panel">
     <div class="deal-card" id="dealCardFace">？</div>
   </div>
 </div>
+
 
 <!-- 色選択モーダル -->
 <div id="colorModal" class="modal hidden" role="dialog" aria-modal="true">
@@ -1139,24 +1144,81 @@ function makeEquipIcon(name, colorName){
   }
 
   // 自分のカード購読
-  function observeMyDeal(){
-    const myRef = ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`);
-    const off = onValue(myRef, (snap)=>{
-      const val = snap.val();
-      const has = !!val;
-      show(myDealMini, has);
-      if (has){
-        myDealMini.onclick = ()=>{
-          dealCardFace.textContent = String(val);
-          show(dealViewer, true);
-        };
-      }else{
-        myDealMini.onclick = null;
-      }
-    });
-    state.unsub.push(off);
-  }
+function observeMyDeal(){
+  const myRef = ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`);
+  const off = onValue(myRef, (snap)=>{
+    const val = snap.val();
+    const has = !!val;
+    show(myDealMini, has);
+    if (has){
+      myDealMini.onclick = ()=>{
+        dealCardFace.textContent = String(val);
+        show(dealViewer, true);
 
+        // ☆ 追加：拡大カードを押すと「公開する」ポップ表示
+        dealCardFace.onclick = ()=>{
+          const pop = document.getElementById('revealPopover');
+          if (!pop) return;
+          pop.classList.remove('hidden');
+          const r = dealCardFace.getBoundingClientRect();
+          // だいたい拡大カードの下に出す
+          pop.style.left = (r.left + r.width/2 - 90) + 'px';
+          pop.style.top  = (r.bottom + 8) + 'px';
+        };
+      };
+    }else{
+      myDealMini.onclick = null;
+      dealCardFace.onclick = null;
+    }
+  });
+  state.unsub.push(off);
+}
+
+// ☆ 追加：公開ボタンの挙動（1秒間の公開→装備欄の左へ固定）
+const btnReveal = document.getElementById('btnReveal');
+if (btnReveal){
+  btnReveal.onclick = async ()=>{
+    const val = (dealCardFace.textContent || '').trim();
+    if (!val) return;
+
+    // 1) 全員に1秒だけ拡大画像を共有
+    await set(ref(db, `rooms/${state.code}/reveal/${state.uid}`), { card: val, at: Date.now() });
+    setTimeout(()=> remove(ref(db, `rooms/${state.code}/reveal/${state.uid}`)), 1000);
+
+    // 2) 装備所持データに追加（左端に来るよう render 側も修正する）
+    const updates = {};
+    // 既存のカードを壊さずマージしたいので、軽く read→write でもOKだが
+    // ここでは単純にこのカードフラグを true で立てる
+    updates[`rooms/${state.code}/equipment/${state.uid}/${val}`] = true;
+    updates[`rooms/${state.code}/equipment_at`] = Date.now();
+    await update(ref(db), updates);
+
+    // 閉じる
+    const pop = document.getElementById('revealPopover');
+    if (pop) pop.classList.add('hidden');
+    show(dealViewer, false);
+  };
+}
+
+// ☆ 追加：公開購読（全員の画面で1秒だけ拡大カードを表示）
+function observeReveals(){
+  const refReveal = ref(db, `rooms/${state.code}/reveal`);
+  const off = onValue(refReveal, (snap)=>{
+    const all = snap.val() || {};
+    // 複数同時に公開される可能性があるなら、すべて順に見せてもよいが
+    // まずは「最初の1件だけ」表示する簡易仕様
+    const firstKey = Object.keys(all)[0];
+    const rec = firstKey ? all[firstKey] : null;
+    if (rec?.card){
+      dealCardFace.textContent = rec.card;
+      show(dealViewer, true);
+      setTimeout(()=> show(dealViewer, false), 1000);
+    }
+  });
+  state.unsub.push(off);
+}
+
+  
 /* === 4b: 装備所持バーのレンダラ＋購読 === */
 function renderEquipmentBar(equipData, participants){
   const bar = document.getElementById('equipBar');
@@ -1175,13 +1237,25 @@ function renderEquipmentBar(equipData, participants){
     // 所持者アイコン
     holder.appendChild(makeEquipIcon(ps.name || '?', ps.color || ''));
 
-    // 装備カードたち
-    Object.keys(cardsObj).forEach(cardName=>{
-      const c = document.createElement('div');
-      c.className = 'equip-card';
-      c.textContent = cardName;
-      holder.appendChild(c);
-    });
+  // 装備カードたち（公開=正体カードを左側優先）
+const cardNames = Object.keys(cardsObj);
+
+// もし正体カードの定義を「右下の配布カード（＝自分の deal）」と一致させたい場合は
+// ここで order を制御して「公開した順」「特定名称」などで先頭に寄せる。
+// まずは単純にソートなどはせず、挿入位置だけを左寄せにする。
+cardNames.forEach((cardName, i)=>{
+  const c = document.createElement('div');
+  c.className = 'equip-card';
+  c.textContent = cardName;
+
+  // 所持者アイコンが holder.children[0] にあるため、その直後に挿入
+  // 最初のカードは常に左（＝直後）に置く
+  if (i === 0){
+    holder.insertBefore(c, holder.children[1] || null);
+  }else{
+    holder.appendChild(c);
+  }
+});
 
     bar.appendChild(holder);
   });
@@ -1341,13 +1415,17 @@ async function becomeHostIfVacant(){
     // 自分の配布カード購読
     observeMyDeal();
 
+    // ☆ 追加：公開の購読（全員に1秒共有を反映）
+    observeReveals();
+
     // 装備所持の購読と描画
-observeEquipment();
+    observeEquipment();
     
     // ホスト設定UI
     hostGear.onclick = ()=>{
       hostPanel.classList.toggle('hidden');
     };
+
     btnStart.onclick = async ()=>{
       if (!state.isHost) return;
       await hostStartIfNotStarted();
