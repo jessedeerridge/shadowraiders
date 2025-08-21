@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -238,6 +239,7 @@ const state = {
 
 
   // --- ユーティリティ ---
+  // --- ユーティリティ ---
   function randomLetter(){ return String.fromCharCode(65 + Math.floor(Math.random()*26)); }
   function random4(){ return String(Math.floor(Math.random()*10000)).padStart(4, '0'); }
   const NAME_RE = /^[A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]$/;
@@ -247,99 +249,93 @@ const state = {
   }
   function show(el, yes){ el.classList.toggle('hidden', !yes); }
 
-
-// ===== 引継ぎユーティリティ =====
-async function soleNameIsMe(){
-  const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-  const ps = psSnap.val() || {};
-  const same = Object.entries(ps).filter(([,v])=> (v?.name||'') === state.name);
-  // 自分だけが在室なら true
-  return same.length === 1 && same[0][0] === state.uid;
-}
-
-// 同名で残っている“孤児データ”の旧UIDを探す（icons / seats / colors / deal を横断）
-async function findOrphanOldUidByName(){
-  const paths = [
-    ['icons',   `rooms/${state.code}/icons`],
-    ['seats',   `rooms/${state.code}/seats`],
-    ['colors',  `rooms/${state.code}/colors`],         // claim は uid を内包
-    ['deal',    `rooms/${state.code}/deal/v1/cards`],
-  ];
-  const candidates = new Set();
-
-  // icons・seats・deal は {uid: {name:..}} / {uid: "カード"} 形式
-  const icons = (await get(ref(db, paths[0][1]))).val() || {};
-  Object.entries(icons).forEach(([uid, v])=>{
-    if ((v?.name||'') === state.name && uid !== state.uid) candidates.add(uid);
-  });
-
-  const seats = (await get(ref(db, paths[1][1]))).val() || {};
-  Object.entries(seats).forEach(([uid, v])=>{
-    if ((v?.name||'') === state.name && uid !== state.uid) candidates.add(uid);
-  });
-
-  // colors は {colorId: {uid,name}} なので uid を拾う
-  const colors = (await get(ref(db, paths[2][1]))).val() || {};
-  Object.values(colors).forEach(v=>{
-    if ((v?.name||'') === state.name && v?.uid && v.uid !== state.uid) candidates.add(v.uid);
-  });
-
-  const deals = (await get(ref(db, paths[3][1]))).val() || {};
-  Object.entries(deals).forEach(([uid, card])=>{
-    if (card && uid !== state.uid) candidates.add(uid);
-  });
-
-  // 候補が1つだけのときのみ採用（複数残骸がある場合は安全のため引継ぎしない）
-  return (candidates.size === 1) ? [...candidates][0] : null;
-}
-
-// 旧UID→新UID への実移管（席・左アイコン・色・配布カード）
-async function migrateAllFromOldUid(oldUid){
-  const updates = {};
-
-  // 席
-  const oldSeat = (await get(ref(db, `rooms/${state.code}/seats/${oldUid}`))).val();
-  if (oldSeat){
-    updates[`rooms/${state.code}/seats/${state.uid}`] = { ...oldSeat, name: state.name, at: Date.now() };
-    updates[`rooms/${state.code}/seats/${oldUid}`] = null;
+  // ===== 引継ぎユーティリティ（同名判定と“孤児”データ移譲） =====
+  async function soleNameIsMe(){
+    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+    const ps = psSnap.val() || {};
+    const same = Object.entries(ps).filter(([,v])=> (v?.name||'') === state.name);
+    // 自分だけが在室なら true
+    return same.length === 1 && same[0][0] === state.uid;
   }
 
-  // 左長方形アイコン
-  const oldIcon = (await get(ref(db, `rooms/${state.code}/icons/${oldUid}`))).val();
-  if (oldIcon){
-    updates[`rooms/${state.code}/icons/${state.uid}`] = { ...oldIcon, name: state.name, ver: Number(oldIcon.ver||0) };
-    updates[`rooms/${state.code}/icons/${oldUid}`] = null;
+  // 同名の“孤児”UIDを横断探索（colors / deal）
+  async function findOrphanOldUidByName(){
+    const paths = {
+      colors: `rooms/${state.code}/colors`,
+      deal:   `rooms/${state.code}/deal/v1/cards`,
+    };
+    const candidates = new Set();
+
+    // colors: claim.name が同名・uid≠自分 を収集
+    const cSnap = await get(ref(db, paths.colors));
+    const colors = cSnap.val() || {};
+    for (const [, claim] of Object.entries(colors)){
+      if ((claim?.name||'') === state.name && claim.uid && claim.uid !== state.uid){
+        candidates.add(claim.uid);
+      }
+    }
+    // deal: {oldUid: card} のキーを収集
+    const dSnap = await get(ref(db, paths.deal));
+    const deal = dSnap.val() || {};
+    for (const [uid, card] of Object.entries(deal)){
+      if (uid !== state.uid && card) candidates.add(uid);
+    }
+
+    if (candidates.size === 0) return null;
+
+    // 参加者にいないUIDだけ（=孤児）に絞る
+    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+    const ps = psSnap.val() || {};
+    for (const oldUid of candidates){
+      if (!ps[oldUid]) return oldUid; // 最初に見つかった孤児を返す
+    }
+    return null;
   }
 
-  // 色（participants の color と colors の claim を移す）
-  const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-  const ps = psSnap.val() || {};
-  const oldColor = ps?.[oldUid]?.color || null;
-  if (oldColor){
-    updates[`rooms/${state.code}/participants/${state.uid}/color`] = oldColor;
-  }
-  // colors の claim を旧→新へ
-  const claimsSnap = await get(ref(db, `rooms/${state.code}/colors`));
-  const claims = claimsSnap.val() || {};
-  for (const [colorId, v] of Object.entries(claims)){
-    if (v?.uid === oldUid){
-      updates[`rooms/${state.code}/colors/${colorId}`] = { uid: state.uid, name: state.name, at: Date.now() };
+  // 引継ぎ本体：同名が“自分だけ在室”のときに、色＆配布カードを移す
+  async function migrateOrphanByName(){
+    if (!(await soleNameIsMe())) return;
+
+    const oldUid = await findOrphanOldUidByName();
+    if (!oldUid) return;
+
+    // colors: 自分に張替え（複数残骸があれば自分以外は解除）
+    const colorsRef = ref(db, `rooms/${state.code}/colors`);
+    const cSnap = await get(colorsRef);
+    const colors = cSnap.val() || {};
+    const updates = {};
+
+    let adoptedColorName = null;
+    for (const [colorId, claim] of Object.entries(colors)){
+      if (claim?.uid === oldUid && (claim?.name||'') === state.name){
+        updates[`rooms/${state.code}/colors/${colorId}`] = { uid: state.uid, name: state.name, at: Date.now() };
+        adoptedColorName = claim?.name || adoptedColorName;
+      }
+      // “同名で自分以外が掴んでいる”残骸は掃除
+      if (claim?.name === state.name && claim?.uid !== state.uid && claim?.uid !== oldUid){
+        updates[`rooms/${state.code}/colors/${colorId}`] = null;
+      }
+    }
+    if (adoptedColorName){
+      updates[`rooms/${state.code}/participants/${state.uid}/color`] = adoptedColorName;
+    }
+
+    // deal: 右下ミニカード（最初の配布）を自分へ移す（自分に既にある場合は上書きしない）
+    const myDealSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`));
+    const oldDealSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${oldUid}`));
+    const myHasCard = !!myDealSnap.val();
+    const oldCard = oldDealSnap.val();
+
+    if (!myHasCard && oldCard){
+      updates[`rooms/${state.code}/deal/v1/cards/${state.uid}`] = oldCard;
+      updates[`rooms/${state.code}/deal/v1/cards/${oldUid}`] = null;
+    }
+
+    if (Object.keys(updates).length){
+      await update(ref(db), updates);
     }
   }
 
-  // 右下カード（v1 最初の配布）
-  const oldDeal = (await get(ref(db, `rooms/${state.code}/deal/v1/cards/${oldUid}`))).val();
-  if (oldDeal){
-    updates[`rooms/${state.code}/deal/v1/cards/${state.uid}`] = oldDeal;
-    updates[`rooms/${state.code}/deal/v1/cards/${oldUid}`] = null;
-  }
-
-  if (Object.keys(updates).length){
-    await update(ref(db), updates);
-  }
-}
-
-  
   // ===== ヘッダ表示・コピー =====
   function updateHeader(){
     headerInfo.innerHTML = '';
@@ -601,16 +597,12 @@ face.addEventListener('click', ()=>{
         sameNameUid = uid; sameData = data; break;
       }
     }
-if (sameNameUid && sameNameUid !== state.uid){
-  // ★ 条件：同名の在室者が自分1人のときだけ“安全移管”
-  if (await soleNameIsMe()){
-    await migrateAllFromOldUid(sameNameUid);   // 席だけでなく色・左アイコン・配布カードも移す
-    return; // 位置変更は行わない
-  }
-  // 条件不成立なら何もしない（競合中は新設・移管しない）
-  return;
-}
-
+    if (sameNameUid && sameNameUid !== state.uid){
+      // 所有を自分に移す（位置はそのまま）
+      await set(ref(db, `rooms/${state.code}/seats/${state.uid}`), { ...sameData, name: state.name, at: Date.now() });
+      await remove(ref(db, `rooms/${state.code}/seats/${sameNameUid}`));
+      return; // 位置変更は行わない
+    }
 
     // 新規または自分の既存を更新
     const p = toSvgCoords(svg, ev.clientX, ev.clientY);
@@ -713,18 +705,11 @@ g.appendChild(box);
     const svg = document.getElementById('art');
     const myIconRef = ref(db, `rooms/${state.code}/icons/${state.uid}`);
 
-// 左長方形内で同名が既にあるかチェック
-const allIconsSnap = await get(ref(db, `rooms/${state.code}/icons`));
-const allIcons = allIconsSnap.val() || {};
-const dup = Object.entries(allIcons).find(([uid, ic])=> (ic?.name||'') === state.name);
-
-// ★ 同名が“自分以外”にあり、かつ同名在室が自分1人なら安全移管
-if (dup && dup[0] !== state.uid){
-  if (await soleNameIsMe()){
-    await migrateAllFromOldUid(dup[0]);
-  }
-  return; // いずれにせよ新規生成はしない
-}
+    // 左長方形内で同名が既にあるかチェック
+    const allIconsSnap = await get(ref(db, `rooms/${state.code}/icons`));
+    const allIcons = allIconsSnap.val() || {};
+    const dup = Object.values(allIcons).some(ic => (ic?.name||'') === state.name);
+    if (dup) return; // 同名があれば新規出現しない
 
     // 自分は未配置なら作成、配置済なら無視
     const snap = await get(myIconRef);
@@ -1073,65 +1058,22 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
     }
   }
 
-// --- 入室処理 ---
-async function join(){
-  const name = normalizeName(nameInput.value);
-  const code = (codeInput.value || "").trim() || random4();
+  // ===== 入室処理 =====
+  async function join(){
+    const name = normalizeName(nameInput.value);
+    const code = (codeInput.value || "").trim() || random4();
 
-  state.name = name;
-  state.code = code;
+    state.name = name;
+    state.code = code;
 
-  // ===== 孤児データ引き継ぎ =====
-  const psSnap = await get(ref(db, `rooms/${code}/participants`));
-  const ps = psSnap.val() || {};
-  const oldUid = Object.keys(ps).find(uid => ps[uid]?.name === name);
-  if (oldUid && oldUid !== state.uid){
-    // 旧参加者を削除
-    await remove(ref(db, `rooms/${code}/participants/${oldUid}`));
-
-    // アイコン引き継ぎ
-    const oldIconSnap = await get(ref(db, `rooms/${code}/icons/${oldUid}`));
-    if (oldIconSnap.exists()){
-      await set(ref(db, `rooms/${code}/icons/${state.uid}`), { ...oldIconSnap.val(), name });
-      await remove(ref(db, `rooms/${code}/icons/${oldUid}`));
-    }
-
-    // 席引き継ぎ
-    const oldSeatSnap = await get(ref(db, `rooms/${code}/seats/${oldUid}`));
-    if (oldSeatSnap.exists()){
-      await set(ref(db, `rooms/${code}/seats/${state.uid}`), { ...oldSeatSnap.val(), name });
-      await remove(ref(db, `rooms/${code}/seats/${oldUid}`));
-    }
-
-    // 色引き継ぎ
-    const colorsSnap = await get(ref(db, `rooms/${code}/colors`));
-    const colors = colorsSnap.val() || {};
-    for (const [cid, v] of Object.entries(colors)){
-      if (v?.uid === oldUid){
-        await set(ref(db, `rooms/${code}/colors/${cid}`), { ...v, uid: state.uid, name });
-      }
-    }
-
-    // カード引き継ぎ
-    const cardSnap = await get(ref(db, `rooms/${code}/deal/v1/cards/${oldUid}`));
-    if (cardSnap.exists()){
-      await set(ref(db, `rooms/${code}/deal/v1/cards/${state.uid}`), cardSnap.val());
-      await remove(ref(db, `rooms/${code}/deal/v1/cards/${oldUid}`));
-    }
-  }
-
-  // ===== 在室登録（新しいuidで） =====
-  const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
-  await set(meRef, { name, at: Date.now() });
-  onDisconnect(meRef).remove();
-
+    // 在室登録
+    const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
+    await set(meRef, { name, at: Date.now() });
+    onDisconnect(meRef).remove();
 
     // ホスト就任（空いていれば）
     await becomeHostIfVacant();
 
-
-
-    
     updateHeader();
     show(joinPanel, false);
     show(roomPanel, true);
@@ -1211,22 +1153,19 @@ async function join(){
       await hostStartIfNotStarted();
       hostPanel.classList.add('hidden');
     };
+    // カードビューア：外側クリックで閉じる
+    dealViewer.addEventListener('click', (e)=>{
+      if (e.target === dealViewer) show(dealViewer, false);
+    });
 
-// カードビューア：外側クリックで閉じる
-dealViewer.addEventListener('click', (e)=>{
-  if (e.target === dealViewer) show(dealViewer, false);
-});
+    // ★ 同名引継ぎ（色／右下カード）
+    try{
+      await migrateOrphanByName();
+    }catch(_e){ /* 引継ぎ失敗は致命ではないため握りつぶし */ }
 
-// ★ 入室直後の安全な一括引継ぎ
-try{
-  if (await soleNameIsMe()){
-    const oldUid = await findOrphanOldUidByName();
-    if (oldUid) await migrateAllFromOldUid(oldUid);
+    state.joined = true;
   }
-}catch(_e){ /* no-op */ }
 
-state.joined = true;
-  }
 
   // 離脱時
   window.addEventListener('beforeunload', ()=>{
