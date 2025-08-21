@@ -1,3 +1,8 @@
+アイコンの色が表示されない。
+選んだ色が自分のアイコンの背景色になる。（黒と緑と紫と青と赤は文字色は白、それ以外は文字色黒）
+
+どこを変更する？
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -7,8 +12,8 @@
 <style>
   :root { --gap:10px; }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
-  header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee;gap:10px}
-  h1{margin:0;font-size:14px}
+  header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee;gap:12px}
+  h1{margin:0;font-size:18px}
   .small{font-size:12px;opacity:.85;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .copybtn{padding:6px 10px;border:1px solid #ddd;border-radius:10px;background:#f7f7f7;cursor:pointer}
   main{padding:14px;display:grid;gap:16px;max-width:980px;margin:0 auto}
@@ -37,19 +42,8 @@
   .roomhit.flash{fill:#eee;transition:fill 60ms}
 
   /* 山札UI（右図形の真下に横並び） */
-.decks-wrap{
-  display:flex;
-  justify-content:flex-end;  /* 右寄せ */
-  padding-right:150px;        /* ← ここで右端からの距離を調整 */
-}
-.decks{
-  display:flex;
-  gap:16px;
-  justify-content:flex-end;
-  align-items:flex-start;
-  margin-top:-30px;  /* ← 上に10px持ち上げる */
-  margin-left:0;
-}
+  .decks-wrap{display:flex;justify-content:center}
+  .decks{display:flex;gap:16px;justify-content:flex-start;align-items:flex-start;margin-top:12px}
   .deck{display:flex;flex-direction:column;align-items:center;gap:8px}
   .deck-back,.deck-face{
     width:80px;height:110px;border:1px solid #111;border-radius:10px;
@@ -478,21 +472,23 @@
     el.classList.add('flash');
     setTimeout(()=> el.classList.remove('flash'), 140);
 
-    // 既存の同名席があれば“引き継ぎ”（新規生成しない）
-    const seatsSnap = await get(ref(db, `rooms/${state.code}/seats`));
-    const seats = seatsSnap.val() || {};
-    let sameNameUid = null, sameData = null;
-    for (const [uid, data] of Object.entries(seats)){
-      if ((data?.name||'') === state.name){
-        sameNameUid = uid; sameData = data; break;
-      }
-    }
-    if (sameNameUid && sameNameUid !== state.uid){
-      // 所有を自分に移す（位置はそのまま）
-      await set(ref(db, `rooms/${state.code}/seats/${state.uid}`), { ...sameData, name: state.name, at: Date.now() });
-      await remove(ref(db, `rooms/${state.code}/seats/${sameNameUid}`));
-      return; // 位置変更は行わない
-    }
+ // 同名の“オフライン孤児”席がちょうど1件のときのみ引き継ぐ
+const [seatsSnap2, psSnap2] = await Promise.all([
+  get(ref(db, `rooms/${state.code}/seats`)),
+  get(ref(db, `rooms/${state.code}/participants`)),
+]);
+const seats2 = seatsSnap2.val() || {};
+const online2 = new Set(Object.keys(psSnap2.val() || {}));
+const candidates = Object.entries(seats2)
+  .filter(([uid, d]) => (d?.name||'') === state.name && !online2.has(uid));
+
+if (candidates.length === 1){
+  const [oldUid, oldData] = candidates[0];
+  await set(ref(db, `rooms/${state.code}/seats/${state.uid}`), { ...oldData, name: state.name, at: Date.now() });
+  await remove(ref(db, `rooms/${state.code}/seats/${oldUid}`));
+  return; // 位置変更は行わない
+}
+
 
     // 新規または自分の既存を更新
     const p = toSvgCoords(svg, ev.clientX, ev.clientY);
@@ -579,25 +575,44 @@ function applyFillAndText(elGroup, colorName){
   }
 
   // 左長方形クリック：同名が存在すれば新規出現しない
-  async function onRectClickWithDupCheck(ev){
-    const svg = document.getElementById('art');
-    const myIconRef = ref(db, `rooms/${state.code}/icons/${state.uid}`);
+async function onRectClickWithDupCheck(ev){
+  const svg = document.getElementById('art');
+  const myIconRef = ref(db, `rooms/${state.code}/icons/${state.uid}`);
 
-    // 左長方形内で同名が既にあるかチェック
-    const allIconsSnap = await get(ref(db, `rooms/${state.code}/icons`));
-    const allIcons = allIconsSnap.val() || {};
-    const dup = Object.values(allIcons).some(ic => (ic?.name||'') === state.name);
-    if (dup) return; // 同名があれば新規出現しない
-
-    // 自分は未配置なら作成、配置済なら無視
-    const snap = await get(myIconRef);
-    if (snap.exists()) return;
-
-    const p = toSvgCoords(svg, ev.clientX, ev.clientY);
-    const pos = clampToRect(p.x - 12, p.y - 12);
-
-    await set(myIconRef, { name: state.name, x: pos.x, y: pos.y, placedAt: Date.now() });
+  // ①同名“オフライン孤児”アイコンが1件だけなら継承して終了
+  const orphanUid = await findUniqueOrphanUidByName('icons');
+  if (orphanUid){
+    const oldSnap = await get(ref(db, `rooms/${state.code}/icons/${orphanUid}`));
+    if (oldSnap.exists()){
+      const v = oldSnap.val();
+      await update(ref(db), {
+        [`rooms/${state.code}/icons/${state.uid}`]: { ...v, name: state.name, placedAt: Date.now() },
+        [`rooms/${state.code}/icons/${orphanUid}`]: null,
+      });
+      return;
+    }
   }
+
+  // ②オンラインで同名アイコンがある場合は新規作成しない
+  const [allIconsSnap, psSnap] = await Promise.all([
+    get(ref(db, `rooms/${state.code}/icons`)),
+    get(ref(db, `rooms/${state.code}/participants`)),
+  ]);
+  const allIcons = allIconsSnap.val() || {};
+  const online = new Set(Object.keys(psSnap.val() || {}));
+  const sameOnline = Object.entries(allIcons)
+    .some(([uid, ic]) => (ic?.name||'') === state.name && online.has(uid));
+  if (sameOnline) return;
+
+  // ③自分は未配置なら作成、配置済なら無視
+  const snap = await get(myIconRef);
+  if (snap.exists()) return;
+
+  const p = toSvgCoords(svg, ev.clientX, ev.clientY);
+  const pos = clampToRect(p.x - 12, p.y - 12);
+  await set(myIconRef, { name: state.name, x: pos.x, y: pos.y, placedAt: Date.now() });
+}
+
 
   function renderOrUpdateIcon(uid, data, userColorsMap){
     const svg = document.getElementById('art');
@@ -862,17 +877,21 @@ function applyFillAndText(elGroup, colorName){
     state.name = name;
     state.code = code;
 
-    // 在室登録
-    const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
-    await set(meRef, { name, at: Date.now() });
-    onDisconnect(meRef).remove();
+// 在室登録
+const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
+await set(meRef, { name, at: Date.now() });
+onDisconnect(meRef).remove();
 
-    // ホスト就任（空いていれば）
-    await becomeHostIfVacant();
+// ホスト就任（空いていれば）
+await becomeHostIfVacant();
 
-    updateHeader();
-    show(joinPanel, false);
-    show(roomPanel, true);
+// 同名のオフライン孤児が1件だけなら seat/icon/配布カードを継承
+await claimSeatIconAndDealIfOrphan();
+
+updateHeader();
+show(joinPanel, false);
+show(roomPanel, true);
+
 
     // 図形構築
     drawFigure2();
