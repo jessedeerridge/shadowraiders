@@ -196,10 +196,18 @@
 <!-- 装備所持バー -->
 <div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
 
-<!-- ☆ 追加：正体カード公開ポップ -->
-<div id="revealPopover" class="popover hidden">
-  <span>この正体カードを公開しますか？</span>
-  <button id="btnReveal">公開する</button>
+<!-- ☆ 修正：正体カード公開ポップ（黒背景、公開するのみ） -->
+<div id="revealPopover" class="hidden"
+     style="position:fixed; z-index:2147483607;
+            background:#000; color:#fff;
+            border-radius:10px; padding:12px 18px;
+            box-shadow:0 4px 12px rgba(0,0,0,.4);
+            display:flex; align-items:center; justify-content:center;">
+  <button id="btnReveal"
+          style="padding:10px 20px; border:none; border-radius:8px;
+                 background:#fff; color:#000; font-weight:700; cursor:pointer;">
+    公開する
+  </button>
 </div>
 
 <!-- カード拡大ビューア -->
@@ -1156,15 +1164,16 @@ function observeMyDeal(){
         show(dealViewer, true);
 
         // ☆ 追加：拡大カードを押すと「公開する」ポップ表示
-        dealCardFace.onclick = ()=>{
-          const pop = document.getElementById('revealPopover');
-          if (!pop) return;
-          pop.classList.remove('hidden');
-          const r = dealCardFace.getBoundingClientRect();
-          // だいたい拡大カードの下に出す
-          pop.style.left = (r.left + r.width/2 - 90) + 'px';
-          pop.style.top  = (r.bottom + 8) + 'px';
-        };
+dealCardFace.onclick = ()=>{
+  const pop = document.getElementById('revealPopover');
+  if (!pop) return;
+  pop.classList.remove('hidden');
+  const r = dealCardFace.getBoundingClientRect();
+  // 拡大カードの中央に重ねる
+  pop.style.left = (r.left + r.width/2 - 60) + 'px';
+  pop.style.top  = (r.top + r.height/2 - 25) + 'px';
+};
+
       };
     }else{
       myDealMini.onclick = null;
