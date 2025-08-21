@@ -412,10 +412,19 @@
       back.title = `${def.label}デッキをめくる`;
       back.addEventListener('click', ()=> advanceDeckGuarded(deckId));
 
-      const face = document.createElement('div');
-      face.className = 'deck-face';
-      face.dataset.role = 'face';
-      face.textContent = '';
+const face = document.createElement('div');
+face.className = 'deck-face';
+face.dataset.role = 'face';
+face.textContent = '';
+
+// ▼追加：クリックで拡大表示
+face.addEventListener('click', ()=>{
+  if (face.textContent){                // 文字があるときのみ
+    dealCardFace.textContent = face.textContent;
+    show(dealViewer, true);             // 既存の拡大仕様を利用
+  }
+});
+
 
       const label = document.createElement('div');
       label.className = 'deck-label';
