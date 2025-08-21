@@ -3,88 +3,41 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>正ひし形×6（六芒星リング）</title>
+<title>六芒星（同じひし形×6｜辺共有）</title>
 <style>
   :root{
-    --size: 80px;         /* ひし形（正方形を45°回転）の一辺 */
-    --ringR: 120px;       /* 円形配置の半径（辺がほぼ接するように調整） */
-    --gap: 0px;           /* 視覚的なすき間（0～-2px くらいで微調整） */
-    --diamond-bg: #f8fafc;
-    --diamond-bd: #0f172a;
-    --active: #22c55e;
+    /* ひし形の一辺の長さ（px）。数字を変えると全体スケールが変わります。 */
+    --side: 100;
+    /* 線幅 */
+    --stroke: 2;
   }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
-  header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee}
-  h1{margin:0;font-size:18px}
-  main{display:grid;place-items:center;padding:24px;min-height:calc(100dvh - 57px)}
-  /* 六つの正ひし形を円形に並べる */
-  .ring{
-    position:relative;
-    width: calc(var(--ringR)*2 + var(--size)*1.2);
-    height: calc(var(--ringR)*2 + var(--size)*1.2);
+  html,body{height:100%}
+  body{
+    margin:0; display:grid; place-items:center; background:#f7f7f8; color:#111;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
   }
-  .diamond{
-    position:absolute; left:50%; top:50%;
-    transform-origin: center center;
-  }
-  /* 内側の実体（正方形を45°回転→正ひし形） */
-  .lozenge{
-    position:absolute; left:0; top:0;
-    width: var(--size); height: var(--size);
-    background: var(--diamond-bg);
-    border: 3px solid var(--diamond-bd);
-    border-radius: 10px;
-    transform: translate(-50%,-50%) rotate(45deg);
-    box-shadow: 0 2px 10px rgba(0,0,0,.08);
-  }
-  /* ラベル（番号／名前など） */
-  .label{
-    position:absolute; left:50%; top:50%;
-    transform: translate(-50%,-50%);
-    font-weight:700; font-size:16px; pointer-events:none;
-  }
-  /* クリックでON/OFF */
-  .diamond.active .lozenge{ border-color: var(--active); box-shadow: 0 0 0 3px color-mix(in oklab, var(--active) 30%, transparent); }
-  /* 中心のガイド（必要なければ display:none） */
-  .center-guide{
-    position:absolute; left:50%; top:50%;
-    width:6px; height:6px; border-radius:50%; background:#94a3b8; transform:translate(-50%,-50%);
-    opacity:.35;
-  }
-  /* 説明 */
-  .note{margin-top:16px;font-size:13px;color:#555}
-  @media (max-width:560px){
-    :root{ --size:64px; --ringR:100px; }
-  }
+  .wrap{padding:16px}
+  .title{margin:0 0 10px;font-size:14px;opacity:.8;text-align:center}
+  svg{display:block; width:min(92vw,540px); height:auto; background:#fff; border-radius:16px; box-shadow:0 6px 24px rgba(0,0,0,.08)}
+  .diamond{stroke:#111; stroke-width:var(--stroke); fill:#7cc4ff20}
+  .diamond:nth-child(even){fill:#ffd66e26} /* 見やすいように交互色 */
+  /* ガイド（正六角形の外形）。要らなければ .guide を display:none に */
+  .guide{fill:none; stroke:#999; stroke-dasharray:6 6; stroke-width:1}
 </style>
 </head>
 <body>
-<header>
-  <h1>正ひし形が6つ円形につながった形</h1>
-  <div class="small">（六芒星リング）</div>
-</header>
+<div class="wrap">
+  <p class="title">同じ正ひし形×6を円環状に配置（内側の辺を共有）</p>
+  <!--
+    ビューボックスは原点(0,0)中心に左右上下へ広げています。
+    ここでは side=100 とし、外側の星の先端半径は 2*t (= √3 * side) なので、
+    余白を含めて ±220 程度を確保。
+  -->
+  <svg id="hexstar" viewBox="-220 -220 440 440" aria-label="六芒星（ひし形6枚）"></svg>
+</div>
 
-<main>
-  <div class="ring" id="ring">
-    <div class="center-guide"></div>
-    <!-- 6個ぶん、JSが角度と配置を設定します -->
-    <div class="diamond"><div class="lozenge"></div><div class="label">1</div></div>
-    <div class="diamond"><div class="lozenge"></div><div class="label">2</div></div>
-    <div class="diamond"><div class="lozenge"></div><div class="label">3</div></div>
-    <div class="diamond"><div class="lozenge"></div><div class="label">4</div></div>
-    <div class="diamond"><div class="lozenge"></div><div class="label">5</div></div>
-    <div class="diamond"><div class="lozenge"></div><div class="label">6</div></div>
-  </div>
-
-  <div class="note">
-    サイズや間隔は <code>:root</code> の <code>--size</code>、<code>--ringR</code>、<code>--gap</code> を微調整してください。<br>
-    クリックで枠色が切り替わります（座席/部屋の選択などに流用可能）。
-  </div>
-</main>
-
-<script type="module">
-  // --- Firebase（必要ならこのまま利用できます。現状このページでは未使用） ---
+<script>
+  // （参考）頂いた Firebase 設定。ここでは未使用です。
   const firebaseConfig = {
     apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
     authDomain: "shadowraiders-a2dbc.firebaseapp.com",
@@ -94,37 +47,62 @@
     appId: "1:577276689873:web:9a13faf90c3d6a791e34f0",
     measurementId: "G-PKNEPDBVSS"
   };
-  // import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-  // initializeApp(firebaseConfig);
 
-  // --- 六つの正ひし形を円形に配置 ---
-  const ring   = document.getElementById('ring');
-  const items  = Array.from(ring.querySelectorAll('.diamond'));
-  const style  = getComputedStyle(document.documentElement);
-  const radius = parseFloat(style.getPropertyValue('--ringR'));
-  const size   = parseFloat(style.getPropertyValue('--size'));
-  const gap    = parseFloat(style.getPropertyValue('--gap'));
+  // 幾何パラメータ
+  const SIDE = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--side')) || 100;
+  // 正三角形の高さ t = (√3 / 2) * side
+  const t = Math.sqrt(3) / 2 * SIDE;
+  // 正ひし形の短径半分 w = side / 2、長径半分 h = t
+  const w = SIDE / 2;
+  const h = t;
 
-  // 角度0°を上に合わせ、時計回りに60°刻みで配置
-  items.forEach((el, i) => {
-    const deg   = -90 + i*60;        // -90°で真上スタート
-    const rad   = deg * Math.PI/180;
-    // ひし形の見た目の辺が触れるように、少しだけ内側/外側を微調整したい時は --ringR / --gap を調整
-    const x = Math.cos(rad) * (radius + gap);
-    const y = Math.sin(rad) * (radius + gap);
-    el.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) rotate(${deg + 30}deg)`;
+  // 基本ひし形（原点中心・長径が縦）の4頂点（反時計回り）
+  const base = [
+    [ 0, -h],  // 上端（内側に向く頂点：後で中心に重ねる）
+    [ w,  0],  // 右
+    [ 0,  h],  // 下端（外側に向く頂点：後で外向きに）
+    [-w,  0]   // 左
+  ];
 
-    // ラベルは正位置に戻して読みやすく
-    const label = el.querySelector('.label');
-    label.style.transform = `translate(-50%,-50%) rotate(${-deg - 30}deg)`;
-  });
+  // 回転 + 並進を適用して points 文字列を作る
+  function makePoints(cx, cy, theta){
+    const cos = Math.cos(theta), sin = Math.sin(theta);
+    return base.map(([x,y])=>{
+      const xr =  x * cos - y * sin;
+      const yr =  x * sin + y * cos;
+      return (xr + cx).toFixed(3) + ',' + (yr + cy).toFixed(3);
+    }).join(' ');
+  }
 
-  // クリックで選択トグル（UI用途）
-  ring.addEventListener('click', (e) => {
-    const d = e.target.closest('.diamond');
-    if (!d) return;
-    d.classList.toggle('active');
-  });
+  // 描画
+  const svg = document.getElementById('hexstar');
+
+  // ガイド：中央の正六角形（各ひし形の内側の辺が一致する場所）
+  // 正六角形の外接半径 R = side
+  const R = SIDE;
+  const hexPts = Array.from({length:6}, (_,k)=>{
+    const a = Math.PI/3 * k - Math.PI/6; // 30°ずらして水平辺に揃える
+    return (R*Math.cos(a)).toFixed(3)+','+(R*Math.sin(a)).toFixed(3);
+  }).join(' ');
+  const guide = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+  guide.setAttribute('points', hexPts);
+  guide.setAttribute('class','guide');
+  svg.appendChild(guide);
+
+  // 6個のひし形を作成
+  for (let k=0; k<6; k++){
+    // 60°刻み。長径方向（外向き法線）をこの角度に合わせる
+    const theta = Math.PI/3 * k;
+    // ひし形の「内側の頂点」を原点（全体の中心）に合わせたいので、
+    // ひし形の中心を t だけ外向きにオフセットする（＝長径半分だけ押し出す）
+    const cx = t * Math.cos(theta);
+    const cy = t * Math.sin(theta);
+
+    const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    poly.setAttribute('points', makePoints(cx, cy, theta));
+    poly.setAttribute('class','diamond');
+    svg.appendChild(poly);
+  }
 </script>
 </body>
 </html>
