@@ -55,4 +55,67 @@ function pentagonFromEdge(a,b,pointOut){
   // エッジから外側に少しオフセット（側面を少し広げて「ほぼ正五角形」に）
   const sideA = add(a, mul(pointOut, 0.60));
   const sideB = add(b, mul(pointOut, 0.60));
-  return [a, b,]()
+  return [a, b, sideB, tip, sideA];
+}
+
+// === 内部の正六角形 2 個（上下に接する）===
+// 六角形の高さ成分 h
+const hHex = (rt3/2)*sHex;
+// 1個目を中心 (0,0)、2個目を (0, 2h) に置くと、ちょうど水平な辺で接します
+const hexTop    = hexFlat(cx, cy - hHex, sHex);
+const hexBottom = hexFlat(cx, cy + hHex, sHex);
+
+polygon(hexTop);
+polygon(hexBottom);
+
+// === 外周の五角形 6 個 ===
+// 外向きの法線ベクトルを用意（六角形の各辺ごと）
+function outwardForEdge(a,b,fromCenter){
+  const e = sub(b,a);                        // 辺ベクトル
+  // 左に90度回転で法線
+  const n = [-e[1], e[0]];
+  // どちらが外側かを判定（辺の中点→中心 との内積で反転）
+  const mid = [(a[0]+b[0])/2,(a[1]+b[1])/2];
+  const toC = sub(fromCenter, mid);
+  const dot = n[0]*toC[0] + n[1]*toC[1];
+  const nn = dot>0 ? mul(n,-1) : n;
+  // 長さを sOut に正規化
+  const L = Math.hypot(nn[0],nn[1]) || 1;
+  return [ nn[0]*sOut/L, nn[1]*sOut/L ];
+}
+
+// 外周に使う6つの「外側の辺」：
+// 上：hexTop の上辺（v4→v5）
+// 右上：hexTop の右上辺（v5→v0）
+// 右下：hexBottom の右下辺（v0→v1）
+// 下：hexBottom の下辺（v1→v2）
+// 左下：hexBottom の左下辺（v2→v3）
+// 左上：hexTop の左上辺（v3→v4）
+const edges = [
+  { poly: hexTop,    i: [4,5],   center:[cx,cy - hHex*3] }, // 上
+  { poly: hexTop,    i: [5,0],   center:[cx+9999,cy]      }, // 右上
+  { poly: hexBottom, i: [0,1],   center:[cx+9999,cy]      }, // 右下
+  { poly: hexBottom, i: [1,2],   center:[cx,cy + hHex*3] },  // 下
+  { poly: hexBottom, i: [2,3],   center:[-9999+cx,cy]     }, // 左下
+  { poly: hexTop,    i: [3,4],   center:[-9999+cx,cy]     }, // 左上
+];
+
+// 6個の五角形を生成
+edges.forEach(({poly,i,center})=>{
+  const a = poly[i[0]], b = poly[i[1]];
+  const out = outwardForEdge(a,b,center);
+  const p = pentagonFromEdge(a,b,out);
+  polygon(p);
+});
+
+// 余白調整
+(function fit(){
+  const pad = 14;
+  const box = svg.getBBox();
+  svg.setAttribute('viewBox',
+    [box.x-pad, box.y-pad, box.width+pad*2, box.height+pad*2].join(' ')
+  );
+})();
+</script>
+</body>
+</html>
