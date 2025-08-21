@@ -1215,8 +1215,27 @@ function observeMyDeal(){
     show(myDealMini, has);
     if (has){
       myDealMini.onclick = ()=>{
-        dealCardFace.textContent = String(val);
-        show(dealViewer, true);
+// 自分のカード表示
+dealCardFace.textContent = String(val);
+
+// ★ 正体カードの色分け（拡大ビュー用）
+if (ROLE_CARDS.shadow.includes(val)) {
+  dealCardFace.style.background = '#1e88e5'; // 青
+  dealCardFace.style.color = '#fff';
+} else if (ROLE_CARDS.raider.includes(val)) {
+  dealCardFace.style.background = '#e53935'; // 赤
+  dealCardFace.style.color = '#fff';
+} else if (ROLE_CARDS.citizen.includes(val)) {
+  dealCardFace.style.background = '#fdd835'; // 黄
+  dealCardFace.style.color = '#111';
+} else {
+  // その他カードは白背景に戻す
+  dealCardFace.style.background = '#fff';
+  dealCardFace.style.color = '#111';
+}
+
+show(dealViewer, true);
+
 
         // ☆ 追加：拡大カードを押すと「公開する」ポップ表示
         dealCardFace.onclick = ()=>{
