@@ -215,19 +215,21 @@
   const dealCardFace  = document.getElementById('dealCardFace');
 
   // --- 状態 ---
-  const state = {
-    uid: crypto.randomUUID(),
-    name: "",
-    code: "",
-    joined: false,
-    unsub: [],
-    rectBBox: null,
-    draggingUid: null,
-    isPointerDown: false,
-    dragOffset: {x:0,y:0},
-    isHost: false,
-    started: false,
-  };
+const state = {
+  uid: crypto.randomUUID(),
+  name: "",
+  code: "",
+  joined: false,
+  unsub: [],
+  rectBBox: null,
+  draggingUid: null,
+  isPointerDown: false,
+  dragOffset: {x:0,y:0},
+  isHost: false,
+  started: false,
+  lockScrollOnRect: false,   // ← 追加：左長方形内タッチ中はスクロール禁止
+};
+
 
   // --- ユーティリティ ---
   function randomLetter(){ return String.fromCharCode(65 + Math.floor(Math.random()*26)); }
@@ -519,13 +521,22 @@ face.addEventListener('click', ()=>{
   }
 
   // SVG座標変換
-  function toSvgCoords(svg, clientX, clientY){
-    const pt = svg.createSVGPoint();
-    pt.x = clientX; pt.y = clientY;
-    const m = svg.getScreenCTM(); if (!m) return {x:0,y:0};
-    const sp = pt.matrixTransform(m.inverse());
-    return {x: sp.x, y: sp.y};
-  }
+function toSvgCoords(svg, clientX, clientY){
+  const pt = svg.createSVGPoint();
+  pt.x = clientX; pt.y = clientY;
+  const m = svg.getScreenCTM(); if (!m) return {x:0,y:0};
+  const sp = pt.matrixTransform(m.inverse());
+  return {x: sp.x, y: sp.y};
+}
+
+/* ← 追加：タッチ点が左長方形(state.rectBBox)内かを判定 */
+function isInLeftRect(clientX, clientY){
+  const svg = document.getElementById('art');
+  if (!svg || !state.rectBBox) return false;
+  const p = toSvgCoords(svg, clientX, clientY);
+  const r = state.rectBBox;
+  return (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
+}
 
   // ===== 席アイコン描画（色反映） =====
 function applyFillAndText(elGroup, colorName){
@@ -984,6 +995,25 @@ g.appendChild(box);
 
   btnJoin.onclick = join;
 
+/* ← 追加：左長方形内タッチ中だけページスクロールを完全抑止 */
+document.addEventListener('touchstart', (e)=>{
+  const t = e.touches && e.touches[0];
+  state.lockScrollOnRect = !!t && isInLeftRect(t.clientX, t.clientY);
+}, { passive:true });
+
+document.addEventListener('touchmove', (e)=>{
+  if (state.lockScrollOnRect) e.preventDefault();   // iOS 対策：passive:false 必須
+}, { passive:false });
+
+document.addEventListener('touchend', ()=>{
+  state.lockScrollOnRect = false;
+}, { passive:true });
+
+document.addEventListener('touchcancel', ()=>{
+  state.lockScrollOnRect = false;
+}, { passive:true });
+
+  
   // 事前入力
   try{
     const qs = new URLSearchParams(location.search);
