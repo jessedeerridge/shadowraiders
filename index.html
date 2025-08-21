@@ -720,9 +720,37 @@ g.addEventListener('pointerup', (e)=>{
       // グローバル installGlobalPointerMove のみに一本化する
 
       // ホスト削除ポップ
-      g.addEventListener('click', (e)=> maybeShowDeletePopover(e, 'icon', uid));
+// 左長方形アイコン：クリックで一つ上に移動（削除ポップ無効化）
+g.addEventListener('click', async (e)=>{
+  // ドラッグ中の誤爆を避ける
+  if (state.isPointerDown) return;
 
-      layer.appendChild(g);
+  // 現在位置を取得（data-x / data-y がなければ作成時データ）
+  const curX = parseFloat(g.getAttribute('data-x') || data.x || 0);
+  const curY = parseFloat(g.getAttribute('data-y') || data.y || 0);
+
+  // アイコン1個分(24px)だけ上へ
+  const nextY = curY - 24;
+  const pos = clampToRect(curX, nextY);   // 左長方形の内側にクランプ
+
+  // 即時反映
+  g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+  g.setAttribute('data-x', pos.x);
+  g.setAttribute('data-y', pos.y);
+
+  // DB更新（ローカルverをインクリメントしてエコー順序を担保）
+  const uidNow = uid;
+  const nextVer = (state.localMoveVer[uidNow] || 0) + 1;
+  state.localMoveVer[uidNow] = nextVer;
+  await update(ref(db, `rooms/${state.code}/icons/${uidNow}`), {
+    x: pos.x,
+    y: pos.y,
+    ver: nextVer
+  });
+});
+
+layer.appendChild(g);
+
     }
 
     // 名前更新
