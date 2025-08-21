@@ -6,105 +6,26 @@
 <title>六芒星（中央：正六角形＋周囲：正ひし形6つ）</title>
 <style>
   html,body{height:100%;margin:0;background:#fff}
-  svg{display:block;margin:auto;max-width:90vmin;height:auto}
-  .shape{fill:#fff;stroke:#111;stroke-width:6;stroke-linejoin:round;stroke-linecap:round}
+  svg{display:block;margin:auto;max-width:92vmin;height:auto}
+  .shape{fill:#fff;stroke:#111;stroke-width:8;stroke-linejoin:round;stroke-linecap:round}
 </style>
 </head>
 <body>
 
-<!-- ここで描画します -->
-<svg id="star" viewBox="-180 -180 360 360" aria-label="六芒星の図形"></svg>
+<!-- 生成画像と同配置：中心の正六角形＋各辺に外向きの正ひし形 -->
+<svg viewBox="-132 -116 264 232" aria-label="六芒星の図形">
+  <!-- 中央の正六角形（辺長=60, 水平向き） -->
+  <polygon class="shape"
+    points="60.000,0.000 30.000,51.962 -30.000,51.962 -60.000,0.000 -30.000,-51.962 30.000,-51.962" />
 
-<script>
-/* 参考：ユーザー提供の設定（使いませんが残しておきます）
-const firebaseConfig = {
-  apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
-  authDomain: "shadowraiders-a2dbc.firebaseapp.com",
-  projectId: "shadowraiders-a2dbc",
-  storageBucket: "shadowraiders-a2dbc.firebasestorage.app",
-  messagingSenderId: "577276689873",
-  appId: "1:577276689873:web:9a13faf90c3d6a791e34f0",
-  measurementId: "G-PKNEPDBVSS"
-};
-*/
+  <!-- 周囲の正ひし形6つ（六角形の各辺を共有） -->
+  <polygon class="shape" points="60.000,0.000 30.000,51.962 60.000,103.923 90.000,51.962"/>
+  <polygon class="shape" points="30.000,51.962 -30.000,51.962 -60.000,103.923 0.000,103.923"/>
+  <polygon class="shape" points="-30.000,51.962 -60.000,0.000 -120.000,0.000 -90.000,51.962"/>
+  <polygon class="shape" points="-60.000,0.000 -30.000,-51.962 -60.000,-103.923 -90.000,-51.962"/>
+  <polygon class="shape" points="-30.000,-51.962 30.000,-51.962 0.000,-103.923 -60.000,-103.923"/>
+  <polygon class="shape" points="30.000,-51.962 60.000,0.000 120.000,0.000 90.000,-51.962"/>
+</svg>
 
-const svg = document.getElementById('star');
-
-// ------- 基本寸法（数値を変えると全体のサイズが変わります） -------
-const s = 50;                // 正六角形の一辺＝正ひし形の一辺
-const cx = 0, cy = 0;        // 中心座標
-const rt3 = Math.sqrt(3);
-
-// 正六角形（水平に平らな面が上・下に来る向き）の頂点を返す
-function hexPoints(cx, cy, side){
-  const h = (rt3/2)*side;
-  const pts = [
-    [cx + side, cy],
-    [cx + side/2, cy + h],
-    [cx - side/2, cy + h],
-    [cx - side, cy],
-    [cx - side/2, cy - h],
-    [cx + side/2, cy - h]
-  ];
-  return pts;
-}
-
-// ベクタ便利関数
-const add = (a,b)=>[a[0]+b[0], a[1]+b[1]];
-const sub = (a,b)=>[a[0]-b[0], a[1]-b[1]];
-const mul = (a,k)=>[a[0]*k, a[1]*k];
-const len = (a)=>Math.hypot(a[0],a[1]);
-
-// 多角形要素を追加
-function polygon(points, cls='shape'){
-  const el = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-  el.setAttribute('points', points.map(p=>p.join(',')).join(' '));
-  el.setAttribute('class', cls);
-  svg.appendChild(el);
-  return el;
-}
-
-// 中央の正六角形
-const hex = hexPoints(cx, cy, s);
-polygon(hex);
-
-// 周囲の正ひし形6個
-// ひし形は「六角形の各辺をそのまま共有する平行四辺形（全辺= s、辺どうしの角度60°）」として作る
-for (let i=0;i<6;i++){
-  const a = hex[i];
-  const b = hex[(i+1)%6];
-
-  // 辺ベクトル e（長さ=s）
-  const e = sub(b, a);
-
-  // e と 60°の角度になるベクトル n を作る（|n| = s）
-  // 2D回転：R60 = [[cos60,-sin60],[sin60,cos60]]
-  const cos60 = 0.5, sin60 = rt3/2;
-  const n1 = [ e[0]*cos60 - e[1]*sin60,  e[0]*sin60 + e[1]*cos60 ];
-  const n2 = [ e[0]*cos60 + e[1]*sin60, -e[0]*sin60 + e[1]*cos60 ];
-
-  // 中心方向に対して「外側」に伸びる方を採用
-  const mid = [(a[0]+b[0])/2, (a[1]+b[1])/2];
-  const toMid = sub(mid,[cx,cy]);
-  const outward = ( (toMid[0]*n1[0] + toMid[1]*n1[1]) > 0 ) ? n1 : n2;
-
-  // ひし形の4頂点：a → b → b+n → a+n
-  const p1 = a;
-  const p2 = b;
-  const p3 = add(b, outward);
-  const p4 = add(a, outward);
-
-  polygon([p1,p2,p3,p4]);
-}
-
-// 枠に少し余白が出るようにオートフィット
-(function fit(){
-  const pad = 10;
-  const box = svg.getBBox();
-  svg.setAttribute('viewBox',
-    [box.x-pad, box.y-pad, box.width+pad*2, box.height+pad*2].join(' ')
-  );
-})();
-</script>
 </body>
 </html>
