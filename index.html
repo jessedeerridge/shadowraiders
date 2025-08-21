@@ -1313,25 +1313,24 @@ function renderEquipmentBar(equipData, participants){
     // 所持者アイコン
     holder.appendChild(makeEquipIcon(ps.name || '?', ps.color || ''));
 
-  // 装備カードたち（公開=正体カードを左側優先）
+// 装備カードたち
 const cardNames = Object.keys(cardsObj);
 
-// もし正体カードの定義を「右下の配布カード（＝自分の deal）」と一致させたい場合は
-// ここで order を制御して「公開した順」「特定名称」などで先頭に寄せる。
-// まずは単純にソートなどはせず、挿入位置だけを左寄せにする。
-cardNames.forEach((cardName, i)=>{
+// ▼ 正体カードを必ず先頭に移動
+const roleCards = [...ROLE_CARDS.raider, ...ROLE_CARDS.shadow, ...ROLE_CARDS.citizen];
+const roleCardsInHand = cardNames.filter(c => roleCards.includes(c));
+const others = cardNames.filter(c => !roleCards.includes(c));
+const ordered = [...roleCardsInHand, ...others];
+
+ordered.forEach(cardName=>{
   const c = document.createElement('div');
   c.className = 'equip-card';
   c.textContent = cardName;
 
-  // 所持者アイコンが holder.children[0] にあるため、その直後に挿入
-  // 最初のカードは常に左（＝直後）に置く
-  if (i === 0){
-    holder.insertBefore(c, holder.children[1] || null);
-  }else{
-    holder.appendChild(c);
-  }
+  // 所持者アイコンの直後に必ず挿入
+  holder.insertBefore(c, holder.children[1] || null);
 });
+
 
     bar.appendChild(holder);
   });
