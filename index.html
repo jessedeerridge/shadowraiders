@@ -3,74 +3,86 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>中央六角形＋外周五角形6</title>
+<title>中心：正六角形1／外周：五角形6</title>
 <style>
   html,body{height:100%;margin:0;background:#fff}
-  svg{display:block;margin:auto;max-width:95vmin;height:auto}
-  .shape{fill:#fff;stroke:#111;stroke-width:8;stroke-linejoin:round;stroke-linecap:round}
+  svg{display:block;margin:auto;max-width:94vmin;height:auto}
+  .shape{fill:#fff;stroke:#111;stroke-width:10;stroke-linejoin:round;stroke-linecap:round}
 </style>
 </head>
 <body>
-<svg id="art" viewBox="-200 -200 400 400"></svg>
+
+<svg id="art" viewBox="-200 -200 400 400" aria-label="中央に六角形、外周に五角形6つ"></svg>
 
 <script>
-const svg = document.getElementById("art");
+const svg = document.getElementById('art');
 const rt3 = Math.sqrt(3);
 
-// === 中央六角形 ===
-const side = 60;  // 六角形の一辺の長さ
-const h = rt3/2*side;
+/* ===== パラメータ（好みで調整可） ===== */
+const sideHex = 48;  // 中央の正六角形の一辺
+const tipLen  = 105; // 五角形の“先端”の外向き距離（大きくするとトゲが伸びる）
+const shoulder = 0.60; // 五角形の肩位置（0～1、0.6前後が画像風）
 
+/* 正六角形（横向き＝上下が平ら） */
 function hexPoints(cx, cy, s){
   const h = (rt3/2)*s;
   return [
-    [cx+s, cy],
-    [cx+s/2, cy+h],
-    [cx-s/2, cy+h],
-    [cx-s, cy],
-    [cx-s/2, cy-h],
-    [cx+s/2, cy-h]
+    [cx + s,     cy],
+    [cx + s/2,   cy + h],
+    [cx - s/2,   cy + h],
+    [cx - s,     cy],
+    [cx - s/2,   cy - h],
+    [cx + s/2,   cy - h],
   ];
 }
 
-function polygon(points){
-  const el = document.createElementNS("http://www.w3.org/2000/svg","polygon");
-  el.setAttribute("points", points.map(p=>p.join(",")).join(" "));
-  el.setAttribute("class","shape");
+/* SVG polygon 追加 */
+function poly(points){
+  const el = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+  el.setAttribute('points', points.map(p=>p.join(',')).join(' '));
+  el.setAttribute('class','shape');
   svg.appendChild(el);
+  return el;
 }
 
-const hex = hexPoints(0,0,side);
-polygon(hex);
+const add=(a,b)=>[a[0]+b[0],a[1]+b[1]];
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1]];
+const mul=(a,k)=>[a[0]*k,a[1]*k];
+const norm=(v)=>{ const L=Math.hypot(v[0],v[1])||1; return [v[0]/L, v[1]/L]; };
 
-// === 外周五角形 ===
-// 五角形は「六角形の辺を底辺として、その外側に二辺＋頂点」で構成
-function add(a,b){ return [a[0]+b[0],a[1]+b[1]]; }
-function sub(a,b){ return [a[0]-b[0],a[1]-b[1]]; }
-function mul(v,k){ return [v[0]*k,v[1]*k]; }
-function norm(v){ let L=Math.hypot(v[0],v[1])||1; return [v[0]/L,v[1]/L]; }
+/* 中央の正六角形（1つ） */
+const center = [0,0];
+const hex = hexPoints(0,0,sideHex);
+poly(hex);
 
+/* 外周の五角形 6つ（六角形の各辺に外向きに1つずつ） */
 for(let i=0;i<6;i++){
   const a = hex[i];
   const b = hex[(i+1)%6];
-  const mid = [(a[0]+b[0])/2,(a[1]+b[1])/2];
 
-  // 外向き法線ベクトル
-  const e = sub(b,a);
-  let n = [-e[1], e[0]];
-  // 中心から外側へ向かせる
-  const dot = (mid[0]*n[0] + mid[1]*n[1]);
-  if(dot<0) n = mul(n,-1);
-  n = norm(n);
+  // 辺の中点 → 中心 方向ベクトル（の逆向き = 外向き）
+  const mid = [(a[0]+b[0])/2, (a[1]+b[1])/2];
+  const outDir = norm(sub(mid, center));         // 中心から見た外向き方向
+  const outward = mul(outDir, tipLen);           // 先端までの距離
 
-  const tipLen = side; // 先端の高さ（＝辺長と同程度に）
-  const tip = add(mid, mul(n, tipLen));
+  // “肩”の位置（a,b から同じだけ外に押し出す）
+  const shoulderVec = mul(outDir, tipLen*shoulder);
+  const sA = add(a, shoulderVec);
+  const sB = add(b, shoulderVec);
+  const tip = add(mid, outward);
 
-  // 五角形 = a→b→(b+out/2)→tip→(a+out/2)
-  const outA = add(a, mul(n, tipLen*0.5));
-  const outB = add(b, mul(n, tipLen*0.5));
-  polygon([a,b,outB,tip,outA]);
+  // 五角形（底辺 a-b を共有）
+  poly([a, b, sB, tip, sA]);
 }
+
+/* 余白を自動調整 */
+(function fit(){
+  const pad = 16;
+  const box = svg.getBBox();
+  svg.setAttribute('viewBox',
+    [box.x-pad, box.y-pad, box.width+pad*2, box.height+pad*2].join(' ')
+  );
+})();
 </script>
 </body>
 </html>
