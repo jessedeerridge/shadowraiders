@@ -579,29 +579,10 @@ g.appendChild(box);
       label.textContent = (data.name || '?');
       g.appendChild(label);
 
-      // クリックで「上に1マス移動」（削除ポップを廃止）
-      g.addEventListener('click', async (e)=>{
-        if (state.isPointerDown) return;     // ドラッグ中の誤爆防止
-        const curX = parseFloat(g.getAttribute('data-x') || data.x || 0);
-        const curY = parseFloat(g.getAttribute('data-y') || data.y || 0);
-        const step = 24;                     // アイコン1個ぶんの高さ
-        const pos = clampToRect(curX, curY - step);
-
-        // ローカル表示を即時更新
-        g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
-        g.setAttribute('data-x', pos.x);
-        g.setAttribute('data-y', pos.y);
-
-        // バージョンを進めてDB更新（エコー順序担保）
-        const nextVer = (state.localMoveVer[uid] || 0) + 1;
-        state.localMoveVer[uid] = nextVer;
-        await update(ref(db, `rooms/${state.code}/icons/${uid}`), {
-          x: pos.x, y: pos.y, ver: nextVer
-        });
-      });
+      // ホスト削除ポップ
+      g.addEventListener('click', (e)=> maybeShowDeletePopover(e, 'seat', uid));
 
       layer.appendChild(g);
-
     }
 
     // 名前更新
@@ -689,6 +670,7 @@ g.appendChild(box);
         state.dragOffset.x = p.x - gx;
         state.dragOffset.y = p.y - gy;
         g.setPointerCapture(e.pointerId);
+ 　　　 g.dataset.dragMoved = '0';              // ★ 追加：ドラッグ判定をリセット
 
         // ★ キックガード：DBのエコーで元位置に“戻る”のを短時間だけ無視
         state.dragKickGuardUid = uid;
@@ -720,29 +702,22 @@ g.addEventListener('pointerup', (e)=>{
       // グローバル installGlobalPointerMove のみに一本化する
 
       // ホスト削除ポップ
-// 左長方形アイコン：クリックで一つ上に移動（削除ポップ無効化）
+// 左長方形内アイコン：クリックで「上に1個ぶん移動」
+// ただし直前にドラッグが走っていた場合は何もしない
 g.addEventListener('click', async (e)=>{
-  // ドラッグ中の誤爆を避ける
-  if (state.isPointerDown) return;
-
-  // 現在位置を取得（data-x / data-y がなければ作成時データ）
+  if (g.dataset.dragMoved === '1') {      // ← ドラッグ直後なら無視
+    g.dataset.dragMoved = '0';            // リセット
+    return;
+  }
   const curX = parseFloat(g.getAttribute('data-x') || data.x || 0);
   const curY = parseFloat(g.getAttribute('data-y') || data.y || 0);
+  const step = 24;                        // アイコン1個ぶんの高さ
+  const pos  = clampToRect(curX, curY - step);
 
-  // アイコン1個分(24px)だけ上へ
-  const nextY = curY - 24;
-  const pos = clampToRect(curX, nextY);   // 左長方形の内側にクランプ
+  const nextVer = (state.localMoveVer[uid] || 0) + 1;
+  state.localMoveVer[uid] = nextVer;
 
-  // 即時反映
-  g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
-  g.setAttribute('data-x', pos.x);
-  g.setAttribute('data-y', pos.y);
-
-  // DB更新（ローカルverをインクリメントしてエコー順序を担保）
-  const uidNow = uid;
-  const nextVer = (state.localMoveVer[uidNow] || 0) + 1;
-  state.localMoveVer[uidNow] = nextVer;
-  await update(ref(db, `rooms/${state.code}/icons/${uidNow}`), {
+  await update(ref(db, `rooms/${state.code}/icons/${uid}`), {
     x: pos.x,
     y: pos.y,
     ver: nextVer
