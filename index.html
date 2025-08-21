@@ -2,99 +2,295 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>中央六角形＋外周五角形6（左に狭い長方形）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>オンラインルーム（チャット無し＋図形②）</title>
 <style>
-  html,body{height:100%;margin:0;background:#fff}
-  svg{display:block;margin:auto;max-width:96vmin;height:auto}
+  :root { --gap:10px; }
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
+  header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee}
+  h1{margin:0;font-size:18px}
+  .small{font-size:12px;opacity:.75}
+  main{padding:14px;display:grid;gap:16px;max-width:900px;margin:0 auto}
+  .join-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .join-box input{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px}
+  .btn{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
+  .btn.ghost{background:#f8f8f8;color:#111}
+  .pill{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:2px 8px;font-size:12px;margin-left:6px}
+  .right{margin-left:auto}
+  .hidden{display:none !important}
+
+  /* 図形（②） */
+  html,body{height:100%}
+  #art{display:block;margin:auto;max-width:96vmin;height:auto}
   .shape{fill:#fff;stroke:#111;stroke-width:0.8;stroke-linejoin:round;stroke-linecap:round}
+  .room-line{font-size:14px}
+  .code-link{ text-decoration: underline; cursor: pointer; }
 </style>
 </head>
 <body>
-<svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
+<header>
+  <h1>オンラインルーム</h1>
+  <div class="small" id="headerInfo"></div>
+</header>
 
-<script>
-const svg = document.getElementById('art');
-const rt3 = Math.sqrt(3);
+<main>
+  <!-- 入室 -->
+  <section id="joinPanel" class="join-box">
+    <input id="nameInput" placeholder="名前（1文字）" maxlength="1" inputmode="text" />
+    <input id="codeInput" placeholder="ルームコード（例: 1234）" maxlength="12" inputmode="numeric" />
+    <button id="btnJoin" class="btn">入室</button>
+  </section>
 
-// ---- パラメータ ----
-const s0 = 48;   // 中央六角形の一辺
-const s1 = 82;   // 中間六角形の一辺
-const rectScale = 0.40; // ← 幅を元の0.60から 2/3 に狭めた
-const gap = 20;         // 星との間隔
+  <!-- ルーム情報（チャットは廃止） -->
+  <section id="roomPanel" class="hidden">
+    <div class="room-line">
+      部屋コード：<span id="roomBadge" class="code-link"></span>
+      <span class="pill">参加者 <span id="memberCount">0</span> 人</span>
+      <span class="pill right">あなた：<span id="selfName"></span></span>
+    </div>
+    <div style="margin-top:10px;">
+      <!-- 図形②：左に狭い長方形＋右に星形（中央六角形＋外周五角形6） -->
+      <svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;">
+      <button id="btnLeave" class="btn ghost">退室</button>
+    </div>
+  </section>
+</main>
 
-function hexFlat(cx, cy, s){
-  const h = (rt3/2)*s;
-  return [
-    [cx+s,   cy],
-    [cx+s/2, cy+h],
-    [cx-s/2, cy+h],
-    [cx-s,   cy],
-    [cx-s/2, cy-h],
-    [cx+s/2, cy-h],
-  ];
-}
+<!-- Firebase（v9 モジュール） -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+  import {
+    getDatabase, ref, set, onValue, onDisconnect, remove
+  } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-// 星グループ
-const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-g.setAttribute('id','star');
-svg.appendChild(g);
+  /* あなたの Firebase 設定（そのまま利用） */
+  const firebaseConfig = {
+    apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
+    authDomain: "shadowraiders-a2dbc.firebaseapp.com",
+    projectId: "shadowraiders-a2dbc",
+    storageBucket: "shadowraiders-a2dbc.firebasestorage.app",
+    messagingSenderId: "577276689873",
+    appId: "1:577276689873:web:9a13faf90c3d6a791e34f0",
+    measurementId: "G-PKNEPDBVSS"
+  };
 
-function poly(pts){
-  const el = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-  el.setAttribute('points', pts.map(p=>p.join(',')).join(' '));
-  el.setAttribute('class','shape');
-  g.appendChild(el);
-}
+  // --- 初期化 ---
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
 
-const add=(a,b)=>[a[0]+b[0],a[1]+b[1]];
-const sub=(a,b)=>[a[0]-b[0],a[1]-b[1]];
-const mul=(a,k)=>[a[0]*k,a[1]*k];
-const norm=(v)=>{ const L=Math.hypot(v[0],v[1])||1; return [v[0]/L,v[1]/L]; };
+  // --- DOM ---
+  const headerInfo    = document.getElementById('headerInfo');
+  const joinPanel     = document.getElementById('joinPanel');
+  const nameInput     = document.getElementById('nameInput');
+  const codeInput     = document.getElementById('codeInput');
+  const btnJoin       = document.getElementById('btnJoin');
 
-function intersectRayRay(p,u,q,v){
-  const A = [[u[0], -v[0]], [u[1], -v[1]]];
-  const b = sub(q,p);
-  const det = A[0][0]*A[1][1] - A[0][1]*A[1][0];
-  const t = ( b[0]*A[1][1] - b[1]*A[0][1]) / det;
-  return add(p, mul(u, t));
-}
+  const roomPanel     = document.getElementById('roomPanel');
+  const roomBadge     = document.getElementById('roomBadge');
+  const memberCountEl = document.getElementById('memberCount');
+  const selfNameEl    = document.getElementById('selfName');
+  const btnLeave      = document.getElementById('btnLeave');
 
-// 星形
-const H0 = hexFlat(0,0,s0);
-const H1 = hexFlat(0,0,s1);
-poly(H0);
-for(let i=0;i<6;i++){
-  const ip=(i+5)%6, inx=(i+1)%6, inx2=(i+2)%6;
-  const a0=H0[i], b0=H0[inx], a1=H1[i], b1=H1[inx];
-  const dirFromA1=norm(sub(H1[i],H1[ip]));
-  const dirFromB1=norm(sub(H1[inx2],H1[inx]));
-  const tip=intersectRayRay(a1,dirFromA1,b1,dirFromB1);
-  poly([a0,b0,b1,tip,a1]);
-}
+  // --- 状態 ---
+  const state = {
+    uid: crypto.randomUUID(),
+    name: "",
+    code: "",
+    joined: false,
+    unsub: [] // リスナー解除
+  };
 
-// 左の長方形
-const starBox = g.getBBox();
-const rectH = starBox.height;
-const rectW = rectH * rectScale;  // 幅を縮小
-const rectX = starBox.x - gap - rectW;
-const rectY = starBox.y;
+  // --- ユーティリティ ---
+  function randomLetter(){
+    return String.fromCharCode(65 + Math.floor(Math.random()*26)); // A-Z
+  }
+  function random4(){
+    return String(Math.floor(Math.random()*10000)).padStart(4, '0');
+  }
+  // 許可：A-Za-z / ひらがな / カタカナ / CJK(漢字) のいずれか1文字
+  const NAME_RE = /^[A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]$/;
 
-const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
-rect.setAttribute('x', rectX);
-rect.setAttribute('y', rectY);
-rect.setAttribute('width', rectW);
-rect.setAttribute('height', rectH);
-rect.setAttribute('class','shape');
-svg.appendChild(rect);
+  function normalizeName(raw){
+    const t = (raw || "").trim();
+    if (!t) return randomLetter();
+    const c = t[0]; // 1文字だけ採用
+    return NAME_RE.test(c) ? c : randomLetter();
+  }
 
-// viewBox調整
-(function fit(){
-  const pad=14, box=svg.getBBox();
-  svg.setAttribute('viewBox',
-    [box.x-pad, box.y-pad, box.width+pad*2, box.height+pad*2].join(' ')
-  );
-})();
+  function buildRoomLink(code){
+    const url = new URL(location.href);
+    url.searchParams.set('room', code);
+    return url.toString();
+  }
+
+  function show(el, yes){ el.classList.toggle('hidden', !yes); }
+
+  // --- 入室処理（チャット無し／参加者だけ管理） ---
+  async function join(){
+    const name = normalizeName(nameInput.value);
+    const code = (codeInput.value || "").trim() || random4();
+
+    state.name = name;
+    state.code = code;
+
+    // 参加者登録（部屋が無ければ初回作成）
+    const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
+    await set(meRef, { name, at: Date.now() });
+    onDisconnect(meRef).remove();
+
+    // UI
+    selfNameEl.textContent = name;
+    roomBadge.textContent = code;
+    roomBadge.onclick = ()=>{
+      const link = buildRoomLink(code);
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(link).then(()=> alert('招待リンクをコピーしました'));
+      } else {
+        prompt('コピーできない場合はこのテキストをコピーしてください', link);
+      }
+    };
+    headerInfo.innerHTML = `コード：<span class="code-link">${code}</span>　/　あなた：${name}`;
+
+    show(joinPanel, false);
+    show(roomPanel, true);
+
+    // 参加者数の監視
+    const membersRef = ref(db, `rooms/${code}/participants`);
+    const offMembers = onValue(membersRef, (snap)=>{
+      const obj = snap.val() || {};
+      memberCountEl.textContent = Object.keys(obj).length;
+    });
+    state.unsub.push(offMembers);
+
+    state.joined = true;
+
+    // 図形②を描く
+    drawFigure2();
+  }
+
+  // --- 退室処理 ---
+  async function leave(){
+    if (!state.joined) return;
+    const { code } = state;
+
+    // 参加者から削除
+    await remove(ref(db, `rooms/${code}/participants/${state.uid}`));
+
+    // リスナー解除
+    state.unsub.forEach(off => off && off());
+    state.unsub = [];
+
+    // UI 戻す
+    show(roomPanel, false);
+    show(joinPanel, true);
+    state.joined = false;
+  }
+
+  // --- 事件 ---
+  btnJoin.onclick = join;
+  btnLeave.onclick = leave;
+
+  // URL パラメータで事前入力（任意）
+  try{
+    const qs = new URLSearchParams(location.search);
+    const qRoom = (qs.get('room')||'').trim();
+    const qName = (qs.get('name')||'').trim();
+    if (qRoom) codeInput.value = qRoom.slice(0, 12);
+    if (qName) nameInput.value = qName.slice(0, 1);
+  }catch(_e){}
+
+  // === 図形②：左に狭い長方形＋右に星形（中央六角形＋外周五角形6） ===
+  function drawFigure2(){
+    const svg = document.getElementById('art');
+    if (!svg) return;
+    svg.innerHTML = ''; // 再入室対策で一旦クリア
+    const rt3 = Math.sqrt(3);
+
+    // ---- パラメータ ----
+    const s0 = 48;   // 中央六角形の一辺
+    const s1 = 82;   // 中間六角形の一辺
+    const rectScale = 0.40; // 幅を狭く
+    const gap = 20;         // 星との間隔
+
+    function hexFlat(cx, cy, s){
+      const h = (rt3/2)*s;
+      return [
+        [cx+s,   cy],
+        [cx+s/2, cy+h],
+        [cx-s/2, cy+h],
+        [cx-s,   cy],
+        [cx-s/2, cy-h],
+        [cx+s/2, cy-h],
+      ];
+    }
+
+    // 星グループ
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('id','star');
+    svg.appendChild(g);
+
+    function poly(pts){
+      const el = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+      el.setAttribute('points', pts.map(p=>p.join(',')).join(' '));
+      el.setAttribute('class','shape');
+      g.appendChild(el);
+    }
+
+    const add=(a,b)=>[a[0]+b[0],a[1]+b[1]];
+    const sub=(a,b)=>[a[0]-b[0],a[1]-b[1]];
+    const mul=(a,k)=>[a[0]*k,a[1]*k];
+    const norm=(v)=>{ const L=Math.hypot(v[0],v[1])||1; return [v[0]/L,v[1]/L]; };
+
+    function intersectRayRay(p,u,q,v){
+      const A = [[u[0], -v[0]], [u[1], -v[1]]];
+      const b = sub(q,p);
+      const det = A[0][0]*A[1][1] - A[0][1]*A[1][0];
+      const t = ( b[0]*A[1][1] - b[1]*A[0][1]) / det;
+      return add(p, mul(u, t));
+    }
+
+    // 星形（中央六角形＋各辺から五角形を押し出し）
+    const H0 = hexFlat(0,0,s0);
+    const H1 = hexFlat(0,0,s1);
+
+    // 中央六角形
+    poly(H0);
+
+    // 外周五角形 ×6
+    for(let i=0;i<6;i++){
+      const ip=(i+5)%6, inx=(i+1)%6, inx2=(i+2)%6;
+      const a0=H0[i], b0=H0[inx], a1=H1[i], b1=H1[inx];
+      const dirFromA1=norm(sub(H1[i],H1[ip]));
+      const dirFromB1=norm(sub(H1[inx2],H1[inx]));
+      const tip=intersectRayRay(a1,dirFromA1,b1,dirFromB1);
+      poly([a0,b0,b1,tip,a1]);
+    }
+
+    // 左の長方形
+    const starBox = g.getBBox();
+    const rectH = starBox.height;
+    const rectW = rectH * rectScale;
+    const rectX = starBox.x - gap - rectW;
+    const rectY = starBox.y;
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', rectX);
+    rect.setAttribute('y', rectY);
+    rect.setAttribute('width', rectW);
+    rect.setAttribute('height', rectH);
+    rect.setAttribute('class','shape');
+    svg.appendChild(rect);
+
+    // viewBox 調整
+    (function fit(){
+      const pad=14, box=svg.getBBox();
+      svg.setAttribute('viewBox',
+        [box.x-pad, box.y-pad, box.width+pad*2, box.height+pad*2].join(' ')
+      );
+    })();
+  }
 </script>
 </body>
 </html>
