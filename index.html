@@ -27,6 +27,10 @@
   .usericon{cursor:grab}
   .usericon.dragging{cursor:grabbing;opacity:.85}
 
+  /* 右側の席アイコン（部屋クリックで生成） */
+  .seaticon rect{fill:#fff;stroke:#111;stroke-width:0.8;rx:6;ry:6}
+  .seaticon text{font-size:12px;font-weight:700;dominant-baseline:middle;text-anchor:middle}
+
   /* 7部屋のヒット領域（通常は透明、クリック時だけフラッシュ） */
   .roomhit{fill:transparent;stroke:none;pointer-events:auto}
   .roomhit.flash{fill:#eee;transition:fill 60ms}
@@ -41,7 +45,7 @@
   }
   .deck-back.green{background:#c7f5c1;}
   .deck-back.white{background:#ffffff;}
-  .deck-back.black{background:#cfcfcf; /* 裏面は黒系指定だけど文字が見えるよう薄グレー */ }
+  .deck-back.black{background:#cfcfcf;} /* 真っ黒にするなら #000; color:#fff; に変更 */
   .deck-label{font-size:12px;opacity:.8}
   .deck-face{
     min-width:70px;min-height:40px;border:1px dashed #bbb;border-radius:8px;
@@ -54,6 +58,7 @@
 <header>
   <h1>オンラインルーム</h1>
   <div class="small" id="headerInfo"></div>
+  <div class="small" id="myRoomBadge">部屋：未選択</div>
 </header>
 
 <main>
@@ -80,10 +85,10 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
   import {
-    getDatabase, ref, set, onValue, onChildRemoved, onDisconnect, remove, get, update
+    getDatabase, ref, set, onValue, onDisconnect, remove, get, update
   } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-  /* Firebase 設定（そのまま） */
+  /* Firebase 設定 */
   const firebaseConfig = {
     apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
     authDomain: "shadowraiders-a2dbc.firebaseapp.com",
@@ -100,6 +105,7 @@
 
   // --- DOM ---
   const headerInfo    = document.getElementById('headerInfo');
+  const myRoomBadge   = document.getElementById('myRoomBadge');
   const joinPanel     = document.getElementById('joinPanel');
   const nameInput     = document.getElementById('nameInput');
   const codeInput     = document.getElementById('codeInput');
@@ -114,7 +120,7 @@
     code: "",
     joined: false,
     unsub: [],
-    rectBBox: null,
+    rectBBox: null,       // 左長方形の座標
     draggingUid: null,
     isPointerDown: false,
     dragOffset: {x:0,y:0}
@@ -214,12 +220,12 @@
     rect.setAttribute('id','leftRect');
     svg.appendChild(rect);
 
-    // アイコン用レイヤ（左長方形内ドラッグ対象）
+    // 左長方形内のアイコン用レイヤ
     const iconsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
     iconsLayer.setAttribute('id','icons');
     svg.appendChild(iconsLayer);
 
-    // === 7部屋ヒット層（非表示） ===
+    // === 7部屋ヒット層（非表示だがクリック可） ===
     const roomsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
     roomsLayer.setAttribute('id','rooms');
     svg.appendChild(roomsLayer);
@@ -227,14 +233,19 @@
     // 中央六角形（room 1）
     const hitHex = poly(H0, 'roomhit', roomsLayer);
     hitHex.dataset.room = '1';
-    hitHex.addEventListener('click', flashRoom);
+    hitHex.addEventListener('click', onRoomClick);
 
     // 外周五角形（room 2〜7）
     for(let i=0;i<6;i++){
       const hitPent = poly(pentPoints[i], 'roomhit', roomsLayer);
       hitPent.dataset.room = String(2 + i); // 2..7
-      hitPent.addEventListener('click', flashRoom);
+      hitPent.addEventListener('click', onRoomClick);
     }
+
+    // 席アイコン用レイヤ（最前面）
+    const seatsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
+    seatsLayer.setAttribute('id','seats');
+    svg.appendChild(seatsLayer);
 
     // viewBox 調整
     (function fit(){
@@ -291,7 +302,6 @@
     const decksRef = ref(db, `rooms/${state.code}/decks`);
     const off = onValue(decksRef, (snap)=>{
       const v = snap.val() || {};
-      // UI反映
       ['green','white','black'].forEach(id=>{
         const idx = (v[id]?.idx ?? -1);
         const faceEl = decksEl.querySelector(`.deck[data-deck="${id}"] .deck-face`);
@@ -306,23 +316,39 @@
   async function advanceDeck(deckId){
     const def = DECKS_DEF[deckId];
     const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
-
-    // 現在インデックス読み出し → +1 → 保存
     const snap = await get(deckPath);
     const curIdx = snap.exists() && typeof snap.val().idx === 'number' ? snap.val().idx : -1;
     const nextIdx = (curIdx + 1) % def.cards.length;
     await set(deckPath, { idx: nextIdx, at: Date.now() });
-    // onValue が全員に反映してくれる
   }
 
-  // ===== 右側7部屋：クリックで薄グレーフラッシュ（番号は内部 data-room） =====
-  function flashRoom(ev){
+  // ===== 右側：部屋クリックで席アイコン（最大1つ）＋部屋番号バッジ更新 =====
+  async function onRoomClick(ev){
+    const svg = document.getElementById('art');
     const el = ev.currentTarget;
+    const roomNo = Number(el.dataset.room || 0);
+
+    // フラッシュ
     el.classList.add('flash');
     setTimeout(()=> el.classList.remove('flash'), 140);
+
+    // クリック座標（SVG座標）
+    const p = toSvgCoords(svg, ev.clientX, ev.clientY);
+
+    // 自分の席を DB に保存（同じ uid のデータを上書き → 常に最大1つ）
+    await set(ref(db, `rooms/${state.code}/seats/${state.uid}`), {
+      name: state.name,
+      room: roomNo,
+      x: p.x - 14,   // アイコン中心補正
+      y: p.y - 10,
+      at: Date.now()
+    });
+
+    // 自分の部屋バッジ更新
+    myRoomBadge.textContent = `部屋：${roomNo}`;
   }
 
-  // ===== 左長方形（2つ前のコードのまま） =====
+  // SVG座標に変換（左長方形・部屋クリックの両方で使用）
   function toSvgCoords(svg, clientX, clientY){
     const pt = svg.createSVGPoint();
     pt.x = clientX; pt.y = clientY;
@@ -331,6 +357,41 @@
     return {x: sp.x, y: sp.y};
   }
 
+  // ===== 右側の席アイコン：生成＆更新（全員分） =====
+  function renderOrUpdateSeat(uid, data){
+    const svg = document.getElementById('art');
+    const layer = document.getElementById('seats');
+    if (!svg || !layer || !data) return;
+
+    let g = layer.querySelector(`g[data-uid="${uid}"]`);
+    if (!g){
+      g = document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','seaticon');
+      g.setAttribute('data-uid', uid);
+
+      const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      box.setAttribute('width', 28);
+      box.setAttribute('height', 20);
+      g.appendChild(box);
+
+      const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+      label.setAttribute('x', 14);
+      label.setAttribute('y', 10);
+      label.textContent = (data.name || '?');
+      g.appendChild(label);
+
+      layer.appendChild(g);
+    }
+
+    // 名前更新
+    const text = g.querySelector('text');
+    if (text && text.textContent !== (data.name || '?')) text.textContent = (data.name || '?');
+
+    // 位置更新
+    g.setAttribute('transform', `translate(${data.x},${data.y})`);
+  }
+
+  // ===== 左長方形（2つ前のコードのまま） =====
   function clampToRect(x, y){
     const r = state.rectBBox;
     const w = 28, h = 20;
@@ -344,6 +405,7 @@
     };
   }
 
+  // 左長方形クリック：自分のアイコンを1回だけ作成
   async function onRectClickOnce(ev){
     const svg = document.getElementById('art');
     const rectEl = document.getElementById('leftRect');
@@ -424,7 +486,7 @@
     const text = g.querySelector('text');
     if (text && text.textContent !== (data.name || '?')) text.textContent = (data.name || '?');
 
-    // 位置更新（自分がドラッグ中はリモート反映をスキップ）
+    // 自分がドラッグ中はリモート更新を抑止
     if (!(state.isPointerDown && state.draggingUid === uid)) {
       g.setAttribute('transform', `translate(${data.x},${data.y})`);
       g.setAttribute('data-x', data.x);
@@ -444,7 +506,7 @@
     };
   }
 
-  // --- 入室処理（参加者登録＋図形＋左長方形アイコン同期＋山札同期） ---
+  // --- 入室処理（参加者登録＋図形＋左長方形アイコン同期＋席同期＋山札同期） ---
   async function join(){
     const name = normalizeName(nameInput.value);
     const code = (codeInput.value || "").trim() || random4();
@@ -457,11 +519,11 @@
     await set(meRef, { name, at: Date.now() });
     onDisconnect(meRef).remove();
 
-    headerInfo.textContent = ''; // 表示は無し
+    headerInfo.textContent = ''; // 表示は未使用
     show(joinPanel, false);
     show(roomPanel, true);
 
-    // 図形（左長方形・部屋ヒット領域含む）
+    // 図形（左長方形・部屋ヒット領域・席レイヤ作成）
     drawFigure2();
 
     // 左長方形アイコンの同期
@@ -479,13 +541,32 @@
     });
     state.unsub.push(offIcons);
 
+    // 右側：席アイコンの同期（全員分）＋自分の部屋バッジの同期
+    const seatsRef = ref(db, `rooms/${code}/seats`);
+    const offSeats = onValue(seatsRef, (snap)=>{
+      const data = snap.val() || {};
+      Object.entries(data).forEach(([uid, seat])=> renderOrUpdateSeat(uid, seat));
+      // 削除反映
+      const layer = document.getElementById('seats');
+      if (layer){
+        [...layer.querySelectorAll('g.seaticon')].forEach(el=>{
+          const uid = el.getAttribute('data-uid');
+          if (!(uid in data)) el.remove();
+        });
+      }
+      // 自分の部屋バッジ
+      const mine = data[state.uid];
+      myRoomBadge.textContent = mine ? `部屋：${mine.room}` : '部屋：未選択';
+    });
+    state.unsub.push(offSeats);
+
     // 山札UIを用意＆同期開始
     setupDecks();
 
     state.joined = true;
   }
 
-  // 離脱時に在室削除（左長方形アイコンや山札の状態は残す運用）
+  // 離脱時に在室削除（席/山札の状態は残す運用）
   window.addEventListener('beforeunload', ()=>{
     if (state.joined) remove(ref(db, `rooms/${state.code}/participants/${state.uid}`));
   });
