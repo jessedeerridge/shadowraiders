@@ -9,18 +9,16 @@
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
   header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee}
   h1{margin:0;font-size:18px}
-  .small{font-size:12px;opacity:.75}
+  .small{font-size:12px;opacity:.85}
   main{padding:14px;display:grid;gap:16px;max-width:900px;margin:0 auto}
   .join-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .join-box input{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px}
   .btn{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
   .btn.ghost{background:#f8f8f8;color:#111}
-  .pill{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:2px 8px;font-size:12px;margin-left:6px}
-  .right{margin-left:auto}
   .code-link{ text-decoration: underline; cursor: pointer; }
 
   /* ルーム画面 */
-  .wrap{display:grid;grid-template-rows:auto 1fr auto;gap:var(--gap)}
+  .wrap{display:grid;grid-template-rows:1fr auto;gap:var(--gap)}
   .stage{
     position:relative;
     aspect-ratio:1/1;
@@ -68,24 +66,34 @@
 
   <!-- ルーム画面（六芒星） -->
   <section id="roomPanel" class="wrap" style="display:none;">
-    <div>
-      部屋コード：<span id="roomBadge" class="code-link"></span>
-      <span class="pill">参加者 <span id="memberCount">0</span> 人</span>
-      <span class="pill right">あなた：<span id="selfName"></span></span>
-    </div>
-
+    <!-- ※ご要望により左上のコード/参加者/あなた 行は削除 -->
     <div class="stage" id="stage">
       <svg id="starSvg" viewBox="0 0 100 100" aria-label="六芒星（クリックで名前を置く）">
-        <!-- 6つの外側三角形（クリック対象） -->
-        <polygon class="tri" data-pos="0" points="96,50 76,50 63,72.5" />
-        <polygon class="tri" data-pos="1" points="73,89.8 63,72.5 37,72.5" />
-        <polygon class="tri" data-pos="2" points="27,89.8 37,72.5 24,50" />
-        <polygon class="tri" data-pos="3" points="4,50 24,50 37,27.5" />
-        <polygon class="tri" data-pos="4" points="27,10.2 37,27.5 63,27.5" />
-        <polygon class="tri" data-pos="5" points="73,10.2 63,27.5 76,50" />
-        <!-- 中央六角形（クリック対象） -->
+        <!-- 正六角形（内側の基準は半径28で構築、クリック対象の中央六角形は半径20で少し小さく） -->
+        <!-- 6つの正三角形（各辺＝内側六角形の一辺、頂点は外側へ等距離） -->
+        <!-- 頂点計算：内側六角 r=28, apothem≈24.25, 外側頂点半径≈48.50 -->
+        <!-- 三角形0（右） -->
+        <polygon class="tri" data-pos="0"
+          points="78,50 64,74.25 98.5,50" />
+        <!-- 三角形1（右下） -->
+        <polygon class="tri" data-pos="1"
+          points="64,74.25 36,74.25 74.25,92" />
+        <!-- 三角形2（左下） -->
+        <polygon class="tri" data-pos="2"
+          points="36,74.25 22,50 25.75,92" />
+        <!-- 三角形3（左） -->
+        <polygon class="tri" data-pos="3"
+          points="22,50 36,25.75 1.5,50" />
+        <!-- 三角形4（左上） -->
+        <polygon class="tri" data-pos="4"
+          points="36,25.75 64,25.75 25.75,8" />
+        <!-- 三角形5（右上） -->
+        <polygon class="tri" data-pos="5"
+          points="64,25.75 78,50 74.25,8" />
+
+        <!-- クリック対象の中央・小さめ正六角形（r=20） -->
         <polygon class="hex" data-pos="6"
-          points="76,50 63,72.5 37,72.5 24,50 37,27.5 63,27.5" />
+          points="70,50 60,67.32 40,67.32 30,50 40,32.68 60,32.68" />
       </svg>
       <div class="labels" id="labels"></div>
     </div>
@@ -126,11 +134,7 @@
   const btnJoin       = document.getElementById('btnJoin');
 
   const roomPanel     = document.getElementById('roomPanel');
-  const roomBadge     = document.getElementById('roomBadge');
-  const memberCountEl = document.getElementById('memberCount');
-  const selfNameEl    = document.getElementById('selfName');
   const stageEl       = document.getElementById('stage');
-  const svgEl         = document.getElementById('starSvg');
   const labelsEl      = document.getElementById('labels');
   const btnLeave      = document.getElementById('btnLeave');
 
@@ -203,29 +207,26 @@
     const myPlaceRef = ref(db, `rooms/${code}/placements/${state.uid}`);
     onDisconnect(myPlaceRef).remove();
 
-    // UI
-    selfNameEl.textContent = name;
-    roomBadge.textContent = code;
-    roomBadge.onclick = ()=>{
-      const link = buildRoomLink(code);
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(link).then(()=> alert('招待リンクをコピーしました'));
-      } else {
-        prompt('コピーできない場合はこのテキストをコピーしてください', link);
+    // 右上（ヘッダー右）にコードと名前のみ表示
+    const link = buildRoomLink(code);
+    headerInfo.innerHTML =
+      `コード：<span class="code-link" id="headerCode">${code}</span>　/　あなた：<strong>${name}</strong>`;
+    // クリックで招待リンクコピー
+    setTimeout(()=>{
+      const codeEl = document.getElementById('headerCode');
+      if (codeEl){
+        codeEl.onclick = ()=>{
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(link).then(()=> alert('招待リンクをコピーしました'));
+          } else {
+            prompt('コピーできない場合はこのテキストをコピーしてください', link);
+          }
+        };
       }
-    };
-    headerInfo.innerHTML = `コード：<span class="code-link" onclick="void(0)">${code}</span>　/　あなた：${name}`;
+    },0);
 
     showJoin(false);
     state.joined = true;
-
-    // 参加者数の監視
-    const membersRef = ref(db, `rooms/${code}/participants`);
-    const offMembers = onValue(membersRef, (snap)=>{
-      const obj = snap.val() || {};
-      memberCountEl.textContent = Object.keys(obj).length;
-    });
-    state.off.push(offMembers);
 
     // 配置の監視（全員分）
     const placesRef = ref(db, `rooms/${code}/placements`);
@@ -248,6 +249,7 @@
     state.off = [];
     // UI 戻す
     renderLabels(null);
+    headerInfo.textContent = '';
     showJoin(true);
     state.joined = false;
   }
@@ -267,7 +269,7 @@
 
     const payload = {
       name: state.name,
-      pos: Number(posIdx), // 0..5=三角, 6=中央六角形（参考: 使用は任意）
+      pos: Number(posIdx), // 0..5=正三角, 6=中央小六角
       x: Math.max(0, Math.min(100, +xPct.toFixed(1))),
       y: Math.max(0, Math.min(100, +yPct.toFixed(1))),
       at: Date.now()
@@ -280,7 +282,6 @@
   document.getElementById('btnLeave').onclick = leave;
   document.getElementById('starSvg').addEventListener('click', onStarClick);
   window.addEventListener('beforeunload', leave);
-  // Enterキーで即入室
   nameInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') join(); });
   codeInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') join(); });
 
