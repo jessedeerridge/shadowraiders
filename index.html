@@ -215,21 +215,19 @@
   const dealCardFace  = document.getElementById('dealCardFace');
 
   // --- 状態 ---
-const state = {
-  uid: crypto.randomUUID(),
-  name: "",
-  code: "",
-  joined: false,
-  unsub: [],
-  rectBBox: null,
-  draggingUid: null,
-  isPointerDown: false,
-  dragOffset: {x:0,y:0},
-  isHost: false,
-  started: false,
-  lockScrollOnRect: false,   // ← 追加：左長方形内タッチ中はスクロール禁止
-};
-
+  const state = {
+    uid: crypto.randomUUID(),
+    name: "",
+    code: "",
+    joined: false,
+    unsub: [],
+    rectBBox: null,
+    draggingUid: null,
+    isPointerDown: false,
+    dragOffset: {x:0,y:0},
+    isHost: false,
+    started: false,
+  };
 
   // --- ユーティリティ ---
   function randomLetter(){ return String.fromCharCode(65 + Math.floor(Math.random()*26)); }
@@ -339,32 +337,17 @@ const state = {
     const rectX = starBox.x - gap - rectW;
     const rectY = starBox.y;
 
-const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
-rect.setAttribute('x', rectX);
-rect.setAttribute('y', rectY);
-rect.setAttribute('width', rectW);
-rect.setAttribute('height', rectH);
-rect.setAttribute('class','shape');
-rect.setAttribute('id','leftRect');
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', rectX);
+    rect.setAttribute('y', rectY);
+    rect.setAttribute('width', rectW);
+    rect.setAttribute('height', rectH);
+    rect.setAttribute('class','shape');
+    rect.setAttribute('id','leftRect');
+    svg.appendChild(rect);
 
-// ▼ 左長方形内タッチ中はスクロールを止める
-rect.addEventListener('touchstart', ()=>{
-  state.lockScrollOnRect = true;
-}, { passive:true });
-
-rect.addEventListener('touchend', ()=>{
-  state.lockScrollOnRect = false;
-}, { passive:true });
-
-rect.addEventListener('touchcancel', ()=>{
-  state.lockScrollOnRect = false;
-}, { passive:true });
-
-svg.appendChild(rect);
-
-// 左長方形内のアイコン用レイヤ
-const iconsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
-
+    // 左長方形内のアイコン用レイヤ
+    const iconsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
     iconsLayer.setAttribute('id','icons');
     svg.appendChild(iconsLayer);
 
@@ -1000,11 +983,6 @@ g.appendChild(box);
   });
 
   btnJoin.onclick = join;
-
-  // 左長方形内タッチ中は画面スクロールを抑止（iOS含む確実対策）
-document.addEventListener('touchmove', (e)=>{
-  if (state.lockScrollOnRect) e.preventDefault();
-}, { passive:false });
 
   // 事前入力
   try{
