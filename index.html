@@ -3,280 +3,215 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>シンプルオンラインルーム（七部屋＋長方形）</title>
+<title>六芒風（六角＋周囲五角形）クリック＆ドラッグ</title>
 <style>
-  :root { --gap:10px; --dock-w:28; } /* 左長方形の幅（%） */
+  :root { --gap:10px; }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
   header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee}
   h1{margin:0;font-size:18px}
-  .small{font-size:12px;opacity:.85}
-  main{padding:14px;display:grid;gap:16px;max-width:980px;margin:0 auto}
+  .small{font-size:12px;opacity:.75}
+  main{padding:14px;display:grid;gap:16px;max-width:900px;margin:0 auto}
+
+  /* 入室 */
   .join-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .join-box input{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px}
   .btn{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
-  .btn.ghost{background:#f8f8f8;color:#111}
-  .code-link{ text-decoration: underline; cursor: pointer; }
+  .hidden{display:none !important}
 
-  /* ルーム画面 */
-  .wrap{display:grid;grid-template-rows:1fr auto;gap:var(--gap)}
-  .stage{ position:relative; aspect-ratio:1/1; width:min(92vw, 720px); margin:0 auto; }
-  svg{width:100%;height:100%;display:block}
-
-  /* ラベル */
-  .labels{ position:absolute; inset:0; pointer-events:none; }
-  .label{
-    position:absolute; transform:translate(-50%,-80%);
-    background:rgba(255,255,255,.9); border:1px solid #ddd; border-radius:10px;
-    padding:2px 6px; font-weight:700; font-size:14px; white-space:nowrap;
-    box-shadow:0 1px 3px rgba(0,0,0,.08);
+  /* ボード（長方形） */
+  .board-wrap{
+    display:grid;place-items:center;
+    height:70vh;border:1px solid #eee;border-radius:12px;padding:12px;
   }
-
-  /* 枠線は直線（miter） */
-  .outline polygon{ fill:none; stroke:#111; stroke-width:3; stroke-linejoin:miter; stroke-linecap:butt; }
-  .innerline{ fill:none; stroke:#111; stroke-width:3; stroke-linejoin:miter; stroke-linecap:butt; }
-
-  /* クリック可能エリア（7部屋） */
-  .area{ fill:rgba(0,0,0,0.0001); cursor:pointer; }
-  .area:hover{ fill:rgba(100,150,255,0.12); }
-
-  /* 左長方形のヒット領域（クリックで1回だけ出現、以後は固定） */
-  .dock-hit{ position:absolute; left:0; top:0; width:calc(var(--dock-w) * 1%); height:100%; pointer-events:auto; }
+  svg{max-width:min(92vw,700px); max-height:60vh; background:#fafafa; border-radius:10px;}
+  .cell { cursor:pointer; transition:opacity .1s ease; }
+  .cell:hover { opacity:.9; }
+  /* 配色（視認性重視、自由に変更可） */
+  .hex { fill:#fff7e6; stroke:#ffc266; stroke-width:1.2; }
+  .penta { fill:#eef5ff; stroke:#9db8ff; stroke-width:1.2; }
+  .outline { fill:none; stroke:#aaa; stroke-width:1.2; pointer-events:none; }
+  .label { font-weight:700; font-size:28px; user-select:none; cursor:move; }
 </style>
 </head>
 <body>
 <header>
-  <h1>シンプルオンラインルーム</h1>
+  <h1>六角＋周囲五角形：クリックで配置／ドラッグで移動</h1>
   <div class="small" id="headerInfo"></div>
 </header>
 
 <main>
-  <!-- 入室画面 -->
+  <!-- 名前登録 -->
   <section id="joinPanel" class="join-box">
     <input id="nameInput" placeholder="名前（1文字）" maxlength="1" inputmode="text" />
-    <input id="codeInput" placeholder="ルームコード（例: 1234）" maxlength="12" inputmode="numeric" />
-    <button id="btnJoin" class="btn">入室</button>
+    <button id="btnJoin" class="btn">開始</button>
   </section>
 
-  <!-- ルーム画面 -->
-  <section id="roomPanel" class="wrap" style="display:none;">
-    <div class="stage" id="stage">
-      <!-- viewBox横140：左28%が長方形、右72%に六芒星 -->
-      <svg id="starSvg" viewBox="0 0 140 100" aria-label="六芒星（7部屋）＋縦長長方形">
-        <!-- 左の縦長長方形（見た目のみ） -->
-        <g class="outline" pointer-events="none">
-          <polygon points="2,2 38,2 38,98 2,98" />
-        </g>
-
-        <!-- 正六芒星（画像の形状／7部屋） -->
-        <g transform="translate(40,0)">
-          <!-- 外側の二つの正三角形（輪郭） -->
-          <g class="outline" pointer-events="none">
-            <polygon points="50,6 88.11,72 11.89,72" />
-            <polygon points="50,94 88.11,28 11.89,28" />
-          </g>
-          <!-- 中央六角形の輪郭（直線） -->
-          <g class="innerline" pointer-events="none">
-            <polygon points="37.30,28.00 62.70,28.00 75.41,50.00 62.70,72.00 37.30,72.00 24.59,50.00" />
-          </g>
-
-          <!-- クリック領域：外側6三角＋中央六角＝計7部屋 -->
-          <polygon class="area" data-pos="0" points="88.11,28.00 62.70,28.00 75.41,50.00" />
-          <polygon class="area" data-pos="1" points="88.11,72.00 75.41,50.00 62.70,72.00" />
-          <polygon class="area" data-pos="2" points="50.00,94.00 62.70,72.00 37.30,72.00" />
-          <polygon class="area" data-pos="3" points="11.89,72.00 37.30,72.00 24.59,50.00" />
-          <polygon class="area" data-pos="4" points="11.89,28.00 24.59,50.00 37.30,28.00" />
-          <polygon class="area" data-pos="5" points="50.00,6.00 37.30,28.00 62.70,28.00" />
-          <polygon class="area" data-pos="6" points="37.30,28.00 62.70,28.00 75.41,50.00 62.70,72.00 37.30,72.00 24.59,50.00" />
-        </g>
-      </svg>
-
-      <!-- ラベル置き場（星側＋長方形アイコン） -->
-      <div class="labels" id="labels"></div>
-      <!-- 左長方形のクリック領域（1回だけ出現、ドラッグ不可） -->
-      <div id="dockHit" class="dock-hit" title="クリックで1回だけ作成（ドラッグ不可）"></div>
-    </div>
-
-    <div style="text-align:center">
-      <button id="btnLeave" class="btn ghost">退室</button>
+  <!-- ボード（SVGは長方形領域内） -->
+  <section id="boardPanel" class="hidden">
+    <div class="board-wrap">
+      <!-- viewBox は長方形（-120..120）で固定：ドラッグ制限にも使う -->
+      <svg id="board" viewBox="-120 -120 240 240" aria-label="ボード" role="img"></svg>
     </div>
   </section>
 </main>
 
-<!-- Firebase -->
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-  import { getDatabase, ref, set, onValue, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
-    authDomain: "shadowraiders-a2dbc.firebaseapp.com",
-    projectId: "shadowraiders-a2dbc",
-    storageBucket: "shadowraiders-a2dbc.firebasestorage.app",
-    messagingSenderId: "577276689873",
-    appId: "1:577276689873:web:9a13faf90c3d6a791e34f0",
-    measurementId: "G-PKNEPDBVSS"
-  };
-
-  /* --- 初期化・参照 --- */
-  const app = initializeApp(firebaseConfig);
-  const db  = getDatabase(app);
-
+  // --- DOM ---
   const headerInfo = document.getElementById('headerInfo');
   const joinPanel  = document.getElementById('joinPanel');
   const nameInput  = document.getElementById('nameInput');
-  const codeInput  = document.getElementById('codeInput');
   const btnJoin    = document.getElementById('btnJoin');
+  const boardPanel = document.getElementById('boardPanel');
+  const svg        = document.getElementById('board');
 
-  const roomPanel  = document.getElementById('roomPanel');
-  const stageEl    = document.getElementById('stage');
-  const labelsEl   = document.getElementById('labels');
-  const dockHitEl  = document.getElementById('dockHit');
-  const btnLeave   = document.getElementById('btnLeave');
+  // --- 状態 ---
+  const state = {
+    name: "",
+    dragging: null,   // ドラッグ中のtext要素
+    dragOffset: {x:0,y:0}
+  };
 
-  const DOCK_W = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dock-w')) || 28; // %
+  // --- ユーティリティ ---
+  function randomLetter(){
+    return String.fromCharCode(65 + Math.floor(Math.random()*26)); // A-Z
+  }
+  const NAME_RE = /^[A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]$/;
+  function normalizeName(raw){
+    const t = (raw || "").trim();
+    if (!t) return randomLetter();
+    const c = t[0];
+    return NAME_RE.test(c) ? c : randomLetter();
+  }
+  function show(el, yes){ el.classList.toggle('hidden', !yes); }
 
-  const state = { uid: crypto.randomUUID(), name:"", code:"", joined:false, off:[], dock:null };
+  // SVG座標へ
+  function toSvgPoint(svgEl, clientX, clientY){
+    const pt = svgEl.createSVGPoint();
+    pt.x = clientX; pt.y = clientY;
+    const ctm = svgEl.getScreenCTM();
+    return pt.matrixTransform(ctm.inverse());
+  }
 
-  /* --- util --- */
-  function randomLetter(){ return String.fromCharCode(65 + Math.floor(Math.random()*26)); }
-  function random4(){ return String(Math.floor(Math.random()*10000)).padStart(4, '0'); }
-  const NAME_RE=/^[A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]$/;
-  function normalizeName(raw){ const t=(raw||"").trim(); if(!t) return randomLetter(); const c=t[0]; return NAME_RE.test(c)?c:randomLetter(); }
-  function buildRoomLink(code){ const url=new URL(location.href); url.searchParams.set('room',code); return url.toString(); }
-  function showJoin(yes){ joinPanel.style.display = yes ? '' : 'none'; roomPanel.style.display = yes ? 'none' : ''; }
+  // ボード境界（viewBox）に収める
+  function clampToViewBox(x, y, margin=6){
+    // viewBox: -120..+120 の長方形
+    const min = -120 + margin;
+    const max =  120 - margin;
+    return { x: Math.min(max, Math.max(min, x)), y: Math.min(max, Math.max(min, y)) };
+  }
 
-  /* --- 星側ラベル描画（各自1つ） --- */
-  function renderPlacements(map){
-    if (!map) map = {};
-    [...labelsEl.querySelectorAll('.label:not(#dockIcon)')].forEach(el=>el.remove());
-    for (const [uid, v] of Object.entries(map)){
-      if (!v || typeof v.x!=='number' || typeof v.y!=='number') continue;
-      const d=document.createElement('div');
-      d.className='label';
-      d.textContent=v.name||'?';
-      d.style.left=`${v.x}%`;
-      d.style.top =`${v.y}%`;
-      labelsEl.appendChild(d);
+  // ラベル生成（複数可）
+  function createLabel(x, y, text){
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    const p = clampToViewBox(x,y,6);
+    t.setAttribute('x', p.x);
+    t.setAttribute('y', p.y);
+    t.setAttribute('text-anchor','middle');
+    t.setAttribute('dominant-baseline','middle');
+    t.setAttribute('class','label');
+    t.textContent = text;
+    // ドラッグ開始
+    t.addEventListener('pointerdown', (e)=>{
+      const sp = toSvgPoint(svg, e.clientX, e.clientY);
+      const cx = parseFloat(t.getAttribute('x'));
+      const cy = parseFloat(t.getAttribute('y'));
+      state.dragging = t;
+      state.dragOffset.x = cx - sp.x;
+      state.dragOffset.y = cy - sp.y;
+      t.setPointerCapture(e.pointerId);
+    });
+    svg.appendChild(t);
+  }
+
+  // --- 図形生成：中央の正六角形＋周囲に“くっつく”五角形6つ ---
+  function buildHexWithPentagons(R=84, r=48, spike=100){
+    const d2r = d => (Math.PI/180)*d;
+
+    // 中央正六角形（半径 r）
+    const inner = Array.from({length:6}, (_,i)=>{
+      const a = d2r(60*i - 90);
+      return [ r*Math.cos(a), r*Math.sin(a) ];
+    });
+    const hex = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    hex.setAttribute('points', inner.map(([x,y])=>`${x},${y}`).join(' '));
+    hex.setAttribute('class','cell hex');
+    hex.dataset.cell = 'center';
+    svg.appendChild(hex);
+
+    // 周囲五角形：各辺の法線方向に“とんがり”を作り、内側六角形にくっつく形
+    // 五角形の5点： inner[i], inner[i+1], shoulder1, tip(スパイク), shoulder2
+    for(let i=0;i<6;i++){
+      const a0 = d2r(60*i - 90);
+      const a1 = d2r(60*(i+1) - 90);
+      const mid = d2r(60*i + 30 - 90);   // 辺の外向き法線方向（スパイク方向）
+
+      const v0 = [ r*Math.cos(a0), r*Math.sin(a0) ];
+      const v1 = [ r*Math.cos(a1), r*Math.sin(a1) ];
+
+      // 肩（外周の“縁”になる位置）：外側半径 R を使い、法線方向に少し振る
+      const shoulderSpread = 18; // 肩の角度オフセット（見た目調整）
+      const s1a = mid - d2r(shoulderSpread);
+      const s2a = mid + d2r(shoulderSpread);
+      const s1 = [ R*Math.cos(s1a), R*Math.sin(s1a) ];
+      const s2 = [ R*Math.cos(s2a), R*Math.sin(s2a) ];
+
+      // スパイクの先端
+      const tip = [ spike*Math.cos(mid), spike*Math.sin(mid) ];
+
+      const pent = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+      pent.setAttribute('points', `${v0[0]},${v0[1]} ${v1[0]},${v1[1]} ${s1[0]},${s1[1]} ${tip[0]},${tip[1]} ${s2[0]},${s2[1]}`);
+      pent.setAttribute('class','cell penta');
+      pent.dataset.cell = `penta-${i}`;
+      svg.appendChild(pent);
     }
+
+    // 輪郭（外観補助）
+    const outerHex = Array.from({length:6},(_,i)=>{
+      const a = d2r(60*i - 90);
+      return [ R*Math.cos(a), R*Math.sin(a) ];
+    });
+    const outline = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    outline.setAttribute('points', outerHex.map(([x,y])=>`${x},${y}`).join(' '));
+    outline.setAttribute('class','outline');
+    svg.appendChild(outline);
   }
 
-  /* --- 左長方形の固定アイコン描画（1個だけ／ドラッグ不可） --- */
-  function renderDock(v){
-    state.dock = v || null;
-    let el = document.getElementById('dockIcon');
-    if (!state.dock){
-      if (el) el.remove();
-      return;
-    }
-    if (!el){
-      el = document.createElement('div');
-      el.id = 'dockIcon';
-      el.className = 'label';
-      labelsEl.appendChild(el);
-    }
-    const leftPct = (state.dock.x * DOCK_W) / 100; // 左領域の% -> ステージ全体%
-    el.style.left = `${leftPct}%`;
-    el.style.top  = `${state.dock.y}%`;
-    el.textContent = state.dock.name || '?';
-    // ドラッグは実装しない（=何もしない）
-  }
+  // --- イベント ---
+  btnJoin.onclick = () => {
+    state.name = normalizeName(nameInput.value);
+    headerInfo.textContent = `あなた：${state.name}`;
+    show(joinPanel, false);
+    show(boardPanel, true);
+    if (!svg.hasChildNodes()) buildHexWithPentagons();
+  };
 
-  /* --- 入室 --- */
-  async function join(){
-    const name = normalizeName(nameInput.value);
-    const code = (codeInput.value || "").trim() || random4();
-    state.name=name; state.code=code;
-
-    const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
-    await set(meRef, { name, at: Date.now() });
-    onDisconnect(meRef).remove();
-
-    const myPlaceRef = ref(db, `rooms/${code}/placements/${state.uid}`);
-    onDisconnect(myPlaceRef).remove();
-
-    // ヘッダー右：コード／あなた
-    const link = buildRoomLink(code);
-    headerInfo.innerHTML = `コード：<span class="code-link" id="headerCode">${code}</span>　/　あなた：<strong>${name}</strong>`;
-    setTimeout(()=>{
-      const codeEl=document.getElementById('headerCode');
-      if(codeEl){
-        codeEl.onclick=()=>{
-          if(navigator.clipboard) navigator.clipboard.writeText(link).then(()=>alert('招待リンクをコピーしました'));
-          else prompt('コピーできない場合はこのテキストをコピーしてください', link);
-        };
-      }
-    },0);
-
-    showJoin(false); state.joined=true;
-
-    // 監視
-    state.off.push(onValue(ref(db, `rooms/${code}/placements`), snap=>renderPlacements(snap.val()||{})));
-    state.off.push(onValue(ref(db, `rooms/${code}/dock`), snap=>renderDock(snap.val()||null)));
-  }
-
-  /* --- 退室 --- */
-  async function leave(){
-    if (!state.joined) return;
-    const { code } = state;
-    await remove(ref(db, `rooms/${code}/participants/${state.uid}`));
-    await remove(ref(db, `rooms/${code}/placements/${state.uid}`));
-    state.off.forEach(fn=>fn&&fn()); state.off=[];
-    [...labelsEl.children].forEach(c=>c.remove());
-    headerInfo.textContent=''; showJoin(true); state.joined=false;
-  }
-
-  /* --- 六芒星クリック：自分の名前を置く（常に1つ） --- */
-  function onStarClick(ev){
-    if (!state.joined) return;
-    const target = ev.target;
+  // クリックでラベルを“追加”（複数可）
+  svg.addEventListener('click', (e)=>{
+    const target = e.target;
     if (!(target instanceof SVGElement)) return;
-    const posIdx = target.dataset?.pos;
-    if (posIdx === undefined) return;
-
-    const rect = stageEl.getBoundingClientRect();
-    const xPct = ((ev.clientX - rect.left) / rect.width) * 100;
-    const yPct = ((ev.clientY - rect.top)  / rect.height) * 100;
-
-    set(ref(db, `rooms/${state.code}/placements/${state.uid}`), {
-      name: state.name,
-      pos: Number(posIdx),
-      x: Math.max(0, Math.min(100, +xPct.toFixed(1))),
-      y: Math.max(0, Math.min(100, +yPct.toFixed(1))),
-      at: Date.now()
-    });
-  }
-
-  /* --- 左長方形：初回クリックで固定アイコン生成（以後は何も起きない） --- */
-  dockHitEl.addEventListener('click', (e)=>{
-    if (!state.joined) return;
-    if (state.dock) return; // 既にある → 何もしない
-    const r = dockHitEl.getBoundingClientRect();
-    const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    const y = Math.max(0, Math.min(1, (e.clientY - r.top)  / r.height));
-    set(ref(db, `rooms/${state.code}/dock`), {
-      name: state.name,
-      x: +(x*100).toFixed(1),
-      y: +(y*100).toFixed(1),
-      createdBy: state.uid,
-      at: Date.now()
-    });
+    if (!target.classList.contains('cell')) return; // クリック対象のみ
+    const p = toSvgPoint(svg, e.clientX, e.clientY);
+    createLabel(p.x, p.y, state.name || '？');
   });
 
-  /* --- イベント --- */
-  btnJoin.onclick = join;
-  btnLeave.onclick = leave;
-  document.getElementById('starSvg').addEventListener('click', onStarClick);
-  window.addEventListener('beforeunload', leave);
-  nameInput.addEventListener('keydown', e=>{ if(e.key==='Enter') join(); });
-  codeInput.addEventListener('keydown', e=>{ if(e.key==='Enter') join(); });
+  // ドラッグ移動（長方形内に制限）
+  svg.addEventListener('pointermove', (e)=>{
+    if (!state.dragging) return;
+    const sp = toSvgPoint(svg, e.clientX, e.clientY);
+    const x = sp.x + state.dragOffset.x;
+    const y = sp.y + state.dragOffset.y;
+    const p = clampToViewBox(x,y,6);
+    state.dragging.setAttribute('x', p.x);
+    state.dragging.setAttribute('y', p.y);
+  });
+  svg.addEventListener('pointerup', ()=>{ state.dragging = null; });
+  svg.addEventListener('pointercancel', ()=>{ state.dragging = null; });
 
-  /* URL パラメータ事前入力 */
+  // URLパラメータで名前を事前入力（任意）
   try{
     const qs = new URLSearchParams(location.search);
-    const qRoom = (qs.get('room')||'').trim();
     const qName = (qs.get('name')||'').trim();
-    if (qRoom) codeInput.value = qRoom.slice(0, 12);
-    if (qName) nameInput.value = qName.slice(0, 1);
+    if (qName) nameInput.value = qName.slice(0,1);
   }catch(_e){}
 </script>
 </body>
