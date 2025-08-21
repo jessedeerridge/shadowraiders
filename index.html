@@ -371,15 +371,26 @@ const state = {
       }
     }
 
-    // 右下の最初の配布カード（myDeal）
-    const myDealSnap  = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`));
-    const oldDealSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${oldUid}`));
-    const myHasCard   = !!myDealSnap.val();
-    const oldCard     = oldDealSnap.val();
-    if (!myHasCard && oldCard){
-      updates[`rooms/${state.code}/deal/v1/cards/${state.uid}`] = oldCard;
-      updates[`rooms/${state.code}/deal/v1/cards/${oldUid}`] = null;
-    }
+// 装備（equipment）
+const oldEquipSnap = await get(ref(db, `rooms/${state.code}/equipment/${oldUid}`));
+const myEquipSnap  = await get(ref(db, `rooms/${state.code}/equipment/${state.uid}`));
+const oldEquip = oldEquipSnap.val();
+const myEquip  = myEquipSnap.val();
+if (oldEquip && !myEquip){
+  updates[`rooms/${state.code}/equipment/${state.uid}`] = oldEquip;
+  updates[`rooms/${state.code}/equipment/${oldUid}`] = null;
+}
+
+// 右下の最初の配布カード（myDeal）
+const myDealSnap  = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`));
+const oldDealSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${oldUid}`));
+const myHasCard   = !!myDealSnap.val();
+const oldCard     = oldDealSnap.val();
+if (!myHasCard && oldCard){
+  updates[`rooms/${state.code}/deal/v1/cards/${state.uid}`] = oldCard;
+  updates[`rooms/${state.code}/deal/v1/cards/${oldUid}`] = null;
+}
+
 
     if (Object.keys(updates).length){
       await update(ref(db), updates);
