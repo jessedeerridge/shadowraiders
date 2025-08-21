@@ -1,25 +1,27 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>中央六角形＋外周五角形6（全辺0/±60度に整列）</title>
+<title>中央六角形＋外周五角形6（左に同高の長方形）</title>
 <style>
   html,body{height:100%;margin:0;background:#fff}
   svg{display:block;margin:auto;max-width:96vmin;height:auto}
-  /* 線を細く：1px以下 */
   .shape{fill:#fff;stroke:#111;stroke-width:0.8;stroke-linejoin:round;stroke-linecap:round}
 </style>
 </head>
 <body>
-<svg id="art" viewBox="-220 -230 440 460" aria-label="中央に正六角形、外周に同一五角形6つ"></svg>
+<svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
 
 <script>
 const svg = document.getElementById('art');
 const rt3 = Math.sqrt(3);
 
-const s0 = 48;  // 中央六角形の一辺
-const s1 = 82;  // 中間六角形の一辺
+// ---- パラメータ ----
+const s0 = 48;   // 中央(内側)六角形の一辺
+const s1 = 82;   // 中間(共有辺)六角形の一辺
+const rectScale = 0.60; // 長方形の幅 = 星の高さ × rectScale
+const gap = 20;         // 長方形と星のすき間
 
 function hexFlat(cx, cy, s){
   const h = (rt3/2)*s;
@@ -33,11 +35,16 @@ function hexFlat(cx, cy, s){
   ];
 }
 
+// star グループ（右の図形をまとめる）
+const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+g.setAttribute('id','star');
+svg.appendChild(g);
+
 function poly(pts){
   const el = document.createElementNS('http://www.w3.org/2000/svg','polygon');
   el.setAttribute('points', pts.map(p=>p.join(',')).join(' '));
   el.setAttribute('class','shape');
-  svg.appendChild(el);
+  g.appendChild(el);
 }
 
 const add=(a,b)=>[a[0]+b[0],a[1]+b[1]];
@@ -45,7 +52,7 @@ const sub=(a,b)=>[a[0]-b[0],a[1]-b[1]];
 const mul=(a,k)=>[a[0]*k,a[1]*k];
 const norm=(v)=>{ const L=Math.hypot(v[0],v[1])||1; return [v[0]/L,v[1]/L]; };
 
-// 直線の交点
+// 交点
 function intersectRayRay(p,u,q,v){
   const A = [[u[0], -v[0]], [u[1], -v[1]]];
   const b = sub(q,p);
@@ -54,11 +61,14 @@ function intersectRayRay(p,u,q,v){
   return add(p, mul(u, t));
 }
 
+// ---- 右側の星形（中央六角形＋外周五角形6）----
 const H0 = hexFlat(0,0,s0);
 const H1 = hexFlat(0,0,s1);
 
+// 中央六角形
 poly(H0);
 
+// 五角形6
 for(let i=0;i<6;i++){
   const ip = (i+5)%6;
   const inx= (i+1)%6;
@@ -71,16 +81,33 @@ for(let i=0;i<6;i++){
 
   const dirFromA1 = norm( sub(H1[i],   H1[ip]) );
   const dirFromB1 = norm( sub(H1[inx2],H1[inx]) );
-
   const tip = intersectRayRay(a1, dirFromA1, b1, dirFromB1);
 
   poly([a0, b0, b1, tip, a1]);
 }
 
+// ---- 左側の長方形（高さ＝星と同じ）----
+const starBox = g.getBBox();                    // 右図形の外接矩形
+const rectH = starBox.height;                   // 長方形の高さ = 星の高さ
+const rectW = rectH * rectScale;                // 幅は比率で
+const rectX = starBox.x - gap - rectW;          // 星の左に配置
+const rectY = starBox.y;                        // 上端を揃える
+
+const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+rect.setAttribute('x', rectX);
+rect.setAttribute('y', rectY);
+rect.setAttribute('width', rectW);
+rect.setAttribute('height', rectH);
+rect.setAttribute('class','shape');
+svg.appendChild(rect);
+
+// ---- 全体の表示領域を自動調整 ----
 (function fit(){
   const pad = 14;
   const box = svg.getBBox();
-  svg.setAttribute('viewBox', [box.x-pad, box.y-pad, box.width+pad*2, box.height+pad*2].join(' '));
+  svg.setAttribute('viewBox',
+    [box.x-pad, box.y-pad, box.width+pad*2, box.height+pad*2].join(' ')
+  );
 })();
 </script>
 </body>
