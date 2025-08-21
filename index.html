@@ -552,10 +552,13 @@ function applyFillAndText(elGroup, colorName){
       g.setAttribute('class','seaticon');
       g.setAttribute('data-uid', uid);
 
-      const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      box.setAttribute('width', 24);
-      box.setAttribute('height', 24);
-      g.appendChild(box);
+const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
+box.setAttribute('width', 24);
+box.setAttribute('height', 24);
+box.setAttribute('rx', 10);   // ← 角丸を属性で付与（スマホでも確実）
+box.setAttribute('ry', 10);
+g.appendChild(box);
+
 
       const label = document.createElementNS('http://www.w3.org/2000/svg','text');
       label.setAttribute('x', 12);
@@ -627,10 +630,13 @@ function applyFillAndText(elGroup, colorName){
       g.setAttribute('class','usericon');
       g.setAttribute('data-uid', uid);
 
-      const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      box.setAttribute('width', 24);
-      box.setAttribute('height', 24);
-      g.appendChild(box);
+const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
+box.setAttribute('width', 24);
+box.setAttribute('height', 24);
+box.setAttribute('rx', 10);   // ← こちらにも同様に
+box.setAttribute('ry', 10);
+g.appendChild(box);
+
 
       const label = document.createElementNS('http://www.w3.org/2000/svg','text');
       label.setAttribute('x', 12);
