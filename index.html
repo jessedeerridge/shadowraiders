@@ -652,37 +652,35 @@ g.appendChild(box);
       g.appendChild(label);
 
       // ドラッグ
-      g.addEventListener('pointerdown', (e)=>{
-        e.preventDefault();
-        state.isPointerDown = true;
-        state.draggingUid = uid;
-        g.classList.add('dragging');
-        const p = toSvgCoords(svg, e.clientX, e.clientY);
-        const gx = parseFloat(g.getAttribute('data-x') || data.x || 0);
-        const gy = parseFloat(g.getAttribute('data-y') || data.y || 0);
-        state.dragOffset.x = p.x - gx;
-        state.dragOffset.y = p.y - gy;
-        g.setPointerCapture(e.pointerId);
-      });
-      g.addEventListener('pointerup', (e)=>{
-        if (!state.isPointerDown) return;
-        state.isPointerDown = false;
-        g.classList.remove('dragging');
-        g.releasePointerCapture(e.pointerId);
-      });
-      g.addEventListener('pointercancel', ()=>{
-        state.isPointerDown = false;
-        g.classList.remove('dragging');
-      });
-      svg.addEventListener('pointermove', throttle((e)=>{
-        if (!state.isPointerDown || state.draggingUid !== uid) return;
-        const p = toSvgCoords(svg, e.clientX, e.clientY);
-        const pos = clampToRect(p.x - state.dragOffset.x, p.y - state.dragOffset.y);
-        g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
-        g.setAttribute('data-x', pos.x);
-        g.setAttribute('data-y', pos.y);
-        update(ref(db, `rooms/${state.code}/icons/${uid}`), { x: pos.x, y: pos.y });
-      }, 40), { passive: true });
+  // --- 追加：グローバルpointermove（1回だけ） ---
+let _pmInstalled = false;
+let _pmPending = false, _pmLastEvent = null;
+
+function installGlobalPointerMove(){
+  if (_pmInstalled) return;
+  _pmInstalled = true;
+  const svg = document.getElementById('art');
+  svg.addEventListener('pointermove', (e)=>{
+    if (!state.isPointerDown || !state.draggingUid) return;
+    _pmLastEvent = e;
+    if (_pmPending) return;
+    _pmPending = true;
+    requestAnimationFrame(()=>{
+      _pmPending = false;
+      const uid = state.draggingUid;
+      const layer = document.getElementById('icons');
+      const g = layer && layer.querySelector(`g[data-uid="${uid}"]`);
+      if (!g) return;
+
+      const p = toSvgCoords(svg, _pmLastEvent.clientX, _pmLastEvent.clientY);
+      const pos = clampToRect(p.x - state.dragOffset.x, p.y - state.dragOffset.y);
+      g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+      g.setAttribute('data-x', pos.x);
+      g.setAttribute('data-y', pos.y);
+      update(ref(db, `rooms/${state.code}/icons/${uid}`), { x: pos.x, y: pos.y });
+    });
+  }, { passive: true });
+}
 
       // ホスト削除ポップ
       g.addEventListener('click', (e)=> maybeShowDeletePopover(e, 'icon', uid));
