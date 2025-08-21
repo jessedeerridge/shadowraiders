@@ -106,7 +106,24 @@
   #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
 }
 
-
+/* ▼ 装備所持バー */
+.equipbar{
+  position:fixed; left:12px; right:12px; bottom:70px;  /* 右下ミニカードとホスト歯車を避けて配置 */
+  z-index:2147483601;
+  display:flex; gap:12px; flex-wrap:wrap; align-items:center;
+  background:#fff; border:1px solid #111; border-radius:12px; padding:8px 10px;
+  box-shadow:0 6px 18px rgba(0,0,0,.12);
+}
+.equip-holder{display:flex; gap:6px; align-items:center; padding:4px 6px; border:1px solid #ddd; border-radius:10px}
+.equip-icon{
+  width:24px; height:24px; border:1px solid #111; border-radius:6px;
+  display:flex; align-items:center; justify-content:center; font-weight:700;
+}
+.equip-card{
+  min-width:46px; height:26px; border:1px solid #111; border-radius:6px;
+  display:flex; align-items:center; justify-content:center; padding:0 6px; font-size:12px; font-weight:700;
+}
+  
 
 </style>
 </head>
@@ -155,6 +172,10 @@
 <!-- 自分用 ミニカード（配布後） -->
 <div id="myDealMini" class="hidden" title="カードを開く">裏</div>
 
+<!-- 装備所持バー -->
+<div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
+
+  
 <!-- カード拡大ビューア -->
 <div id="dealViewer" class="modal hidden" role="dialog" aria-modal="true">
   <div class="modal-panel">
@@ -560,11 +581,16 @@ const state = {
   }
 
   // ===== 山札 =====
-  const DECKS_DEF = {
-    green: { label:'緑', colorClass:'green', cards:['あ','か','た','ら','わ','は'] },
-    white: { label:'白', colorClass:'white', cards:['し','き','に','み','ぎ','ち'] },
-    black: { label:'黒', colorClass:'black', cards:['ろ','も','こ','ど','そ','ぼ'] },
-  };
+ const DECKS_DEF = {
+  green: { label:'緑', colorClass:'green', cards:['あ','か','た','ら','わ','は'] },
+  white: {
+    label:'白',
+    colorClass:'white',
+    cards:['みみ','きき','ひひ','ぎぎ','しし','りり','にに','ちち','びび','じじ'],
+    equipIdx: [1,2,3,4] // 0始まり → 2,3,4,5番が装備
+  },
+  black: { label:'黒', colorClass:'black', cards:['ろ','も','こ','ど','そ','ぼ'] },
+};
 
   function setupDecks(){
     decksEl.innerHTML = '';
@@ -579,7 +605,7 @@ const state = {
       back.className = `deck-back ${def.colorClass}`;
       back.textContent = '裏';
       back.title = `${def.label}デッキをめくる`;
-      back.addEventListener('click', ()=> advanceDeckGuarded(deckId));
+back.addEventListener('click', ()=> advanceDeckGuarded(deckId, state.uid));
 
 const face = document.createElement('div');
 face.className = 'deck-face';
@@ -630,30 +656,31 @@ face.addEventListener('click', ()=>{
       default: return false;
     }
   }
-  function refreshDeckEnable(){
-    const myRoom = state.myRoomNumber || null;
-    ['green','white','black'].forEach(id=>{
-      const back = decksEl.querySelector(`.deck[data-deck="${id}"] .deck-back`);
-      if (!back) return;
-      const ok = canFlip(id, myRoom);
-      back.classList.toggle('disabled', !ok);
-    });
-  }
+ function refreshDeckEnable(){ /* 既存のまま */ }
 
-  async function advanceDeckGuarded(deckId){
-    const ok = canFlip(deckId, state.myRoomNumber || null);
-    if (!ok) return; // 禁止
-    await advanceDeck(deckId);
-  }
+async function advanceDeckGuarded(deckId, flipperUid){
+  const ok = canFlip(deckId, state.myRoomNumber || null);
+  if (!ok) return; // 禁止
+  await advanceDeck(deckId, flipperUid);
+}
 
-  async function advanceDeck(deckId){
-    const def = DECKS_DEF[deckId];
-    const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
-    const snap = await get(deckPath);
-    const curIdx = snap.exists() && typeof snap.val().idx === 'number' ? snap.val().idx : -1;
-    const nextIdx = (curIdx + 1) % def.cards.length;
-    await set(deckPath, { idx: nextIdx, at: Date.now() });
+async function advanceDeck(deckId, flipperUid){
+  const def = DECKS_DEF[deckId];
+  const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
+  const snap = await get(deckPath);
+  const curIdx = snap.exists() && typeof snap.val().idx === 'number' ? snap.val().idx : -1;
+  const nextIdx = (curIdx + 1) % def.cards.length;
+  await set(deckPath, { idx: nextIdx, at: Date.now() });
+
+  // ▼ 装備付与（白デッキのみ／equipIdx 該当時）
+  if (deckId === 'white' && Array.isArray(def.equipIdx) && def.equipIdx.includes(nextIdx) && flipperUid){
+    const card = def.cards[nextIdx]; // 例: 'きき' など
+    const updates = {};
+    updates[`rooms/${state.code}/equipment/${flipperUid}/${card}`] = true;
+    updates[`rooms/${state.code}/equipment_at`] = Date.now();
+    await update(ref(db), updates);
   }
+}
 
   // ===== 右側：部屋クリック =====
   async function onRoomClick(ev){
@@ -990,6 +1017,19 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
     const needWhite = darkText.includes(label) || ['red','blue','black','green1','green2','purple'].includes(item?.id);
     return { bg, text: needWhite ? '#fff' : '#111' };
   }
+
+/* === 4a: 装備所持用の小アイコンを作る === */
+function makeEquipIcon(name, colorName){
+  const div = document.createElement('div');
+  div.className = 'equip-icon';
+  const { bg, text } = colorToStyle(colorName || '');
+  div.style.background = bg;
+  div.style.color = text;
+  div.textContent = name || '?';
+  return div;
+}
+
+  
   function renderColorGrid(claims){
     colorGrid.innerHTML = '';
     COLOR_LIST.forEach(c=>{
@@ -1095,6 +1135,50 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
     state.unsub.push(off);
   }
 
+/* === 4b: 装備所持バーのレンダラ＋購読 === */
+function renderEquipmentBar(equipData, participants){
+  const bar = document.getElementById('equipBar');
+  if (!bar) return;
+  bar.innerHTML = '';
+
+  const uids = Object.keys(equipData || {});
+  if (uids.length === 0){ bar.classList.add('hidden'); return; }
+
+  uids.forEach(uid=>{
+    const cardsObj = equipData[uid] || {};
+    const ps = participants?.[uid] || {};
+    const holder = document.createElement('div');
+    holder.className = 'equip-holder';
+
+    // 所持者アイコン
+    holder.appendChild(makeEquipIcon(ps.name || '?', ps.color || ''));
+
+    // 装備カードたち
+    Object.keys(cardsObj).forEach(cardName=>{
+      const c = document.createElement('div');
+      c.className = 'equip-card';
+      c.textContent = cardName;
+      holder.appendChild(c);
+    });
+
+    bar.appendChild(holder);
+  });
+
+  bar.classList.remove('hidden');
+}
+
+function observeEquipment(){
+  const equipRef = ref(db, `rooms/${state.code}/equipment`);
+  const off = onValue(equipRef, async (snap)=>{
+    const equipData = snap.val() || {};
+    // 参加者（色・名前）を併せて取得
+    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+    const participants = psSnap.val() || {};
+    renderEquipmentBar(equipData, participants);
+  });
+  state.unsub.push(off);
+}
+  
   // ===== ホスト管理 & 削除ポップ =====
 async function becomeHostIfVacant(){
   const hostRef = ref(db, `rooms/${state.code}/host`);
@@ -1235,6 +1319,9 @@ async function becomeHostIfVacant(){
     // 自分の配布カード購読
     observeMyDeal();
 
+    // 装備所持の購読と描画
+observeEquipment();
+    
     // ホスト設定UI
     hostGear.onclick = ()=>{
       hostPanel.classList.toggle('hidden');
