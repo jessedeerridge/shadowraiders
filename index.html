@@ -257,66 +257,72 @@ const state = {
     return same.length === 1 && same[0][0] === state.uid;
   }
 
-async function findUidBySameNamePreferOthers(){
-  const candidates = new Set();
+  async function findOrphanUidBySameName(){
+    const candidates = new Set();
 
-  // colors: 同名で自分以外のuid
-  const cSnap = await get(ref(db, `rooms/${state.code}/colors`));
-  const colors = cSnap.val() || {};
-  for (const [, claim] of Object.entries(colors)){
-    if ((claim?.name||'') === state.name && claim?.uid && claim.uid !== state.uid){
-      candidates.add(claim.uid);
+    // colors から同名の旧UID候補
+    const cSnap = await get(ref(db, `rooms/${state.code}/colors`));
+    const colors = cSnap.val() || {};
+    for (const [, claim] of Object.entries(colors)){
+      if ((claim?.name||'') === state.name && claim?.uid && claim.uid !== state.uid){
+        candidates.add(claim.uid);
+      }
     }
+
+    // deal/v1/cards から旧UID候補
+    const dSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards`));
+    const deal = dSnap.val() || {};
+    for (const uid of Object.keys(deal)){
+      if (uid !== state.uid) candidates.add(uid);
+    }
+
+    // participants に居ないUIDのみ（＝孤児）
+    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+    const ps = psSnap.val() || {};
+    for (const oldUid of candidates){
+      if (!ps[oldUid]) return oldUid;
+    }
+    return null;
   }
-
-  // deal: 同名とは限らないが、旧UIDの痕跡があれば候補に
-  const dSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards`));
-  const deal = dSnap.val() || {};
-  Object.keys(deal).forEach(uid=>{
-    if (uid !== state.uid) candidates.add(uid);
-  });
-
-  // 在室か否かは問わず、“自分以外”を返す
-  for (const oldUid of candidates) return oldUid;
-  return null;
-}
-
 
   async function inheritBySameName(){
-// ★ 在室状況に関わらず同名の旧UIDから引き継ぐ
-const oldUid = await findUidBySameNamePreferOthers();
-if (!oldUid) return;
+    // 仕様：同名在室者が自分だけのときのみ発動
+    if (!(await onlySelfHasThisName())) return;
 
-// 色（colors）を自分に移す＋participants の color 反映
-const colorsRef = ref(db, `rooms/${state.code}/colors`);
-const cSnap = await get(colorsRef);
-const colors = cSnap.val() || {};
-const updates = {};
+    const oldUid = await findOrphanUidBySameName();
+    if (!oldUid) return;
 
-for (const [colorId, claim] of Object.entries(colors)){
-  // 同名の“旧UID”が持っている色を自分(uid)に強制移譲
-  if (claim?.uid === oldUid && (claim?.name||'') === state.name){
-    updates[`rooms/${state.code}/colors/${colorId}`] =
-      { uid: state.uid, name: state.name, at: Date.now() };
+    const updates = {};
 
-    const label = (COLOR_LIST.find(c => c.id === colorId)?.name) || colorId;
-    updates[`rooms/${state.code}/participants/${state.uid}/color`] = label;
-  }
-}
+    // 色（colors）を自分に移す＋participants の color 反映
+    const colorsRef = ref(db, `rooms/${state.code}/colors`);
+    const cSnap = await get(colorsRef);
+    const colors = cSnap.val() || {};
+    for (const [colorId, claim] of Object.entries(colors)){
+      if (claim?.uid === oldUid && (claim?.name||'') === state.name){
+        // colors の所有者を自分に
+        updates[`rooms/${state.code}/colors/${colorId}`] =
+          { uid: state.uid, name: state.name, at: Date.now() };
+        // 参加者にも色を保存（既存実装に合わせ label で保存）
+        // ＊labelは曖昧になるので、厳密化したければ colorId を保存する実装に変えてOK
+        const label = (COLOR_LIST.find(c => c.id === colorId)?.name) || colorId;
+        updates[`rooms/${state.code}/participants/${state.uid}/color`] = label;
+      }
+    }
 
-// 右下カード（myDeal）を自分へ（自分に既にあれば上書きしない）
-const myDealSnap  = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`));
-const oldDealSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${oldUid}`));
-const myHasCard   = !!myDealSnap.val();
-const oldCard     = oldDealSnap.val();
-if (!myHasCard && oldCard){
-  updates[`rooms/${state.code}/deal/v1/cards/${state.uid}`] = oldCard;
-  updates[`rooms/${state.code}/deal/v1/cards/${oldUid}`] = null; // ← 旧UIDのカードは消す
-}
+    // 右下の最初の配布カード（myDeal）
+    const myDealSnap  = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`));
+    const oldDealSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${oldUid}`));
+    const myHasCard   = !!myDealSnap.val();
+    const oldCard     = oldDealSnap.val();
+    if (!myHasCard && oldCard){
+      updates[`rooms/${state.code}/deal/v1/cards/${state.uid}`] = oldCard;
+      updates[`rooms/${state.code}/deal/v1/cards/${oldUid}`] = null;
+    }
 
-if (Object.keys(updates).length){
-  await update(ref(db), updates);
-}
+    if (Object.keys(updates).length){
+      await update(ref(db), updates);
+    }
   }
 
   // ===== 引継ぎユーティリティ（同名判定と“孤児”データ移譲） =====
