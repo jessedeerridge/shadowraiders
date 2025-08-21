@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>六芒星クリック</title>
+<title>六芒星クリック（五角形6＋中央六角形 & 左ドラッグパッド）</title>
 <style>
-  :root { --gap:10px; }
+  :root { --gap:12px; }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
   header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee}
   h1{margin:0;font-size:18px}
-  .small{font-size:12px;opacity:.75}
+  .small{font-size:12px;opacity:.8}
   main{padding:14px;display:grid;gap:16px;max-width:1100px;margin:0 auto}
 
   /* 入室 */
@@ -19,54 +19,50 @@
   .btn.ghost{background:#f8f8f8;color:#111}
   .hidden{display:none !important}
 
-  /* 2カラム：左＝長方形ドラッグ盤 / 右＝図形 */
-  .board{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  @media (max-width:900px){ .board{grid-template-columns:1fr} }
-
-  /* 左：ドラッグ用長方形 */
-  .dropzone{
-    position:relative;
-    height:70vh;
-    min-height:360px;
-    border:2px dashed #88a;
-    border-radius:12px;
-    background:#f7fbff;
-    overflow:hidden;         /* はみ出し防止 */
-    touch-action:none;       /* タッチドラッグのため */
-  }
-  /* アイコンは「▢の中に名前1文字」 */
-  .chip{
-    position:absolute;
-    width:44px;height:44px;line-height:44px;
-    border-radius:8px;                 /* ← 四角（角丸） */
-    background:#fff;                   /* 白地 */
-    color:#111;
-    text-align:center;font-weight:700;font-size:20px;
-    user-select:none;
-    cursor:grab;
-    box-shadow:0 2px 8px rgba(0,0,0,.08);
-    border:2px solid #111;             /* ← 枠線で“▢”表現 */
-  }
-  .chip:active{ cursor:grabbing; }
-
-  /* 右：図形エリア */
-  .star-wrap{
+  /* 2カラム配置（左：ドラッグパッド / 右：図形） */
+  .boards{
     display:grid;
-    place-items:center;
-    height:70vh;
-    min-height:360px;
-    border:1px solid #eee;
-    border-radius:12px;
-    padding:12px;
+    grid-template-columns: 1fr 1.2fr;
+    gap: var(--gap);
   }
-  svg{max-width:min(92vw,700px); max-height:60vh;}
-  .cell { cursor:pointer; transition:opacity .1s ease; }
-  .cell:hover { opacity:.92; }
 
-  /* 着色（視認性） */
-  .diamond { fill:#eaf4ff; stroke:#0d4660; stroke-width:1.6; }
-  .ring-outline{ fill:none; stroke:#0d4660; stroke-width:2; opacity:.9; }
-  .label { font-weight:700; font-size:28px; pointer-events:none; fill:#0d4660; }
+  /* 左：ドラッグパッド */
+  .pad-wrap{
+    border:1px solid #eee;border-radius:12px;padding:12px;
+    display:grid;gap:8px;align-content:start;
+  }
+  .pad{
+    position:relative;
+    height:60vh; min-height:320px;
+    border:2px dashed #bbb;
+    border-radius:12px;
+    background:#fafafa;
+    overflow:hidden;
+    touch-action:none; /* タッチでのスクロール抑制（ドラッグしやすく） */
+  }
+  .dot{
+    position:absolute;
+    width:32px;height:32px;border-radius:50%;
+    background:#4a8cff; color:#fff; display:grid; place-items:center;
+    font-weight:700; user-select:none; cursor:grab;
+    box-shadow:0 2px 6px rgba(0,0,0,.15);
+  }
+  .dot:active{ cursor:grabbing; }
+  .pad-help{font-size:12px;opacity:.8}
+
+  /* 右：六芒星（中央六角＋周囲五角形） */
+  .star-wrap{
+    display:grid; place-items:center;
+    height:70vh; min-height:360px;
+    border:1px solid #eee;border-radius:12px;padding:12px;
+  }
+  svg{max-width:min(92vw,700px); max-height:60vh}
+  .cell { cursor:pointer; transition:opacity .1s ease; }
+  .cell:hover { opacity:.9; }
+  .hex { fill:#fff7e6; stroke:#ffb84d; stroke-width:1.5; }
+  .penta { fill:#eef4ff; stroke:#99b3ff; stroke-width:1.3; }
+  .outline { fill:none; stroke:#333; stroke-width:2.4; }
+  .label { font-weight:700; font-size:28px; pointer-events:none; }
 </style>
 </head>
 <body>
@@ -78,21 +74,23 @@
 <main>
   <!-- 名前登録 -->
   <section id="joinPanel" class="join-box">
-    <!-- 名前：1文字のみ（アルファベット/ひらがな/カタカナ/漢字）。未入力なら自動で英字1文字 -->
+    <!-- 名前：1文字（A-Z/ひらがな/カタカナ/漢字）。未入力なら自動で英字1文字 -->
     <input id="nameInput" placeholder="名前（1文字）" maxlength="1" inputmode="text" />
     <button id="btnJoin" class="btn">開始</button>
+    <button id="btnAddToken" class="btn ghost hidden">左にトークン追加</button>
   </section>
 
-  <!-- 左右レイアウト -->
-  <section class="board hidden" id="board">
-    <!-- 左：ドラッグ長方形 -->
-    <div class="dropzone" id="dropzone" aria-label="ドラッグ盤">
-      <!-- 入室後に .chip を生成 -->
+  <!-- 2カラム：左（ドラッグパッド） / 右（図形） -->
+  <section id="boards" class="boards hidden">
+    <!-- 左：ドラッグパッド -->
+    <div class="pad-wrap">
+      <div class="pad-help">左の長方形内をクリックでトークン生成・ドラッグで移動できます。</div>
+      <div id="pad" class="pad" aria-label="ドラッグパッド" role="region"></div>
     </div>
 
     <!-- 右：図形 -->
     <div class="star-wrap">
-      <svg id="starSvg" viewBox="-120 -120 240 240" aria-label="ひし形リング" role="img"></svg>
+      <svg id="starSvg" viewBox="-110 -110 220 220" aria-label="六芒星（五角形＋六角形）" role="img"></svg>
     </div>
   </section>
 </main>
@@ -103,26 +101,23 @@
   const joinPanel  = document.getElementById('joinPanel');
   const nameInput  = document.getElementById('nameInput');
   const btnJoin    = document.getElementById('btnJoin');
-  const board      = document.getElementById('board');
-
-  const dropzone   = document.getElementById('dropzone');
+  const btnAddToken= document.getElementById('btnAddToken');
+  const boards     = document.getElementById('boards');
   const svg        = document.getElementById('starSvg');
+  const pad        = document.getElementById('pad');
 
   // --- 状態 ---
   const state = {
     name: "",
     labelEl: null,
-    chipEl: null,
-    dragging: false,
-    dragOffsetX: 0,
-    dragOffsetY: 0
+    tokenSeq: 1,
+    dragging: null
   };
 
   // --- ユーティリティ ---
   function randomLetter(){
     return String.fromCharCode(65 + Math.floor(Math.random()*26)); // A-Z
   }
-  // 許可：A-Za-z / ひらがな / カタカナ / CJK(漢字)
   const NAME_RE = /^[A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]$/;
   function normalizeName(raw){
     const t = (raw || "").trim();
@@ -132,46 +127,65 @@
   }
   function show(el, yes){ el.classList.toggle('hidden', !yes); }
 
-  // 角度→ラジアン
-  const deg2rad = d => (Math.PI/180) * d;
+  // --- 六芒星（中央六角＋周囲五角形6つ） ---
+  // R: 外側頂点の半径 / r: 中央六角の半径 / t: 五角形の“頂点”までの比率（Rへ寄せる）
+  function buildStar(R = 96, r = 56, tipRatio = 0.82, shoulderRatio = 0.58){
+    const d2r = d => (Math.PI/180)*d;
 
-  /**
-   * 右：ひし形が六個 円形につながった形
-   * 各ひし形 i は基準角 θi（-90°スタートで60°刻み）。
-   * 頂点は [外, 側(+30°), 内, 側(-30°)] の4点。
-   * 側(+30°) は次のひし形の 側(-30°) と同一点を共有 → 連結表現。
-   */
-  function buildDiamondRing(Rout = 96, Rm = 74, Rin = 44){
-    // ひし形6個
-    for (let i=0;i<6;i++){
-      const theta = -90 + 60*i;      // 基準角（外向きの頂点）
-      const a0 = theta;
-      const a1 = theta + 30;
-      const a2 = theta + 180;
-      const a3 = theta - 30;
+    // 外側六角の頂点
+    const outer = Array.from({length:6}, (_,i)=>{
+      const a = d2r(60*i - 90);
+      return [ R*Math.cos(a), R*Math.sin(a) ];
+    });
 
-      const p0 = [ Rout*Math.cos(deg2rad(a0)), Rout*Math.sin(deg2rad(a0)) ]; // 外
-      const p1 = [  Rm*Math.cos(deg2rad(a1)),  Rm*Math.sin(deg2rad(a1)) ];   // 側(+30°)
-      const p2 = [ Rin*Math.cos(deg2rad(a2)), Rin*Math.sin(deg2rad(a2)) ];   // 内
-      const p3 = [  Rm*Math.cos(deg2rad(a3)),  Rm*Math.sin(deg2rad(a3)) ];   // 側(-30°)
+    // 内側（中央六角）
+    const inner = Array.from({length:6}, (_,i)=>{
+      const a = d2r(60*i - 90);
+      return [ r*Math.cos(a), r*Math.sin(a) ];
+    });
 
+    // 中央六角
+    const hex = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    hex.setAttribute('points', inner.map(p=>p.join(',')).join(' '));
+    hex.setAttribute('class','cell hex');
+    hex.dataset.cell = 'center';
+    svg.appendChild(hex);
+
+    // 6つの五角形（内側六角の各辺に接続）
+    for(let i=0;i<6;i++){
+      const i0 = i, i1 = (i+1)%6;
+      const pivot = outer[i1];           // 対応する外頂点（五角形の先端方向）
+      const a0 = inner[i0];
+      const a1 = inner[i1];
+
+      // 先端（外頂点方向へ少し控えめに）
+      const tip = [ pivot[0]*tipRatio, pivot[1]*tipRatio ];
+
+      // 肩（内辺の各端から外頂点方向へ少し出す：五角形の左右の角）
+      const shoulder = (pt)=>[
+        pt[0]*(1-shoulderRatio) + pivot[0]*shoulderRatio,
+        pt[1]*(1-shoulderRatio) + pivot[1]*shoulderRatio
+      ];
+      const s0 = shoulder(a0);
+      const s1 = shoulder(a1);
+
+      // 五角形の順序：内側端a0 → 肩s0 → 先端tip → 肩s1 → 内側端a1
+      const pentaPts = [a0,s0,tip,s1,a1].map(p=>p.join(',')).join(' ');
       const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-      poly.setAttribute('points', `${p0[0]},${p0[1]} ${p1[0]},${p1[1]} ${p2[0]},${p2[1]} ${p3[0]},${p3[1]}`);
-      poly.setAttribute('class','cell diamond');
-      poly.dataset.cell = `diamond-${i}`;
+      poly.setAttribute('points', pentaPts);
+      poly.setAttribute('class','cell penta');
+      poly.dataset.cell = `penta-${i}`;
       svg.appendChild(poly);
     }
 
-    // 外周の見栄え（オプション）
-    const ring = document.createElementNS('http://www.w3.org/2000/svg','circle');
-    ring.setAttribute('cx','0'); ring.setAttribute('cy','0');
-    ring.setAttribute('r', String(Rout));
-    ring.setAttribute('class','ring-outline');
-    ring.setAttribute('opacity','0.25');
-    svg.appendChild(ring);
+    // 外形の太線（参考アウトライン）
+    const outline = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    outline.setAttribute('points', outer.map(p=>p.join(',')).join(' '));
+    outline.setAttribute('class','outline');
+    svg.appendChild(outline);
   }
 
-  // SVG座標への変換
+  // SVG座標変換
   function toSvgPoint(svgEl, clientX, clientY){
     const pt = svgEl.createSVGPoint();
     pt.x = clientX; pt.y = clientY;
@@ -179,7 +193,7 @@
     return pt.matrixTransform(ctm.inverse());
   }
 
-  // クリック時のラベル配置（常に1つだけ）
+  // クリック位置にラベル（常に1つだけ）
   function placeLabelAt(x, y, text){
     if (state.labelEl && state.labelEl.parentNode) {
       state.labelEl.parentNode.removeChild(state.labelEl);
@@ -195,76 +209,89 @@
     state.labelEl = t;
   }
 
-  // --- 左：ドラッグ処理（自由配置・領域内制限） ---
-  function makeDraggableChip(letter){
-    if (state.chipEl) state.chipEl.remove();
-    const el = document.createElement('div');
-    el.className = 'chip';
-    el.textContent = letter || '?';
-    dropzone.appendChild(el);
-    // 初期位置：中央
-    const dzRect = dropzone.getBoundingClientRect();
-    const x = (dzRect.width  - 44)/2;
-    const y = (dzRect.height - 44)/2;
-    el.style.left = x + 'px';
-    el.style.top  = y + 'px';
+  // --- 左パッド：トークン生成＆ドラッグ ---
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 
-    const onPointerDown = (ev) => {
-      ev.preventDefault();
-      el.setPointerCapture?.(ev.pointerId);
-      state.dragging = true;
-      const r = el.getBoundingClientRect();
-      state.dragOffsetX = ev.clientX - r.left;
-      state.dragOffsetY = ev.clientY - r.top;
+  function createToken(x, y, text){
+    const el = document.createElement('div');
+    el.className = 'dot';
+    el.textContent = text ?? state.tokenSeq++;
+    el.style.left = (x-16) + 'px';
+    el.style.top  = (y-16) + 'px';
+
+    let startX=0, startY=0, baseL=0, baseT=0;
+
+    const onPointerDown = (e)=>{
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      state.dragging = el;
+      startX = e.clientX; startY = e.clientY;
+      baseL = parseFloat(el.style.left)||0;
+      baseT = parseFloat(el.style.top)||0;
     };
-    const onPointerMove = (ev) => {
-      if (!state.dragging) return;
-      const dz = dropzone.getBoundingClientRect();
-      let nx = ev.clientX - dz.left - state.dragOffsetX;
-      let ny = ev.clientY - dz.top  - state.dragOffsetY;
-      // 盤内にクリップ
-      nx = Math.max(0, Math.min(nx, dz.width  - 44));
-      ny = Math.max(0, Math.min(ny, dz.height - 44));
-      el.style.left = nx + 'px';
-      el.style.top  = ny + 'px';
+    const onPointerMove = (e)=>{
+      if (state.dragging !== el) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const rect = pad.getBoundingClientRect();
+      let L = baseL + dx;
+      let T = baseT + dy;
+      // パッド内に収める
+      L = clamp(L, 0, rect.width  - el.offsetWidth);
+      T = clamp(T, 0, rect.height - el.offsetHeight);
+      el.style.left = L + 'px';
+      el.style.top  = T + 'px';
     };
-    const onPointerUp = (ev) => {
-      state.dragging = false;
-      el.releasePointerCapture?.(ev.pointerId);
+    const onPointerUp = (e)=>{
+      if (state.dragging === el){
+        state.dragging = null;
+        el.releasePointerCapture(e.pointerId);
+      }
     };
 
     el.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup',   onPointerUp);
-    window.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('pointerup', onPointerUp);
 
-    state.chipEl = el;
+    pad.appendChild(el);
+    return el;
   }
+
+  // パッド内クリックで新規トークン
+  pad.addEventListener('pointerdown', (e)=>{
+    if (e.target !== pad) return; // 既存トークン上は無視（そのトークンのdragが発火）
+    const rect = pad.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    createToken(x, y);
+  });
 
   // --- イベント ---
   btnJoin.onclick = () => {
     state.name = normalizeName(nameInput.value);
     headerInfo.textContent = `あなた：${state.name}`;
-    show(joinPanel, false);
-    show(board, true);
-
-    // 左：ドラッグチップ
-    makeDraggableChip(state.name);
-
-    // 右：ひし形リング
-    if (!svg.hasChildNodes()) buildDiamondRing();
+    show(joinPanel, true);
+    show(boards, true);
+    btnAddToken.classList.remove('hidden');
+    if (!svg.hasChildNodes()) buildStar();
   };
 
-  // 図形のセルだけ反応
+  btnAddToken.onclick = () => {
+    // 左パッドの左上に自分の1文字を出す
+    const rect = pad.getBoundingClientRect();
+    createToken(24, 24, state.name || 'A');
+  };
+
+  // 図形クリック：セル内クリック時のみ反応
   svg.addEventListener('click', (e)=>{
     const target = e.target;
     if (!(target instanceof SVGElement)) return;
-    if (!target.classList.contains('cell')) return; // クリック対象のみ
+    if (!target.classList.contains('cell')) return;
     const p = toSvgPoint(svg, e.clientX, e.clientY);
     placeLabelAt(p.x, p.y, state.name || '？');
   });
 
-  // URLパラメータで名前を事前入力（任意）
+  // URLパラメータで名前事前入力（任意）
   try{
     const qs = new URLSearchParams(location.search);
     const qName = (qs.get('name')||'').trim();
