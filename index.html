@@ -725,6 +725,7 @@
     const snap = await get(hostRef);
     state.isHost = (snap.val() === state.uid);
     updateHostUI();
+ updateGameUI(); 
   }
 
   function updateHostUI(){
@@ -738,6 +739,7 @@
     const off = onValue(hostRef, (snap)=>{
       state.isHost = (snap.val() === state.uid);
       updateHostUI();
+  updateGameUI(); 
     });
     state.unsub.push(off);
   }
