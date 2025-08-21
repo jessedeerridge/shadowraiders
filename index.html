@@ -1073,18 +1073,58 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
     }
   }
 
-  // ===== 入室処理 =====
-  async function join(){
-    const name = normalizeName(nameInput.value);
-    const code = (codeInput.value || "").trim() || random4();
+// --- 入室処理 ---
+async function join(){
+  const name = normalizeName(nameInput.value);
+  const code = (codeInput.value || "").trim() || random4();
 
-    state.name = name;
-    state.code = code;
+  state.name = name;
+  state.code = code;
 
-    // 在室登録
-    const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
-    await set(meRef, { name, at: Date.now() });
-    onDisconnect(meRef).remove();
+  // ===== 孤児データ引き継ぎ =====
+  const psSnap = await get(ref(db, `rooms/${code}/participants`));
+  const ps = psSnap.val() || {};
+  const oldUid = Object.keys(ps).find(uid => ps[uid]?.name === name);
+  if (oldUid && oldUid !== state.uid){
+    // 旧参加者を削除
+    await remove(ref(db, `rooms/${code}/participants/${oldUid}`));
+
+    // アイコン引き継ぎ
+    const oldIconSnap = await get(ref(db, `rooms/${code}/icons/${oldUid}`));
+    if (oldIconSnap.exists()){
+      await set(ref(db, `rooms/${code}/icons/${state.uid}`), { ...oldIconSnap.val(), name });
+      await remove(ref(db, `rooms/${code}/icons/${oldUid}`));
+    }
+
+    // 席引き継ぎ
+    const oldSeatSnap = await get(ref(db, `rooms/${code}/seats/${oldUid}`));
+    if (oldSeatSnap.exists()){
+      await set(ref(db, `rooms/${code}/seats/${state.uid}`), { ...oldSeatSnap.val(), name });
+      await remove(ref(db, `rooms/${code}/seats/${oldUid}`));
+    }
+
+    // 色引き継ぎ
+    const colorsSnap = await get(ref(db, `rooms/${code}/colors`));
+    const colors = colorsSnap.val() || {};
+    for (const [cid, v] of Object.entries(colors)){
+      if (v?.uid === oldUid){
+        await set(ref(db, `rooms/${code}/colors/${cid}`), { ...v, uid: state.uid, name });
+      }
+    }
+
+    // カード引き継ぎ
+    const cardSnap = await get(ref(db, `rooms/${code}/deal/v1/cards/${oldUid}`));
+    if (cardSnap.exists()){
+      await set(ref(db, `rooms/${code}/deal/v1/cards/${state.uid}`), cardSnap.val());
+      await remove(ref(db, `rooms/${code}/deal/v1/cards/${oldUid}`));
+    }
+  }
+
+  // ===== 在室登録（新しいuidで） =====
+  const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
+  await set(meRef, { name, at: Date.now() });
+  onDisconnect(meRef).remove();
+
 
     // ホスト就任（空いていれば）
     await becomeHostIfVacant();
