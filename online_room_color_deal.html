@@ -7,8 +7,8 @@
 <style>
   :root { --gap:10px; }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
-  header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee;gap:12px}
-  h1{margin:0;font-size:18px}
+  header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee;gap:10px}
+  h1{margin:0;font-size:14px}
   .small{font-size:12px;opacity:.85;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .copybtn{padding:6px 10px;border:1px solid #ddd;border-radius:10px;background:#f7f7f7;cursor:pointer}
   main{padding:14px;display:grid;gap:16px;max-width:980px;margin:0 auto}
@@ -37,8 +37,19 @@
   .roomhit.flash{fill:#eee;transition:fill 60ms}
 
   /* 山札UI（右図形の真下に横並び） */
-  .decks-wrap{display:flex;justify-content:center}
-  .decks{display:flex;gap:16px;justify-content:flex-start;align-items:flex-start;margin-top:12px}
+.decks-wrap{
+  display:flex;
+  justify-content:flex-end;  /* 右寄せ */
+  padding-right:150px;        /* ← ここで右端からの距離を調整 */
+}
+.decks{
+  display:flex;
+  gap:16px;
+  justify-content:flex-end;
+  align-items:flex-start;
+  margin-top:-30px;  /* ← 上に10px持ち上げる */
+  margin-left:0;
+}
   .deck{display:flex;flex-direction:column;align-items:center;gap:8px}
   .deck-back,.deck-face{
     width:80px;height:110px;border:1px solid #111;border-radius:10px;
@@ -107,16 +118,14 @@
   </section>
 
   <!-- ルーム -->
-<section id="roomPanel" class="hidden">
-  <div class="figure-block" style="margin-top:10px;">
-    <!-- 図形②：左に狭い長方形＋右に星形（中央六角形＋外周五角形6） -->
-    <svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
-    <div class="figure-sep" aria-hidden="true"></div>
-  </div>
+  <section id="roomPanel" class="hidden">
+    <div style="margin-top:10px;">
+      <!-- 図形②：左に狭い長方形＋右に星形（中央六角形＋外周五角形6） -->
+      <svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
+    </div>
 
-  <!-- ダイス（左長方形の下／ローカル表示） -->
-  <div class="dicebar" id="diceBar">
-
+    <!-- ダイス（左長方形の下／ローカル表示） -->
+    <div class="dicebar" id="diceBar">
       <button class="dicebtn" id="rollD6">d6 を振る</button>
       <span class="diceres" id="resD6">-</span>
       <button class="dicebtn" id="rollD4">d4 を振る</button>
@@ -513,6 +522,7 @@ function applyFillAndText(elGroup, colorName){
   if (box){ box.style.fill = bg; }     // ← inline style は CSS より強い
   if (label){ label.style.fill = text; }
 }
+
 
   function renderOrUpdateSeat(uid, data, userColorsMap){
     const svg = document.getElementById('art');
