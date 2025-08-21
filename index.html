@@ -3,29 +3,56 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>六芒星（中央：正六角形＋周囲：正ひし形6つ）</title>
+<title>六芒星（外周：五角形×6 / 内部：正六角形×2）</title>
 <style>
   html,body{height:100%;margin:0;background:#fff}
-  svg{display:block;margin:auto;max-width:92vmin;height:auto}
-  .shape{fill:#fff;stroke:#111;stroke-width:8;stroke-linejoin:round;stroke-linecap:round}
+  svg{display:block;margin:auto;max-width:94vmin;height:auto}
+  .line{fill:#fff;stroke:#111;stroke-width:10;stroke-linejoin:round;stroke-linecap:round}
 </style>
 </head>
 <body>
 
-<!-- 生成画像と同配置：中心の正六角形＋各辺に外向きの正ひし形 -->
-<svg viewBox="-132 -116 264 232" aria-label="六芒星の図形">
-  <!-- 中央の正六角形（辺長=60, 水平向き） -->
-  <polygon class="shape"
-    points="60.000,0.000 30.000,51.962 -30.000,51.962 -60.000,0.000 -30.000,-51.962 30.000,-51.962" />
+<svg id="art" viewBox="-210 -240 420 480" aria-label="外周が五角形6つの六芒星"></svg>
 
-  <!-- 周囲の正ひし形6つ（六角形の各辺を共有） -->
-  <polygon class="shape" points="60.000,0.000 30.000,51.962 60.000,103.923 90.000,51.962"/>
-  <polygon class="shape" points="30.000,51.962 -30.000,51.962 -60.000,103.923 0.000,103.923"/>
-  <polygon class="shape" points="-30.000,51.962 -60.000,0.000 -120.000,0.000 -90.000,51.962"/>
-  <polygon class="shape" points="-60.000,0.000 -30.000,-51.962 -60.000,-103.923 -90.000,-51.962"/>
-  <polygon class="shape" points="-30.000,-51.962 30.000,-51.962 0.000,-103.923 -60.000,-103.923"/>
-  <polygon class="shape" points="30.000,-51.962 60.000,0.000 120.000,0.000 90.000,-51.962"/>
-</svg>
+<script>
+const svg = document.getElementById('art');
+const rt3 = Math.sqrt(3);
 
-</body>
-</html>
+// === パラメータ ===
+const sHex = 48;         // 内部の正六角形の一辺
+const sOut = 78;         // 外周の出っ張り量（五角形の高さ感）
+const cx = 0, cy = 0;    // 図の中心
+
+// 正六角形（横向き＝上辺が水平）
+function hexFlat(cx, cy, side){
+  const h = (rt3/2)*side;
+  return [
+    [cx + side, cy],
+    [cx + side/2, cy + h],
+    [cx - side/2, cy + h],
+    [cx - side,   cy],
+    [cx - side/2, cy - h],
+    [cx + side/2, cy - h],
+  ];
+}
+
+function polygon(points){
+  const el = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+  el.setAttribute('points', points.map(p=>p.join(',')).join(' '));
+  el.setAttribute('class','line');
+  svg.appendChild(el);
+  return el;
+}
+
+const add=(a,b)=>[a[0]+b[0],a[1]+b[1]];
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1]];
+const mul=(a,k)=>[a[0]*k,a[1]*k];
+
+// pentagonFromEdge: 六角形の辺 a-b を共有し、外側へ尖る五角形を作る
+function pentagonFromEdge(a,b,pointOut){
+  const mid = [(a[0]+b[0])/2,(a[1]+b[1])/2];
+  const tip = add(mid, mul(pointOut, 1));      // 先端
+  // エッジから外側に少しオフセット（側面を少し広げて「ほぼ正五角形」に）
+  const sideA = add(a, mul(pointOut, 0.60));
+  const sideB = add(b, mul(pointOut, 0.60));
+  return [a, b,]()
