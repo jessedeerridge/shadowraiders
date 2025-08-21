@@ -579,10 +579,29 @@ g.appendChild(box);
       label.textContent = (data.name || '?');
       g.appendChild(label);
 
-      // ホスト削除ポップ
-      g.addEventListener('click', (e)=> maybeShowDeletePopover(e, 'seat', uid));
+      // クリックで「上に1マス移動」（削除ポップを廃止）
+      g.addEventListener('click', async (e)=>{
+        if (state.isPointerDown) return;     // ドラッグ中の誤爆防止
+        const curX = parseFloat(g.getAttribute('data-x') || data.x || 0);
+        const curY = parseFloat(g.getAttribute('data-y') || data.y || 0);
+        const step = 24;                     // アイコン1個ぶんの高さ
+        const pos = clampToRect(curX, curY - step);
+
+        // ローカル表示を即時更新
+        g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+        g.setAttribute('data-x', pos.x);
+        g.setAttribute('data-y', pos.y);
+
+        // バージョンを進めてDB更新（エコー順序担保）
+        const nextVer = (state.localMoveVer[uid] || 0) + 1;
+        state.localMoveVer[uid] = nextVer;
+        await update(ref(db, `rooms/${state.code}/icons/${uid}`), {
+          x: pos.x, y: pos.y, ver: nextVer
+        });
+      });
 
       layer.appendChild(g);
+
     }
 
     // 名前更新
