@@ -106,23 +106,39 @@
   #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
 }
 
-/* ▼ 装備所持バー */
+/* ▼ 装備所持エリア（通常フロー） */
 .equipbar{
-  position:fixed; left:12px; right:12px; bottom:70px;  /* 右下ミニカードとホスト歯車を避けて配置 */
-  z-index:2147483601;
   display:flex; gap:12px; flex-wrap:wrap; align-items:center;
   background:#fff; border:1px solid #111; border-radius:12px; padding:8px 10px;
-  box-shadow:0 6px 18px rgba(0,0,0,.12);
+  margin-top:12px;           /* 山札との間に余白 */
 }
-.equip-holder{display:flex; gap:6px; align-items:center; padding:4px 6px; border:1px solid #ddd; border-radius:10px}
+
+/* 所持者1人分のボックス */
+.equip-holder{
+  display:flex; gap:8px; align-items:center;
+  padding:6px 8px; border:1px solid #ddd; border-radius:10px;
+}
+
+/* 所持者の色付き小アイコン（名前1文字） */
 .equip-icon{
-  width:24px; height:24px; border:1px solid #111; border-radius:6px;
+  width:24px; height:24px;
+  border:1px solid #111; border-radius:6px;
   display:flex; align-items:center; justify-content:center; font-weight:700;
 }
+
+/* 装備カード：サイズを“カードと同じ”に合わせる */
 .equip-card{
-  min-width:46px; height:26px; border:1px solid #111; border-radius:6px;
-  display:flex; align-items:center; justify-content:center; padding:0 6px; font-size:12px; font-weight:700;
+  width:60px; height:86px;         /* ← デスクトップのカードサイズに合わせる */
+  border:1px solid #111; border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:14px; font-weight:700;
 }
+
+/* 既存のモバイル用カードサイズに追従（例：@media内のdeckサイズが50x69なら同じ） */
+@media (max-width:600px){
+  .equip-card{ width:50px; height:69px; font-size:12px; }
+}
+
   
 
 </style>
@@ -172,9 +188,15 @@
 <!-- 自分用 ミニカード（配布後） -->
 <div id="myDealMini" class="hidden" title="カードを開く">裏</div>
 
+<!-- 山札コンテナ -->
+<div class="decks-wrap">
+  <div class="decks" id="decks"></div>
+</div>
+  
 <!-- 装備所持バー -->
 <div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
 
+  
   
 <!-- カード拡大ビューア -->
 <div id="dealViewer" class="modal hidden" role="dialog" aria-modal="true">
