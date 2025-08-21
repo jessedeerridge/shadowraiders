@@ -3,303 +3,258 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>シンプル・チャット（ルームコード式）</title>
+<title>シンプルチャット（入室画面）</title>
 <style>
-  :root{ --maxw:880px; }
-  *{ box-sizing:border-box; }
-  body{
-    margin:0; font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Sans",
-    "Noto Sans JP", "Yu Gothic UI", "Yu Gothic", "Meiryo", sans-serif;
-    background:#0b0f14; color:#e6edf3;
-    display:flex; min-height:100vh; align-items:center; justify-content:center;
-  }
-  .card{
-    width:min(100%, var(--maxw)); background:#0f1722; border:1px solid #1f2a37;
-    border-radius:16px; padding:20px; box-shadow:0 10px 30px rgba(0,0,0,.35);
-  }
-  h1{ font-size:20px; margin:0 0 16px; letter-spacing:.02em; }
-  .row{ display:flex; gap:10px; flex-wrap:wrap; }
-  .field{ flex:1 1 200px; }
-  label{ display:block; font-size:13px; color:#9fb0c0; margin:0 0 6px; }
-  input{
-    width:100%; padding:12px 14px; border-radius:12px; border:1px solid #243145;
-    background:#0b121d; color:#e6edf3; outline:none;
-  }
-  input:focus{ border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.2); }
-  button{
-    padding:12px 16px; border-radius:12px; border:1px solid #2a3a54; cursor:pointer;
-    background:#1b2a41; color:#e6edf3; font-weight:600;
-  }
-  button.primary{ background:#2563eb; border-color:#2563eb; }
-  button:hover{ filter:brightness(1.05); }
-  .hint{ font-size:12px; color:#7f93a8; margin-top:4px; }
+  :root { --gap:10px; }
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
+  header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee}
+  h1{margin:0;font-size:18px}
+  .small{font-size:12px;opacity:.75}
+  main{padding:14px;display:grid;gap:16px;max-width:900px;margin:0 auto}
+  .join-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .join-box input{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px}
+  .btn{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
+  .btn.ghost{background:#f8f8f8;color:#111}
+  .muted{opacity:.65}
+  .hidden{display:none !important}
 
-  .hidden{ display:none !important; }
-
-  /* chat area */
-  .header{
-    display:flex; align-items:center; justify-content:space-between; gap:10px;
-    padding:10px 12px; border:1px solid #1f2a37; border-radius:12px; background:#0b121d;
-    margin:8px 0 16px;
-  }
-  .pill{ padding:6px 10px; border:1px solid #2a3a54; border-radius:999px; font-size:12px; color:#b9c7d6; }
-  .list{
-    height:48vh; min-height:320px; overflow:auto; padding:12px; border:1px solid #1f2a37;
-    border-radius:12px; background:#0b121d;
-  }
-  .msg{
-    margin:0 0 10px; display:flex; gap:8px; align-items:flex-start;
-  }
-  .me .bubble{ background:#1f3b78; }
-  .other .bubble{ background:#1d2636; }
-  .bubble{
-    max-width:75%; padding:10px 12px; border-radius:14px;
-    white-space:pre-wrap; word-break:break-word; border:1px solid #2a3a54;
-  }
-  .meta{ font-size:11px; color:#8394a7; margin-top:4px; }
-  .foot{
-    display:flex; gap:8px; margin-top:10px;
-  }
-  .foot input{ flex:1; }
-  .copy{ font-size:12px; }
+  /* チャット画面 */
+  .room-line{font-size:14px}
+  .wrap{display:grid;grid-template-rows:auto 1fr auto;gap:var(--gap);height:70vh;border:1px solid #eee;border-radius:12px;padding:12px}
+  #msgs{overflow:auto;border:1px solid #eee;border-radius:10px;padding:10px}
+  .msg{display:flex;gap:8px;margin:6px 0;line-height:1.4}
+  .msg .name{flex:0 0 auto;font-weight:700}
+  .msg .text{white-space:pre-wrap;word-break:break-word}
+  .sys{color:#666;font-style:italic}
+  .row{display:flex;gap:8px}
+  .row input[type="text"]{flex:1;padding:10px;border:1px solid #ddd;border-radius:8px}
+  .pill{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:2px 8px;font-size:12px;margin-left:6px}
+  .right{margin-left:auto}
+  .code-link{ text-decoration: underline; cursor: pointer; }
 </style>
 </head>
 <body>
-  <div class="card" id="screen-join">
-    <h1>チャットに入室</h1>
-    <div class="row">
-      <div class="field">
-        <label for="name">名前（1文字：英字/漢字/ひらがな/カタカナ）</label>
-        <input id="name" placeholder="例）A / 太 / あ / タ" maxlength="4" autocomplete="off" />
-        <div class="hint">未入力ならランダム英字1文字が自動設定されます。</div>
-      </div>
-      <div class="field">
-        <label for="code">ルームコード（4桁）</label>
-        <input id="code" placeholder="例）0275（未入力なら自動生成）" inputmode="numeric" autocomplete="off" />
-        <div class="hint">同じコードを入力した人は同じ部屋に入ります。</div>
-      </div>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <button class="primary" id="enter">入室</button>
-    </div>
-  </div>
+<header>
+  <h1>シンプルチャット</h1>
+  <div class="small" id="headerInfo"></div>
+</header>
 
-  <div class="card hidden" id="screen-chat">
-    <div class="header">
-      <div>
-        <div class="pill" id="room-pill">ROOM ----</div>
-        <div class="hint" id="me-pill" style="margin-top:6px">あなた：-</div>
-      </div>
-      <div class="row" style="gap:6px">
-        <button id="copy-code" class="copy">コードをコピー</button>
-        <button id="leave">退出</button>
+<main>
+  <!-- 入室画面 -->
+  <section id="joinPanel" class="join-box">
+    <!-- 名前：1文字のみ（アルファベット/ひらがな/カタカナ/漢字） -->
+    <input id="nameInput" placeholder="名前（1文字）" maxlength="1" inputmode="text" />
+    <!-- ルームコード：未入力なら自動で4桁 -->
+    <input id="codeInput" placeholder="ルームコード（例: 1234）" maxlength="12" inputmode="numeric" />
+    <button id="btnJoin" class="btn">入室</button>
+  </section>
+
+  <!-- チャット画面 -->
+  <section id="chatPanel" class="hidden">
+    <div class="room-line">
+      部屋コード：<span id="roomBadge" class="code-link"></span>
+      <span class="pill">参加者 <span id="memberCount">0</span> 人</span>
+      <span class="pill right">あなた：<span id="selfName"></span></span>
+    </div>
+    <div class="wrap">
+      <div id="msgs"></div>
+      <div class="row">
+        <input id="msgInput" type="text" placeholder="メッセージを入力" />
+        <button id="btnSend" class="btn">送信</button>
+        <button id="btnLeave" class="btn ghost">退室</button>
       </div>
     </div>
-    <div id="messages" class="list" aria-live="polite"></div>
-    <div class="foot">
-      <input id="text" placeholder="メッセージを入力して Enter" />
-      <button id="send" class="primary">送信</button>
-    </div>
-  </div>
+  </section>
+</main>
 
-  <!-- Firebase SDK (v10+ modular) -->
-  <script type="module">
-    // ================= Firebase 初期化 =================
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import {
-      getFirestore, doc, setDoc, getDoc, collection, addDoc,
-      serverTimestamp, query, orderBy, onSnapshot
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+<!-- Firebase（v9 モジュール） -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+  import {
+    getDatabase, ref, get, set, push, onValue, onChildAdded, query, limitToLast, onDisconnect, remove
+  } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
-      authDomain: "shadowraiders-a2dbc.firebaseapp.com",
-      projectId: "shadowraiders-a2dbc",
-      storageBucket: "shadowraiders-a2dbc.firebasestorage.app",
-      messagingSenderId: "577276689873",
-      appId: "1:577276689873:web:9a13faf90c3d6a791e34f0",
-      measurementId: "G-PKNEPDBVSS"
+  /* あなたの Firebase 設定 */
+  const firebaseConfig = {
+    apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
+    authDomain: "shadowraiders-a2dbc.firebaseapp.com",
+    projectId: "shadowraiders-a2dbc",
+    storageBucket: "shadowraiders-a2dbc.firebasestorage.app",
+    messagingSenderId: "577276689873",
+    appId: "1:577276689873:web:9a13faf90c3d6a791e34f0",
+    measurementId: "G-PKNEPDBVSS"
+  };
+
+  // --- 初期化 ---
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
+
+  // --- DOM ---
+  const headerInfo    = document.getElementById('headerInfo');
+  const joinPanel     = document.getElementById('joinPanel');
+  const nameInput     = document.getElementById('nameInput');
+  const codeInput     = document.getElementById('codeInput');
+  const btnJoin       = document.getElementById('btnJoin');
+
+  const chatPanel     = document.getElementById('chatPanel');
+  const roomBadge     = document.getElementById('roomBadge');
+  const memberCountEl = document.getElementById('memberCount');
+  const selfNameEl    = document.getElementById('selfName');
+  const msgsEl        = document.getElementById('msgs');
+  const msgInput      = document.getElementById('msgInput');
+  const btnSend       = document.getElementById('btnSend');
+  const btnLeave      = document.getElementById('btnLeave');
+
+  // --- 状態 ---
+  const state = {
+    uid: crypto.randomUUID(),
+    name: "",
+    code: "",
+    joined: false,
+    unsub: [] // リスナー解除
+  };
+
+  // --- ユーティリティ ---
+  function randomLetter(){
+    return String.fromCharCode(65 + Math.floor(Math.random()*26)); // A-Z
+  }
+  function random4(){
+    return String(Math.floor(Math.random()*10000)).padStart(4, '0');
+  }
+  // 許可：A-Za-z / ひらがな / カタカナ / CJK(漢字) のいずれか1文字
+  const NAME_RE = /^[A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]$/;
+
+  function normalizeName(raw){
+    const t = (raw || "").trim();
+    if (!t) return randomLetter();
+    const c = t[0]; // 1文字だけ採用
+    return NAME_RE.test(c) ? c : randomLetter();
+  }
+
+  function buildRoomLink(code){
+    const url = new URL(location.href);
+    url.searchParams.set('room', code);
+    return url.toString();
+  }
+
+  function show(el, yes){ el.classList.toggle('hidden', !yes); }
+
+  function addMsg(name, text, isSys=false){
+    const row = document.createElement('div');
+    row.className = 'msg';
+    if(isSys) row.classList.add('sys');
+    const nm  = document.createElement('div'); nm.className='name'; nm.textContent = isSys ? '●' : `[${name}]`;
+    const txt = document.createElement('div'); txt.className='text'; txt.textContent = text;
+    row.appendChild(nm); row.appendChild(txt);
+    msgsEl.appendChild(row);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+  }
+
+  // --- 入室処理 ---
+  async function join(){
+    const name = normalizeName(nameInput.value);
+    const code = (codeInput.value || "").trim() || random4();
+
+    state.name = name;
+    state.code = code;
+
+    // 参加者登録（部屋が無ければ初回作成される）
+    const baseRef = ref(db, `rooms/${code}`);
+    const meRef   = ref(db, `rooms/${code}/participants/${state.uid}`);
+    await set(meRef, { name, at: Date.now() });
+    onDisconnect(meRef).remove();
+
+    // UI 切替
+    selfNameEl.textContent = name;
+    roomBadge.textContent = code;
+    roomBadge.onclick = (ev)=>{
+      const link = buildRoomLink(code);
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(link).then(()=> alert('招待リンクをコピーしました'));
+      } else {
+        prompt('コピーできない場合はこのテキストをコピーしてください', link);
+      }
     };
-    const app = initializeApp(firebaseConfig);
-    const db  = getFirestore(app);
+    headerInfo.innerHTML = `コード：<span class="code-link" onclick="void(0)">${code}</span>　/　あなた：${name}`;
 
-    // ================= ユーティリティ =================
-    const $ = (sel) => document.querySelector(sel);
-    const screenJoin = $("#screen-join");
-    const screenChat = $("#screen-chat");
-    const nameInput  = $("#name");
-    const codeInput  = $("#code");
-    const enterBtn   = $("#enter");
-    const messagesEl = $("#messages");
-    const textInput  = $("#text");
-    const sendBtn    = $("#send");
-    const roomPill   = $("#room-pill");
-    const mePill     = $("#me-pill");
+    show(joinPanel, false);
+    show(chatPanel, true);
 
-    // 端末ごとの簡易ID（匿名Auth不要）
-    const clientId = (() => {
-      const k = "chat-client-id";
-      let v = localStorage.getItem(k);
-      if(!v){ v = crypto.randomUUID(); localStorage.setItem(k, v); }
-      return v;
-    })();
+    // 参加者数の監視
+    const membersRef = ref(db, `rooms/${code}/participants`);
+    const offMembers = onValue(membersRef, (snap)=>{
+      const obj = snap.val() || {};
+      memberCountEl.textContent = Object.keys(obj).length;
+    });
+    state.unsub.push(offMembers);
 
-    // 名前：1文字のみ許容（英字/ひらがな/カタカナ/漢字）。未入力なら英大文字1文字を付与
-    function normalizeName(input){
-      const s = (input || "").trim();
-      let ch = null;
-      for(const c of Array.from(s)){ // サロゲート対応で1コードポイントずつ
-        if (/^[A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]$/.test(c)) { ch = c; break; }
-      }
-      if(!ch){
-        ch = String.fromCharCode(65 + Math.floor(Math.random() * 26)); // 'A'〜'Z'
-      }
-      return ch;
-    }
+    // メッセージ監視（最後の100件）
+    const msgsRef = query(ref(db, `rooms/${code}/messages`), limitToLast(100));
+    const offMsgs = onChildAdded(msgsRef, (snap)=>{
+      const v = snap.val();
+      if (!v) return;
+      addMsg(v.name, v.text);
+    });
+    state.unsub.push(offMsgs);
 
-    // ルームコード：数字のみ4桁。未入力ならランダム4桁を生成
-    function normalizeCode(input){
-      const digits = String(input || "").replace(/\D/g, "");
-      if(digits.length === 4) return digits;
-      const rnd = Math.floor(Math.random() * 10000);
-      return String(rnd).padStart(4, "0");
-    }
-
-    function scrollToBottom(){
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-
-    // ================= 入室処理 =================
-    let roomRef = null;
-    let unsubMessages = null;
-    let myName = "-";
-    let roomCode = "----";
-
-    async function enterRoom(){
-      myName   = normalizeName(nameInput.value);
-      roomCode = normalizeCode(codeInput.value);
-
-      // UI反映＆ローカル保存
-      nameInput.value = myName;
-      codeInput.value = roomCode;
-      localStorage.setItem("lastName", myName);
-      localStorage.setItem("lastCode", roomCode);
-
-      // ルーム作成（なければ）／存在していれば参加
-      roomRef = doc(db, "rooms", roomCode);
-      const exists = (await getDoc(roomRef)).exists();
-      await setDoc(roomRef, { createdAt: serverTimestamp() }, { merge: true });
-
-      // メンバー登録（簡易）
-      await setDoc(doc(db, "rooms", roomCode, "members", clientId), {
-        name: myName,
-        joinedAt: serverTimestamp()
-      }, { merge: true });
-
-      // 既に部屋があったのか、新規なのかシステムメッセージを軽く残す（任意）
-      await addDoc(collection(db, "rooms", roomCode, "messages"), {
-        text: exists ? `🔔 ${myName} さんが入室しました` : `🚪 ルーム ${roomCode} が作成されました（作成者：${myName}）`,
-        name: "SYSTEM",
-        createdAt: serverTimestamp()
-      });
-
-      // 画面切替
-      screenJoin.classList.add("hidden");
-      screenChat.classList.remove("hidden");
-      roomPill.textContent = `ROOM ${roomCode}`;
-      mePill.textContent   = `あなた：${myName}`;
-
-      // メッセージ購読
-      if (unsubMessages) unsubMessages();
-      const q = query(collection(db, "rooms", roomCode, "messages"), orderBy("createdAt", "asc"));
-      unsubMessages = onSnapshot(q, snap => {
-        messagesEl.innerHTML = "";
-        snap.forEach(docSnap => {
-          const m = docSnap.data();
-          const isMe = m.name === myName;
-          const item = document.createElement("div");
-          item.className = `msg ${isMe ? "me" : "other"}`;
-          const bubble = document.createElement("div");
-          bubble.className = "bubble";
-          bubble.textContent = m.text || "";
-          const meta = document.createElement("div");
-          meta.className = "meta";
-          meta.textContent = (m.name || "匿名");
-          const wrap = document.createElement("div");
-          wrap.appendChild(bubble);
-          wrap.appendChild(meta);
-          item.appendChild(wrap);
-          messagesEl.appendChild(item);
-        });
-        scrollToBottom();
-      });
-
-      textInput.focus();
-    }
-
-    async function sendMessage(){
-      const text = textInput.value.trim();
-      if(!text) return;
-      await addDoc(collection(db, "rooms", roomCode, "messages"), {
-        text, name: myName, createdAt: serverTimestamp()
-      });
-      textInput.value = "";
-      textInput.focus();
-    }
-
-    // ================= イベント結線 =================
-    // 前回の入力を復元
-    const lastName = localStorage.getItem("lastName");
-    const lastCode = localStorage.getItem("lastCode");
-    if(lastName) nameInput.value = lastName;
-    if(lastCode) codeInput.value = lastCode;
-
-    enterBtn.addEventListener("click", enterRoom);
-    codeInput.addEventListener("keydown", e => { if(e.key === "Enter") enterRoom(); });
-    nameInput.addEventListener("keydown", e => { if(e.key === "Enter") enterRoom(); });
-
-    sendBtn.addEventListener("click", sendMessage);
-    textInput.addEventListener("keydown", e => { if(e.key === "Enter") sendMessage(); });
-
-    $("#leave").addEventListener("click", () => {
-      // 軽い退室ログ（任意）
-      if (roomRef && roomCode && myName) {
-        addDoc(collection(db, "rooms", roomCode, "messages"), {
-          text:`👋 ${myName} さんが退出しました`, name:"SYSTEM", createdAt: serverTimestamp()
-        });
-      }
-      // 画面戻す
-      screenChat.classList.add("hidden");
-      screenJoin.classList.remove("hidden");
-      textInput.value = "";
-      messagesEl.innerHTML = "";
-      roomRef = null;
+    // システムメッセージ
+    push(ref(db, `rooms/${code}/messages`), {
+      name: 'system', text: `${name} が入室しました`, at: Date.now(), sys: true
     });
 
-    $("#copy-code").addEventListener("click", async () => {
-      try{
-        await navigator.clipboard.writeText(roomCode);
-        alert(`コード ${roomCode} をコピーしました`);
-      }catch(_){ /* noop */ }
+    state.joined = true;
+    msgInput.focus();
+  }
+
+  // --- 退室処理 ---
+  async function leave(){
+    if (!state.joined) return;
+    const { code, name } = state;
+
+    // システムメッセージ
+    push(ref(db, `rooms/${code}/messages`), {
+      name: 'system', text: `${name} が退室しました`, at: Date.now(), sys: true
     });
 
-    // タブを閉じる時に軽く記録（任意）
-    window.addEventListener("beforeunload", () => {
-      if(roomCode){
-        addDoc(collection(db, "rooms", roomCode, "messages"), {
-          text:`🚪 ${myName} さんが切断されました`, name:"SYSTEM", createdAt: serverTimestamp()
-        });
-      }
-    });
-  </script>
+    // 参加者から削除
+    await remove(ref(db, `rooms/${code}/participants/${state.uid}`));
 
-  <!--
-    ■メモ
-    - Firestore セキュリティルールは本番に合わせて必ず設定してください。
-    - このサンプルは匿名認証を使わず、端末ごとの簡易IDでメンバー記録をしています。
-    - 名前は 1 文字のみ（英字/漢字/ひらがな/カタカナ）。未入力時は英大文字 1 文字を自動付与。
-    - ルームコードは 4 桁。未入力時は 0000〜9999 で自動生成。
-    - 同じコードの人は同じ rooms/{code} に接続し、messages サブコレクションを共有します。
-  -->
+    // リスナー解除
+    state.unsub.forEach(off => off && off());
+    state.unsub = [];
+
+    // UI 戻す
+    msgsEl.innerHTML = '';
+    show(chatPanel, false);
+    show(joinPanel, true);
+    state.joined = false;
+  }
+
+  // --- 送信 ---
+  async function send(){
+    const text = (msgInput.value || '').trim();
+    if (!text) return;
+    await push(ref(db, `rooms/${state.code}/messages`), {
+      name: state.name, text, at: Date.now()
+    });
+    msgInput.value = '';
+    msgInput.focus();
+  }
+
+  // --- 事件 ---
+  btnJoin.onclick = join;
+  btnSend.onclick = send;
+  btnLeave.onclick = leave;
+  msgInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') send(); });
+
+  // URL パラメータで事前入力（任意）
+  try{
+    const qs = new URLSearchParams(location.search);
+    const qRoom = (qs.get('room')||'').trim();
+    const qName = (qs.get('name')||'').trim();
+    if (qRoom) codeInput.value = qRoom.slice(0, 12);
+    if (qName) nameInput.value = qName.slice(0, 1);
+  }catch(_e){}
+</script>
 </body>
 </html>
