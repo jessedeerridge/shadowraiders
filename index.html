@@ -1,3 +1,8 @@
+アイコンの色が表示されない。
+選んだ色が自分のアイコンの背景色になる。（黒と緑と紫と青と赤は文字色は白、それ以外は文字色黒）
+
+どこを変更する？
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -36,17 +41,14 @@
   .roomhit{fill:transparent;stroke:none;pointer-events:auto}
   .roomhit.flash{fill:#eee;transition:fill 60ms}
 
-/* 山札UI（右図形の真下に横並び） */
-.decks-wrap{display:flex;justify-content:flex-end}
-.decks{display:flex;gap:16px;justify-content:flex-end;align-items:flex-start;margin-top:-50px}
+  /* 山札UI（右図形の真下に横並び） */
+  .decks-wrap{display:flex;justify-content:center}
+  .decks{display:flex;gap:16px;justify-content:flex-start;align-items:flex-start;margin-top:12px}
   .deck{display:flex;flex-direction:column;align-items:center;gap:8px}
-.deck-back,.deck-face{
-  width:60px;height:90px;   /* ← サイズを縮小 */
-  border:1px solid #111;
-  border-radius:8px;        /* ← 角丸も少し小さめに調整 */
-  display:flex;align-items:center;justify-content:center;
-  font-weight:700;color:#111;user-select:none;
-}
+  .deck-back,.deck-face{
+    width:80px;height:110px;border:1px solid #111;border-radius:10px;
+    display:flex;align-items:center;justify-content:center;font-weight:700;color:#111;user-select:none;
+  }
   .deck-back{cursor:pointer}
   .deck-back.disabled{opacity:.35;cursor:not-allowed;filter:grayscale(1)}
   .deck-back.green{background:#c7f5c1;}
@@ -92,6 +94,15 @@
     padding:6px 10px;box-shadow:0 6px 16px rgba(0,0,0,.12);display:flex;gap:10px;align-items:center
   }
   .popover button{padding:6px 10px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
+
+@media (max-width:600px){
+  h1{font-size:16px}
+  .deck-back,.deck-face{width:40px;height:60px}
+  .color-tile{width:44px;height:44px}
+  #hostGear{width:36px;height:36px;font-size:16px}
+}
+
+
 </style>
 </head>
 <body>
@@ -514,6 +525,7 @@ function applyFillAndText(elGroup, colorName){
   if (box){ box.style.fill = bg; }     // ← inline style は CSS より強い
   if (label){ label.style.fill = text; }
 }
+
 
   function renderOrUpdateSeat(uid, data, userColorsMap){
     const svg = document.getElementById('art');
