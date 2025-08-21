@@ -1316,19 +1316,18 @@ function renderEquipmentBar(equipData, participants){
 // 装備カードたち
 const cardNames = Object.keys(cardsObj);
 
-// ▼ 正体カードを必ず先頭に移動
+// ▼ 正体カード群を先頭に、それ以外を後ろに
 const roleCards = [...ROLE_CARDS.raider, ...ROLE_CARDS.shadow, ...ROLE_CARDS.citizen];
 const roleCardsInHand = cardNames.filter(c => roleCards.includes(c));
 const others = cardNames.filter(c => !roleCards.includes(c));
 const ordered = [...roleCardsInHand, ...others];
 
+// ▼ 先に役職カードを append → 常に一番左（= 所持者アイコンの直後）
 ordered.forEach(cardName=>{
   const c = document.createElement('div');
   c.className = 'equip-card';
   c.textContent = cardName;
-
-  // 所持者アイコンの直後に必ず挿入
-  holder.insertBefore(c, holder.children[1] || null);
+  holder.appendChild(c);
 });
 
 
