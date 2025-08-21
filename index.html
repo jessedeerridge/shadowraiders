@@ -19,7 +19,10 @@
 
   /* 図形（②） */
   html,body{height:100%}
-  #art{display:block;margin:auto;max-width:96vmin;height:auto}
+  #art{
+    display:block;margin:auto;max-width:96vmin;height:auto;
+    touch-action: none; /* ★ 追加：ブラウザのパン/ズーム既定動作を無効化 */
+  }
   .shape{fill:#fff;stroke:#111;stroke-width:0.8;stroke-linejoin:round;stroke-linecap:round}
 
   /* 左長方形内のユーザーアイコン（正方形＋角丸） */
@@ -95,11 +98,7 @@
   .color-tile{width:44px;height:44px}
   #hostGear{width:36px;height:36px;font-size:16px}
   #myDealMini{width:40px;height:60px;font-size:12px}
-  .usericon rect,
-  .seaticon rect{
-    rx:10 !important;
-    ry:10 !important;
-  }  h1{font-size:14px; margin-right:4px;}   /* タイトル小さめ */
+  h1{font-size:14px; margin-right:4px;}   /* タイトル小さめ */
   header{gap:6px; padding:8px;}          /* スペース縮小 */
   .small{font-size:10px; gap:4px;}       /* 補助テキストをさらに小さく */
   #myRoomBadge{white-space:nowrap;}      /* 強制的に改行しない */
@@ -219,19 +218,23 @@
   const dealCardFace  = document.getElementById('dealCardFace');
 
   // --- 状態 ---
-  const state = {
-    uid: crypto.randomUUID(),
-    name: "",
-    code: "",
-    joined: false,
-    unsub: [],
-    rectBBox: null,
-    draggingUid: null,
-    isPointerDown: false,
-    dragOffset: {x:0,y:0},
-    isHost: false,
-    started: false,
-  };
+const state = {
+  uid: crypto.randomUUID(),
+  name: "",
+  code: "",
+  joined: false,
+  unsub: [],
+  rectBBox: null,
+  draggingUid: null,
+  isPointerDown: false,
+  dragOffset: {x:0,y:0},
+  isHost: false,
+  started: false,
+  lockScrollOnRect: false,   // ← 追加：左長方形内タッチ中はスクロール禁止
+  lastLocalAtByUid: {},      // ★ 追加：自分が最後に書いた時刻
+};
+
+
 
   // --- ユーティリティ ---
   function randomLetter(){ return String.fromCharCode(65 + Math.floor(Math.random()*26)); }
@@ -523,13 +526,22 @@ face.addEventListener('click', ()=>{
   }
 
   // SVG座標変換
-  function toSvgCoords(svg, clientX, clientY){
-    const pt = svg.createSVGPoint();
-    pt.x = clientX; pt.y = clientY;
-    const m = svg.getScreenCTM(); if (!m) return {x:0,y:0};
-    const sp = pt.matrixTransform(m.inverse());
-    return {x: sp.x, y: sp.y};
-  }
+function toSvgCoords(svg, clientX, clientY){
+  const pt = svg.createSVGPoint();
+  pt.x = clientX; pt.y = clientY;
+  const m = svg.getScreenCTM(); if (!m) return {x:0,y:0};
+  const sp = pt.matrixTransform(m.inverse());
+  return {x: sp.x, y: sp.y};
+}
+
+/* ← 追加：タッチ点が左長方形(state.rectBBox)内かを判定 */
+function isInLeftRect(clientX, clientY){
+  const svg = document.getElementById('art');
+  if (!svg || !state.rectBBox) return false;
+  const p = toSvgCoords(svg, clientX, clientY);
+  const r = state.rectBBox;
+  return (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
+}
 
   // ===== 席アイコン描画（色反映） =====
 function applyFillAndText(elGroup, colorName){
@@ -552,10 +564,13 @@ function applyFillAndText(elGroup, colorName){
       g.setAttribute('class','seaticon');
       g.setAttribute('data-uid', uid);
 
-      const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      box.setAttribute('width', 24);
-      box.setAttribute('height', 24);
-      g.appendChild(box);
+const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
+box.setAttribute('width', 24);
+box.setAttribute('height', 24);
+box.setAttribute('rx', 10);   // ← 角丸を属性で付与（スマホでも確実）
+box.setAttribute('ry', 10);
+g.appendChild(box);
+
 
       const label = document.createElementNS('http://www.w3.org/2000/svg','text');
       label.setAttribute('x', 12);
@@ -627,10 +642,13 @@ function applyFillAndText(elGroup, colorName){
       g.setAttribute('class','usericon');
       g.setAttribute('data-uid', uid);
 
-      const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      box.setAttribute('width', 24);
-      box.setAttribute('height', 24);
-      g.appendChild(box);
+const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
+box.setAttribute('width', 24);
+box.setAttribute('height', 24);
+box.setAttribute('rx', 10);   // ← こちらにも同様に
+box.setAttribute('ry', 10);
+g.appendChild(box);
+
 
       const label = document.createElementNS('http://www.w3.org/2000/svg','text');
       label.setAttribute('x', 12);
@@ -650,26 +668,30 @@ function applyFillAndText(elGroup, colorName){
         state.dragOffset.x = p.x - gx;
         state.dragOffset.y = p.y - gy;
         g.setPointerCapture(e.pointerId);
+
+        // ★ キックガード：DBのエコーで元位置に“戻る”のを短時間だけ無視
+        state.dragKickGuardUid = uid;
+        state.dragKickGuardUntil = Date.now() + 180; // 180ms（環境次第で 150〜300ms）
+
+        installGlobalPointerMove(); // ← 全体リスナーを用意
       });
       g.addEventListener('pointerup', (e)=>{
+
         if (!state.isPointerDown) return;
         state.isPointerDown = false;
+        state.draggingUid = null;            // ★ 追加：必ず解除
         g.classList.remove('dragging');
         g.releasePointerCapture(e.pointerId);
       });
       g.addEventListener('pointercancel', ()=>{
         state.isPointerDown = false;
+        state.draggingUid = null;            // ★ 追加：必ず解除
         g.classList.remove('dragging');
       });
-      svg.addEventListener('pointermove', throttle((e)=>{
-        if (!state.isPointerDown || state.draggingUid !== uid) return;
-        const p = toSvgCoords(svg, e.clientX, e.clientY);
-        const pos = clampToRect(p.x - state.dragOffset.x, p.y - state.dragOffset.y);
-        g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
-        g.setAttribute('data-x', pos.x);
-        g.setAttribute('data-y', pos.y);
-        update(ref(db, `rooms/${state.code}/icons/${uid}`), { x: pos.x, y: pos.y });
-      }, 40), { passive: true });
+      // （以下続く）
+
+      // （削除）svg.addEventListener('pointermove', ...) は削除して、
+      // グローバル installGlobalPointerMove のみに一本化する
 
       // ホスト削除ポップ
       g.addEventListener('click', (e)=> maybeShowDeletePopover(e, 'icon', uid));
@@ -685,8 +707,18 @@ function applyFillAndText(elGroup, colorName){
     const colorName = userColorsMap?.[uid] || null;
     if (colorName) applyFillAndText(g, colorName);
 
-    // 自分がドラッグ中はリモート更新を抑止
-    if (!(state.isPointerDown && state.draggingUid === uid)) {
+    // 自分がドラッグ中はリモート更新を抑止＋開始直後の“戻り”も抑止
+    const now = Date.now();
+    const draggingNow = (state.isPointerDown && state.draggingUid === uid);
+    const kickGuard = (state.dragKickGuardUid === uid) && (now < (state.dragKickGuardUntil || 0));
+
+    // 自分がドラッグ中はリモート更新を抑止 ＋ 古い反映は無視（巻き戻し防止）
+    const draggingNow = (state.isPointerDown && state.draggingUid === uid);
+    const localAt = state.lastLocalAtByUid?.[uid] || 0;
+    const remoteAt = data.at || 0;
+    const isStale = remoteAt && localAt && (remoteAt + 30 < localAt); // 30ms バッファ
+
+    if (!(draggingNow || isStale)) {
       g.setAttribute('transform', `translate(${data.x},${data.y})`);
       g.setAttribute('data-x', data.x);
       g.setAttribute('data-y', data.y);
@@ -694,6 +726,8 @@ function applyFillAndText(elGroup, colorName){
   }
 
   function throttle(fn, ms){
+
+
     let t = 0, lastArgs = null, tid = null;
     return function(...args){
       const now = Date.now();
@@ -704,6 +738,34 @@ function applyFillAndText(elGroup, colorName){
       }
     };
   }
+
+    // --- グローバルに1回だけ pointermove をインストール ---
+  let pointerMoveInstalled = false;
+  function installGlobalPointerMove(){
+    if (pointerMoveInstalled) return;
+    pointerMoveInstalled = true;
+
+    const svg = document.getElementById('art');
+    svg.addEventListener('pointermove', (e)=>{
+      if (!state.isPointerDown || !state.draggingUid) return;
+
+      const layer = document.getElementById('icons');
+      const g = layer && layer.querySelector(`g[data-uid="${state.draggingUid}"]`);
+      if (!g) return;
+
+        const p = toSvgCoords(svg, e.clientX, e.clientY);
+      const pos = clampToRect(p.x - state.dragOffset.x, p.y - state.dragOffset.y);
+      g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+      g.setAttribute('data-x', pos.x);
+      g.setAttribute('data-y', pos.y);
+
+      // ★ 追加：ローカルの更新時刻を記録し、DBにも at を付けて書く
+      const now = Date.now();
+      state.lastLocalAtByUid[state.draggingUid] = now;
+      update(ref(db, `rooms/${state.code}/icons/${state.draggingUid}`), { x: pos.x, y: pos.y, at: now });
+    }, { passive: true });
+  }
+
 
   // ====== 色選択 ======
   const COLOR_LIST = [
@@ -902,7 +964,14 @@ function applyFillAndText(elGroup, colorName){
       const psSnap = await get(ref(db, `rooms/${code}/participants`));
       const ps = psSnap.val() || {};
       const colorMap = Object.fromEntries(Object.entries(ps).map(([uid, v])=> [uid, v?.color || null]));
-      Object.entries(data).forEach(([uid, icon])=> renderOrUpdateIcon(uid, icon, colorMap));
+
+      // ★ 追加：自分がドラッグ中のアイコンは onValue で更新しない（巻き戻し防止）
+      const dragging = (state.isPointerDown && state.draggingUid) ? state.draggingUid : null;
+      Object.entries(data).forEach(([uid, icon])=>{
+        if (dragging && uid === dragging) return;
+        renderOrUpdateIcon(uid, icon, colorMap);
+      });
+
       const layer = document.getElementById('icons');
       if (layer){
         [...layer.querySelectorAll('g.usericon')].forEach(el=>{
@@ -912,6 +981,7 @@ function applyFillAndText(elGroup, colorName){
       }
     });
     state.unsub.push(offIcons);
+
 
     // 席アイコンの同期＋自分の部屋/バッジ（色反映込み）
     const seatsRef = ref(db, `rooms/${code}/seats`);
@@ -982,6 +1052,25 @@ function applyFillAndText(elGroup, colorName){
 
   btnJoin.onclick = join;
 
+/* ← 追加：左長方形内タッチ中だけページスクロールを完全抑止 */
+document.addEventListener('touchstart', (e)=>{
+  const t = e.touches && e.touches[0];
+  state.lockScrollOnRect = !!t && isInLeftRect(t.clientX, t.clientY);
+}, { passive:true });
+
+document.addEventListener('touchmove', (e)=>{
+  if (state.lockScrollOnRect) e.preventDefault();   // iOS 対策：passive:false 必須
+}, { passive:false });
+
+document.addEventListener('touchend', ()=>{
+  state.lockScrollOnRect = false;
+}, { passive:true });
+
+document.addEventListener('touchcancel', ()=>{
+  state.lockScrollOnRect = false;
+}, { passive:true });
+
+  
   // 事前入力
   try{
     const qs = new URLSearchParams(location.search);
