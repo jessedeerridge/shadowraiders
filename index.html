@@ -19,7 +19,10 @@
 
   /* 図形（②） */
   html,body{height:100%}
-  #art{display:block;margin:auto;max-width:96vmin;height:auto}
+  #art{
+    display:block;margin:auto;max-width:96vmin;height:auto;
+    touch-action: none; /* ★ 追加：ブラウザのパン/ズーム既定動作を無効化 */
+  }
   .shape{fill:#fff;stroke:#111;stroke-width:0.8;stroke-linejoin:round;stroke-linecap:round}
 
   /* 左長方形内のユーザーアイコン（正方形＋角丸） */
@@ -663,28 +666,30 @@ g.appendChild(box);
         state.dragOffset.x = p.x - gx;
         state.dragOffset.y = p.y - gy;
         g.setPointerCapture(e.pointerId);
-          installGlobalPointerMove(); // ← 追加：ここで一回だけ全体リスナーを用意
 
+        // ★ キックガード：DBのエコーで元位置に“戻る”のを短時間だけ無視
+        state.dragKickGuardUid = uid;
+        state.dragKickGuardUntil = Date.now() + 180; // 180ms（環境次第で 150〜300ms）
+
+        installGlobalPointerMove(); // ← 全体リスナーを用意
       });
       g.addEventListener('pointerup', (e)=>{
+
         if (!state.isPointerDown) return;
         state.isPointerDown = false;
+        state.draggingUid = null;            // ★ 追加：必ず解除
         g.classList.remove('dragging');
         g.releasePointerCapture(e.pointerId);
       });
       g.addEventListener('pointercancel', ()=>{
         state.isPointerDown = false;
+        state.draggingUid = null;            // ★ 追加：必ず解除
         g.classList.remove('dragging');
       });
-      svg.addEventListener('pointermove', throttle((e)=>{
-        if (!state.isPointerDown || state.draggingUid !== uid) return;
-        const p = toSvgCoords(svg, e.clientX, e.clientY);
-        const pos = clampToRect(p.x - state.dragOffset.x, p.y - state.dragOffset.y);
-        g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
-        g.setAttribute('data-x', pos.x);
-        g.setAttribute('data-y', pos.y);
-        update(ref(db, `rooms/${state.code}/icons/${uid}`), { x: pos.x, y: pos.y });
-      }, 40), { passive: true });
+      // （以下続く）
+
+      // （削除）svg.addEventListener('pointermove', ...) は削除して、
+      // グローバル installGlobalPointerMove のみに一本化する
 
       // ホスト削除ポップ
       g.addEventListener('click', (e)=> maybeShowDeletePopover(e, 'icon', uid));
@@ -700,8 +705,12 @@ g.appendChild(box);
     const colorName = userColorsMap?.[uid] || null;
     if (colorName) applyFillAndText(g, colorName);
 
-    // 自分がドラッグ中はリモート更新を抑止
-    if (!(state.isPointerDown && state.draggingUid === uid)) {
+    // 自分がドラッグ中はリモート更新を抑止＋開始直後の“戻り”も抑止
+    const now = Date.now();
+    const draggingNow = (state.isPointerDown && state.draggingUid === uid);
+    const kickGuard = (state.dragKickGuardUid === uid) && (now < (state.dragKickGuardUntil || 0));
+
+    if (!(draggingNow || kickGuard)) {
       g.setAttribute('transform', `translate(${data.x},${data.y})`);
       g.setAttribute('data-x', data.x);
       g.setAttribute('data-y', data.y);
@@ -709,6 +718,7 @@ g.appendChild(box);
   }
 
   function throttle(fn, ms){
+
     let t = 0, lastArgs = null, tid = null;
     return function(...args){
       const now = Date.now();
