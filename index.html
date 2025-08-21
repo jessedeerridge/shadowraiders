@@ -25,13 +25,8 @@
   /* 左長方形内のユーザーアイコン（正方形＋角丸） */
   .usericon rect{fill:#fff;stroke:#111;stroke-width:0.8;rx:6;ry:6}
   .usericon text{font-size:12px;font-weight:700;dominant-baseline:middle;text-anchor:middle}
- .usericon{cursor:grab}
-/* ▼ スマホで左長方形内の操作がスクロールに化けないよう抑止 */
-#leftRect,
-.usericon{
-  touch-action: none;
-}
-.usericon.dragging{cursor:grabbing;opacity:.85}
+  .usericon{cursor:grab}
+  .usericon.dragging{cursor:grabbing;opacity:.85}
 
   /* 右側の席アイコン（正方形＋角丸） */
   .seaticon rect{fill:#fff;stroke:#111;stroke-width:0.8;rx:6;ry:6}
@@ -342,22 +337,17 @@
     const rectX = starBox.x - gap - rectW;
     const rectY = starBox.y;
 
-const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
-rect.setAttribute('x', rectX);
-rect.setAttribute('y', rectY);
-rect.setAttribute('width', rectW);
-rect.setAttribute('height', rectH);
-rect.setAttribute('class','shape');
-rect.setAttribute('id','leftRect');
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', rectX);
+    rect.setAttribute('y', rectY);
+    rect.setAttribute('width', rectW);
+    rect.setAttribute('height', rectH);
+    rect.setAttribute('class','shape');
+    rect.setAttribute('id','leftRect');
+    svg.appendChild(rect);
 
-/* ▼ スクロール抑制の保険 */
-rect.style.touchAction = 'none';
-rect.addEventListener('touchmove', (e)=> e.preventDefault(), { passive:false });
-
-svg.appendChild(rect);
-
-// 左長方形内のアイコン用レイヤ
-const iconsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
+    // 左長方形内のアイコン用レイヤ
+    const iconsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
     iconsLayer.setAttribute('id','icons');
     svg.appendChild(iconsLayer);
 
@@ -554,13 +544,9 @@ function applyFillAndText(elGroup, colorName){
 
     let g = layer.querySelector(`g[data-uid="${uid}"]`);
     if (!g){
-g = document.createElementNS('http://www.w3.org/2000/svg','g');
-g.setAttribute('class','usericon');
-g.setAttribute('data-uid', uid);
-
-/* ▼ スクロール抑制の保険（アイコン操作中も画面が動かないように） */
-g.style.touchAction = 'none';
-g.addEventListener('touchmove', (e)=> e.preventDefault(), { passive:false });
+      g = document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','seaticon');
+      g.setAttribute('data-uid', uid);
 
 const box = document.createElementNS('http://www.w3.org/2000/svg','rect');
 box.setAttribute('width', 24);
