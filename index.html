@@ -1,8 +1,3 @@
-アイコンの色が表示されない。
-選んだ色が自分のアイコンの背景色になる。（黒と緑と紫と青と赤は文字色は白、それ以外は文字色黒）
-
-どこを変更する？
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -41,9 +36,9 @@
   .roomhit{fill:transparent;stroke:none;pointer-events:auto}
   .roomhit.flash{fill:#eee;transition:fill 60ms}
 
-  /* 山札UI（右図形の真下に横並び） */
-  .decks-wrap{display:flex;justify-content:center}
-  .decks{display:flex;gap:16px;justify-content:flex-start;align-items:flex-start;margin-top:12px}
+/* 山札UI（右図形の真下に横並び） */
+.decks-wrap{display:flex;justify-content:flex-end}
+.decks{display:flex;gap:16px;justify-content:flex-end;align-items:flex-start;margin-top:0px}
   .deck{display:flex;flex-direction:column;align-items:center;gap:8px}
   .deck-back,.deck-face{
     width:80px;height:110px;border:1px solid #111;border-radius:10px;
