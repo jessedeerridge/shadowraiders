@@ -231,7 +231,9 @@ const state = {
   isHost: false,
   started: false,
   lockScrollOnRect: false,   // ← 追加：左長方形内タッチ中はスクロール禁止
+  lastLocalAtByUid: {},      // ★ 追加：自分が最後に書いた時刻
 };
+
 
 
   // --- ユーティリティ ---
@@ -710,7 +712,13 @@ g.appendChild(box);
     const draggingNow = (state.isPointerDown && state.draggingUid === uid);
     const kickGuard = (state.dragKickGuardUid === uid) && (now < (state.dragKickGuardUntil || 0));
 
-    if (!(draggingNow || kickGuard)) {
+    // 自分がドラッグ中はリモート更新を抑止 ＋ 古い反映は無視（巻き戻し防止）
+    const draggingNow = (state.isPointerDown && state.draggingUid === uid);
+    const localAt = state.lastLocalAtByUid?.[uid] || 0;
+    const remoteAt = data.at || 0;
+    const isStale = remoteAt && localAt && (remoteAt + 30 < localAt); // 30ms バッファ
+
+    if (!(draggingNow || isStale)) {
       g.setAttribute('transform', `translate(${data.x},${data.y})`);
       g.setAttribute('data-x', data.x);
       g.setAttribute('data-y', data.y);
@@ -718,6 +726,7 @@ g.appendChild(box);
   }
 
   function throttle(fn, ms){
+
 
     let t = 0, lastArgs = null, tid = null;
     return function(...args){
@@ -744,15 +753,19 @@ g.appendChild(box);
       const g = layer && layer.querySelector(`g[data-uid="${state.draggingUid}"]`);
       if (!g) return;
 
-      const p = toSvgCoords(svg, e.clientX, e.clientY);
+        const p = toSvgCoords(svg, e.clientX, e.clientY);
       const pos = clampToRect(p.x - state.dragOffset.x, p.y - state.dragOffset.y);
       g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
       g.setAttribute('data-x', pos.x);
       g.setAttribute('data-y', pos.y);
 
-      update(ref(db, `rooms/${state.code}/icons/${state.draggingUid}`), { x: pos.x, y: pos.y });
+      // ★ 追加：ローカルの更新時刻を記録し、DBにも at を付けて書く
+      const now = Date.now();
+      state.lastLocalAtByUid[state.draggingUid] = now;
+      update(ref(db, `rooms/${state.code}/icons/${state.draggingUid}`), { x: pos.x, y: pos.y, at: now });
     }, { passive: true });
   }
+
 
   // ====== 色選択 ======
   const COLOR_LIST = [
@@ -951,7 +964,14 @@ g.appendChild(box);
       const psSnap = await get(ref(db, `rooms/${code}/participants`));
       const ps = psSnap.val() || {};
       const colorMap = Object.fromEntries(Object.entries(ps).map(([uid, v])=> [uid, v?.color || null]));
-      Object.entries(data).forEach(([uid, icon])=> renderOrUpdateIcon(uid, icon, colorMap));
+
+      // ★ 追加：自分がドラッグ中のアイコンは onValue で更新しない（巻き戻し防止）
+      const dragging = (state.isPointerDown && state.draggingUid) ? state.draggingUid : null;
+      Object.entries(data).forEach(([uid, icon])=>{
+        if (dragging && uid === dragging) return;
+        renderOrUpdateIcon(uid, icon, colorMap);
+      });
+
       const layer = document.getElementById('icons');
       if (layer){
         [...layer.querySelectorAll('g.usericon')].forEach(el=>{
@@ -961,6 +981,7 @@ g.appendChild(box);
       }
     });
     state.unsub.push(offIcons);
+
 
     // 席アイコンの同期＋自分の部屋/バッジ（色反映込み）
     const seatsRef = ref(db, `rooms/${code}/seats`);
