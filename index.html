@@ -249,6 +249,82 @@ const state = {
   }
   function show(el, yes){ el.classList.toggle('hidden', !yes); }
 
+  // ===== 同名引継ぎ：旧UIDから「色」と「右下カード」を移す =====
+  async function onlySelfHasThisName(){
+    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+    const ps = psSnap.val() || {};
+    const same = Object.entries(ps).filter(([,v]) => (v?.name||'') === state.name);
+    return same.length === 1 && same[0][0] === state.uid;
+  }
+
+  async function findOrphanUidBySameName(){
+    const candidates = new Set();
+
+    // colors から同名の旧UID候補
+    const cSnap = await get(ref(db, `rooms/${state.code}/colors`));
+    const colors = cSnap.val() || {};
+    for (const [, claim] of Object.entries(colors)){
+      if ((claim?.name||'') === state.name && claim?.uid && claim.uid !== state.uid){
+        candidates.add(claim.uid);
+      }
+    }
+
+    // deal/v1/cards から旧UID候補
+    const dSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards`));
+    const deal = dSnap.val() || {};
+    for (const uid of Object.keys(deal)){
+      if (uid !== state.uid) candidates.add(uid);
+    }
+
+    // participants に居ないUIDのみ（＝孤児）
+    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+    const ps = psSnap.val() || {};
+    for (const oldUid of candidates){
+      if (!ps[oldUid]) return oldUid;
+    }
+    return null;
+  }
+
+  async function inheritBySameName(){
+    // 仕様：同名在室者が自分だけのときのみ発動
+    if (!(await onlySelfHasThisName())) return;
+
+    const oldUid = await findOrphanUidBySameName();
+    if (!oldUid) return;
+
+    const updates = {};
+
+    // 色（colors）を自分に移す＋participants の color 反映
+    const colorsRef = ref(db, `rooms/${state.code}/colors`);
+    const cSnap = await get(colorsRef);
+    const colors = cSnap.val() || {};
+    for (const [colorId, claim] of Object.entries(colors)){
+      if (claim?.uid === oldUid && (claim?.name||'') === state.name){
+        // colors の所有者を自分に
+        updates[`rooms/${state.code}/colors/${colorId}`] =
+          { uid: state.uid, name: state.name, at: Date.now() };
+        // 参加者にも色を保存（既存実装に合わせ label で保存）
+        // ＊labelは曖昧になるので、厳密化したければ colorId を保存する実装に変えてOK
+        const label = (COLOR_LIST.find(c => c.id === colorId)?.name) || colorId;
+        updates[`rooms/${state.code}/participants/${state.uid}/color`] = label;
+      }
+    }
+
+    // 右下の最初の配布カード（myDeal）
+    const myDealSnap  = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`));
+    const oldDealSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${oldUid}`));
+    const myHasCard   = !!myDealSnap.val();
+    const oldCard     = oldDealSnap.val();
+    if (!myHasCard && oldCard){
+      updates[`rooms/${state.code}/deal/v1/cards/${state.uid}`] = oldCard;
+      updates[`rooms/${state.code}/deal/v1/cards/${oldUid}`] = null;
+    }
+
+    if (Object.keys(updates).length){
+      await update(ref(db), updates);
+    }
+  }
+
   // ===== 引継ぎユーティリティ（同名判定と“孤児”データ移譲） =====
   async function soleNameIsMe(){
     const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
@@ -1160,11 +1236,16 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
 
     // ★ 同名引継ぎ（色／右下カード）
     try{
-      await migrateOrphanByName();
-    }catch(_e){ /* 引継ぎ失敗は致命ではないため握りつぶし */ }
+      await inheritBySameName();
+    }catch(err){
+      console.warn('inheritBySameName failed once', err);
+    }
+    // ★ onDisconnect が遅れて旧UIDが participants に残るケースへのフォロー
+    setTimeout(()=>{ inheritBySameName().catch(()=>{}); }, 1200);
 
     state.joined = true;
   }
+
 
 
   // 離脱時
