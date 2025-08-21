@@ -860,14 +860,19 @@
     // すでに開始済なら何もしない
     const gRef = ref(db, `rooms/${state.code}/game/started`);
     const gSnap = await get(gRef);
-    if (gSnap.val()) return;
-
+ if (gSnap.val()) {
+   // 残骸をリセットして続行できるようにする
+   await set(ref(db, `rooms/${state.code}/hands`), null);
+   await set(gRef, false);
+ }
     // 参加者一覧を取得
     const pSnap = await get(ref(db, `rooms/${state.code}/participants`));
     const participants = pSnap.val() || {};
     const uids = Object.keys(participants);
-    if (uids.length === 0) return;
-
+ if (uids.length === 0) {
+   // 少なくともホスト自身には配る
+   uids.push(state.uid);
+ }
     // カードプールをシャッフル
     const pool = shuffle([...CARD_POOL]);
 
