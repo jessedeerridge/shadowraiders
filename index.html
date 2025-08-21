@@ -257,33 +257,30 @@ const state = {
     return same.length === 1 && same[0][0] === state.uid;
   }
 
-  async function findOrphanUidBySameName(){
-    const candidates = new Set();
+async function findUidBySameNamePreferOthers(){
+  const candidates = new Set();
 
-    // colors から同名の旧UID候補
-    const cSnap = await get(ref(db, `rooms/${state.code}/colors`));
-    const colors = cSnap.val() || {};
-    for (const [, claim] of Object.entries(colors)){
-      if ((claim?.name||'') === state.name && claim?.uid && claim.uid !== state.uid){
-        candidates.add(claim.uid);
-      }
+  // colors: 同名で自分以外のuid
+  const cSnap = await get(ref(db, `rooms/${state.code}/colors`));
+  const colors = cSnap.val() || {};
+  for (const [, claim] of Object.entries(colors)){
+    if ((claim?.name||'') === state.name && claim?.uid && claim.uid !== state.uid){
+      candidates.add(claim.uid);
     }
-
-    // deal/v1/cards から旧UID候補
-    const dSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards`));
-    const deal = dSnap.val() || {};
-    for (const uid of Object.keys(deal)){
-      if (uid !== state.uid) candidates.add(uid);
-    }
-
-    // participants に居ないUIDのみ（＝孤児）
-    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-    const ps = psSnap.val() || {};
-    for (const oldUid of candidates){
-      if (!ps[oldUid]) return oldUid;
-    }
-    return null;
   }
+
+  // deal: 同名とは限らないが、旧UIDの痕跡があれば候補に
+  const dSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards`));
+  const deal = dSnap.val() || {};
+  Object.keys(deal).forEach(uid=>{
+    if (uid !== state.uid) candidates.add(uid);
+  });
+
+  // 在室か否かは問わず、“自分以外”を返す
+  for (const oldUid of candidates) return oldUid;
+  return null;
+}
+
 
   async function inheritBySameName(){
 // ★ 在室状況に関わらず同名の旧UIDから引き継ぐ
