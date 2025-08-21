@@ -1096,13 +1096,28 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
   }
 
   // ===== ホスト管理 & 削除ポップ =====
-  async function becomeHostIfVacant(){
-    const hostRef = ref(db, `rooms/${state.code}/host`);
-    await runTransaction(hostRef, cur => cur ?? state.uid);
-    const snap = await get(hostRef);
-    state.isHost = (snap.val() === state.uid);
-    show(hostGear, state.isHost);
+async function becomeHostIfVacant(){
+  const hostRef = ref(db, `rooms/${state.code}/host`);
+  const nameRef = ref(db, `rooms/${state.code}/host_name`);
+
+  // 空いていれば就任し、ホスト名を記録
+  const res = await runTransaction(hostRef, cur => cur ?? state.uid);
+  if (res.committed && (res.snapshot.val() === state.uid)){
+    await set(nameRef, state.name);
   }
+
+  // “同名復帰”の奪還：最後のホスト名と自分の名前が一致したら host を自分に上書き
+  const [hostSnap, nameSnap] = await Promise.all([get(hostRef), get(nameRef)]);
+  const curHost  = hostSnap.val();
+  const hostName = nameSnap.val();
+  if (hostName && hostName === state.name && curHost !== state.uid){
+    await set(hostRef, state.uid);
+  }
+
+  const finalHostSnap = await get(hostRef);
+  state.isHost = (finalHostSnap.val() === state.uid);
+  show(hostGear, state.isHost);
+}
 
   let popEl = null;
   function closePopover(){ if (popEl){ popEl.remove(); popEl=null; } }
