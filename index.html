@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>六芒星クリック</title>
+<title>シンプルオンラインルーム（六芒星）</title>
 <style>
   :root { --gap:10px; }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
@@ -11,175 +11,286 @@
   h1{margin:0;font-size:18px}
   .small{font-size:12px;opacity:.75}
   main{padding:14px;display:grid;gap:16px;max-width:900px;margin:0 auto}
-
-  /* 入室 */
   .join-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .join-box input{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px}
   .btn{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
   .btn.ghost{background:#f8f8f8;color:#111}
-  .hidden{display:none !important}
+  .pill{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:2px 8px;font-size:12px;margin-left:6px}
+  .right{margin-left:auto}
+  .code-link{ text-decoration: underline; cursor: pointer; }
 
-  /* 六芒星 */
-  .star-wrap{
-    display:grid;
-    place-items:center;
-    height:70vh;
-    border:1px solid #eee;
-    border-radius:12px;
-    padding:12px;
+  /* ルーム画面 */
+  .wrap{display:grid;grid-template-rows:auto 1fr auto;gap:var(--gap)}
+  .stage{
+    position:relative;
+    aspect-ratio:1/1;
+    width:min(92vw, 560px);
+    margin:0 auto;
   }
-  svg{max-width:min(92vw,700px); max-height:60vh;}
-  .cell { cursor:pointer; transition:opacity .1s ease; }
-  .cell:hover { opacity:.85; }
-  /* 着色（視認性のため） */
-  .tri { fill:#f0f4ff; stroke:#99b3ff; }
-  .hex { fill:#fff7e6; stroke:#ffc266; }
-  .label { font-weight:700; font-size:28px; pointer-events:none; }
+  svg{width:100%;height:100%;display:block}
+  .labels{
+    position:absolute; inset:0;
+    pointer-events:none;
+  }
+  .label{
+    position:absolute;
+    transform:translate(-50%,-80%);
+    background:rgba(255,255,255,.9);
+    border:1px solid #ddd;
+    border-radius:10px;
+    padding:2px 6px;
+    font-weight:700;
+    font-size:14px;
+    white-space:nowrap;
+    box-shadow:0 1px 3px rgba(0,0,0,.08);
+  }
+  /* 六芒星の見た目 */
+  .tri{ fill:#f4f7ff; stroke:#333; stroke-width:.8; }
+  .tri:hover{ filter:brightness(0.95); }
+  .hex{ fill:#eef4ff; stroke:#333; stroke-width:.9; }
 </style>
 </head>
 <body>
 <header>
-  <h1>六芒星クリック</h1>
+  <h1>シンプルオンラインルーム</h1>
   <div class="small" id="headerInfo"></div>
 </header>
 
 <main>
-  <!-- 名前登録 -->
+  <!-- 入室画面 -->
   <section id="joinPanel" class="join-box">
-    <!-- 名前：1文字のみ（アルファベット/ひらがな/カタカナ/漢字）。未入力なら自動で英字1文字 -->
+    <!-- 名前：1文字のみ（アルファベット/ひらがな/カタカナ/漢字） -->
     <input id="nameInput" placeholder="名前（1文字）" maxlength="1" inputmode="text" />
-    <button id="btnJoin" class="btn">開始</button>
+    <!-- ルームコード：未入力なら自動で4桁 -->
+    <input id="codeInput" placeholder="ルームコード（例: 1234）" maxlength="12" inputmode="numeric" />
+    <button id="btnJoin" class="btn">入室</button>
   </section>
 
-  <!-- 六芒星 -->
-  <section id="starPanel" class="hidden">
-    <div class="star-wrap">
-      <svg id="starSvg" viewBox="-100 -100 200 200" aria-label="六芒星" role="img"></svg>
+  <!-- ルーム画面（六芒星） -->
+  <section id="roomPanel" class="wrap" style="display:none;">
+    <div>
+      部屋コード：<span id="roomBadge" class="code-link"></span>
+      <span class="pill">参加者 <span id="memberCount">0</span> 人</span>
+      <span class="pill right">あなた：<span id="selfName"></span></span>
+    </div>
+
+    <div class="stage" id="stage">
+      <svg id="starSvg" viewBox="0 0 100 100" aria-label="六芒星（クリックで名前を置く）">
+        <!-- 6つの外側三角形（クリック対象） -->
+        <polygon class="tri" data-pos="0" points="96,50 76,50 63,72.5" />
+        <polygon class="tri" data-pos="1" points="73,89.8 63,72.5 37,72.5" />
+        <polygon class="tri" data-pos="2" points="27,89.8 37,72.5 24,50" />
+        <polygon class="tri" data-pos="3" points="4,50 24,50 37,27.5" />
+        <polygon class="tri" data-pos="4" points="27,10.2 37,27.5 63,27.5" />
+        <polygon class="tri" data-pos="5" points="73,10.2 63,27.5 76,50" />
+        <!-- 中央六角形（クリック対象） -->
+        <polygon class="hex" data-pos="6"
+          points="76,50 63,72.5 37,72.5 24,50 37,27.5 63,27.5" />
+      </svg>
+      <div class="labels" id="labels"></div>
+    </div>
+
+    <div style="text-align:center">
+      <button id="btnLeave" class="btn ghost">退室</button>
     </div>
   </section>
 </main>
 
+<!-- Firebase（v9 モジュール） -->
 <script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+  import {
+    getDatabase, ref, set, onValue, onDisconnect, remove
+  } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+  /* あなたの Firebase 設定 */
+  const firebaseConfig = {
+    apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
+    authDomain: "shadowraiders-a2dbc.firebaseapp.com",
+    projectId: "shadowraiders-a2dbc",
+    storageBucket: "shadowraiders-a2dbc.firebasestorage.app",
+    messagingSenderId: "577276689873",
+    appId: "1:577276689873:web:9a13faf90c3d6a791e34f0",
+    measurementId: "G-PKNEPDBVSS"
+  };
+
+  // --- 初期化 ---
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
+
   // --- DOM ---
-  const headerInfo = document.getElementById('headerInfo');
-  const joinPanel  = document.getElementById('joinPanel');
-  const nameInput  = document.getElementById('nameInput');
-  const btnJoin    = document.getElementById('btnJoin');
-  const starPanel  = document.getElementById('starPanel');
-  const svg        = document.getElementById('starSvg');
+  const headerInfo    = document.getElementById('headerInfo');
+  const joinPanel     = document.getElementById('joinPanel');
+  const nameInput     = document.getElementById('nameInput');
+  const codeInput     = document.getElementById('codeInput');
+  const btnJoin       = document.getElementById('btnJoin');
+
+  const roomPanel     = document.getElementById('roomPanel');
+  const roomBadge     = document.getElementById('roomBadge');
+  const memberCountEl = document.getElementById('memberCount');
+  const selfNameEl    = document.getElementById('selfName');
+  const stageEl       = document.getElementById('stage');
+  const svgEl         = document.getElementById('starSvg');
+  const labelsEl      = document.getElementById('labels');
+  const btnLeave      = document.getElementById('btnLeave');
 
   // --- 状態 ---
   const state = {
+    uid: crypto.randomUUID(),
     name: "",
-    labelEl: null
+    code: "",
+    joined: false,
+    off: [] // リスナー解除
   };
 
   // --- ユーティリティ ---
   function randomLetter(){
     return String.fromCharCode(65 + Math.floor(Math.random()*26)); // A-Z
   }
-  // 許可：A-Za-z / ひらがな / カタカナ / CJK(漢字)
+  function random4(){
+    return String(Math.floor(Math.random()*10000)).padStart(4, '0');
+  }
+  // 許可：A-Za-z / ひらがな / カタカナ / CJK(漢字) のいずれか1文字
   const NAME_RE = /^[A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]$/;
+
   function normalizeName(raw){
     const t = (raw || "").trim();
     if (!t) return randomLetter();
-    const c = t[0];
+    const c = t[0]; // 1文字だけ採用
     return NAME_RE.test(c) ? c : randomLetter();
   }
-  function show(el, yes){ el.classList.toggle('hidden', !yes); }
 
-  // --- 六芒星生成 ---
-  // 正六角形の外接半径 R と内側六角形の半径 r を使い、6つの小三角形＋中央六角形を作る
-  function buildStar(R = 90, r = 52){
-    // 角度をラジアンで
-    const deg2rad = d => (Math.PI/180) * d;
-    // 正六角形の頂点（外・内）
-    const outer = Array.from({length:6}, (_,i)=>{
-      const ang = deg2rad(60*i - 90); // 上を起点(-90°)に回す
-      return [ R*Math.cos(ang), R*Math.sin(ang) ];
-    });
-    const inner = Array.from({length:6}, (_,i)=>{
-      const ang = deg2rad(60*i - 90);
-      return [ r*Math.cos(ang), r*Math.sin(ang) ];
-    });
-
-    // 中央六角形
-    const hexPts = inner.map(([x,y])=>`${x},${y}`).join(' ');
-    const hex = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-    hex.setAttribute('points', hexPts);
-    hex.setAttribute('class','cell hex');
-    hex.dataset.cell = 'center';
-    svg.appendChild(hex);
-
-    // 6つの小三角形（outer[i] と inner[i], inner[(i+1)%6]）
-    for(let i=0;i<6;i++){
-      const p0 = outer[i];
-      const p1 = inner[i];
-      const p2 = inner[(i+1)%6];
-      const tri = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-      tri.setAttribute('points', `${p0[0]},${p0[1]} ${p1[0]},${p1[1]} ${p2[0]},${p2[1]}`);
-      tri.setAttribute('class','cell tri');
-      tri.dataset.cell = `tri-${i}`;
-      svg.appendChild(tri);
-    }
-
-    // 境界線（視認性向上・クリックには影響なし）
-    const outline = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-    outline.setAttribute('points', outer.map(([x,y])=>`${x},${y}`).join(' '));
-    outline.setAttribute('fill','none');
-    outline.setAttribute('stroke','#aaa');
-    outline.setAttribute('stroke-width','1.2');
-    svg.appendChild(outline);
+  function buildRoomLink(code){
+    const url = new URL(location.href);
+    url.searchParams.set('room', code);
+    return url.toString();
   }
 
-  // SVG座標への変換
-  function toSvgPoint(svgEl, clientX, clientY){
-    const pt = svgEl.createSVGPoint();
-    pt.x = clientX; pt.y = clientY;
-    const ctm = svgEl.getScreenCTM();
-    return pt.matrixTransform(ctm.inverse());
+  function showJoin(yes){
+    joinPanel.style.display = yes ? '' : 'none';
+    roomPanel.style.display = yes ? 'none' : '';
   }
 
-  // クリック時のラベル配置（常に1つだけ）
-  function placeLabelAt(x, y, text){
-    // 既存を消す
-    if (state.labelEl && state.labelEl.parentNode) {
-      state.labelEl.parentNode.removeChild(state.labelEl);
+  // ラベル再描画
+  function renderLabels(map){
+    labelsEl.innerHTML = '';
+    if (!map) return;
+    for (const [uid, v] of Object.entries(map)){
+      if (!v || typeof v.x !== 'number' || typeof v.y !== 'number') continue;
+      const d = document.createElement('div');
+      d.className = 'label';
+      d.textContent = v.name || '?';
+      d.style.left = `${v.x}%`;
+      d.style.top  = `${v.y}%`;
+      labelsEl.appendChild(d);
     }
-    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
-    t.setAttribute('x', x);
-    t.setAttribute('y', y);
-    t.setAttribute('text-anchor','middle');
-    t.setAttribute('dominant-baseline','middle');
-    t.setAttribute('class','label');
-    t.textContent = text;
-    svg.appendChild(t);
-    state.labelEl = t;
+  }
+
+  // --- 入室処理 ---
+  async function join(){
+    const name = normalizeName(nameInput.value);
+    const code = (codeInput.value || "").trim() || random4();
+
+    state.name = name;
+    state.code = code;
+
+    // 参加者登録
+    const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
+    await set(meRef, { name, at: Date.now() });
+    onDisconnect(meRef).remove();
+
+    // 自分のクリック配置の onDisconnect
+    const myPlaceRef = ref(db, `rooms/${code}/placements/${state.uid}`);
+    onDisconnect(myPlaceRef).remove();
+
+    // UI
+    selfNameEl.textContent = name;
+    roomBadge.textContent = code;
+    roomBadge.onclick = ()=>{
+      const link = buildRoomLink(code);
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(link).then(()=> alert('招待リンクをコピーしました'));
+      } else {
+        prompt('コピーできない場合はこのテキストをコピーしてください', link);
+      }
+    };
+    headerInfo.innerHTML = `コード：<span class="code-link" onclick="void(0)">${code}</span>　/　あなた：${name}`;
+
+    showJoin(false);
+    state.joined = true;
+
+    // 参加者数の監視
+    const membersRef = ref(db, `rooms/${code}/participants`);
+    const offMembers = onValue(membersRef, (snap)=>{
+      const obj = snap.val() || {};
+      memberCountEl.textContent = Object.keys(obj).length;
+    });
+    state.off.push(offMembers);
+
+    // 配置の監視（全員分）
+    const placesRef = ref(db, `rooms/${code}/placements`);
+    const offPlaces = onValue(placesRef, (snap)=>{
+      renderLabels(snap.val() || {});
+    });
+    state.off.push(offPlaces);
+  }
+
+  // --- 退室処理 ---
+  async function leave(){
+    if (!state.joined) return;
+    const { code } = state;
+    // 自分をparticipantsから削除
+    await remove(ref(db, `rooms/${code}/participants/${state.uid}`));
+    // 自分の配置も削除
+    await remove(ref(db, `rooms/${code}/placements/${state.uid}`));
+    // リスナー解除
+    state.off.forEach(fn => fn && fn());
+    state.off = [];
+    // UI 戻す
+    renderLabels(null);
+    showJoin(true);
+    state.joined = false;
+  }
+
+  // --- クリック → 自分の名前を置く（常に最新1つ） ---
+  function onStarClick(ev){
+    const target = ev.target;
+    if (!state.joined) return;
+    if (!(target instanceof SVGElement)) return;
+    const posIdx = target.dataset?.pos;
+    if (posIdx === undefined) return; // 対象外
+
+    // クリック座標をステージ上の%で保存（リサイズしても位置が維持される）
+    const rect = stageEl.getBoundingClientRect();
+    const xPct = ((ev.clientX - rect.left) / rect.width) * 100;
+    const yPct = ((ev.clientY - rect.top)  / rect.height) * 100;
+
+    const payload = {
+      name: state.name,
+      pos: Number(posIdx), // 0..5=三角, 6=中央六角形（参考: 使用は任意）
+      x: Math.max(0, Math.min(100, +xPct.toFixed(1))),
+      y: Math.max(0, Math.min(100, +yPct.toFixed(1))),
+      at: Date.now()
+    };
+    set(ref(db, `rooms/${state.code}/placements/${state.uid}`), payload);
   }
 
   // --- イベント ---
-  btnJoin.onclick = () => {
-    state.name = normalizeName(nameInput.value);
-    headerInfo.textContent = `あなた：${state.name}`;
-    show(joinPanel, false);
-    show(starPanel, true);
-    if (!svg.hasChildNodes()) buildStar();
-  };
+  document.getElementById('btnJoin').onclick = join;
+  document.getElementById('btnLeave').onclick = leave;
+  document.getElementById('starSvg').addEventListener('click', onStarClick);
+  window.addEventListener('beforeunload', leave);
+  // Enterキーで即入室
+  nameInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') join(); });
+  codeInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') join(); });
 
-  // 六芒星のセルだけ反応
-  svg.addEventListener('click', (e)=>{
-    const target = e.target;
-    if (!(target instanceof SVGElement)) return;
-    if (!target.classList.contains('cell')) return; // クリック対象のみ
-    const p = toSvgPoint(svg, e.clientX, e.clientY);
-    placeLabelAt(p.x, p.y, state.name || '？');
-  });
-
-  // URLパラメータで名前を事前入力（任意）
+  // URL パラメータで事前入力（任意）
   try{
     const qs = new URLSearchParams(location.search);
+    const qRoom = (qs.get('room')||'').trim();
     const qName = (qs.get('name')||'').trim();
-    if (qName) nameInput.value = qName.slice(0,1);
+    if (qRoom) codeInput.value = qRoom.slice(0, 12);
+    if (qName) nameInput.value = qName.slice(0, 1);
   }catch(_e){}
 </script>
 </body>
