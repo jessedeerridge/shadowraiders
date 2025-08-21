@@ -26,26 +26,20 @@
     margin:0 auto;
   }
   svg{width:100%;height:100%;display:block}
-  .labels{
-    position:absolute; inset:0;
-    pointer-events:none;
-  }
+
+  /* 名前ラベル */
+  .labels{ position:absolute; inset:0; pointer-events:none; }
   .label{
-    position:absolute;
-    transform:translate(-50%,-80%);
-    background:rgba(255,255,255,.9);
-    border:1px solid #ddd;
-    border-radius:10px;
-    padding:2px 6px;
-    font-weight:700;
-    font-size:14px;
-    white-space:nowrap;
+    position:absolute; transform:translate(-50%,-80%);
+    background:rgba(255,255,255,.9); border:1px solid #ddd; border-radius:10px;
+    padding:2px 6px; font-weight:700; font-size:14px; white-space:nowrap;
     box-shadow:0 1px 3px rgba(0,0,0,.08);
   }
-  /* 六芒星の見た目 */
-  .tri{ fill:#f4f7ff; stroke:#333; stroke-width:.8; }
-  .tri:hover{ filter:brightness(0.95); }
-  .hex{ fill:#eef4ff; stroke:#333; stroke-width:.9; }
+
+  /* 見た目：画像のように線画で表示。クリック領域は透明でホバー時だけ薄く色付け */
+  .outline polygon{ fill:none; stroke:#111; stroke-width:3; stroke-linejoin:round; }
+  .area{ fill:rgba(0,0,0,0.0001); cursor:pointer; }          /* 透明だがクリック可 */
+  .area:hover{ fill:rgba(100,150,255,0.12); }                /* ホバーでうっすら */
 </style>
 </head>
 <body>
@@ -57,43 +51,37 @@
 <main>
   <!-- 入室画面 -->
   <section id="joinPanel" class="join-box">
-    <!-- 名前：1文字のみ（アルファベット/ひらがな/カタカナ/漢字） -->
     <input id="nameInput" placeholder="名前（1文字）" maxlength="1" inputmode="text" />
-    <!-- ルームコード：未入力なら自動で4桁 -->
     <input id="codeInput" placeholder="ルームコード（例: 1234）" maxlength="12" inputmode="numeric" />
     <button id="btnJoin" class="btn">入室</button>
   </section>
 
   <!-- ルーム画面（六芒星） -->
   <section id="roomPanel" class="wrap" style="display:none;">
-    <!-- ※ご要望により左上のコード/参加者/あなた 行は削除 -->
     <div class="stage" id="stage">
+      <!-- 正六芒星：二つの正三角形（輪郭）＋ 内側6三角形と中央六角形（クリック領域） -->
       <svg id="starSvg" viewBox="0 0 100 100" aria-label="六芒星（クリックで名前を置く）">
-        <!-- 正六角形（内側の基準は半径28で構築、クリック対象の中央六角形は半径20で少し小さく） -->
-        <!-- 6つの正三角形（各辺＝内側六角形の一辺、頂点は外側へ等距離） -->
-        <!-- 頂点計算：内側六角 r=28, apothem≈24.25, 外側頂点半径≈48.50 -->
-        <!-- 三角形0（右） -->
-        <polygon class="tri" data-pos="0"
-          points="78,50 64,74.25 98.5,50" />
-        <!-- 三角形1（右下） -->
-        <polygon class="tri" data-pos="1"
-          points="64,74.25 36,74.25 74.25,92" />
-        <!-- 三角形2（左下） -->
-        <polygon class="tri" data-pos="2"
-          points="36,74.25 22,50 25.75,92" />
-        <!-- 三角形3（左） -->
-        <polygon class="tri" data-pos="3"
-          points="22,50 36,25.75 1.5,50" />
-        <!-- 三角形4（左上） -->
-        <polygon class="tri" data-pos="4"
-          points="36,25.75 64,25.75 25.75,8" />
-        <!-- 三角形5（右上） -->
-        <polygon class="tri" data-pos="5"
-          points="64,25.75 78,50 74.25,8" />
+        <!-- 輪郭（画像と同じ見た目） -->
+        <g class="outline" pointer-events="none">
+          <!-- 上向き正三角形 -->
+          <polygon points="50,6 88.11,72 11.89,72" />
+          <!-- 下向き正三角形 -->
+          <polygon points="50,94 88.11,28 11.89,28" />
+        </g>
 
-        <!-- クリック対象の中央・小さめ正六角形（r=20） -->
-        <polygon class="hex" data-pos="6"
-          points="70,50 60,67.32 40,67.32 30,50 40,32.68 60,32.68" />
+        <!-- クリック領域（内側6三角形 + 中央六角形） -->
+        <!-- 中央六角形の頂点（正確な交点）：
+             37.30,28.00 / 62.70,28.00 / 75.41,50.00 / 62.70,72.00 / 37.30,72.00 / 24.59,50.00 -->
+        <!-- 三角は各頂点＋隣接する内側六角形の2点で構成 -->
+        <polygon class="area" data-pos="0" points="88.11,28.00 62.70,28.00 75.41,50.00" /> <!-- 右上 -->
+        <polygon class="area" data-pos="1" points="88.11,72.00 75.41,50.00 62.70,72.00" /> <!-- 右下 -->
+        <polygon class="area" data-pos="2" points="50.00,94.00 62.70,72.00 37.30,72.00" /> <!-- 下 -->
+        <polygon class="area" data-pos="3" points="11.89,72.00 37.30,72.00 24.59,50.00" /> <!-- 左下 -->
+        <polygon class="area" data-pos="4" points="11.89,28.00 24.59,50.00 37.30,28.00" /> <!-- 左上 -->
+        <polygon class="area" data-pos="5" points="50.00,6.00 37.30,28.00 62.70,28.00" />  <!-- 上 -->
+        <!-- 中央六角形 -->
+        <polygon class="area" data-pos="6"
+                 points="37.30,28.00 62.70,28.00 75.41,50.00 62.70,72.00 37.30,72.00 24.59,50.00" />
       </svg>
       <div class="labels" id="labels"></div>
     </div>
@@ -107,9 +95,7 @@
 <!-- Firebase（v9 モジュール） -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-  import {
-    getDatabase, ref, set, onValue, onDisconnect, remove
-  } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+  import { getDatabase, ref, set, onValue, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
   /* あなたの Firebase 設定 */
   const firebaseConfig = {
@@ -127,53 +113,30 @@
   const db  = getDatabase(app);
 
   // --- DOM ---
-  const headerInfo    = document.getElementById('headerInfo');
-  const joinPanel     = document.getElementById('joinPanel');
-  const nameInput     = document.getElementById('nameInput');
-  const codeInput     = document.getElementById('codeInput');
-  const btnJoin       = document.getElementById('btnJoin');
+  const headerInfo = document.getElementById('headerInfo');
+  const joinPanel  = document.getElementById('joinPanel');
+  const nameInput  = document.getElementById('nameInput');
+  const codeInput  = document.getElementById('codeInput');
+  const btnJoin    = document.getElementById('btnJoin');
 
-  const roomPanel     = document.getElementById('roomPanel');
-  const stageEl       = document.getElementById('stage');
-  const labelsEl      = document.getElementById('labels');
-  const btnLeave      = document.getElementById('btnLeave');
+  const roomPanel  = document.getElementById('roomPanel');
+  const stageEl    = document.getElementById('stage');
+  const labelsEl   = document.getElementById('labels');
+  const btnLeave   = document.getElementById('btnLeave');
 
   // --- 状態 ---
-  const state = {
-    uid: crypto.randomUUID(),
-    name: "",
-    code: "",
-    joined: false,
-    off: [] // リスナー解除
-  };
+  const state = { uid: crypto.randomUUID(), name:"", code:"", joined:false, off:[] };
 
   // --- ユーティリティ ---
-  function randomLetter(){
-    return String.fromCharCode(65 + Math.floor(Math.random()*26)); // A-Z
-  }
-  function random4(){
-    return String(Math.floor(Math.random()*10000)).padStart(4, '0');
-  }
-  // 許可：A-Za-z / ひらがな / カタカナ / CJK(漢字) のいずれか1文字
+  function randomLetter(){ return String.fromCharCode(65 + Math.floor(Math.random()*26)); }
+  function random4(){ return String(Math.floor(Math.random()*10000)).padStart(4, '0'); }
   const NAME_RE = /^[A-Za-z\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]$/;
-
   function normalizeName(raw){
-    const t = (raw || "").trim();
-    if (!t) return randomLetter();
-    const c = t[0]; // 1文字だけ採用
-    return NAME_RE.test(c) ? c : randomLetter();
+    const t = (raw || "").trim(); if (!t) return randomLetter();
+    const c = t[0]; return NAME_RE.test(c) ? c : randomLetter();
   }
-
-  function buildRoomLink(code){
-    const url = new URL(location.href);
-    url.searchParams.set('room', code);
-    return url.toString();
-  }
-
-  function showJoin(yes){
-    joinPanel.style.display = yes ? '' : 'none';
-    roomPanel.style.display = yes ? 'none' : '';
-  }
+  function buildRoomLink(code){ const url = new URL(location.href); url.searchParams.set('room', code); return url.toString(); }
+  function showJoin(yes){ joinPanel.style.display = yes ? '' : 'none'; roomPanel.style.display = yes ? 'none' : ''; }
 
   // ラベル再描画
   function renderLabels(map){
@@ -190,28 +153,22 @@
     }
   }
 
-  // --- 入室処理 ---
+  // --- 入室 ---
   async function join(){
     const name = normalizeName(nameInput.value);
     const code = (codeInput.value || "").trim() || random4();
+    state.name = name; state.code = code;
 
-    state.name = name;
-    state.code = code;
-
-    // 参加者登録
     const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
     await set(meRef, { name, at: Date.now() });
     onDisconnect(meRef).remove();
 
-    // 自分のクリック配置の onDisconnect
     const myPlaceRef = ref(db, `rooms/${code}/placements/${state.uid}`);
     onDisconnect(myPlaceRef).remove();
 
-    // 右上（ヘッダー右）にコードと名前のみ表示
+    // 右上（ヘッダー右）にコードと名前のみ
     const link = buildRoomLink(code);
-    headerInfo.innerHTML =
-      `コード：<span class="code-link" id="headerCode">${code}</span>　/　あなた：<strong>${name}</strong>`;
-    // クリックで招待リンクコピー
+    headerInfo.innerHTML = `コード：<span class="code-link" id="headerCode">${code}</span>　/　あなた：<strong>${name}</strong>`;
     setTimeout(()=>{
       const codeEl = document.getElementById('headerCode');
       if (codeEl){
@@ -225,51 +182,40 @@
       }
     },0);
 
-    showJoin(false);
-    state.joined = true;
+    showJoin(false); state.joined = true;
 
     // 配置の監視（全員分）
     const placesRef = ref(db, `rooms/${code}/placements`);
-    const offPlaces = onValue(placesRef, (snap)=>{
-      renderLabels(snap.val() || {});
-    });
+    const offPlaces = onValue(placesRef, (snap)=>{ renderLabels(snap.val() || {}); });
     state.off.push(offPlaces);
   }
 
-  // --- 退室処理 ---
+  // --- 退室 ---
   async function leave(){
     if (!state.joined) return;
     const { code } = state;
-    // 自分をparticipantsから削除
     await remove(ref(db, `rooms/${code}/participants/${state.uid}`));
-    // 自分の配置も削除
     await remove(ref(db, `rooms/${code}/placements/${state.uid}`));
-    // リスナー解除
-    state.off.forEach(fn => fn && fn());
-    state.off = [];
-    // UI 戻す
-    renderLabels(null);
-    headerInfo.textContent = '';
-    showJoin(true);
-    state.joined = false;
+    state.off.forEach(fn => fn && fn()); state.off = [];
+    renderLabels(null); headerInfo.textContent = '';
+    showJoin(true); state.joined = false;
   }
 
   // --- クリック → 自分の名前を置く（常に最新1つ） ---
   function onStarClick(ev){
-    const target = ev.target;
     if (!state.joined) return;
+    const target = ev.target;
     if (!(target instanceof SVGElement)) return;
     const posIdx = target.dataset?.pos;
-    if (posIdx === undefined) return; // 対象外
+    if (posIdx === undefined) return; // 輪郭は対象外
 
-    // クリック座標をステージ上の%で保存（リサイズしても位置が維持される）
     const rect = stageEl.getBoundingClientRect();
     const xPct = ((ev.clientX - rect.left) / rect.width) * 100;
     const yPct = ((ev.clientY - rect.top)  / rect.height) * 100;
 
     const payload = {
       name: state.name,
-      pos: Number(posIdx), // 0..5=正三角, 6=中央小六角
+      pos: Number(posIdx),   // 0..5=内側三角, 6=中央六角
       x: Math.max(0, Math.min(100, +xPct.toFixed(1))),
       y: Math.max(0, Math.min(100, +yPct.toFixed(1))),
       at: Date.now()
