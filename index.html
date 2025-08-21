@@ -31,18 +31,21 @@
     border:2px dashed #88a;
     border-radius:12px;
     background:#f7fbff;
-    overflow:hidden; /* はみ出し防止 */
-    touch-action:none; /* タッチドラッグのため */
+    overflow:hidden;         /* はみ出し防止 */
+    touch-action:none;       /* タッチドラッグのため */
   }
+  /* アイコンは「▢の中に名前1文字」 */
   .chip{
     position:absolute;
     width:44px;height:44px;line-height:44px;
-    border-radius:50%;
-    background:#111;color:#fff;
+    border-radius:8px;                 /* ← 四角（角丸） */
+    background:#fff;                   /* 白地 */
+    color:#111;
     text-align:center;font-weight:700;font-size:20px;
     user-select:none;
     cursor:grab;
-    box-shadow:0 2px 8px rgba(0,0,0,.12);
+    box-shadow:0 2px 8px rgba(0,0,0,.08);
+    border:2px solid #111;             /* ← 枠線で“▢”表現 */
   }
   .chip:active{ cursor:grabbing; }
 
@@ -58,12 +61,11 @@
   }
   svg{max-width:min(92vw,700px); max-height:60vh;}
   .cell { cursor:pointer; transition:opacity .1s ease; }
-  .cell:hover { opacity:.9; }
+  .cell:hover { opacity:.92; }
 
   /* 着色（視認性） */
-  .penta { fill:#eaf4ff; stroke:#0d4660; stroke-width:1.5; }
-  .hex   { fill:#0b2431;  stroke:#0d4660; stroke-width:1.5; fill-opacity:.08; }
-  .outline{ fill:none; stroke:#0d4660; stroke-width:2; opacity:.9; }
+  .diamond { fill:#eaf4ff; stroke:#0d4660; stroke-width:1.6; }
+  .ring-outline{ fill:none; stroke:#0d4660; stroke-width:2; opacity:.9; }
   .label { font-weight:700; font-size:28px; pointer-events:none; fill:#0d4660; }
 </style>
 </head>
@@ -90,7 +92,7 @@
 
     <!-- 右：図形 -->
     <div class="star-wrap">
-      <svg id="starSvg" viewBox="-100 -100 200 200" aria-label="六芒星" role="img"></svg>
+      <svg id="starSvg" viewBox="-120 -120 240 240" aria-label="ひし形リング" role="img"></svg>
     </div>
   </section>
 </main>
@@ -130,60 +132,43 @@
   }
   function show(el, yes){ el.classList.toggle('hidden', !yes); }
 
-  // --- 右：図形生成（中央六角＋周囲五角） ---
-  function buildStar(R = 92, r = 52){
-    const deg2rad = d => (Math.PI/180) * d;
+  // 角度→ラジアン
+  const deg2rad = d => (Math.PI/180) * d;
 
-    // 六角の外接半径R / 内側半径r（中央）
-    const outer = Array.from({length:6}, (_,i)=>{
-      const ang = deg2rad(60*i - 90);
-      return [ R*Math.cos(ang), R*Math.sin(ang) ];
-    });
-    const inner = Array.from({length:6}, (_,i)=>{
-      const ang = deg2rad(60*i - 90);
-      return [ r*Math.cos(ang), r*Math.sin(ang) ];
-    });
+  /**
+   * 右：ひし形が六個 円形につながった形
+   * 各ひし形 i は基準角 θi（-90°スタートで60°刻み）。
+   * 頂点は [外, 側(+30°), 内, 側(-30°)] の4点。
+   * 側(+30°) は次のひし形の 側(-30°) と同一点を共有 → 連結表現。
+   */
+  function buildDiamondRing(Rout = 96, Rm = 74, Rin = 44){
+    // ひし形6個
+    for (let i=0;i<6;i++){
+      const theta = -90 + 60*i;      // 基準角（外向きの頂点）
+      const a0 = theta;
+      const a1 = theta + 30;
+      const a2 = theta + 180;
+      const a3 = theta - 30;
 
-    // 中央六角形
-    const hexPts = inner.map(([x,y])=>`${x},${y}`).join(' ');
-    const hex = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-    hex.setAttribute('points', hexPts);
-    hex.setAttribute('class','cell hex');
-    hex.dataset.cell = 'center';
-    svg.appendChild(hex);
+      const p0 = [ Rout*Math.cos(deg2rad(a0)), Rout*Math.sin(deg2rad(a0)) ]; // 外
+      const p1 = [  Rm*Math.cos(deg2rad(a1)),  Rm*Math.sin(deg2rad(a1)) ];   // 側(+30°)
+      const p2 = [ Rin*Math.cos(deg2rad(a2)), Rin*Math.sin(deg2rad(a2)) ];   // 内
+      const p3 = [  Rm*Math.cos(deg2rad(a3)),  Rm*Math.sin(deg2rad(a3)) ];   // 側(-30°)
 
-    // 各辺に家形の五角形を付与
-    for(let i=0;i<6;i++){
-      const i0 = i;
-      const i1 = (i+1)%6;
-
-      const baseA = inner[i0];         // 中央六角の辺の端1
-      const baseB = inner[i1];         // 中央六角の辺の端2
-      const outA  = outer[i0];         // 右肩
-      const outB  = outer[i1];         // 左肩
-
-      // 辺の外向き法線方向の中点へ「先端」を置く
-      const mid   = [(baseA[0]+baseB[0])/2, (baseA[1]+baseB[1])/2];
-      // 法線ベクトル（辺ベクトルを90度回転→外側へ）
-      const vx = baseB[0]-baseA[0], vy = baseB[1]-baseA[1];
-      const nx = -vy, ny = vx;
-      const nlen = Math.hypot(nx,ny) || 1;
-      const tipLen = (R - r) * 1.05; // 少しだけ外へ
-      const tip = [ mid[0] + (nx/nlen)*tipLen, mid[1] + (ny/nlen)*tipLen ];
-
-      // 五角形の頂点順：baseA -> baseB -> tip -> outB -> outA
-      const penta = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-      penta.setAttribute('points', `${baseA[0]},${baseA[1]} ${baseB[0]},${baseB[1]} ${tip[0]},${tip[1]} ${outB[0]},${outB[1]} ${outA[0]},${outA[1]}`);
-      penta.setAttribute('class','cell penta');
-      penta.dataset.cell = `penta-${i}`;
-      svg.appendChild(penta);
+      const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+      poly.setAttribute('points', `${p0[0]},${p0[1]} ${p1[0]},${p1[1]} ${p2[0]},${p2[1]} ${p3[0]},${p3[1]}`);
+      poly.setAttribute('class','cell diamond');
+      poly.dataset.cell = `diamond-${i}`;
+      svg.appendChild(poly);
     }
 
-    // 外周（見栄え用）
-    const outline = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-    outline.setAttribute('points', outer.map(([x,y])=>`${x},${y}`).join(' '));
-    outline.setAttribute('class','outline');
-    svg.appendChild(outline);
+    // 外周の見栄え（オプション）
+    const ring = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    ring.setAttribute('cx','0'); ring.setAttribute('cy','0');
+    ring.setAttribute('r', String(Rout));
+    ring.setAttribute('class','ring-outline');
+    ring.setAttribute('opacity','0.25');
+    svg.appendChild(ring);
   }
 
   // SVG座標への変換
@@ -237,7 +222,7 @@
       const dz = dropzone.getBoundingClientRect();
       let nx = ev.clientX - dz.left - state.dragOffsetX;
       let ny = ev.clientY - dz.top  - state.dragOffsetY;
-      // クリップ
+      // 盤内にクリップ
       nx = Math.max(0, Math.min(nx, dz.width  - 44));
       ny = Math.max(0, Math.min(ny, dz.height - 44));
       el.style.left = nx + 'px';
@@ -266,8 +251,8 @@
     // 左：ドラッグチップ
     makeDraggableChip(state.name);
 
-    // 右：図形
-    if (!svg.hasChildNodes()) buildStar();
+    // 右：ひし形リング
+    if (!svg.hasChildNodes()) buildDiamondRing();
   };
 
   // 図形のセルだけ反応
