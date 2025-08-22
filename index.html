@@ -82,6 +82,11 @@ header{
   font-size: 11px;
   opacity: 0.7;
 }
+.deck-back.blank {
+  border: 2px dashed #999;  /* 点線の枠線 */
+  background: transparent;  /* 背景透明 */
+  color: transparent;       /* 文字も非表示 */
+}
 
   /* ダイス欄 */
 .dicebar{
@@ -953,15 +958,17 @@ const off = onValue(decksRef, (snap)=>{
     if (countEl){
       countEl.textContent = remain >= 0 ? remain : def.cards.length;
     }
-    if (backEl){
-      if (remain <= 0){
-        backEl.textContent = '';            // ブランク
-        backEl.classList.add('disabled');   // 灰色
-      }else{
-        backEl.textContent = '裏';
-        backEl.classList.remove('disabled');
-      }
-    }
+if (backEl){
+  if (remain <= 0){
+    backEl.textContent = '';                 // 裏の文字は消す
+    backEl.classList.add('blank');           // ★ 点線枠
+    backEl.classList.remove('disabled');     // disabled は不要
+  }else{
+    backEl.textContent = '裏';
+    backEl.classList.remove('blank');        // 通常枠に戻す
+  }
+}
+
   }
   updateCount('white');
   updateCount('black');
