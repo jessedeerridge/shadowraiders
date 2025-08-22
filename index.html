@@ -326,11 +326,11 @@ header{
 <!-- 色選択モーダル -->
 <div id="colorModal" class="modal hidden" role="dialog" aria-modal="true">
   <div class="modal-panel">
-    <h2 style="margin:0 0 12px;font-size:16px">色を選んでください（2行×5列）</h2>
+    <h2 style="margin:0 0 12px;font-size:16px">色を選んでください。</h2>
     <div class="color-grid" id="colorGrid"></div>
-    <div style="margin-top:10px;font-size:12px;opacity:.8">※ 他プレイヤーが選択済みの色は選べません。ホストがスタートを押すまでこの画面のまま。</div>
+    <div style="margin-top:10px;font-size:12px;opacity:.8">※スタートまで待ってください。</div>
     <!-- ▼ 追加：右下の合計表示 -->
-    <div class="color-foot"><span id="colorCount">ゲーム参加者合計：0</span></div>
+    <div class="color-foot"><span id="colorCount">プレイヤー数：0</span></div>
   </div>
 </div>
 
@@ -1504,16 +1504,16 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
 
   // ====== 色選択 ======
   const COLOR_LIST = [
-    { id:'red',     name:'赤',    bg:'#e53935' },
-    { id:'blue',    name:'青',    bg:'#1e88e5' },
-    { id:'black',   name:'黒',    bg:'#000000' },
-    { id:'green1',  name:'緑',    bg:'#43a047' },
-    { id:'white',   name:'白',    bg:'#ffffff', border:'#111' },
-    { id:'green2',  name:'緑',    bg:'#43a047' }, // 指示通り2つ目の緑
-    { id:'purple',  name:'紫',    bg:'#8e24aa' },
-    { id:'cyan',    name:'水色',  bg:'#26c6da' },
-    { id:'orange',  name:'オレンジ', bg:'#fb8c00' },
-    { id:'yellow',  name:'黄色',  bg:'#fdd835' },
+    { id:'red',     name:'',    bg:'#e53935' },
+    { id:'blue',    name:'',    bg:'#1e88e5' },
+    { id:'black',   name:'',    bg:'#000000' },
+    { id:'green1',  name:'',    bg:'#43a047' },
+    { id:'white',   name:'',    bg:'#ffffff', border:'#111' },
+    { id:'green2',  name:'',    bg:'#43a047' }, // 指示通り2つ目の緑
+    { id:'purple',  name:'',    bg:'#8e24aa' },
+    { id:'cyan',    name:'',  bg:'#26c6da' },
+    { id:'orange',  name:'', bg:'#fb8c00' },
+    { id:'yellow',  name:'',  bg:'#fdd835' },
   ];
   function colorToStyle(colorName){
     // 背景と文字色の組合せ規定
