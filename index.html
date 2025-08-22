@@ -1581,16 +1581,16 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
 
   // ====== 色選択 ======
   const COLOR_LIST = [
-    { id:'red',     name:'',    bg:'#e53935' },
-    { id:'blue',    name:'',    bg:'#1e88e5' },
-    { id:'black',   name:'',    bg:'#000000' },
-    { id:'green1',  name:'',    bg:'#43a047' },
-    { id:'white',   name:'',    bg:'#ffffff', border:'#111' },
-    { id:'green2',  name:'',    bg:'#43a047' }, // 指示通り2つ目の緑
-    { id:'purple',  name:'',    bg:'#8e24aa' },
-    { id:'cyan',    name:'',  bg:'#26c6da' },
-    { id:'orange',  name:'', bg:'#fb8c00' },
-    { id:'yellow',  name:'',  bg:'#fdd835' },
+    { id:'red',     name:'赤',    bg:'#e53935' },
+    { id:'blue',    name:'青',    bg:'#1e88e5' },
+    { id:'black',   name:'黒',    bg:'#000000' },
+    { id:'green1',  name:'緑',    bg:'#43a047' },
+    { id:'white',   name:'白',    bg:'#ffffff', border:'#111' },
+    { id:'green2',  name:'緑',    bg:'#43a047' }, // 指示通り2つ目の緑
+    { id:'purple',  name:'紫',    bg:'#8e24aa' },
+    { id:'cyan',    name:'水色',  bg:'#26c6da' },
+    { id:'orange',  name:'オレンジ', bg:'#fb8c00' },
+    { id:'yellow',  name:'黄',  bg:'#fdd835' },
   ];
   function colorToStyle(colorName){
     // 背景と文字色の組合せ規定
