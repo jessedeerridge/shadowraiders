@@ -117,6 +117,19 @@ deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字
   background:#fff; border:1px solid #111; border-radius:12px; padding:8px 10px;
   margin-top:12px;           /* 山札との間に余白 */
 }
+/* ▼ 装備欄フッター：緑カードQ&A履歴（常に一番下） */
+.equip-history{
+  width:100%;
+  border-top:1px dashed #aaa;
+  margin-top:6px; padding-top:6px;
+  font-size:12px; line-height:1.5;
+}
+.equip-history .row{ display:flex; gap:6px; align-items:center; padding:2px 0; }
+.equip-history .q{ font-weight:700; }
+.equip-history .sep{ opacity:.6; }
+.equip-history .title{ font-weight:700; margin-bottom:4px; }
+
+  
 /* ▼ 緑カードQ&A履歴 */
 .history{
   background:#fff; border:1px solid #111; border-radius:12px;
@@ -190,6 +203,8 @@ deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字
     <div class="decks-wrap"><div id="decks" class="decks" aria-label="山札（左から緑・白・黒）"></div></div>
   </section>
 </main>
+
+  
 <!-- 緑カードQ&A履歴 -->
 <div id="greenHistory" class="history hidden" aria-label="質問履歴"></div>
 
@@ -210,7 +225,9 @@ deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字
   
 <!-- 装備所持バー -->
 <div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
-
+  <!-- ▼ 履歴フッター（常に一番下へ） -->
+  <div id="equipHistory" class="equip-history hidden" aria-label="緑カードQ&A履歴"></div>
+</div>
 <!-- ☆ 修正：正体カード公開ポップ（黒背景、公開するのみ） -->
 <div id="revealPopover" class="hidden"
      style="position:fixed; z-index:2147483607;
@@ -1600,7 +1617,7 @@ function observeGreenResult(){
     setTimeout(()=> remove(myResultRef), 0);
   });
   state.unsub.push(off);
-}  
+} 
 // ▼ ここから追加：履歴に保存
 (async ()=>{
   const toUid   = rec.from || '';
@@ -1619,26 +1636,42 @@ function observeGreenResult(){
 function observeGreenHistory(){
   const histRef = ref(db, `rooms/${state.code}/greenHistory`);
   const off = onValue(histRef, (snap)=>{
-    const box = document.getElementById('greenHistory');
-    if (!box) return;
-    const val = snap.val() || {};
+    const equipBar = document.getElementById('equipBar');
+    if (!equipBar) return;
+
+    // フッター( #equipHistory ) を必ず“末尾”に保持
+    let foot = document.getElementById('equipHistory');
+    if (!foot){
+      foot = document.createElement('div');
+      foot.id = 'equipHistory';
+      foot.className = 'equip-history hidden';
+      equipBar.appendChild(foot);
+    }else if (equipBar.lastElementChild !== foot){
+      equipBar.appendChild(foot); // 何かで消された/順序が変わっても最下部へ戻す
+    }
+
+    const val   = snap.val() || {};
     const items = Object.values(val).sort((a,b)=> (b.at||0)-(a.at||0)).slice(0,20);
+
     if (items.length === 0){
-      box.classList.add('hidden');
-      box.innerHTML = '';
+      foot.classList.add('hidden');
+      foot.innerHTML = '';
       return;
     }
-    box.classList.remove('hidden');
-    box.innerHTML = '<div style="font-weight:700;margin-bottom:4px">緑カード履歴</div>' +
+
+    foot.classList.remove('hidden');
+    foot.innerHTML =
+      `<div class="title">緑カード履歴</div>` +
       items.map(it=>{
-        const q = it.q || '';
-        const to = it.to || '?';
+        const q   = it.q   || '';
+        const to  = it.to  || '?';
         const ans = it.ans || '?';
-        return `<div class="history-item"><span class="q">${q}</span><span class="sep">＞</span><span>${to}</span><span class="sep">＞</span><span>${ans}</span></div>`;
+        return `<div class="row"><span class="q">${q}</span><span class="sep">＞</span><span>${to}</span><span class="sep">＞</span><span>${ans}</span></div>`;
       }).join('');
   });
   state.unsub.push(off);
 }
+
 
   
   
