@@ -788,7 +788,6 @@ if (!myHasCard && oldCard){
     btn.onclick = ()=>{
       const url = new URL(location.href);
       url.searchParams.set('room', state.code);
-      url.searchParams.set('name', state.name);
       navigator.clipboard.writeText(url.toString());
       btn.textContent = 'コピー済み！';
       setTimeout(()=> btn.textContent='リンクコピー', 1200);
