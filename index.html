@@ -494,31 +494,6 @@ function rollBothDice(){
   const hostPanel     = document.getElementById('hostPanel');
   const btnStart      = document.getElementById('btnStart');
 
-btnStart.addEventListener('click', async ()=>{
-  if (!state.started){
-    // スタート時の処理
-    state.started = true;
-    btnStart.textContent = 'リセット';
-
-    // TODO: 必要ならここで正体カード配布など開始処理を呼ぶ
-  }else{
-    // リセット時の処理
-    if (!confirm('リセットしますか？')) return;
-
-    const updates = {};
-    updates[`rooms/${state.code}/icons`] = null;
-    updates[`rooms/${state.code}/equipment`] = null;
-    updates[`rooms/${state.code}/greenHistory`] = null;
-    updates[`rooms/${state.code}/deal/v1/cards`] = null;
-    updates[`rooms/${state.code}/resetAt`] = Date.now();
-    await update(ref(db), updates);
-
-    // ローカル状態をリセット
-    state.started = false;
-    show(colorModal, true);   // 色選択画面を再表示
-    btnStart.textContent = 'スタート';
-  }
-});
 
   
   const colorModal    = document.getElementById('colorModal');
@@ -2074,6 +2049,26 @@ function showParticipantSelectPopup(cardText){
   pop.appendChild(panel);
   document.body.appendChild(pop);
 
+
+
+  // ★ 既にこのカードでロック中なら、その相手だけを出す
+  const lock = state.greenLock;
+  if (lock && lock.card === cardText){
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = `${lock.toName}（固定）`;
+    btn.style.width = '100%';
+    btn.onclick = async ()=>{
+      await set(ref(db, `rooms/${state.code}/greenShare/${lock.toUid}`), {
+        card: cardText, from: state.uid, at: Date.now()
+      });
+      pop.remove();
+    };
+    list.appendChild(btn);
+    return; // 他の名前は出さない
+  }
+
+  
   // 自分以外の参加者を列挙
   get(ref(db, `rooms/${state.code}/participants`)).then(snap=>{
     const ps = snap.val() || {};
@@ -2084,6 +2079,8 @@ function showParticipantSelectPopup(cardText){
       btn.textContent = (info?.name || '?');
       btn.style.width = '100%';
  btn.onclick = async ()=>{
+           state.greenLock = { card: cardText, toUid: uid, toName: (info?.name || '?') };
+
   // 1) 相手に“共有”を書き込む
   await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
     card: cardText, from: state.uid, at: Date.now()
@@ -2293,6 +2290,16 @@ function observeGreenResult(){
       // 従来挙動（閉じるだけ）
       state.pinDealViewer = false;
       show(dealViewer, false);
+    }
+
+        // ロック解除（このカードの処理が完了）
+    if (state.greenLock){
+      const lock = state.greenLock;
+      const sameCard   = (rec.card && lock.card === rec.card);
+      const sameTarget = (rec.from && lock.toUid === rec.from); // rec.from は回答者uid
+      if (sameCard && sameTarget){
+        state.greenLock = null; // 完全解除
+      }
     }
 
     // 受領後掃除
@@ -2661,6 +2668,8 @@ async function becomeHostIfVacant(){
     observeGreenShare();
 　　installDealViewerPinGuard();
 　　observeGreenResult();
+        if (state.greenLock === undefined) state.greenLock = null; // ← 追加（1行だけ）
+
     // 装備所持の購読と描画
     observeEquipment();
     
