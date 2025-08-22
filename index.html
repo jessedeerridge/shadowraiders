@@ -741,15 +741,21 @@ if (oldEquip && !myEquip){
   updates[`rooms/${state.code}/equipment/${oldUid}`] = null;
 }
 
-// 右下の最初の配布カード（myDeal）
-const myDealSnap  = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`));
-const oldDealSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${oldUid}`));
-const myHasCard   = !!myDealSnap.val();
-const oldCard     = oldDealSnap.val();
-if (!myHasCard && oldCard){
-  updates[`rooms/${state.code}/deal/v1/cards/${state.uid}`] = oldCard;
-  updates[`rooms/${state.code}/deal/v1/cards/${oldUid}`] = null;
-}
+// 右下の最初の配布カード（myDeal）— 原子的に移管
+await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
+  cards = cards || {};
+
+  // すでに新UIDがカードを持っていたら何もしない
+  if (cards[state.uid]) return cards;
+
+  // 旧UID（孤児）のカードがあれば、新UIDへ移し替え（旧UID分は削除）
+  if (cards[oldUid]) {
+    cards[state.uid] = cards[oldUid];
+    delete cards[oldUid];
+  }
+  return cards;
+});
+
 
 
     if (Object.keys(updates).length){
