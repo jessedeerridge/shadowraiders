@@ -1452,53 +1452,92 @@ function showParticipantSelectPopup(cardText){
 }
 
 /// === 追加：受信者用「はい／いいえ」ポップ ===
-/// fromUid … 自分に共有してきた送信者UID
 function showYesNoPopoverForGreen(cardText, fromUid){
-  // 既存ポップがあれば消す
   const ex = document.getElementById('greenYesNo');
   if (ex) ex.remove();
 
-  const pop = document.createElement('div');
-  pop.id = 'greenYesNo';
-  pop.style.cssText = `
-    position:fixed; inset:0; z-index:2147483610;
-    display:flex; align-items:center; justify-content:center;
-    background:rgba(0,0,0,.4);
-  `;
-  const panel = document.createElement('div');
-  panel.className = 'modal-panel';
-  panel.innerHTML = `
-    <div style="font-weight:800; margin-bottom:10px">回答してください</div>
-    <div style="margin-bottom:8px; font-size:14px">${cardText}</div>
-    <div style="display:flex; gap:10px; justify-content:center">
-      <button id="ansYes" class="btn">はい</button>
-      <button id="ansNo"  class="btn" style="background:#555">いいえ</button>
-    </div>
-  `;
-  pop.appendChild(panel);
-  document.body.appendChild(pop);
+  // --- 自分の正体を取得して判定 ---
+  (async ()=>{
+    // 自分の正体カード文字列（例: 'かかか' 等）を読む
+    const myRoleCardSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`));
+    const myRoleCard = myRoleCardSnap.val() || '';
 
-  async function finish(answer){
-    // 送信者側への結果通知
-    await set(ref(db, `rooms/${state.code}/greenShareResult/${fromUid}`), {
-      from: state.uid, answer, card: cardText, at: Date.now()
-    });
-    // 自分宛の共有は掃除（これで observeGreenShare の再表示も止まる）
-    await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
+    // ROLE_CARDS（既存定義）で役職を特定
+    // どれにも該当しない場合は null
+    let myRole = null;
+    if (ROLE_CARDS.raider.includes(myRoleCard))   myRole = 'レイダー';
+    else if (ROLE_CARDS.shadow.includes(myRoleCard))  myRole = 'シャドウ';
+    else if (ROLE_CARDS.citizen.includes(myRoleCard)) myRole = 'シチズン';
 
-    // 両者とも拡大を閉じられるよう、自分側は即閉じ
-    state.pinDealViewer = false;
-    show(dealViewer, false);
+    // 質問文に含まれる語と一致するか
+    const containsRaider  = cardText.includes('レイダー');
+    const containsShadow  = cardText.includes('シャドウ');
+    const containsCitizen = cardText.includes('シチズン');
 
-    // ポップも閉じる
-    pop.remove();
-  }
+    const shouldYes =
+      (myRole === 'レイダー' && containsRaider) ||
+      (myRole === 'シャドウ' && containsShadow) ||
+      (myRole === 'シチズン' && containsCitizen);
 
-  document.getElementById('ansYes').onclick = ()=> finish('yes');
-  document.getElementById('ansNo').onclick  = ()=> finish('no');
+    // --- ポップ生成（片方のみ表示） ---
+    const pop = document.createElement('div');
+    pop.id = 'greenYesNo';
+    pop.style.cssText = `
+      position:fixed; inset:0; z-index:2147483610;
+      display:flex; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.4);
+    `;
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.innerHTML = `
+      <div style="font-weight:800; margin-bottom:10px">回答してください</div>
+      <div style="margin-bottom:8px; font-size:14px">${cardText}</div>
+      <div id="ynBtns" style="display:flex; gap:10px; justify-content:center"></div>
+    `;
+    pop.appendChild(panel);
+    document.body.appendChild(pop);
 
-  // 外側クリックでは閉じない（誤タップ防止）
+    // ボタン生成：shouldYes が真なら「はい」だけ、偽なら「いいえ」だけ
+    const btnWrap = panel.querySelector('#ynBtns');
+    const yesBtn = document.createElement('button');
+    yesBtn.id = 'ansYes';
+    yesBtn.className = 'btn';
+    yesBtn.textContent = 'はい';
+
+    const noBtn = document.createElement('button');
+    noBtn.id = 'ansNo';
+    noBtn.className = 'btn';
+    noBtn.style.background = '#555';
+    noBtn.textContent = 'いいえ';
+
+    if (shouldYes){
+      btnWrap.appendChild(yesBtn);
+    }else{
+      btnWrap.appendChild(noBtn);
+    }
+
+    async function finish(answer){
+      // 送信者側へ結果通知
+      await set(ref(db, `rooms/${state.code}/greenShareResult/${fromUid}`), {
+        from: state.uid, answer, card: cardText, at: Date.now()
+      });
+      // 自分宛の共有を掃除（再表示防止）
+      await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
+
+      // 自分側の拡大を閉じる（送信者側は observeGreenResult が閉じる）
+      state.pinDealViewer = false;
+      show(dealViewer, false);
+
+      pop.remove();
+    }
+
+    yesBtn.onclick = ()=> finish('yes');
+    noBtn.onclick  = ()=> finish('no');
+
+    // 外側クリックで閉じない（誤タップ防止／ピン留め継続）
+  })();
 }
+
   
 // === 緑カード共有：受信者側購読（自分宛の共有が来たら拡大表示） ===
 function observeGreenShare(){
