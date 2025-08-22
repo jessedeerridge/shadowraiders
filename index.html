@@ -670,7 +670,6 @@ if (!myHasCard && oldCard){
     btn.onclick = ()=>{
       const url = new URL(location.href);
       url.searchParams.set('room', state.code);
-      url.searchParams.set('name', state.name);
       navigator.clipboard.writeText(url.toString());
       btn.textContent = 'コピー済み！';
       setTimeout(()=> btn.textContent='リンクコピー', 1200);
@@ -1712,29 +1711,35 @@ async function hostStartIfNotStarted(){
   const dist = ROLE_DISTRIBUTION[uids.length];
   if (!dist) return;
 
-
-  
-  // 各役職ごとにシャッフル
+  // 各役職ごとにシャッフル（既存）
   function shuffle(arr){ return [...arr].sort(()=>Math.random()-0.5); }
   const raiders  = shuffle(ROLE_CARDS.raider).slice(0, dist.raider);
   const shadows  = shuffle(ROLE_CARDS.shadow).slice(0, dist.shadow);
   const citizens = shuffle(ROLE_CARDS.citizen).slice(0, dist.citizen);
-
   const selected = shuffle([...raiders, ...shadows, ...citizens]);
 
-  // 参加者に割り当て
+  // 参加者に割り当て（既存）
   const assign = {};
-  uids.forEach((uid, i)=>{
-    assign[uid] = selected[i];
-  });
+  uids.forEach((uid, i)=>{ assign[uid] = selected[i]; });
+
+  // ★ ここから追加：3デッキを「idx:-1 & 新order」で初期化（＝シャッフル）
+  const now = Date.now();
+  const decksInit = (id)=> ({ idx: -1, order: makeShuffledOrder(id), at: now });
 
   const updates = {};
+  // 正体カード
   updates[`rooms/${state.code}/deal/v1/cards`] = assign;
-  updates[`rooms/${state.code}/deal/v1/at`] = Date.now();
+  updates[`rooms/${state.code}/deal/v1/at`] = now;
   updates[`rooms/${state.code}/game/started`] = true;
+
+  // ★ デッキ3種の初期化（シャッフル結果を同期保存）
+  updates[`rooms/${state.code}/decks/green`] = decksInit('green');
+  updates[`rooms/${state.code}/decks/white`] = decksInit('white');
+  updates[`rooms/${state.code}/decks/black`] = decksInit('black');
 
   await update(ref(db), updates);
 }
+
 
   
   // 自分のカード購読
