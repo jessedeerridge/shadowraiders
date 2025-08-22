@@ -117,19 +117,24 @@ deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字
   background:#fff; border:1px solid #111; border-radius:12px; padding:8px 10px;
   margin-top:12px;           /* 山札との間に余白 */
 }
-
-/* ▼ 装備欄フッター：緑カードQ&A履歴（常に一番下） */
-.equip-history{
-  width:100%;
-  border-top:1px dashed #bbb;
-  margin-top:6px; padding-top:6px;
-  font-size:12px; line-height:1.5;
+/* ▼ 緑カード履歴（装備とは独立して常時表示） */
+#greenHistory{
+  margin-top:10px;
+  border:1px solid #111;
+  border-radius:12px;
+  padding:8px 10px;
+  background:#fff;
+  max-height:140px;     /* 必要に応じて調整 */
+  overflow:auto;
+  font-size:12px;
+  line-height:1.4;
 }
-.equip-history h4{margin:0 0 4px 0; font-size:12px}
-.equip-history .row{display:flex; gap:6px; align-items:center; flex-wrap:wrap;}
-.equip-history .q{font-weight:700;}
-.equip-history .a{padding:2px 6px; border:1px solid #ddd; border-radius:8px;}
-
+#greenHistory .row{
+  display:flex; gap:8px; align-items:center;
+  padding:4px 0; border-bottom:1px dashed #ddd;
+}
+#greenHistory .row:last-child{ border-bottom:none; }
+#greenHistory .tag{ font-weight:700; }
   
 /* ▼ 緑カードQ&A履歴 */
 .history{
@@ -207,7 +212,7 @@ deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字
 
   
 <!-- 緑カードQ&A履歴 -->
-<div id="greenHistory" class="history hidden" aria-label="質問履歴"></div>
+<div id="greenHistory" aria-label="緑カードの履歴"></div>
 
 <!-- ホスト設定マークとパネル -->
 <button id="hostGear" class="hidden" title="設定">⚙️</button>
@@ -219,16 +224,11 @@ deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字
 <!-- 自分用 ミニカード（配布後） -->
 <div id="myDealMini" class="hidden" title="カードを開く">裏</div>
 
-<!-- 山札コンテナ -->
-<div class="decks-wrap">
-  <div class="decks" id="decks"></div>
-</div>
+
   
 <!-- 装備所持バー -->
 <div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
-  <!-- ▼ 履歴フッター（常に一番下へ） -->
-  <div id="equipHistory" class="equip-history hidden" aria-label="緑カードQ&A履歴"></div>
-</div>
+
 <!-- ☆ 修正：正体カード公開ポップ（黒背景、公開するのみ） -->
 <div id="revealPopover" class="hidden"
      style="position:fixed; z-index:2147483607;
@@ -265,10 +265,10 @@ deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字
 
 <!-- Firebase（v9 モジュール） -->
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-  import {
-    getDatabase, ref, set, onValue, onDisconnect, remove, get, update, runTransaction, push
-  } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import {
+  getDatabase, ref, set, onValue, onDisconnect, remove, get, update, runTransaction, push,
+  query, orderByChild, limitToLast        // ★ 追加
+} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
   /* Firebase 設定 */
   const firebaseConfig = {
@@ -1313,43 +1313,6 @@ async function hostStartIfNotStarted(){
   await update(ref(db), updates);
 }
 
-// === 緑カード履歴：購読 → equipBar最下部へ描画 ===
-function observeGreenHistory(){
-  const histRef = ref(db, `rooms/${state.code}/greenHistory`);
-  const off = onValue(histRef, async (snap)=>{
-    // DB → 配列へ（時刻の新しい順）
-    const list = [];
-    snap.forEach(child=> list.push({ id: child.key, ...child.val() }));
-    list.sort((a,b)=> (b.at||0) - (a.at||0));
-
-    // 表示先（③で保証済み）
-    const bar = document.getElementById('equipBar');
-    if (!bar) return;
-    let wrap = document.getElementById('equipHistory');
-    if (!wrap){
-      wrap = document.createElement('div');
-      wrap.id = 'equipHistory';
-      wrap.className = 'equip-history';
-      bar.appendChild(wrap);
-    }else if (bar.lastElementChild !== wrap){
-      bar.appendChild(wrap);
-    }
-
-    // レンダリング（最大20件）
-    const max = 20;
-    const html = ['<h4>緑カード履歴</h4>'].concat(
-      list.slice(0, max).map(rec=>{
-        const toName = (state.participants?.[rec.to]?.name) || rec.to || '？';
-        const ja = rec.answer==='yes' ? 'はい' : (rec.answer==='no' ? 'いいえ' : '？');
-        return `<div class="row"><span class="q">「${rec.card}」</span><span>＞ ${toName}</span><span class="a">＞ ${ja}</span></div>`;
-      })
-    ).join('');
-    wrap.innerHTML = html;
-    wrap.classList.remove('hidden');
-  });
-  state.unsub.push(off);
-}
-
   
   // 自分のカード購読
 function observeMyDeal(){
@@ -1512,9 +1475,25 @@ function showParticipantSelectPopup(cardText){
       btn.textContent = (info?.name || '?');
       btn.style.width = '100%';
       btn.onclick = async ()=>{
+        // 1) 相手に“共有”を書き込む
         await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
           card: cardText, from: state.uid, at: Date.now()
         });
+
+        // 2) ★ ③ 履歴：送信ログを greenHistory に記録（answerは未確定）
+        //    push() でIDを採番し、 {type:'sent', from, to, card, answer:null, at} を保存
+        const hRef = ref(db, `rooms/${state.code}/greenHistory`);
+        const id = push(hRef).key;
+        await set(ref(db, `rooms/${state.code}/greenHistory/${id}`), {
+          type: 'sent',
+          from: state.uid,   // 送信者（自分）
+          to: uid,           // 受信者
+          card: cardText,    // 質問文
+          answer: null,      // この時点では未確定
+          at: Date.now()
+        });
+
+        // 3) ポップを閉じる
         pop.remove();
       };
       list.appendChild(btn);
@@ -1597,28 +1576,32 @@ function showYesNoPopoverForGreen(cardText, fromUid){
       btnWrap.appendChild(noBtn);
     }
 
-    async function finish(answer){
-      // 送信者側へ結果通知
-      await set(ref(db, `rooms/${state.code}/greenShareResult/${fromUid}`), {
-        from: state.uid, answer, card: cardText, at: Date.now()
-      });
-      // 自分宛の共有を掃除（再表示防止）
-      await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
+   async function finish(answer){
+  // 送信者側へ結果通知
+  await set(ref(db, `rooms/${state.code}/greenShareResult/${fromUid}`), {
+    from: state.uid, answer, card: cardText, at: Date.now()
+  });
 
-      // ★ 履歴を部屋スコープに保存（質問 ＞ 送った相手 ＞ 答え）
-      await push(ref(db, `rooms/${state.code}/greenHistory`), {
-        card: cardText,     // 緑カードの質問文
-        to: fromUid,        // 送った相手（= この通知の送り主）
-        answer,             // 'yes' | 'no'
-        at: Date.now()
-      });
+  // ★ 履歴：回答を記録
+  const h2Ref = ref(db, `rooms/${state.code}/greenHistory`);
+  await set(ref(db, `rooms/${state.code}/greenHistory/${push(h2Ref).key}`), {
+    type: 'answered',
+    from: fromUid,        // 送信者
+    to: state.uid,        // 自分（回答者）
+    card: cardText,
+    answer,               // 'yes' | 'no'
+    at: Date.now()
+  });
 
-      // 自分側の拡大を閉じる（送信者側は observeGreenResult が閉じる）
-      state.pinDealViewer = false;
-      show(dealViewer, false);
+  // 自分宛の共有を掃除（再表示防止）
+  await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
 
-      pop.remove();
-    }
+  // 自分側の拡大を閉じる（送信者側は observeGreenResult が閉じる）
+  state.pinDealViewer = false;
+  show(dealViewer, false);
+
+  pop.remove();
+}
 
 
     yesBtn.onclick = ()=> finish('yes');
@@ -1664,60 +1647,34 @@ function observeGreenResult(){
     setTimeout(()=> remove(myResultRef), 0);
   });
   state.unsub.push(off);
-} 
-// ▼ ここから追加：履歴に保存
-(async ()=>{
-  const toUid   = rec.from || '';
-  const toSnap  = await get(ref(db, `rooms/${state.code}/participants/${toUid}`));
-  const toName  = toSnap.val()?.name || '?';
-  const q       = rec.card || '';
-  const ansText = (rec.answer === 'yes') ? 'はい' : 'いいえ';
-  const key     = Date.now();
-
-  await set(ref(db, `rooms/${state.code}/greenHistory/${key}`), {
-    q, to: toName, ans: ansText, from: state.name || '', at: key
-  });
-})();
+}
 
 
+// ★ 緑カード履歴購読 → #greenHistory にappend
 function observeGreenHistory(){
-  const histRef = ref(db, `rooms/${state.code}/greenHistory`);
-  const off = onValue(histRef, (snap)=>{
-    const equipBar = document.getElementById('equipBar');
-    if (!equipBar) return;
-
-    // フッター( #equipHistory ) を必ず“末尾”に保持
-    let foot = document.getElementById('equipHistory');
-    if (!foot){
-      foot = document.createElement('div');
-      foot.id = 'equipHistory';
-      foot.className = 'equip-history hidden';
-      equipBar.appendChild(foot);
-    }else if (equipBar.lastElementChild !== foot){
-      equipBar.appendChild(foot); // 何かで消された/順序が変わっても最下部へ戻す
-    }
-
-    const val   = snap.val() || {};
-    const items = Object.values(val).sort((a,b)=> (b.at||0)-(a.at||0)).slice(0,20);
-
-    if (items.length === 0){
-      foot.classList.add('hidden');
-      foot.innerHTML = '';
-      return;
-    }
-
-    foot.classList.remove('hidden');
-    foot.innerHTML =
-      `<div class="title">緑カード履歴</div>` +
-      items.map(it=>{
-        const q   = it.q   || '';
-        const to  = it.to  || '?';
-        const ans = it.ans || '?';
-        return `<div class="row"><span class="q">${q}</span><span class="sep">＞</span><span>${to}</span><span class="sep">＞</span><span>${ans}</span></div>`;
-      }).join('');
+  const box = document.getElementById('greenHistory');
+  if (!box) return;
+  const q = query(ref(db, `rooms/${state.code}/greenHistory`), orderByChild('at'), limitToLast(50));
+  const off = onValue(q, (snap)=>{
+    const all = snap.val() || {};
+    const rows = Object.values(all).sort((a,b)=> (a.at||0)-(b.at||0));
+    box.innerHTML = '';
+    rows.forEach(r=>{
+      const who = (r.type==='sent')
+        ? `→ ${String(r.to||'').slice(0,6)}`
+        : `← ${String(r.from||'').slice(0,6)}`;
+      const ans = (r.type==='answered')
+        ? (r.answer==='yes' ? 'はい' : 'いいえ')
+        : '送信';
+      const div = document.createElement('div');
+      div.className = 'row';
+      div.innerHTML = `<span class="tag">[緑]</span><span>${r.card}</span><span>${who}</span><span>：${ans}</span>`;
+      box.appendChild(div);
+    });
   });
   state.unsub.push(off);
 }
+
 
 
   
