@@ -426,20 +426,13 @@ function rollBothDice(){
   if (bothRolling) return;
   bothRolling = true;
 
-  // ダイス振っている間は山札クリック不可
-  setDeckClickReady(false);
-
-  // 個別アニメ開始
+  // 個別のガード(fourDRolling / sixDRolling)は各関数内で有効
   play4dAnimationThenResult();   // 0.5秒で止まる
   play6dAnimationThenResult();   // 1.0秒で止まる
 
-  // 最長終了に少し余裕を見て解除＆この手番で1回だけ許可
-  setTimeout(()=>{
-    bothRolling = false;
-    setDeckClickReady(true);     // ★ この手番で1回だけ押せる
-  }, 1200);
+  // 最長の方に合わせて少し余裕を見てロック解除
+  setTimeout(()=>{ bothRolling = false; }, 1200);
 }
-
 
   
 
@@ -473,14 +466,6 @@ const state = {
   dragSettleGuardUntil: 0,   // ★ 追加：抑止の期限(ms)
 };
 
-// ★ 追加：ダイス後に「山札の裏」を1回だけ押せるフラグ
-state.deckClickReady = false;
-
-// ★ 追加：有効/無効の切替ヘルパ（UIも更新）
-function setDeckClickReady(on){
-  state.deckClickReady = !!on;
-  refreshDeckEnable();
-}
 
   // --- ユーティリティ ---
   // --- ユーティリティ ---
@@ -888,27 +873,11 @@ function setupDecks(){
       default: return false;
     }
   }
-function refreshDeckEnable(){
-  const backs = document.querySelectorAll('.deck-back');
-  backs.forEach(el=>{
-    const deckId = el.dataset.deck;
-    const roomOk = canFlip(deckId, state.myRoomNumber || null);
-    const turnOk = !!state.deckClickReady;  // この手番で未消費か？
-    const enabled = roomOk && turnOk;
+ function refreshDeckEnable(){ /* 既存のまま */ }
 
-    el.classList.toggle('disabled', !enabled);
-    el.style.pointerEvents = enabled ? 'auto' : 'none';
-    el.title = enabled ? `${DECKS_DEF[deckId].label}デッキをめくる`
-                       : 'ダイスを振ると、もう一度だけめくれます';
-  });
-}
-  
 async function advanceDeckGuarded(deckId, flipperUid){
   const ok = canFlip(deckId, state.myRoomNumber || null);
   if (!ok) return; // 禁止
-  // ★ この手番での山札クリックは自分1回だけ
-  if (!state.deckClickReady) return;
-  setDeckClickReady(false); // 消費
 
   await advanceDeck(deckId, flipperUid);
 
@@ -1364,46 +1333,52 @@ function makeEquipIcon(name, colorName){
     state.unsub.push(off);
   }
 
-  // ▼ 装備一覧の描画（自分の行が先頭に来る）
   function renderEquipments(equipData, participants){
-    const equipBar = document.getElementById('equipBar');
-    equipBar.innerHTML = '';
+  const equipBar = document.getElementById('equipBar');
+  equipBar.innerHTML = '';
 
-    // 並べ替え：自分(uid)を先頭に
-    const entries = Object.entries(equipData || {});
-    entries.sort(([uidA],[uidB])=>{
-      if (uidA === state.uid) return -1;
-      if (uidB === state.uid) return 1;
-      return 0;
+  const entries = Object.entries(equipData || {});
+  entries.sort(([uidA],[uidB])=>{
+    if (uidA === state.uid) return -1;
+    if (uidB === state.uid) return 1;
+    return 0;
+  });
+
+  entries.forEach(([uid, cards])=>{
+    const holder = document.createElement('div');
+    holder.className = 'equip-holder';
+
+    // 名前＋色アイコン
+    const p = participants?.[uid] || {};
+    holder.appendChild(makeEquipIcon(p.name, p.color));
+
+    // 装備カード群（※ここを一本化）
+    Object.keys(cards).forEach(card=>{
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'equip-card';
+      cardDiv.textContent = card;
+
+      // 役職カードはクリック不可＆奪う対象外
+      if (ROLE_CARD_SET.has(card)){
+        cardDiv.classList.add('unclickable-role');
+        cardDiv.title = '役職カードは奪えません';
+        cardDiv.style.pointerEvents = 'none';    // ← クリック不能化（委譲ハンドラ対策にも有効）
+      }else{
+        // （任意）奪うポップを出す既存ハンドラがある場合だけ付与
+        // cardDiv.addEventListener('click', (e)=>{
+        //   showStealPopover({ ownerUid: uid, cardName: card, anchorEl: cardDiv });
+        // });
+      }
+
+      holder.appendChild(cardDiv);
     });
 
-    entries.forEach(([uid, cards])=>{
-      const holder = document.createElement('div');
-      holder.className = 'equip-holder';
+    equipBar.appendChild(holder);
+  });
 
-      // 名前＋色アイコン
-      const p = participants?.[uid] || {};
-      holder.appendChild(makeEquipIcon(p.name, p.color));
+  show(equipBar, entries.length > 0);
+}
 
-      // 装備カード群
-Object.keys(cards).forEach(card=>{
-  const cardDiv = document.createElement('div');
-  cardDiv.className = 'equip-card';
-  cardDiv.textContent = card;
-
-  // ▼ 役職カード（レイダー／シャドウ／シチズン）はクリック不可
-Object.keys(cards).forEach(card=>{
-  const cardDiv = document.createElement('div');
-  cardDiv.className = 'equip-card';
-  cardDiv.textContent = card;
-  holder.appendChild(cardDiv);
-});
-
-      equipBar.appendChild(holder);
-    });
-
-    show(equipBar, entries.length > 0);
-  }
 
   // ▼ 装備購読
   function observeEquipments(){
@@ -1435,7 +1410,12 @@ const ROLE_CARDS = {
     'Dダニエル','Dデーヴィッド','Dデボラ'
   ],
 };
-
+// ▼ 役職カード高速判定用セット
+const ROLE_CARD_SET = new Set([
+  ...ROLE_CARDS.raider,
+  ...ROLE_CARDS.shadow,
+  ...ROLE_CARDS.citizen
+]);
 
 // 人数ごとの役職割り当て
 const ROLE_DISTRIBUTION = {
