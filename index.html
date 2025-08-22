@@ -42,7 +42,12 @@
 
 /* 山札UI（右図形の真下に横並び） */
 .decks-wrap{display:flex;justify-content:flex-end}
-.decks{display:flex;gap:16px;justify-content:flex-end;align-items:flex-start;margin-top:-30px}
+.decks{
+  display:flex;gap:16px;justify-content:flex-end;align-items:flex-start;margin-top:-30px;
+  margin-right:24px;              /* ★追加：右余白で全体を“少し左へ”移動 */
+  /* もしくは transform で移動したい場合は下行を使う（どちらか片方でOK）
+     transform: translateX(-24px);  */
+}
   .deck{display:flex;flex-direction:column;align-items:center;gap:8px}
   .deck-back,.deck-face{
     width:80px;height:110px;border:1px solid #111;border-radius:10px;
@@ -635,78 +640,102 @@ if (!myHasCard && oldCard){
   black: { label:'黒', colorClass:'black', cards:['ろ','も','こ','ど','そ','ぼ'] },
 };
 
+function setupDecks(){
+  decksEl.innerHTML = '';
 
-  function setupDecks(){
-    decksEl.innerHTML = '';
-    ['green','white','black'].forEach(deckId=>{
-      const def = DECKS_DEF[deckId];
+  // ★ 並び順を明示：「緑裏 → 白裏 → 白表 → 黒裏 → 黒表」
+  const order = [
+    { deck:'green', type:'back' },
+    { deck:'white', type:'back' },
+    { deck:'white', type:'face' },
+    { deck:'black', type:'back' },
+    { deck:'black', type:'face' },
+  ];
 
-      const wrap = document.createElement('div');
-      wrap.className = 'deck';
-      wrap.dataset.deck = deckId;
+  // クリック用ヘルパ
+  function attachFaceClick(faceEl, deckId){
+    faceEl.addEventListener('click', async ()=>{
+      if (deckId === 'green'){
+        // 緑表は共有しない：自分だけ参照
+        const snap = await get(ref(db, `rooms/${state.code}/decks/${deckId}`));
+        const idx = (snap.val()?.idx ?? -1);
+        if (idx >= 0){
+          const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
+          dealCardFace.textContent = card;
+          applyDeckTheme(dealCardFace, 'green');
+          show(dealViewer, true);
+        }
+      }else{
+        // 白・黒の表は faceEl のテキストを拡大
+        if (faceEl.textContent){
+          dealCardFace.textContent = faceEl.textContent;
+          applyDeckTheme(dealCardFace, deckId);
+          show(dealViewer, true);
+        }
+      }
+    });
+  }
 
+  // 要素を順番に配置
+  order.forEach(({deck:deckId, type})=>{
+    const def = DECKS_DEF[deckId];
+
+    if (type === 'back'){
       const back = document.createElement('div');
       back.className = `deck-back ${def.colorClass}`;
+      back.dataset.deck = deckId;     // ★識別
+      back.dataset.role = 'back';
       back.textContent = '裏';
       back.title = `${def.label}デッキをめくる`;
-back.addEventListener('click', ()=> advanceDeckGuarded(deckId, state.uid));
-
-const face = document.createElement('div');
-face.className = 'deck-face';
-face.dataset.role = 'face';
-face.textContent = '';
-if (deckId === 'green') face.style.display = 'none'; // ★ 緑の表はDOMごと非表示
-
-face.addEventListener('click', async ()=>{
-  if (deckId === 'green'){ 
-    // DBから自分のカードを直接読む（他人には表示しない）
-    const snap = await get(ref(db, `rooms/${state.code}/decks/${deckId}`));
-    const idx = (snap.val()?.idx ?? -1);
-    if (idx >= 0){
-      const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
-      dealCardFace.textContent = card;
-      applyDeckTheme(dealCardFace, 'green');      // ★ 追加
-      show(dealViewer, true);
+      back.addEventListener('click', ()=> advanceDeckGuarded(deckId, state.uid));
+      decksEl.appendChild(back);
+    }else{
+      // type === 'face'
+      const face = document.createElement('div');
+      face.className = 'deck-face';
+      face.dataset.deck = deckId;     // ★識別
+      face.dataset.role = 'face';
+      face.textContent = '';
+      attachFaceClick(face, deckId);
+      decksEl.appendChild(face);
     }
-  }else{
-    if (face.textContent){
-      dealCardFace.textContent = face.textContent;
-            applyDeckTheme(dealCardFace, deckId);       // ★ 追加
-      show(dealViewer, true);
-    }
-  }
-});
-
-
-      const label = document.createElement('div');
-      label.className = 'deck-label';
-      label.textContent = `${def.label}デッキ`;
-
-      wrap.appendChild(back);
-      wrap.appendChild(face);
-      wrap.appendChild(label);
-      decksEl.appendChild(wrap);
-    });
-
-    // DB同期購読
-    const decksRef = ref(db, `rooms/${state.code}/decks`);
-const off = onValue(decksRef, (snap)=>{
-  const v = snap.val() || {};
-  ['green','white','black'].forEach(id=>{
-    const idx = (v[id]?.idx ?? -1);
-    const faceEl = decksEl.querySelector(`.deck[data-deck="${id}"] .deck-face`);
-    let card = '';
-    if (id !== 'green'){   // ★ 緑デッキは表を共有しない
-      card = (idx >= 0) ? DECKS_DEF[id].cards[idx % DECKS_DEF[id].cards.length] : '';
-    }
-    faceEl.textContent = card;
-        applyDeckTheme(faceEl, id);
   });
-  refreshDeckEnable();
-});
 
-    state.unsub.push(off);
-  }
+  // ★ 緑の「表」は作らない（orderに含めない）＝表示されない
+
+  // DB同期購読（face要素のテキストを更新）
+  const decksRef = ref(db, `rooms/${state.code}/decks`);
+  const off = onValue(decksRef, (snap)=>{
+    const v = snap.val() || {};
+
+    // 白の表
+    {
+      const idx = (v.white?.idx ?? -1);
+      const faceEl = decksEl.querySelector('.deck-face[data-deck="white"][data-role="face"]');
+      if (faceEl){
+        const card = (idx >= 0) ? DECKS_DEF.white.cards[idx % DECKS_DEF.white.cards.length] : '';
+        faceEl.textContent = card;
+        applyDeckTheme(faceEl, 'white');
+      }
+    }
+    // 黒の表
+    {
+      const idx = (v.black?.idx ?? -1);
+      const faceEl = decksEl.querySelector('.deck-face[data-deck="black"][data-role="face"]');
+      if (faceEl){
+        const card = (idx >= 0) ? DECKS_DEF.black.cards[idx % DECKS_DEF.black.cards.length] : '';
+        faceEl.textContent = card;
+        applyDeckTheme(faceEl, 'black');
+      }
+    }
+    // 緑は表共有なし（face自体を置いていない）
+
+    refreshDeckEnable();
+  });
+
+  state.unsub.push(off);
+}
+
 
   // ルーム制限に従ってクリック可否を判定
   function canFlip(deckId, myRoom){
@@ -1843,30 +1872,9 @@ function observeEquipment(){
   });
   state.unsub.push(off);
 }
-
- 
-// === 部屋の自動削除（全員退出後2分で消滅） ===
-function observeAutoRoomRemoval() {
-  const psRef = ref(db, `rooms/${state.code}/participants`);
-  const off = onValue(psRef, (snap) => {
-    const ps = snap.val() || {};
-    const count = Object.keys(ps).length;
-
-    if (count === 0) {
-      // 2分後に再確認して、まだ空なら部屋を削除
-      setTimeout(async () => {
-        const again = (await get(psRef)).val() || {};
-        if (Object.keys(again).length === 0) {
-          await remove(ref(db, `rooms/${state.code}`));
-          console.log("部屋が削除されました:", state.code);
-        }
-      }, 2 * 60 * 1000);
-    }
-  });
-  state.unsub.push(off);
-}
-
-// ===== ホスト管理 & 削除ポップ =====async function becomeHostIfVacant(){
+  
+  // ===== ホスト管理 & 削除ポップ =====
+async function becomeHostIfVacant(){
   const hostRef = ref(db, `rooms/${state.code}/host`);
   const nameRef = ref(db, `rooms/${state.code}/host_name`);
 
@@ -2014,8 +2022,7 @@ function observeAutoRoomRemoval() {
 　　observeGreenResult();
     // 装備所持の購読と描画
     observeEquipment();
-    observeAutoRoomRemoval();
-
+    
     // ホスト設定UI
     hostGear.onclick = ()=>{
       hostPanel.classList.toggle('hidden');
