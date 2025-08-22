@@ -1420,53 +1420,12 @@ function makeEquipIcon(name, colorName){
       holder.appendChild(makeEquipIcon(p.name, p.color));
 
       // 装備カード群
-// 装備カード群（クリックで拡大：色は登録通りに再現）
-Object.keys(cards).forEach(card=>{
-  const cardDiv = document.createElement('div');
-  cardDiv.className = 'equip-card';
-  cardDiv.textContent = card;
-
-  // クリックで拡大表示
-  cardDiv.addEventListener('click', () => {
-    // 表示内容
-    dealCardFace.textContent = card;
-
-    // --- 色の決定ロジック ---
-    // 1) デッキ起源で判定（装備カード）
-    if (DECKS_DEF.white.cards.includes(card)) {
-      applyDeckTheme(dealCardFace, 'white');   // 白装備
-    } else if (DECKS_DEF.black.cards.includes(card)) {
-      applyDeckTheme(dealCardFace, 'black');   // 黒装備
-    } else if (DECKS_DEF.green.cards?.includes?.(card)) {
-      applyDeckTheme(dealCardFace, 'green');   // 念のため緑も考慮
-    } else {
-      // 2) 正体カード（ロール別の登録色）
-      if (ROLE_CARDS.shadow.includes(card)) {
-        // Shadow＝青（既存仕様に合わせる）
-        dealCardFace.style.background = '#1e88e5';
-        dealCardFace.style.color = '#fff';
-      } else if (ROLE_CARDS.raider.includes(card)) {
-        // Raider＝赤
-        dealCardFace.style.background = '#e53935';
-        dealCardFace.style.color = '#fff';
-      } else if (ROLE_CARDS.citizen.includes(card)) {
-        // Citizen＝黄
-        dealCardFace.style.background = '#fdd835';
-        dealCardFace.style.color = '#111';
-      } else {
-        // 不明時は無彩色
-        dealCardFace.style.background = '#fff';
-        dealCardFace.style.color = '#111';
-      }
-    }
-
-    // 外側クリックで閉じてOK（pinは使わない）
-    state.pinDealViewer = false;
-    show(dealViewer, true);
-  });
-
-  holder.appendChild(cardDiv);
-});
+      Object.keys(cards).forEach(card=>{
+        const cardDiv = document.createElement('div');
+        cardDiv.className = 'equip-card';
+        cardDiv.textContent = card;
+        holder.appendChild(cardDiv);
+      });
 
       
       equipBar.appendChild(holder);
@@ -1657,27 +1616,48 @@ if (btnReveal){
 // ☆ 追加：公開購読（全員の画面で1秒だけ拡大カードを表示）
 function observeReveals(){
   const refAll = ref(db, `rooms/${state.code}/reveal`);
-  const off = onValue(refAll, (snap)=>{
+  const off = onValue(refAll, async (snap)=>{
     const all = snap.val() || {};
-    const any = Object.values(all)[0];
-    if (!any) return;
+    const entries = Object.entries(all);
+    if (!entries.length) return;
+
+    // 送信者UID と 内容
+    const [fromUid, any] = entries[0];
+    const card = (any && any.card) || '？';
 
     // 表示内容
-    dealCardFace.textContent = any.card || '？';
+    dealCardFace.textContent = card;
 
-    // 配色（デッキ色優先）
-    if (DECKS_DEF.white.cards.includes(any.card)) {
-      applyDeckTheme(dealCardFace,'white');
-    } else if (DECKS_DEF.black.cards.includes(any.card)) {
-      applyDeckTheme(dealCardFace,'black');
-    } else if (DECKS_DEF.green.cards.includes(any.card)) {
-      applyDeckTheme(dealCardFace,'green');
+    // 1) まずは従来通り「デッキ色」を優先
+    if (DECKS_DEF.white.cards.includes(card)) {
+      applyDeckTheme(dealCardFace, 'white');
+    } else if (DECKS_DEF.black.cards.includes(card)) {
+      applyDeckTheme(dealCardFace, 'black');
+    } else if (DECKS_DEF.green.cards.includes(card)) {
+      applyDeckTheme(dealCardFace, 'green');
     } else {
-      dealCardFace.style.background = '#fff';
-      dealCardFace.style.color = '#111';
+      // 2) ここから正体カード：公開者の“登録色”で配色
+      //    participants/{fromUid}.color に入っている色名を使う
+      const pSnap = await get(ref(db, `rooms/${state.code}/participants/${fromUid}`));
+      const p = pSnap.val() || {};
+      const colorName = p.color || ''; // 例: '赤' '青' '白' など
+
+      const { bg, text } = colorToStyle(colorName); // 既存ユーティリティを流用
+      dealCardFace.style.background = bg;
+      dealCardFace.style.color = text || '#111';
     }
 
     // 外側タップで閉じない
+    state.pinDealViewer = true;
+    show(dealViewer, true);
+    setTimeout(()=>{
+      state.pinDealViewer = false;
+      show(dealViewer,false);
+    }, 1200);
+  });
+  state.unsub.push(off);
+}
+
     state.pinDealViewer = true;
     show(dealViewer, true);
 
