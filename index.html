@@ -2191,12 +2191,13 @@ async function finish(answer){
     at: Date.now()
   });
 
-  // ★ 変更：自分だけでなく全員分の greenShare を削除
-  const allSharesSnap = await get(ref(db, `rooms/${state.code}/greenShare`));
-  const allShares = allSharesSnap.val() || {};
-  for (const uid of Object.keys(allShares)){
-    await remove(ref(db, `rooms/${state.code}/greenShare/${uid}`));
-  }
+  
+  // ★ greenShare 全員分を削除
+  await remove(ref(db, `rooms/${state.code}/greenShare`));
+
+  // ★ greenCards も削除（これを忘れると未回答者に残る）
+  await remove(ref(db, `rooms/${state.code}/greenCards/${cardId}`));
+
 
   state.pinDealViewer = false;
   show(dealViewer, false);
