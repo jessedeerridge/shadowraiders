@@ -293,21 +293,6 @@
   </button>
 </div>
 
-<!-- ☆ 追加：装備奪取ポップ -->
-<div id="stealPopover" class="hidden"
-     style="position:fixed; z-index:2147483607;
-            background:#000; color:#fff;
-            border-radius:10px; padding:12px 18px;
-            box-shadow:0 4px 12px rgba(0,0,0,.4);
-            display:flex; align-items:center; justify-content:center;">
-  <button id="btnSteal"
-          style="padding:10px 20px; border:none; border-radius:8px;
-                 background:#fff; color:#000; font-weight:700; cursor:pointer;">
-    奪う
-  </button>
-</div>
-
-  
 <!-- カード拡大ビューア -->
 <div id="dealViewer" class="modal hidden" role="dialog" aria-modal="true">
   <div class="modal-panel">
@@ -446,7 +431,12 @@ function rollBothDice(){
   play6dAnimationThenResult();   // 1.0秒で止まる
 
   // 最長の方に合わせて少し余裕を見てロック解除
-  setTimeout(()=>{ bothRolling = false; }, 1200);
+  setTimeout(()=>{
+    bothRolling = false;
+
+    // ★ 追加：ダイスを振った“後”に、山札（裏）を合計1回だけめくれる
+    if (typeof setDeckQuota === 'function') setDeckQuota(1);
+  }, 1200);
 }
 
   
@@ -475,16 +465,12 @@ const state = {
   dragOffset: {x:0,y:0},
   isHost: false,
   started: false,
-  lockScrollOnRect: false,
-  localMoveVer: {},
-  dragSettleGuardUid: null,
-  dragSettleGuardUntil: 0,
-
-  // ★ 追加：拡大ビューの文脈（装備奪取に使用）
-  expandContext: null,  // { type:'equip', fromUid, card }
+ lockScrollOnRect: false,   // ← 左長方形内タッチ中はスクロール禁止
+  localMoveVer: {},          // 自分の移動バージョン管理（uid→ver）
+  dragSettleGuardUid: null,  // ドロップ直後のエコー抑止
+  dragSettleGuardUntil: 0,   // 抑止の期限(ms)
+  deckClicksLeft: 0,         // ダイス後に山札（裏）をめくれる残回数（ローカル）
 };
-
-
 
   // --- ユーティリティ ---
   // --- ユーティリティ ---
@@ -892,11 +878,42 @@ function setupDecks(){
       default: return false;
     }
   }
- function refreshDeckEnable(){ /* 既存のまま */ }
+
+  // ★ 追加：残回数のセット（UI更新つき）
+  function setDeckQuota(n){
+    state.deckClicksLeft = Math.max(0, Number(n || 0));
+    refreshDeckEnable();
+  }
+
+  // ★ 差し替え：山札の「裏」クリック可否＝部屋制限 × 残回数
+  function refreshDeckEnable(){
+    const backs = decksEl.querySelectorAll('.deck-back'); // 裏のみ対象
+    backs.forEach(back=>{
+      const deckId = back.dataset.deck;
+      const roomOk = canFlip(deckId, state.myRoomNumber || null);
+      const quotaOk = (state.deckClicksLeft > 0);
+      const enabled = roomOk && quotaOk;
+
+      back.classList.toggle('disabled', !enabled);
+      back.style.pointerEvents = enabled ? 'auto' : 'none';
+      back.title = enabled ? `${DECKS_DEF[deckId].label}デッキをめくる` : 'ダイスを振ると再びめくれます';
+    });
+    // 「表」（拡大）は制限しない（face はそのまま）
+  }
+
 
 async function advanceDeckGuarded(deckId, flipperUid){
+  // ★ 追加：ローカル残回数（裏クリックの総量）が無ければ中止
+  if (typeof state.deckClicksLeft === 'number' && state.deckClicksLeft <= 0) return;
+
   const ok = canFlip(deckId, state.myRoomNumber || null);
   if (!ok) return; // 禁止
+
+  // ★ 追加：裏をめくる直前に残回数を1消費し、UIを更新
+  if (typeof state.deckClicksLeft === 'number'){
+    state.deckClicksLeft = Math.max(0, state.deckClicksLeft - 1);
+    if (typeof refreshDeckEnable === 'function') refreshDeckEnable();
+  }
 
   await advanceDeck(deckId, flipperUid);
 
@@ -917,6 +934,7 @@ async function advanceDeckGuarded(deckId, flipperUid){
     }
   }
 }
+
 
 
 async function advanceDeck(deckId, flipperUid){
@@ -1354,57 +1372,39 @@ function makeEquipIcon(name, colorName){
 
   // ▼ 装備一覧の描画（自分の行が先頭に来る）
   function renderEquipments(equipData, participants){
-  const equipBar = document.getElementById('equipBar');
-  equipBar.innerHTML = '';
+    const equipBar = document.getElementById('equipBar');
+    equipBar.innerHTML = '';
 
-  const entries = Object.entries(equipData || {});
-  entries.sort(([uidA],[uidB])=>{
-    if (uidA === state.uid) return -1;
-    if (uidB === state.uid) return 1;
-    return 0;
-  });
-
-  entries.forEach(([uid, cards])=>{
-    const holder = document.createElement('div');
-    holder.className = 'equip-holder';
-
-    const p = participants?.[uid] || {};
-    holder.appendChild(makeEquipIcon(p.name, p.color));
-
-    // 装備カード群（クリック＝拡大のみ）
-    Object.keys(cards).forEach(card=>{
-      const cardDiv = document.createElement('div');
-      cardDiv.className = 'equip-card';
-      cardDiv.textContent = card;
-
-      // ★ ここから追加：拡大ビュー表示のみ
-      cardDiv.addEventListener('click', ()=>{
-        // テーマ決定（白/黒どちらのカードか判定）
-        let deckId = null;
-        if (DECKS_DEF.white.cards.includes(card)) deckId = 'white';
-        else if (DECKS_DEF.black.cards.includes(card)) deckId = 'black';
-
-        dealCardFace.textContent = card;
-        applyDeckTheme(dealCardFace, deckId || 'white'); // 既定で白に寄せる
-        show(dealViewer, true);
-
-        // 拡大ビューのクリックで奪取ポップを出すための文脈を保存
-        state.expandContext = { type:'equip', fromUid: uid, card };
-
-        // ★ 拡大カードのクリック挙動を差し替え
-        dealCardFace.onclick = onExpandedCardClickForSteal;
-      });
-      // ★ 追加ここまで
-
-      holder.appendChild(cardDiv);
+    // 並べ替え：自分(uid)を先頭に
+    const entries = Object.entries(equipData || {});
+    entries.sort(([uidA],[uidB])=>{
+      if (uidA === state.uid) return -1;
+      if (uidB === state.uid) return 1;
+      return 0;
     });
 
-    equipBar.appendChild(holder);
-  });
+    entries.forEach(([uid, cards])=>{
+      const holder = document.createElement('div');
+      holder.className = 'equip-holder';
 
-  show(equipBar, entries.length > 0);
-}
+      // 名前＋色アイコン
+      const p = participants?.[uid] || {};
+      holder.appendChild(makeEquipIcon(p.name, p.color));
 
+      // 装備カード群
+      Object.keys(cards).forEach(card=>{
+        const cardDiv = document.createElement('div');
+        cardDiv.className = 'equip-card';
+        cardDiv.textContent = card;
+        holder.appendChild(cardDiv);
+      });
+
+      
+      equipBar.appendChild(holder);
+    });
+
+    show(equipBar, entries.length > 0);
+  }
 
   // ▼ 装備購読
   function observeEquipments(){
@@ -1585,34 +1585,6 @@ if (btnReveal){
   };
 }
 
-// ★ 奪うボタンの挙動
-const btnSteal = document.getElementById('btnSteal');
-if (btnSteal){
-  btnSteal.onclick = async ()=>{
-    const ctx = state.expandContext;
-    if (!ctx || ctx.type !== 'equip') return;
-
-    const card = String(ctx.card || '').trim();
-    const fromUid = ctx.fromUid;
-    if (!card || !fromUid || fromUid === state.uid) return;
-    if (/^[A-Z]/.test(card)) return; // 保険：A〜Z 始まりは奪えない
-
-    const updates = {};
-    updates[`rooms/${state.code}/equipment/${fromUid}/${card}`] = null;
-    updates[`rooms/${state.code}/equipment/${state.uid}/${card}`] = true;
-    updates[`rooms/${state.code}/equipment_at`] = Date.now();
-    await update(ref(db), updates);
-
-    // 後始末
-    const pop = document.getElementById('stealPopover');
-    if (pop) pop.classList.add('hidden');
-    show(dealViewer, false);
-    state.expandContext = null;
-    dealCardFace.onclick = null;
-  };
-}
-
-  
 // ☆ 追加：公開購読（全員の画面で1秒だけ拡大カードを表示）
 function observeReveals(){
   const refAll = ref(db, `rooms/${state.code}/reveal`);
@@ -2086,8 +2058,6 @@ ordered.forEach(cardName=>{
       c.style.background = '#c7f5c1'; c.style.color = '#111';
     }
   }
-
-
   
   holder.appendChild(c);
 });
@@ -2096,35 +2066,6 @@ ordered.forEach(cardName=>{
 
     bar.appendChild(holder);
   });
-
-  // ★ 装備経由で拡大したカードをクリックしたときの奪う処理
-function onExpandedCardClickForSteal(){
-  const ctx = state.expandContext;
-  if (!ctx || ctx.type !== 'equip') return;
-
-  const card = String(ctx.card || '').trim();
-  if (/^[A-Z]/.test(card)) return;       // 役職など A〜Z 始まりは対象外
-  if (ctx.fromUid === state.uid) return; // 自分の装備は対象外
-
-  const pop = document.getElementById('stealPopover');
-  if (!pop) return;
-
-  pop.classList.remove('hidden');
-  const r = dealCardFace.getBoundingClientRect();
-  pop.style.left = (r.left + r.width/2 - 60) + 'px';
-  pop.style.top  = (r.top + r.height/2 - 25) + 'px';
-
-  // クリックアウェイで閉じる
-  setTimeout(()=>{
-    const onDoc = (e)=>{
-      if (pop.contains(e.target)) return;
-      pop.classList.add('hidden');
-      document.removeEventListener('click', onDoc, true);
-    };
-    document.addEventListener('click', onDoc, true);
-  }, 0);
-}
-
 
   // ★ equipBar の一番下に履歴表示用コンテナを（毎回存在を保証）
   let hist = document.getElementById('equipHistory');
@@ -2206,80 +2147,6 @@ async function becomeHostIfVacant(){
     }
   }
 
-// === 装備「奪う」ポップ ===
-let stealPopEl = null;
-function closeStealPopover(){ if (stealPopEl){ stealPopEl.remove(); stealPopEl = null; } }
-
-/**
- * 装備奪取ポップを表示
- * @param {MouseEvent} ev - クリックイベント（座標用）
- * @param {string} fromUid - 奪われる側のUID
- * @param {string} cardName - 奪うカード名
- */
-function showStealPopover(ev, fromUid, cardName){
-  // 自分のカードは対象外
-  if (fromUid === state.uid) return;
-
-  closeStealPopover();
-
-  stealPopEl = document.createElement('div');
-  stealPopEl.className = 'popover';
-  stealPopEl.innerHTML = `<span>この装備を奪う？</span>`;
-
-  const btn = document.createElement('button');
-  btn.textContent = '奪う';
-  btn.onclick = async ()=>{
-    try{
-      // equipment 全体に対するトランザクションで原子的に移す
-      const equipRef = ref(db, `rooms/${state.code}/equipment`);
-      await runTransaction(equipRef, (equip)=>{
-        equip = equip || {};
-        const from = equip[fromUid] || {};
-        // すでに無ければ何もしない（レース対策）
-        if (!from || !from[cardName]) return equip;
-
-        // 取り上げ（削除）
-        delete from[cardName];
-        equip[fromUid] = from;
-
-        // 自分へ追加
-        equip[state.uid] = equip[state.uid] || {};
-        equip[state.uid][cardName] = true;
-
-        return equip;
-      });
-
-      // タイムスタンプ更新（一覧の並びや更新検知用に既存キーを踏襲）
-      await update(ref(db), {
-        [`rooms/${state.code}/equipment_at`]: Date.now()
-      });
-
-    }finally{
-      closeStealPopover();
-    }
-  };
-  stealPopEl.appendChild(btn);
-  document.body.appendChild(stealPopEl);
-
-  // 位置（画面端はみ出し防止は簡易）
-  const x = ev.clientX, y = ev.clientY;
-  const r = stealPopEl.getBoundingClientRect();
-  stealPopEl.style.left = Math.max(8, Math.min(x - r.width/2, window.innerWidth - r.width - 8)) + 'px';
-  stealPopEl.style.top  = Math.max(8, Math.min(y + 12, window.innerHeight - r.height - 8)) + 'px';
-
-  // クリックアウェイで閉じる
-  setTimeout(()=>{
-    const onDoc = (e)=>{
-      if (stealPopEl && !stealPopEl.contains(e.target)) {
-        closeStealPopover();
-        document.removeEventListener('click', onDoc, true);
-      }
-    };
-    document.addEventListener('click', onDoc, true);
-  }, 0);
-}
-
-    
   // ===== 入室処理 =====
   async function join(){
     const name = normalizeName(nameInput.value);
