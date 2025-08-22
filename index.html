@@ -54,9 +54,9 @@
   .deck-back.white{background:#ffffff;}
   .deck-back.black{background:#000;color:#fff;}
   .deck-label{font-size:12px;opacity:.8}
-deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字 */
-.deck-face.black{ background:#000000; color:#ffffff; }/* 黒：黒地＋白文字 */
-.deck-face.green{ background:#c7f5c1; color:#111; }   /* 緑：薄緑＋黒文字 */
+.deck-face.white{ background:#ffffff; color:#111; }
+.deck-face.black{ background:#000000; color:#ffffff; }
+.deck-face.green{ background:#c7f5c1; color:#111; }
 
   /* ダイス欄 */
   .dicebar{display:flex;gap:8px;align-items:center;margin-top:6px;margin-left:8px;flex-wrap:wrap}
@@ -265,9 +265,10 @@ deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字
 
 <!-- Firebase（v9 モジュール） -->
 <script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import {
   getDatabase, ref, set, onValue, onDisconnect, remove, get, update, runTransaction, push,
-  query, orderByChild, limitToLast        // ★ 追加
+  query, orderByChild, limitToLast
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
   /* Firebase 設定 */
@@ -1411,7 +1412,40 @@ if (btnReveal){
 }
 
 // ☆ 追加：公開購読（全員の画面で1秒だけ拡大カードを表示）
-function observeReveals(){ /* 直前と同じ */ }
+function observeReveals(){
+  const refAll = ref(db, `rooms/${state.code}/reveal`);
+  const off = onValue(refAll, (snap)=>{
+    const all = snap.val() || {};
+    const any = Object.values(all)[0];
+    if (!any) return;
+
+    // 表示内容
+    dealCardFace.textContent = any.card || '？';
+
+    // 配色（デッキ色優先）
+    if (DECKS_DEF.white.cards.includes(any.card)) {
+      applyDeckTheme(dealCardFace,'white');
+    } else if (DECKS_DEF.black.cards.includes(any.card)) {
+      applyDeckTheme(dealCardFace,'black');
+    } else if (DECKS_DEF.green.cards.includes(any.card)) {
+      applyDeckTheme(dealCardFace,'green');
+    } else {
+      dealCardFace.style.background = '#fff';
+      dealCardFace.style.color = '#111';
+    }
+
+    // 外側タップで閉じない
+    state.pinDealViewer = true;
+    show(dealViewer, true);
+
+    // 少しして自動クローズ（DB側は1秒で消す仕様）
+    setTimeout(()=>{
+      state.pinDealViewer = false;
+      show(dealViewer,false);
+    }, 1200);
+  });
+  state.unsub.push(off);
+}
 
 /// === 追加：緑拡大の“ピン留め”ガード ===
 /// dealViewer配下のクリックは、ピン留め中は閉じ処理に届かないよう握りつぶす
@@ -1949,9 +1983,22 @@ async function becomeHostIfVacant(){
 
 
   // 離脱時
-  window.addEventListener('beforeunload', ()=>{
-    if (state.joined) remove(ref(db, `rooms/${state.code}/participants/${state.uid}`));
-  });
+window.addEventListener('beforeunload', ()=>{
+  // 1) すべての購読(onValue)を解除
+  try {
+    (state.unsub || []).forEach(fn => {
+      try { typeof fn === 'function' && fn(); } catch {}
+    });
+  } catch {}
+
+  // 2) 参加者リストから自分を削除（在室表示の掃除）
+  try {
+    if (state.joined) {
+      remove(ref(db, `rooms/${state.code}/participants/${state.uid}`));
+    }
+  } catch {}
+});
+
 
   btnJoin.onclick = join;
 
