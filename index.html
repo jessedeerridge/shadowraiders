@@ -201,6 +201,8 @@
   border:1px solid #111; border-radius:6px;
   display:flex; align-items:center; justify-content:center;
   font-size:14px; font-weight:700;
+  cursor:pointer;      /* 追加：クリック可能に見せる */
+  user-select:none;    /* 追加：ドラッグ選択を防いで操作感UP */
 }
 
 .diceimg{
@@ -503,45 +505,6 @@ function applyDeckTheme(el, deckId){
   else if (deckId === 'green'){ el.style.background = '#c7f5c1'; el.style.color = '#111'; }
 }
 
-// --- 奪取ポップ（拡大カードの“前”に表示）---
-function ensureStealPopover(){
-  let pop = document.getElementById('stealPopover');
-  if (pop) return pop;
-
-  pop = document.createElement('div');
-  pop.id = 'stealPopover';
-  pop.style.cssText = `
-    position:fixed; z-index:2147483608; /* dealViewer(3602)より前面 */
-    inset:0; display:flex; align-items:center; justify-content:center;
-    background:rgba(0,0,0,.0); /* 透過、黒幕は出さない */
-  `;
-  const btn = document.createElement('button');
-  btn.textContent = '奪う';
-  btn.style.cssText = `
-    padding:10px 20px; border:1px solid #111; border-radius:10px;
-    background:#111; color:#fff; font-weight:700; cursor:pointer;
-    box-shadow:0 6px 16px rgba(0,0,0,.18);
-  `;
-  btn.id = 'btnDoSteal';
-  pop.appendChild(btn);
-  document.body.appendChild(pop);
-  pop.classList.add('hidden');
-  return pop;
-}
-
-async function performSteal(ownerUid, card){
-  if (!state.code || !state.uid || !ownerUid || !card) return;
-  if (ownerUid === state.uid) return; // 既に自分の物は無視
-
-  const updates = {};
-  // 旧所有者から外す → 自分に付与（participantsは触らない＝アイコンは変化しない）
-  updates[`rooms/${state.code}/equipment/${ownerUid}/${card}`] = null;
-  updates[`rooms/${state.code}/equipment/${state.uid}/${card}`] = true;
-  updates[`rooms/${state.code}/equipment_at`] = Date.now();
-  await update(ref(db), updates);
-}
-
-  
   
   // ===== 同名引継ぎ：旧UIDから「色」と「右下カード」を移す =====
   async function onlySelfHasThisName(){
@@ -1458,52 +1421,61 @@ function makeEquipIcon(name, colorName){
       const p = participants?.[uid] || {};
       holder.appendChild(makeEquipIcon(p.name, p.color));
 
-    // 装備カード群
-    Object.keys(cards).forEach(cardName=>{
-      const cardDiv = document.createElement('div');
-      cardDiv.className = 'equip-card';
-      cardDiv.textContent = cardName;
+      // 装備カード群
+      Object.keys(cards).forEach(card=>{
+        const cardDiv = document.createElement('div');
+cardDiv.className = 'equip-card';
+cardDiv.textContent = card;
 
-      // どのデッキ由来か推定（配色は必ず applyDeckTheme を通す）
-      const fromWhite = (DECKS_DEF.white.cards || []).includes(cardName);
-      const fromBlack = (DECKS_DEF.black.cards || []).includes(cardName);
-      const deckIdForTheme = fromWhite ? 'white' : (fromBlack ? 'black' : null);
-      if (deckIdForTheme) applyDeckTheme(cardDiv, deckIdForTheme);  // ★色のリセット防止
+/* クリックで拡大表示＋色分け */
+cardDiv.addEventListener('click', ()=>{
+  // 表示文字
+  dealCardFace.textContent = card;
 
-      // 後工程で使うメタ
-      cardDiv.dataset.ownerUid = uid;
-      cardDiv.dataset.card = cardName;
-      cardDiv.dataset.deck = deckIdForTheme || '';
+  // 1) 役職カード（赤=レイダー / 青=シャドウ / 黄=シチズン）を最優先で判定
+  //    ※ 既存の ROLE_CARDS を利用（青/赤/黄の配色は他所と揃えています）
+  //       シャドウ=青 #1e88e5 / レイダー=赤 #e53935 / シチズン=黄 #fdd835
+  if (ROLE_CARDS.shadow.includes(card)) {
+    dealCardFace.style.background = '#1e88e5';  // 青
+    dealCardFace.style.color = '#fff';
+  } else if (ROLE_CARDS.raider.includes(card)) {
+    dealCardFace.style.background = '#e53935';  // 赤
+    dealCardFace.style.color = '#fff';
+  } else if (ROLE_CARDS.citizen.includes(card)) {
+    dealCardFace.style.background = '#fdd835';  // 黄
+    dealCardFace.style.color = '#111';
+  } else {
+    // 2) 役職でなければ、白/黒/緑のデッキ色で判定して拡大（既存関数を流用）
+    //    例：白表/黒表拡大でも applyDeckTheme を使っているのと同じ流れ
+    //         dealCardFace.textContent = ...; applyDeckTheme(...); show(...);
+    let deckId = null;
+    if (DECKS_DEF.white.cards.includes(card)) deckId = 'white';
+    else if (DECKS_DEF.black.cards.includes(card)) deckId = 'black';
+    else if (DECKS_DEF.green?.cards?.includes(card)) deckId = 'green';
+    if (deckId) {
+      applyDeckTheme(dealCardFace, deckId);
+    } else {
+      // 念のための保険（どれにも属さない特殊文字列など）
+      dealCardFace.style.background = '#fff';
+      dealCardFace.style.color = '#111';
+    }
+  }
 
-      // 1) クリックで拡大（既存 dealViewer を利用）
-      cardDiv.addEventListener('click', ()=>{
-        const card = cardDiv.dataset.card || '';
-        const deckHint = cardDiv.dataset.deck || '';
+  // モーダルを開く
+  show(dealViewer, true);
+});
 
-        // 表示文字と配色
-        dealCardFace.textContent = card;
-        if (deckHint) applyDeckTheme(dealCardFace, deckHint);
+holder.appendChild(cardDiv);
 
-        // 奪取対象を保持（拡大カードクリック時に参照）
-        state._stealTarget = {
-          ownerUid: cardDiv.dataset.ownerUid,
-          card: card,
-          deck: deckHint
-        };
-
-        // 拡大は常に可能（仕様）
-        state.pinDealViewer = true; // 背景クリックで閉じない
-        show(dealViewer, true);
       });
 
-      holder.appendChild(cardDiv);
+      
+      equipBar.appendChild(holder);
     });
 
-    equipBar.appendChild(holder);
-  });
+    show(equipBar, entries.length > 0);
+  }
 
-  show(equipBar, entries.length > 0);
-}
   // ▼ 装備購読
   function observeEquipments(){
     const equipRef = ref(db, `rooms/${state.code}/equipment`);
@@ -2336,37 +2308,6 @@ async function becomeHostIfVacant(){
 　　observeGreenResult();
     // 装備所持の購読と描画
     observeEquipment();
-
-// 拡大カード押下 → 奪うポップ
-dealCardFace.addEventListener('click', ()=>{
-  const tgt = state._stealTarget;
-  if (!tgt) return;
-
-  // 正体カード（A〜Zで始まる）は何もしない（拡大のみ）
-  if (/^[A-Z]/.test(tgt.card)) return;
-
-  const pop = ensureStealPopover();
-  pop.classList.remove('hidden');
-
-  // ボタン押下で奪取
-  const btn = document.getElementById('btnDoSteal');
-  const once = async ()=>{
-    btn.removeEventListener('click', once);
-    pop.classList.add('hidden');
-    await performSteal(tgt.ownerUid, tgt.card);
-
-    // 閉じる
-    state.pinDealViewer = false;
-    show(dealViewer, false);
-    state._stealTarget = null;
-  };
-  btn.addEventListener('click', once);
-});
-
-// dealViewerの外側クリックで閉じる動作は既存ピン留めガードで抑止中。
-// 明示的に閉じたい場合は state.pinDealViewer=false; show(dealViewer,false) を呼ぶ。
-
-
     
     // ホスト設定UI
     hostGear.onclick = ()=>{
