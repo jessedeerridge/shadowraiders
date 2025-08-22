@@ -1120,6 +1120,14 @@ if (backEl){
 
   refreshDeckEnable();
 });
+// ★ 緑カード終了フラグを監視
+const greenDoneRef = ref(db, `rooms/${state.code}/greenActive`);
+onValue(greenDoneRef, (snap)=>{
+  const v = snap.val();
+  if (v && v.active === false){
+    show(dealViewer, false);  // 強制的に非表示
+  }
+});
 
 
   // ★ 追加：ダイスの共有イベント購読
@@ -1195,36 +1203,25 @@ async function advanceDeckGuarded(deckId, flipperUid){
 
   await advanceDeck(deckId, flipperUid);
 
-if (deckId === 'green' && flipperUid === state.uid){
-  const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
-  const snap = await get(deckPath);
-  const idx = (snap.val()?.idx ?? -1);
-  if (idx >= 0){
-    const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
+  if (deckId === 'green' && flipperUid === state.uid){
+    const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
+    const snap = await get(deckPath);
+    const idx = (snap.val()?.idx ?? -1);
+    if (idx >= 0){
+      const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
 
-    state.pinDealViewer = true;
-    dealCardFace.textContent = card;
-    applyDeckTheme(dealCardFace, 'green');
-    show(dealViewer, true);
+      // ★ ピン留め（外側タップで閉じない）
+      state.pinDealViewer = true;
 
-    // ▼ 修正：ポップ表示のあと、返信で終了フラグを書き込む
-    dealCardFace.onclick = ()=> showParticipantSelectPopup(card, async ()=>{
-      await update(ref(db), {
-        [`rooms/${state.code}/greenAnsweredAt`]: Date.now()
-      });
-    });
+      dealCardFace.textContent = card;
+      applyDeckTheme(dealCardFace, 'green');      // ★ 追加
+      show(dealViewer, true);
+      dealCardFace.onclick = ()=> showParticipantSelectPopup(card);
+    // ★ 緑カードの返信終了フラグをセット
+    const cardKey = `rooms/${state.code}/greenActive`;
+    await set(ref(db, cardKey), { text: card, active: true });
+    }
   }
-}
-
-// ▼ 追加：終了フラグを購読して全員で閉じる
-const answeredRef = ref(db, `rooms/${state.code}/greenAnsweredAt`);
-onValue(answeredRef, (snap)=>{
-  if (snap.exists()){
-    show(dealViewer, false);  // 全員カードを閉じる
-    state.pinDealViewer = false;
-  }
-});
-
 }
 
 
@@ -2221,6 +2218,11 @@ async function finish(answer){
     at: Date.now()
   });
 
+  // ★ 追加：誰かが回答したら全員終了（全員の表示を消すトリガ）
+  await update(ref(db), {
+    [`rooms/${state.code}/greenActive/active`]: false
+  });
+  
   await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
   state.pinDealViewer = false;
   show(dealViewer, false);
