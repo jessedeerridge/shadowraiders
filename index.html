@@ -928,14 +928,16 @@ function setupDecks(){
   }
 
 async function advanceDeckGuarded(deckId, flipperUid){
-  // ★ 追加：ローカル残回数（裏クリックの総量）が無ければ中止
-  if (typeof state.deckClicksLeft === 'number' && state.deckClicksLeft <= 0) return;
+  // ★ 自分のクリック以外ではローカル残回数を消費しない
+  if (flipperUid === state.uid){
+    if (typeof state.deckClicksLeft === 'number' && state.deckClicksLeft <= 0) return;
+  }
 
   const ok = canFlip(deckId, state.myRoomNumber || null);
   if (!ok) return; // 禁止
 
-  // ★ 追加：裏をめくる直前に残回数を1消費し、UIを更新
-  if (typeof state.deckClicksLeft === 'number'){
+  // ★ 自分がクリックした時にだけ1消費し、即UI反映
+  if (flipperUid === state.uid && typeof state.deckClicksLeft === 'number'){
     state.deckClicksLeft = Math.max(0, state.deckClicksLeft - 1);
     if (typeof refreshDeckEnable === 'function') refreshDeckEnable();
   }
@@ -959,6 +961,7 @@ async function advanceDeckGuarded(deckId, flipperUid){
     }
   }
 }
+
 
 
 
