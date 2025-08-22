@@ -760,20 +760,23 @@ async function advanceDeckGuarded(deckId, flipperUid){
 
   await advanceDeck(deckId, flipperUid);
 
-  // ★ 緑デッキは共有表を出さないので、めくった本人だけ即プレビュー
   if (deckId === 'green' && flipperUid === state.uid){
     const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
     const snap = await get(deckPath);
     const idx = (snap.val()?.idx ?? -1);
     if (idx >= 0){
       const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
+
+      // ★ ピン留め（外側タップで閉じない）
+      state.pinDealViewer = true;
+
       dealCardFace.textContent = card;
       show(dealViewer, true);
-      // ★ 拡大画像クリック → 参加者選択ポップ（③へ）
       dealCardFace.onclick = ()=> showParticipantSelectPopup(card);
     }
   }
 }
+
 
 
 async function advanceDeck(deckId, flipperUid){
@@ -1364,20 +1367,24 @@ if (btnReveal){
 }
 
 // ☆ 追加：公開購読（全員の画面で1秒だけ拡大カードを表示）
-function observeReveals(){
-  const refReveal = ref(db, `rooms/${state.code}/reveal`);
-  const off = onValue(refReveal, (snap)=>{
-    const all = snap.val() || {};
-    const firstKey = Object.keys(all)[0];
-    const rec = firstKey ? all[firstKey] : null;
-    if (rec?.card){
-      dealCardFace.textContent = rec.card;
-      show(dealViewer, true);
-      setTimeout(()=> show(dealViewer, false), 1000);
+function observeReveals(){ /* 直前と同じ */ }
+
+/// === 追加：緑拡大の“ピン留め”ガード ===
+/// dealViewer配下のクリックは、ピン留め中は閉じ処理に届かないよう握りつぶす
+function installDealViewerPinGuard(){
+  if (state._pinGuardInstalled) return;
+  state._pinGuardInstalled = true;
+
+  document.addEventListener('click', (e)=>{
+    const viewerOpen = dealViewer && !dealViewer.classList.contains('hidden');
+    if (!viewerOpen || !state.pinDealViewer) return;
+    if (dealViewer.contains(e.target)){
+      e.stopImmediatePropagation();
+      e.stopPropagation();
     }
-  });
-  state.unsub.push(off);
+  }, true);
 }
+
 
 // === 緑カード共有：参加者選択ポップ ===
 function showParticipantSelectPopup(cardText){
@@ -1433,20 +1440,91 @@ function showParticipantSelectPopup(cardText){
   }, 0);
 }
 
+/// === 追加：受信者用「はい／いいえ」ポップ ===
+/// fromUid … 自分に共有してきた送信者UID
+function showYesNoPopoverForGreen(cardText, fromUid){
+  // 既存ポップがあれば消す
+  const ex = document.getElementById('greenYesNo');
+  if (ex) ex.remove();
+
+  const pop = document.createElement('div');
+  pop.id = 'greenYesNo';
+  pop.style.cssText = `
+    position:fixed; inset:0; z-index:2147483610;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.4);
+  `;
+  const panel = document.createElement('div');
+  panel.className = 'modal-panel';
+  panel.innerHTML = `
+    <div style="font-weight:800; margin-bottom:10px">回答してください</div>
+    <div style="margin-bottom:8px; font-size:14px">${cardText}</div>
+    <div style="display:flex; gap:10px; justify-content:center">
+      <button id="ansYes" class="btn">はい</button>
+      <button id="ansNo"  class="btn" style="background:#555">いいえ</button>
+    </div>
+  `;
+  pop.appendChild(panel);
+  document.body.appendChild(pop);
+
+  async function finish(answer){
+    // 送信者側への結果通知
+    await set(ref(db, `rooms/${state.code}/greenShareResult/${fromUid}`), {
+      from: state.uid, answer, card: cardText, at: Date.now()
+    });
+    // 自分宛の共有は掃除（これで observeGreenShare の再表示も止まる）
+    await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
+
+    // 両者とも拡大を閉じられるよう、自分側は即閉じ
+    state.pinDealViewer = false;
+    show(dealViewer, false);
+
+    // ポップも閉じる
+    pop.remove();
+  }
+
+  document.getElementById('ansYes').onclick = ()=> finish('yes');
+  document.getElementById('ansNo').onclick  = ()=> finish('no');
+
+  // 外側クリックでは閉じない（誤タップ防止）
+}
+  
 // === 緑カード共有：受信者側購読（自分宛の共有が来たら拡大表示） ===
 function observeGreenShare(){
   const myShareRef = ref(db, `rooms/${state.code}/greenShare/${state.uid}`);
   const off = onValue(myShareRef, (snap)=>{
     const rec = snap.val();
     if (rec?.card){
+      // ★ ピン留め（外側タップで閉じない）
+      state.pinDealViewer = true;
+
       dealCardFace.textContent = rec.card;
       show(dealViewer, true);
-      // 受信後クリーンアップ（1回表示）
-      setTimeout(()=> remove(myShareRef), 0);
+
+      // ★ 拡大をクリック → はい/いいえポップ（送信者uidを渡す）
+      dealCardFace.onclick = ()=> showYesNoPopoverForGreen(rec.card, rec.from || '');
+
+      // 受信側はここでは greenShare を消さない（回答時に消す）
     }
   });
   state.unsub.push(off);
 }
+
+/// === 追加：送信者側 結果購読（相手の「はい／いいえ」受領で閉じる） ===
+function observeGreenResult(){
+  const myResultRef = ref(db, `rooms/${state.code}/greenShareResult/${state.uid}`);
+  const off = onValue(myResultRef, (snap)=>{
+    const rec = snap.val();
+    if (!rec) return;
+    // 受領したら送信者の拡大を閉じる
+    state.pinDealViewer = false;
+    show(dealViewer, false);
+    // 一度受け取ったら掃除
+    setTimeout(()=> remove(myResultRef), 0);
+  });
+  state.unsub.push(off);
+}  
+
 
 
   
@@ -1663,7 +1741,8 @@ async function becomeHostIfVacant(){
 
     // ★ 追加：緑カードの個別共有（自分宛）を受信
     observeGreenShare();
-
+　　installDealViewerPinGuard();
+　　observeGreenResult();
     // 装備所持の購読と描画
     observeEquipment();
     
