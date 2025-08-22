@@ -248,7 +248,7 @@ header{
 </head>
 <body>
 <header>
-  <h1>シャドウ・レイダーズ</h1>
+  <h1>オンラインルーム</h1>
   <div class="small" id="headerInfo"></div>
   <div class="small" id="myRoomBadge">部屋：未選択</div>
 </header>
@@ -471,22 +471,11 @@ function rollBothDice(){
   play4dAnimationThenResult();   // 0.5秒で止まる
   play6dAnimationThenResult();   // 1.0秒で止まる
 
-  // 最長の方に合わせて少し余裕を見てロック解除
-  setTimeout(async ()=>{
-    bothRolling = false;
+setTimeout(()=>{
+  bothRolling = false;
+  // ← ダイスによる回復・書き込みは廃止（何もしない）
+}, 1200);
 
-    // ★ 追加：ダイスを振ったことを共有（誰が・いつ）
-    try{
-      await update(ref(db), {
-        [`rooms/${state.code}/dice/lastRollAt`]: Date.now(),
-        [`rooms/${state.code}/dice/lastRoller`]: state.uid,
-      });
-    }catch(e){ console.error('dice write failed', e); }
-
-    // ★ 自分の画面では “自分が振った” 場合にだけ1回分を付与
-    if (typeof setDeckQuota === 'function') setDeckQuota(1);
-  }, 1200);
-}
 
   
 
@@ -494,7 +483,31 @@ function rollBothDice(){
   const hostPanel     = document.getElementById('hostPanel');
   const btnStart      = document.getElementById('btnStart');
 
+btnStart.addEventListener('click', async ()=>{
+  if (!state.started){
+    // スタート時の処理
+    state.started = true;
+    btnStart.textContent = 'リセット';
 
+    // TODO: 必要ならここで正体カード配布など開始処理を呼ぶ
+  }else{
+    // リセット時の処理
+    if (!confirm('リセットしますか？')) return;
+
+    const updates = {};
+    updates[`rooms/${state.code}/icons`] = null;
+    updates[`rooms/${state.code}/equipment`] = null;
+    updates[`rooms/${state.code}/greenHistory`] = null;
+    updates[`rooms/${state.code}/deal/v1/cards`] = null;
+    updates[`rooms/${state.code}/resetAt`] = Date.now();
+    await update(ref(db), updates);
+
+    // ローカル状態をリセット
+    state.started = false;
+    show(colorModal, true);   // 色選択画面を再表示
+    btnStart.textContent = 'スタート';
+  }
+});
 
   
   const colorModal    = document.getElementById('colorModal');
@@ -1109,10 +1122,6 @@ if (backEl){
     // 誰かがダイスを振った → まず全員のローカル残回数を0に
     if (typeof setDeckQuota === 'function') setDeckQuota(0);
 
-    // その上で「自分がローラーだった」場合のみ 1 を付与
-    if (lastRoller && lastRoller === state.uid){
-      if (typeof setDeckQuota === 'function') setDeckQuota(1);
-    }
   });
 
   state.unsub.push(off);
@@ -1308,6 +1317,8 @@ async function rebuildDeck(deckId){
       y: p.y - 12,
       at: Date.now()
     });
+// 右図クリックで1回分回復（自分だけローカル）
+if (typeof setDeckQuota === 'function') setDeckQuota(1);                                                  
   }
 
   // SVG座標変換
@@ -2067,11 +2078,9 @@ function showParticipantSelectPopup(cardText){
       btn.style.width = '100%';
  btn.onclick = async ()=>{
   // 1) 相手に“共有”を書き込む
- const cardId = push(h1Ref).key;   // ★ ここでキーを作って変数に保存
- await set(ref(db, `rooms/${state.code}/greenCards/${cardId}`), {
-  from: state.uid, card: cardText, at: Date.now()
- });
- state.currentGreenCardId = cardId;  // ★ ローカルにも保持しておく
+  await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
+    card: cardText, from: state.uid, at: Date.now()
+  });
 
   // ※送信時は履歴に書かない（未回答は保存しない）
 
@@ -2193,20 +2202,11 @@ async function finish(answer){
     at: Date.now()
   });
 
-  
-  // ★ greenShare 全員分を削除
-  await remove(ref(db, `rooms/${state.code}/greenShare`));
-
-  // ★ greenCards も削除（これを忘れると未回答者に残る）
- if(state.currentGreenCardId){
-   await remove(ref(db, `rooms/${state.code}/greenCards/${state.currentGreenCardId}`));
- }
-
+  await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
   state.pinDealViewer = false;
   show(dealViewer, false);
   pop.remove();
 }
-
 
 yesBtn.onclick = ()=> finish('yes');
 // ★ 追加：特例時は「いいえ」を付けない
