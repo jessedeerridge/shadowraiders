@@ -516,6 +516,47 @@ function applyDeckTheme(el, deckId){
   else if (deckId === 'green'){ el.style.background = '#c7f5c1'; el.style.color = '#111'; }
 }
 
+// 任意のカード名に対して dealViewer の見た目を適切に設定するヘルパ
+function colorizeDealFaceByCardName(cardName){
+  // まず完全リセット
+  dealCardFace.style.background = '';
+  dealCardFace.style.color = '';
+
+  // 1) デッキ出自（装備カードなど）：白／黒／緑
+  if (DECKS_DEF.white.cards.includes(cardName)) {
+    applyDeckTheme(dealCardFace,'white');
+    return;
+  }
+  if (DECKS_DEF.black.cards.includes(cardName)) {
+    applyDeckTheme(dealCardFace,'black');
+    return;
+  }
+  if (DECKS_DEF.green.cards.includes(cardName)) {
+    applyDeckTheme(dealCardFace,'green');
+    return;
+  }
+
+  // 2) 正体カード：役職ごとの3色
+  if (ROLE_CARDS.shadow.includes(cardName)) {
+    dealCardFace.style.background = '#1e88e5'; // シャドウ＝青
+    dealCardFace.style.color = '#fff';
+    return;
+  }
+  if (ROLE_CARDS.raider.includes(cardName)) {
+    dealCardFace.style.background = '#e53935'; // レイダー＝赤
+    dealCardFace.style.color = '#fff';
+    return;
+  }
+  if (ROLE_CARDS.citizen.includes(cardName)) {
+    dealCardFace.style.background = '#fdd835'; // シチズン＝黄
+    dealCardFace.style.color = '#111';
+    return;
+  }
+
+  // 3) どれにも該当しない場合は白
+  dealCardFace.style.background = '#fff';
+  dealCardFace.style.color = '#111';
+}
   
   // ===== 同名引継ぎ：旧UIDから「色」と「右下カード」を移す =====
   async function onlySelfHasThisName(){
@@ -2109,6 +2150,23 @@ ordered.forEach(cardName=>{
       c.style.background = '#c7f5c1'; c.style.color = '#111';
     }
   }
+
+  // ▼ クリックで拡大（装備カード＝出自デッキ色、正体カード＝3色のまま）
+  c.addEventListener('click', ()=>{
+    const name = (cardName || '').trim();
+    if (!name) return;
+
+    // テキストを反映
+    dealCardFace.textContent = name;
+
+    // 色を統一ロジックで付与
+    colorizeDealFaceByCardName(name);
+
+    // 装備一覧からの拡大は“ピン留め”しない（外側クリックで閉じる）
+    state.pinDealViewer = false;
+    show(dealViewer, true);
+  });
+
   
   holder.appendChild(c);
 });
