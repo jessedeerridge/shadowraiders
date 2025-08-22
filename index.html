@@ -1134,15 +1134,13 @@ async function advanceDeck(deckId, flipperUid){
   // 進行を保存（orderは維持）
   await set(deckPath, { idx: nextIdx, order: order || null, at: Date.now() });
 
-  // ▼ 装備付与（白・黒）: equipIdx は“実カード番号”で判定
-  if ((deckId === 'white' || deckId === 'black')
-      && Array.isArray(def.equipIdx)
-      && def.equipIdx.includes(actualCardIndex)
-      && flipperUid){
-    const updates = {};
-    updates[`rooms/${state.code}/equipment/${flipperUid}/${cardName}`] = true;
-    updates[`rooms/${state.code}/equipment_at`] = Date.now();
-    await update(ref(db), updates);
+ const card = def.cards[nextIdx]; 
+ if ((deckId === 'white' || deckId === 'black')  
+     && Array.isArray(def.equipNames) && def.equipNames.includes(card) && flipperUid){
+   const updates = {};
+   updates[`rooms/${state.code}/equipment/${flipperUid}/${card}`] = true;
+   updates[`rooms/${state.code}/equipment_at`] = Date.now();
+   await update(ref(db), updates);
  }
 }
 
