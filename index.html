@@ -208,12 +208,15 @@
     </div>
 
     <!-- ダイス（左長方形の下／ローカル表示） -->
-    <div class="dicebar" id="diceBar">
-      <button class="dicebtn" id="rollD6">d6 を振る</button>
-      <span class="diceres" id="resD6">-</span>
-      <button class="dicebtn" id="rollD4">d4 を振る</button>
-      <span class="diceres" id="resD4">-</span>
-    </div>
+  <div class="dicebar" id="diceBar">
+  <button class="dicebtn" id="rollD6">d6 を振る</button>
+  <span class="diceres" id="resD6">-</span>
+
+  <!-- ▼ d4はボタン＆テキストではなく画像で表示 -->
+  <img id="d4Img" src="4d1.png" alt="d4" width="60" height="60"
+       style="cursor:pointer; user-select:none;" />
+</div>
+
 
     <!-- ▼ 右図形の真下：山札 -->
     <div class="decks-wrap"><div id="decks" class="decks" aria-label="山札（左から緑・白・黒）"></div></div>
@@ -308,9 +311,48 @@ import {
   const roomPanel     = document.getElementById('roomPanel');
   const decksEl       = document.getElementById('decks');
   const rollD6Btn     = document.getElementById('rollD6');
-  const rollD4Btn     = document.getElementById('rollD4');
   const resD6         = document.getElementById('resD6');
-  const resD4         = document.getElementById('resD4');
+const d4Img = document.getElementById('d4Img');
+// === d4 画像アニメーション ===
+const D4_ANIM_FRAMES = ['4da1.png', '4da2.png', '4da3.png'];
+const D4_RESULTS     = ['4d1.png', '4d2.png', '4d3.png', '4d4.png'];
+
+// 事前プリロード
+(function preloadD4Images(){
+  [...D4_ANIM_FRAMES, ...D4_RESULTS].forEach(src=>{
+    const im = new Image(); im.src = src;
+  });
+})();
+
+// クリック中の多重実行防止フラグ
+state._d4Busy = false;
+
+if (d4Img){
+  d4Img.addEventListener('click', ()=>{
+    if (state._d4Busy) return;
+    state._d4Busy = true;
+
+    const duration = 1000; // 1秒
+    const start = performance.now();
+    let idx = 0;
+
+    function tick(now){
+      const elapsed = now - start;
+      if (elapsed < duration){
+        // 3枚を高速で切り替え（requestAnimationFrameに任せて約60fps）
+        d4Img.src = D4_ANIM_FRAMES[idx % D4_ANIM_FRAMES.length];
+        idx++;
+        requestAnimationFrame(tick);
+      }else{
+        // 終了時にランダムで1〜4の目を表示
+        const n = Math.floor(Math.random() * 4); // 0..3
+        d4Img.src = D4_RESULTS[n];
+        state._d4Busy = false;
+      }
+    }
+    requestAnimationFrame(tick);
+  });
+}
 
   const hostGear      = document.getElementById('hostGear');
   const hostPanel     = document.getElementById('hostPanel');
