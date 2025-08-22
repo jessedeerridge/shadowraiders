@@ -1843,9 +1843,30 @@ function observeEquipment(){
   });
   state.unsub.push(off);
 }
-  
-  // ===== ホスト管理 & 削除ポップ =====
-async function becomeHostIfVacant(){
+
+ 
+// === 部屋の自動削除（全員退出後2分で消滅） ===
+function observeAutoRoomRemoval() {
+  const psRef = ref(db, `rooms/${state.code}/participants`);
+  const off = onValue(psRef, (snap) => {
+    const ps = snap.val() || {};
+    const count = Object.keys(ps).length;
+
+    if (count === 0) {
+      // 2分後に再確認して、まだ空なら部屋を削除
+      setTimeout(async () => {
+        const again = (await get(psRef)).val() || {};
+        if (Object.keys(again).length === 0) {
+          await remove(ref(db, `rooms/${state.code}`));
+          console.log("部屋が削除されました:", state.code);
+        }
+      }, 2 * 60 * 1000);
+    }
+  });
+  state.unsub.push(off);
+}
+
+// ===== ホスト管理 & 削除ポップ =====async function becomeHostIfVacant(){
   const hostRef = ref(db, `rooms/${state.code}/host`);
   const nameRef = ref(db, `rooms/${state.code}/host_name`);
 
@@ -1993,7 +2014,8 @@ async function becomeHostIfVacant(){
 　　observeGreenResult();
     // 装備所持の購読と描画
     observeEquipment();
-    
+    observeAutoRoomRemoval();
+
     // ホスト設定UI
     hostGear.onclick = ()=>{
       hostPanel.classList.toggle('hidden');
