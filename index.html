@@ -1195,22 +1195,36 @@ async function advanceDeckGuarded(deckId, flipperUid){
 
   await advanceDeck(deckId, flipperUid);
 
-  if (deckId === 'green' && flipperUid === state.uid){
-    const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
-    const snap = await get(deckPath);
-    const idx = (snap.val()?.idx ?? -1);
-    if (idx >= 0){
-      const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
+if (deckId === 'green' && flipperUid === state.uid){
+  const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
+  const snap = await get(deckPath);
+  const idx = (snap.val()?.idx ?? -1);
+  if (idx >= 0){
+    const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
 
-      // ★ ピン留め（外側タップで閉じない）
-      state.pinDealViewer = true;
+    state.pinDealViewer = true;
+    dealCardFace.textContent = card;
+    applyDeckTheme(dealCardFace, 'green');
+    show(dealViewer, true);
 
-      dealCardFace.textContent = card;
-      applyDeckTheme(dealCardFace, 'green');      // ★ 追加
-      show(dealViewer, true);
-      dealCardFace.onclick = ()=> showParticipantSelectPopup(card);
-    }
+    // ▼ 修正：ポップ表示のあと、返信で終了フラグを書き込む
+    dealCardFace.onclick = ()=> showParticipantSelectPopup(card, async ()=>{
+      await update(ref(db), {
+        [`rooms/${state.code}/greenAnsweredAt`]: Date.now()
+      });
+    });
   }
+}
+
+// ▼ 追加：終了フラグを購読して全員で閉じる
+const answeredRef = ref(db, `rooms/${state.code}/greenAnsweredAt`);
+onValue(answeredRef, (snap)=>{
+  if (snap.exists()){
+    show(dealViewer, false);  // 全員カードを閉じる
+    state.pinDealViewer = false;
+  }
+});
+
 }
 
 
