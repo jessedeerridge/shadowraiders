@@ -1378,12 +1378,23 @@ function installDealViewerPinGuard(){
   document.addEventListener('click', (e)=>{
     const viewerOpen = dealViewer && !dealViewer.classList.contains('hidden');
     if (!viewerOpen || !state.pinDealViewer) return;
-    if (dealViewer.contains(e.target)){
+
+    // ★ ここを修正：dealViewer配下でも「カード本体(#dealCardFace)」クリックは通す
+    const panel = dealViewer.querySelector('.modal-panel');
+    const card  = document.getElementById('dealCardFace');
+
+    const clickedInsideViewer = dealViewer.contains(e.target);
+    const clickedOnCard       = card && (e.target === card || card.contains(e.target));
+
+    // 背景やパネルをクリックした場合のみ、閉じ処理に届かないよう握り潰す
+    if (clickedInsideViewer && !clickedOnCard){
       e.stopImmediatePropagation();
       e.stopPropagation();
+      // 必要なら e.preventDefault();
     }
   }, true);
 }
+
 
 
 // === 緑カード共有：参加者選択ポップ ===
