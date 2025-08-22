@@ -910,7 +910,7 @@ async function advanceDeck(deckId, flipperUid){
   await set(deckPath, { idx: nextIdx, at: Date.now() });
 
   // ▼ 装備付与（白デッキのみ／equipIdx 該当時）
-  if (deckId === 'white' &&　deckId === 'black' && Array.isArray(def.equipIdx) && def.equipIdx.includes(nextIdx) && flipperUid){
+  if ((deckId === 'white' || deckId === 'black')  &&  Array.isArray(def.equipIdx) && def.equipIdx.includes(nextIdx) && flipperUid){
     const card = def.cards[nextIdx]; // 例: 'きき' など
     const updates = {};
     updates[`rooms/${state.code}/equipment/${flipperUid}/${card}`] = true;
