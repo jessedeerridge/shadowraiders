@@ -71,10 +71,12 @@
   gap:8px;
   align-items:center;
   margin-top:6px;
-  margin-left:8px;   /* ←これを削除 */
-  justify-content:flex-end; /* ←追加：右寄せ */
+  margin-left:0;          /* 左余白を戻す */
+  justify-content:center; /* ←中央寄せ（少し左寄りになる） */
   flex-wrap:wrap;
-}  .dicebtn{padding:8px 10px;border:1px solid #ddd;border-radius:10px;background:#fafafa;cursor:pointer}
+}
+
+  .dicebtn{padding:8px 10px;border:1px solid #ddd;border-radius:10px;background:#fafafa;cursor:pointer}
   .diceres{font-weight:700}
 
   /* ホスト用 設定マーク（左下固定） */
