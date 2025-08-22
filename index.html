@@ -129,11 +129,16 @@
   font-size:12px;
   line-height:1.4;
 }
+/* ★ 追加：中身が空（白紙）のときは表示しない */
+#greenHistory:empty{
+  display:none !important;
+}
 #greenHistory .row{
   display:flex; gap:8px; align-items:center;
   padding:4px 0; border-bottom:1px dashed #ddd;
 }
 #greenHistory .row:last-child{ border-bottom:none; }
+
 #greenHistory .tag{ font-weight:700; }
   
 /* ▼ 緑カードQ&A履歴 */
@@ -210,7 +215,9 @@
   </section>
 </main>
 
-  
+  <!-- 装備所持バー（※ 上に移動） -->
+<div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
+
 <!-- 緑カードQ&A履歴 -->
 <div id="greenHistory" aria-label="緑カードの履歴"></div>
 
