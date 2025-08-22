@@ -2725,11 +2725,7 @@ async function becomeHostIfVacant(){
       hostPanel.classList.toggle('hidden');
     };
 
-    btnStart.onclick = async ()=>{
-      if (!state.isHost) return;
-      await hostStartIfNotStarted();
-      hostPanel.classList.add('hidden');
-    };
+
     // カードビューア：外側クリックで閉じる
     dealViewer.addEventListener('click', (e)=>{
       if (e.target === dealViewer) show(dealViewer, false);
