@@ -248,7 +248,7 @@ header{
 </head>
 <body>
 <header>
-  <h1>オンラインルーム</h1>
+  <h1>シャドウ・レイダーズ</h1>
   <div class="small" id="headerInfo"></div>
   <div class="small" id="myRoomBadge">部屋：未選択</div>
 </header>
@@ -494,31 +494,7 @@ function rollBothDice(){
   const hostPanel     = document.getElementById('hostPanel');
   const btnStart      = document.getElementById('btnStart');
 
-btnStart.addEventListener('click', async ()=>{
-  if (!state.started){
-    // スタート時の処理
-    state.started = true;
-    btnStart.textContent = 'リセット';
 
-    // TODO: 必要ならここで正体カード配布など開始処理を呼ぶ
-  }else{
-    // リセット時の処理
-    if (!confirm('リセットしますか？')) return;
-
-    const updates = {};
-    updates[`rooms/${state.code}/icons`] = null;
-    updates[`rooms/${state.code}/equipment`] = null;
-    updates[`rooms/${state.code}/greenHistory`] = null;
-    updates[`rooms/${state.code}/deal/v1/cards`] = null;
-    updates[`rooms/${state.code}/resetAt`] = Date.now();
-    await update(ref(db), updates);
-
-    // ローカル状態をリセット
-    state.started = false;
-    show(colorModal, true);   // 色選択画面を再表示
-    btnStart.textContent = 'スタート';
-  }
-});
 
   
   const colorModal    = document.getElementById('colorModal');
@@ -2215,11 +2191,18 @@ async function finish(answer){
     at: Date.now()
   });
 
-  await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
+  // ★ 変更：自分だけでなく全員分の greenShare を削除
+  const allSharesSnap = await get(ref(db, `rooms/${state.code}/greenShare`));
+  const allShares = allSharesSnap.val() || {};
+  for (const uid of Object.keys(allShares)){
+    await remove(ref(db, `rooms/${state.code}/greenShare/${uid}`));
+  }
+
   state.pinDealViewer = false;
   show(dealViewer, false);
   pop.remove();
 }
+
 
 yesBtn.onclick = ()=> finish('yes');
 // ★ 追加：特例時は「いいえ」を付けない
