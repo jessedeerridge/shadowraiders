@@ -476,37 +476,6 @@ function rollBothDice(){
   const hostPanel     = document.getElementById('hostPanel');
   const btnStart      = document.getElementById('btnStart');
 
-
-function shuffleArray(arr){
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--){
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-btnStart.addEventListener('click', async ()=>{
-  if (!state.isHost) return;
-
-  // ★ デッキシャッフル
-  DECKS_DEF.green.cards = shuffleArray(DECKS_DEF.green.cards);
-  DECKS_DEF.white.cards = shuffleArray(DECKS_DEF.white.cards);
-  DECKS_DEF.black.cards = shuffleArray(DECKS_DEF.black.cards);
-
-  // ★ DB側のインデックスをリセット
-  const updates = {};
-  ['green','white','black'].forEach(deckId=>{
-    updates[`rooms/${state.code}/decks/${deckId}`] = { idx: -1, at: Date.now() };
-  });
-  await update(ref(db), updates);
-
-  state.started = true;
-  show(colorModal, false); // 既存処理をそのまま残す
-});
-
-
-  
   const colorModal    = document.getElementById('colorModal');
   const colorGrid     = document.getElementById('colorGrid');
 
@@ -864,34 +833,14 @@ if (!myHasCard && oldCard){
       'あなたは シチズン か レイダー？'
     ]
   },
- white: {
-  label:'白',
-  colorClass:'white',
-  cards:[
-    '幸せのクッキー','光臨','いにしえの聖杯','恩恵','闇を祓う鏡',
-    'いやしの聖水','いやしの聖水','いやしの聖水',
-    '銀のロザリオ','銀のロザリオ ',
-    '幸運のブローチ','裁きの閃光','賢者のローブ','人魚の涙',
-    'エクスカリバー','守護天使','神秘のコンパス','虹色のパラソル',
-    '封印の知恵','応急手当'
-  ],
- equipNames:['いにしえの聖杯','銀のロザリオ','銀のロザリオ ','幸運のブローチ','賢者のローブ','エクスカリバー','神秘のコンパス','虹色のパラソル']
-},
-  black: {
-  label:'黒',
-  colorClass:'black',
-  cards:[
-    '妖刀マサムネ','吸血コウモリ','吸血コウモリ','吸血コウモリ',
-    '拳銃R','拳銃L','暴動','バナナの皮',
-    'クロスボウガン','死神スコープ','死神スコープ ',
-    '三つ目の黒犬','三つ目の黒犬','呪いの人形',
-    'サーベル','ガトリング',
-    'オリバーの子分','オリバーの子分','オリバーの子分',
-    '戦慄の闇儀式'
-  ],
-  equipNames:[
-    '拳銃R','拳銃L','ガトリング','妖刀マサムネ',
-    'クロスボウガン','死神スコープ','死神スコープ ','サーベル'  ]
+  white: {
+    label:'白',
+    colorClass:'white',
+    cards:['みみ','きき','ひひ','ぎぎ','しし','りり','にに','ちち','びび','じじ'],
+    equipIdx: [0,1,2,3,4]
+  },
+  black: { label:'黒', colorClass:'black', cards:['拳銃R','拳銃L','ガトリング','妖刀マサムネ','クロスボウガン','死神スコープ','死神スコープ ','サーベル','オリバーの子分','バナナの皮'],
+    equipIdx: [0,1,2,3,4,5,6,7,8]
 },
 };
 
@@ -1147,15 +1096,13 @@ async function advanceDeck(deckId, flipperUid){
   await set(deckPath, { idx: nextIdx, at: Date.now() });
 
   // ▼ 装備付与（白デッキのみ／equipIdx 該当時）
-
- const card = def.cards[nextIdx]; 
- if ((deckId === 'white' || deckId === 'black')  
-     && Array.isArray(def.equipNames) && def.equipNames.includes(card) && flipperUid){
-   const updates = {};
-   updates[`rooms/${state.code}/equipment/${flipperUid}/${card}`] = true;
-   updates[`rooms/${state.code}/equipment_at`] = Date.now();
-   await update(ref(db), updates);
- }
+  if ((deckId === 'white' || deckId === 'black')  &&  Array.isArray(def.equipIdx) && def.equipIdx.includes(nextIdx) && flipperUid){
+    const card = def.cards[nextIdx]; // 例: 'きき' など
+    const updates = {};
+    updates[`rooms/${state.code}/equipment/${flipperUid}/${card}`] = true;
+    updates[`rooms/${state.code}/equipment_at`] = Date.now();
+    await update(ref(db), updates);
+  }
 }
 
 // ★ 追加：ブランク時の「山札を作る（シャッフル）」ポップ
@@ -1176,7 +1123,7 @@ function showShufflePopover(targetEl, deckId, ev){
 
   // ボタンだけのシンプルUI
   const btn = document.createElement('button');
-  btn.textContent = '山札を作る';
+  btn.textContent = '山札を作る（シャッフル）';
   btn.onclick = async ()=>{
     await rebuildDeck(deckId);   // idx を初期化
     pop.remove();
@@ -1192,18 +1139,12 @@ function showShufflePopover(targetEl, deckId, ev){
   setTimeout(()=> document.addEventListener('mousedown', closer, true), 0);
 }
 
-// ★ 修正：デッキ再構築（シャッフル付き）
+// ★ 追加：デッキ再構築（idx を -1 に戻す）
 async function rebuildDeck(deckId){
-  // --- まずシャッフル ---
-  DECKS_DEF[deckId].cards = shuffleArray(DECKS_DEF[deckId].cards);
-
-  // --- DBを初期化 ---
   const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
   await set(deckPath, { idx: -1, at: Date.now() });
-
-  // → updateCount が走り、ブランク解除→裏表示＆枚数満タンになります
+  // updateCount が走り、ブランク解除→裏表示＆枚数満タンになります（監視ロジック既存）。 
 }
-
 
 
   
