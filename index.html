@@ -476,6 +476,37 @@ function rollBothDice(){
   const hostPanel     = document.getElementById('hostPanel');
   const btnStart      = document.getElementById('btnStart');
 
+
+function shuffleArray(arr){
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+btnStart.addEventListener('click', async ()=>{
+  if (!state.isHost) return;
+
+  // ★ デッキシャッフル
+  DECKS_DEF.green.cards = shuffleArray(DECKS_DEF.green.cards);
+  DECKS_DEF.white.cards = shuffleArray(DECKS_DEF.white.cards);
+  DECKS_DEF.black.cards = shuffleArray(DECKS_DEF.black.cards);
+
+  // ★ DB側のインデックスをリセット
+  const updates = {};
+  ['green','white','black'].forEach(deckId=>{
+    updates[`rooms/${state.code}/decks/${deckId}`] = { idx: -1, at: Date.now() };
+  });
+  await update(ref(db), updates);
+
+  state.started = true;
+  show(colorModal, false); // 既存処理をそのまま残す
+});
+
+
+  
   const colorModal    = document.getElementById('colorModal');
   const colorGrid     = document.getElementById('colorGrid');
 
@@ -1123,7 +1154,7 @@ function showShufflePopover(targetEl, deckId, ev){
 
   // ボタンだけのシンプルUI
   const btn = document.createElement('button');
-  btn.textContent = '山札を作る（シャッフル）';
+  btn.textContent = '山札を作る';
   btn.onclick = async ()=>{
     await rebuildDeck(deckId);   // idx を初期化
     pop.remove();
