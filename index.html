@@ -1804,14 +1804,14 @@ async function hostStartIfNotStarted(){
   const startedSnap = await get(startedRef);
   if (startedSnap.val()) return;
 
-  // 参加者
-  const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-  const ps = psSnap.val() || {};
-  const uids = Object.keys(ps);
-  if (uids.length === 0) return;
+// 色選択者だけを配布対象にする
+const colorsSnap = await get(ref(db, `rooms/${state.code}/colors`));
+const claims = colorsSnap.val() || {};
+const uids = [...new Set(Object.values(claims).map(v => v && v.uid).filter(Boolean))];
+if (uids.length === 0) return;
 
-  const dist = ROLE_DISTRIBUTION[uids.length];
-  if (!dist) return;
+const dist = ROLE_DISTRIBUTION[uids.length];
+if (!dist) return;
 
   // 各役職ごとにシャッフル（既存）
   function shuffle(arr){ return [...arr].sort(()=>Math.random()-0.5); }
