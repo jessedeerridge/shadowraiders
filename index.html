@@ -54,6 +54,9 @@
   .deck-back.white{background:#ffffff;}
   .deck-back.black{background:#000;color:#fff;}
   .deck-label{font-size:12px;opacity:.8}
+deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字 */
+.deck-face.black{ background:#000000; color:#ffffff; }/* 黒：黒地＋白文字 */
+.deck-face.green{ background:#c7f5c1; color:#111; }   /* 緑：薄緑＋黒文字 */
 
   /* ダイス欄 */
   .dicebar{display:flex;gap:8px;align-items:center;margin-top:6px;margin-left:8px;flex-wrap:wrap}
@@ -310,6 +313,18 @@ const state = {
   }
   function show(el, yes){ el.classList.toggle('hidden', !yes); }
 
+// カード配色ユーティリティ（表・拡大・装備で共通使用）
+function applyDeckTheme(el, deckId){
+  if (!el) return;
+  // いったんリセット
+  el.style.background = '';
+  el.style.color = '';
+  if (deckId === 'white'){ el.style.background = '#ffffff'; el.style.color = '#111'; }
+  else if (deckId === 'black'){ el.style.background = '#000000'; el.style.color = '#fff'; }
+  else if (deckId === 'green'){ el.style.background = '#c7f5c1'; el.style.color = '#111'; }
+}
+
+  
   // ===== 同名引継ぎ：旧UIDから「色」と「右下カード」を移す =====
   async function onlySelfHasThisName(){
     const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
@@ -691,9 +706,6 @@ face.dataset.role = 'face';
 face.textContent = '';
 if (deckId === 'green') face.style.display = 'none'; // ★ 緑の表はDOMごと非表示
 
-
-// ▼追加：クリックで拡大表示
-// ▼追加：クリックで拡大表示
 face.addEventListener('click', async ()=>{
   if (deckId === 'green'){ 
     // DBから自分のカードを直接読む（他人には表示しない）
@@ -702,11 +714,13 @@ face.addEventListener('click', async ()=>{
     if (idx >= 0){
       const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
       dealCardFace.textContent = card;
+      applyDeckTheme(dealCardFace, 'green');      // ★ 追加
       show(dealViewer, true);
     }
   }else{
     if (face.textContent){
       dealCardFace.textContent = face.textContent;
+            applyDeckTheme(dealCardFace, deckId);       // ★ 追加
       show(dealViewer, true);
     }
   }
@@ -735,6 +749,7 @@ const off = onValue(decksRef, (snap)=>{
       card = (idx >= 0) ? DECKS_DEF[id].cards[idx % DECKS_DEF[id].cards.length] : '';
     }
     faceEl.textContent = card;
+        applyDeckTheme(faceEl, id);
   });
   refreshDeckEnable();
 });
@@ -771,6 +786,7 @@ async function advanceDeckGuarded(deckId, flipperUid){
       state.pinDealViewer = true;
 
       dealCardFace.textContent = card;
+      applyDeckTheme(dealCardFace, 'green');      // ★ 追加
       show(dealViewer, true);
       dealCardFace.onclick = ()=> showParticipantSelectPopup(card);
     }
@@ -1549,7 +1565,8 @@ function observeGreenShare(){
       state.pinDealViewer = true;
 
       dealCardFace.textContent = rec.card;
-      show(dealViewer, true);
+       applyDeckTheme(dealCardFace, 'green');      // ★ 追加
+　　　 show(dealViewer, true);
 
       // ★ 拡大をクリック → はい/いいえポップ（送信者uidを渡す）
       dealCardFace.onclick = ()=> showYesNoPopoverForGreen(rec.card, rec.from || '');
@@ -1623,6 +1640,17 @@ ordered.forEach(cardName=>{
     c.style.color = '#111';
   }
 
+  // 役職で未着色のカードは、デッキ色で配色（白／黒／緑）
+  if (!c.style.background){
+    if (DECKS_DEF.white.cards.includes(cardName)){
+      c.style.background = '#ffffff'; c.style.color = '#111';
+    } else if (DECKS_DEF.black.cards.includes(cardName)){
+      c.style.background = '#000000'; c.style.color = '#fff';
+    } else if (DECKS_DEF.green.cards.includes(cardName)){
+      c.style.background = '#c7f5c1'; c.style.color = '#111';
+    }
+  }
+  
   holder.appendChild(c);
 });
 
