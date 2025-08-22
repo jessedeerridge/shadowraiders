@@ -95,7 +95,22 @@
   /* 自分用：配られたカード（右下に小さな黒裏） */
   #myDealMini{position:fixed;right:16px;bottom:16px;width:60px;height:90px;border-radius:10px;border:1px solid #000;background:#000;color:#fff;
     display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2147483600}
-  #dealViewer .deal-card{min-width:240px;min-height:360px;border:1px solid #111;border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:42px;font-weight:900;padding:20px}
+#dealViewer .deal-card{
+  width:240px;     /* ←固定幅 */
+  height:360px;    /* ←固定高さ */
+  border:1px solid #111;
+  border-radius:14px;
+  background:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:42px;
+  font-weight:900;
+  padding:20px;
+  box-sizing:border-box; /* paddingを含めて計算 */
+  text-align:center;     /* 文字が長くても中央寄せ */
+  word-break:break-word; /* 長文は折り返す */
+}
 
   /* ホスト削除ポップ（既存） */
   .popover{
@@ -114,6 +129,7 @@
   .small{font-size:10px; gap:4px;}       /* 補助テキストをさらに小さく */
   #myRoomBadge{white-space:nowrap;}      /* 強制的に改行しない */
   #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
+#dealViewer .deal-card{ width:180px; height:260px; font-size:28px; }
 }
 
 /* ▼ 装備所持エリア（通常フロー） */
