@@ -340,7 +340,7 @@ function play4dAnimationThenResult(){
   const iv = setInterval(()=>{
     roll4dImg.src = fourDAnimFrames[idx % fourDAnimFrames.length];
     idx++;
-    if (Date.now() - start >= 1000){ // 1秒経過で停止
+    if (Date.now() - start >= 500){ // 1秒経過で停止
       clearInterval(iv);
 
       // 1～4 の結果をランダム表示（4d1.png ～ 4d4.png）
