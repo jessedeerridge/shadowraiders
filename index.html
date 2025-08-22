@@ -761,7 +761,9 @@ if (!myHasCard && oldCard){
     cards:['みみ','きき','ひひ','ぎぎ','しし','りり','にに','ちち','びび','じじ'],
     equipIdx: [1,2,3,4]
   },
-  black: { label:'黒', colorClass:'black', cards:['ろ','も','こ','ど','そ','ぼ'] },
+  black: { label:'黒', colorClass:'black', cards:['拳銃R','拳銃L','ガトリング','妖刀マサムネ','クロスボウガン','死神スコープ','死神スコープ ','サーベル','オリバーの子分','バナナの皮'],
+    equipIdx: [1,2,3,4,5,6,7,8]
+},
 };
 
 function setupDecks(){
@@ -908,7 +910,7 @@ async function advanceDeck(deckId, flipperUid){
   await set(deckPath, { idx: nextIdx, at: Date.now() });
 
   // ▼ 装備付与（白デッキのみ／equipIdx 該当時）
-  if (deckId === 'white' && Array.isArray(def.equipIdx) && def.equipIdx.includes(nextIdx) && flipperUid){
+  if (deckId === 'white' &&　deckId === 'black' && Array.isArray(def.equipIdx) && def.equipIdx.includes(nextIdx) && flipperUid){
     const card = def.cards[nextIdx]; // 例: 'きき' など
     const updates = {};
     updates[`rooms/${state.code}/equipment/${flipperUid}/${card}`] = true;
