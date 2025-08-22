@@ -2020,6 +2020,11 @@ ordered.forEach(cardName=>{
       c.style.background = '#c7f5c1'; c.style.color = '#111';
     }
   }
+
+  // ▼ クリックで「奪う」ポップ（自分の行のカードは対象外）
+  c.addEventListener('click', (ev)=>{
+    showStealPopover(ev, uid, cardName);
+  });
   
   holder.appendChild(c);
 });
@@ -2109,6 +2114,80 @@ async function becomeHostIfVacant(){
     }
   }
 
+// === 装備「奪う」ポップ ===
+let stealPopEl = null;
+function closeStealPopover(){ if (stealPopEl){ stealPopEl.remove(); stealPopEl = null; } }
+
+/**
+ * 装備奪取ポップを表示
+ * @param {MouseEvent} ev - クリックイベント（座標用）
+ * @param {string} fromUid - 奪われる側のUID
+ * @param {string} cardName - 奪うカード名
+ */
+function showStealPopover(ev, fromUid, cardName){
+  // 自分のカードは対象外
+  if (fromUid === state.uid) return;
+
+  closeStealPopover();
+
+  stealPopEl = document.createElement('div');
+  stealPopEl.className = 'popover';
+  stealPopEl.innerHTML = `<span>この装備を奪う？</span>`;
+
+  const btn = document.createElement('button');
+  btn.textContent = '奪う';
+  btn.onclick = async ()=>{
+    try{
+      // equipment 全体に対するトランザクションで原子的に移す
+      const equipRef = ref(db, `rooms/${state.code}/equipment`);
+      await runTransaction(equipRef, (equip)=>{
+        equip = equip || {};
+        const from = equip[fromUid] || {};
+        // すでに無ければ何もしない（レース対策）
+        if (!from || !from[cardName]) return equip;
+
+        // 取り上げ（削除）
+        delete from[cardName];
+        equip[fromUid] = from;
+
+        // 自分へ追加
+        equip[state.uid] = equip[state.uid] || {};
+        equip[state.uid][cardName] = true;
+
+        return equip;
+      });
+
+      // タイムスタンプ更新（一覧の並びや更新検知用に既存キーを踏襲）
+      await update(ref(db), {
+        [`rooms/${state.code}/equipment_at`]: Date.now()
+      });
+
+    }finally{
+      closeStealPopover();
+    }
+  };
+  stealPopEl.appendChild(btn);
+  document.body.appendChild(stealPopEl);
+
+  // 位置（画面端はみ出し防止は簡易）
+  const x = ev.clientX, y = ev.clientY;
+  const r = stealPopEl.getBoundingClientRect();
+  stealPopEl.style.left = Math.max(8, Math.min(x - r.width/2, window.innerWidth - r.width - 8)) + 'px';
+  stealPopEl.style.top  = Math.max(8, Math.min(y + 12, window.innerHeight - r.height - 8)) + 'px';
+
+  // クリックアウェイで閉じる
+  setTimeout(()=>{
+    const onDoc = (e)=>{
+      if (stealPopEl && !stealPopEl.contains(e.target)) {
+        closeStealPopover();
+        document.removeEventListener('click', onDoc, true);
+      }
+    };
+    document.addEventListener('click', onDoc, true);
+  }, 0);
+}
+
+    
   // ===== 入室処理 =====
   async function join(){
     const name = normalizeName(nameInput.value);
