@@ -1616,48 +1616,37 @@ if (btnReveal){
 // ☆ 追加：公開購読（全員の画面で1秒だけ拡大カードを表示）
 function observeReveals(){
   const refAll = ref(db, `rooms/${state.code}/reveal`);
-  const off = onValue(refAll, async (snap)=>{
+  const off = onValue(refAll, (snap)=>{
     const all = snap.val() || {};
-    const entries = Object.entries(all);
-    if (!entries.length) return;
-
-    // 送信者UID と 内容
-    const [fromUid, any] = entries[0];
-    const card = (any && any.card) || '？';
+    const any = Object.values(all)[0];
+    if (!any) return;
 
     // 表示内容
-    dealCardFace.textContent = card;
+    dealCardFace.textContent = any.card || '？';
 
-    // 1) まずは従来通り「デッキ色」を優先
-    if (DECKS_DEF.white.cards.includes(card)) {
-      applyDeckTheme(dealCardFace, 'white');
-    } else if (DECKS_DEF.black.cards.includes(card)) {
-      applyDeckTheme(dealCardFace, 'black');
-    } else if (DECKS_DEF.green.cards.includes(card)) {
-      applyDeckTheme(dealCardFace, 'green');
-    } else {
-      // 2) ここから正体カード：公開者の“登録色”で配色
-      //    participants/{fromUid}.color に入っている色名を使う
-      const pSnap = await get(ref(db, `rooms/${state.code}/participants/${fromUid}`));
-      const p = pSnap.val() || {};
-      const colorName = p.color || ''; // 例: '赤' '青' '白' など
-
-      const { bg, text } = colorToStyle(colorName); // 既存ユーティリティを流用
-      dealCardFace.style.background = bg;
-      dealCardFace.style.color = text || '#111';
-    }
-
-    // 外側タップで閉じない
-    state.pinDealViewer = true;
-    show(dealViewer, true);
-    setTimeout(()=>{
-      state.pinDealViewer = false;
-      show(dealViewer,false);
-    }, 1200);
-  });
-  state.unsub.push(off);
+// 配色（デッキ色優先 → 役職カード → それ以外は白）
+if (DECKS_DEF.white.cards.includes(any.card)) {
+  applyDeckTheme(dealCardFace,'white');
+} else if (DECKS_DEF.black.cards.includes(any.card)) {
+  applyDeckTheme(dealCardFace,'black');
+} else if (DECKS_DEF.green.cards.includes(any.card)) {
+  applyDeckTheme(dealCardFace,'green');
+} else if (ROLE_CARDS.shadow.includes(any.card)) {
+  dealCardFace.style.background = '#1e88e5'; // 青
+  dealCardFace.style.color = '#fff';
+} else if (ROLE_CARDS.raider.includes(any.card)) {
+  dealCardFace.style.background = '#e53935'; // 赤
+  dealCardFace.style.color = '#fff';
+} else if (ROLE_CARDS.citizen.includes(any.card)) {
+  dealCardFace.style.background = '#fdd835'; // 黄
+  dealCardFace.style.color = '#111';
+} else {
+  dealCardFace.style.background = '#fff';
+  dealCardFace.style.color = '#111';
 }
 
+
+    // 外側タップで閉じない
     state.pinDealViewer = true;
     show(dealViewer, true);
 
