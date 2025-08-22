@@ -2429,6 +2429,7 @@ ordered.forEach(cardName=>{
   c.addEventListener('click', ()=>{
     const name = (cardName || '').trim();
     if (!name) return;
+  state.expandedContext = { source: 'equip', ownerUid: uid, cardName: name };
 
     // テキストを反映
     dealCardFace.textContent = name;
