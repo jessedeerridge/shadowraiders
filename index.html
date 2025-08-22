@@ -2056,7 +2056,7 @@ function showParticipantSelectPopup(cardText){
   if (lock && lock.card === cardText){
     const btn = document.createElement('button');
     btn.className = 'btn';
-    btn.textContent = `${lock.toName}（固定）`;
+    btn.textContent = `${lock.toName}`;
     btn.style.width = '100%';
     btn.onclick = async ()=>{
       await set(ref(db, `rooms/${state.code}/greenShare/${lock.toUid}`), {
