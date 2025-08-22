@@ -544,11 +544,15 @@ btnStart.addEventListener('click', async ()=>{
   });
   await update(ref(db), updates);
 
+  // ★ 正体カードを再配布（人数ルールに従う）
+  await dealRolesByHeadcount();
+
   state.started = true;
-  show(colorModal, false); // 既存処理をそのまま残す
-document.getElementById('btnRestart').classList.remove('hidden');
-  document.getElementById('btnStart').classList.add('hidden'); // ★ スタート後は非表示
+  show(colorModal, false);
+  document.getElementById('btnRestart').classList.remove('hidden');
+  document.getElementById('btnStart').classList.add('hidden');
 });
+
 
 
   
@@ -1749,6 +1753,52 @@ const ROLE_DISTRIBUTION = {
  10: { raider:3, shadow:3, citizen:4 },
 };
 
+// ▼ 正体カードを人数ルールでシャッフル配布
+async function dealRolesByHeadcount(){
+  // 参加者一覧取得
+  const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+  const ps = psSnap.val() || {};
+  const uids = Object.keys(ps);
+  if (uids.length === 0) return;
+
+  const dist = ROLE_DISTRIBUTION[uids.length];
+  if (!dist) return; // 未定義人数はスキップ
+
+  // シャッフル用
+  const shuffle = (arr) => {
+    const a = arr.slice();
+    for (let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]] = [a[j],a[i]];
+    }
+    return a;
+  };
+
+  // 各役職から必要数を無作為抽出
+  const pick = (arr, n) => shuffle(arr).slice(0, Math.max(0,n));
+  const chosen = [
+    ...pick(ROLE_CARDS.raider,   dist.raider),
+    ...pick(ROLE_CARDS.shadow,   dist.shadow),
+    ...pick(ROLE_CARDS.citizen,  dist.citizen),
+  ];
+
+  // 最終配布順もシャッフル
+  const finalDeck = shuffle(chosen);
+
+  // UID順に割り当て（人数と枚数は ROLE_DISTRIBUTION で一致している想定）
+  const assign = {};
+  uids.forEach((uid, i) => { assign[uid] = finalDeck[i] || null; });
+
+  // DB へ書き込み
+  await update(ref(db), {
+    [`rooms/${state.code}/deal/v1/cards`]: assign,
+    [`rooms/${state.code}/deal/v1/at`]: Date.now(),
+    [`rooms/${state.code}/game/started`]: true
+  });
+}
+
+
+  
 async function hostStartIfNotStarted(){
   const startedRef = ref(db, `rooms/${state.code}/game/started`);
   const startedSnap = await get(startedRef);
