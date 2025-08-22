@@ -176,6 +176,15 @@
   font-size:14px; font-weight:700;
 }
 
+.diceimg{
+  width:44px;       /* 必要に応じて調整 */
+  height:auto;
+  cursor:pointer;
+  user-select:none;
+  image-rendering:-webkit-optimize-contrast;
+}
+
+  
 /* 既存のモバイル用カードサイズに追従（例：@media内のdeckサイズが50x69なら同じ） */
 @media (max-width:600px){
   .equip-card{ width:50px; height:69px; font-size:12px; }
@@ -208,15 +217,12 @@
     </div>
 
     <!-- ダイス（左長方形の下／ローカル表示） -->
-  <div class="dicebar" id="diceBar">
+<div class="dicebar" id="diceBar">
   <button class="dicebtn" id="rollD6">d6 を振る</button>
   <span class="diceres" id="resD6">-</span>
-
-  <!-- ▼ d4はボタン＆テキストではなく画像で表示 -->
-  <img id="d4Img" src="4d1.png" alt="d4" width="60" height="60"
-       style="cursor:pointer; user-select:none;" />
+  <!-- d4 は画像クリックに変更：初期は 4d1.png を表示 -->
+  <img id="roll4dImg" class="diceimg" src="4d1.png" alt="d4" role="button" />
 </div>
-
 
     <!-- ▼ 右図形の真下：山札 -->
     <div class="decks-wrap"><div id="decks" class="decks" aria-label="山札（左から緑・白・黒）"></div></div>
@@ -239,6 +245,10 @@
 <!-- 自分用 ミニカード（配布後） -->
 <div id="myDealMini" class="hidden" title="カードを開く">裏</div>
 
+
+  
+<!-- 装備所持バー -->
+<div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
 
 <!-- ☆ 修正：正体カード公開ポップ（黒背景、公開するのみ） -->
 <div id="revealPopover" class="hidden"
@@ -306,49 +316,49 @@ import {
   const btnJoin       = document.getElementById('btnJoin');
   const roomPanel     = document.getElementById('roomPanel');
   const decksEl       = document.getElementById('decks');
-  const rollD6Btn     = document.getElementById('rollD6');
-  const resD6         = document.getElementById('resD6');
-const d4Img = document.getElementById('d4Img');
-// === d4 画像アニメーション ===
-const D4_ANIM_FRAMES = ['4da1.png', '4da2.png', '4da3.png'];
-const D4_RESULTS     = ['4d1.png', '4d2.png', '4d3.png', '4d4.png'];
+const rollD6Btn     = document.getElementById('rollD6');
+const resD6         = document.getElementById('resD6');
+const roll4dImg     = document.getElementById('roll4dImg'); // ← 新規
 
-// 事前プリロード
-(function preloadD4Images(){
-  [...D4_ANIM_FRAMES, ...D4_RESULTS].forEach(src=>{
-    const im = new Image(); im.src = src;
-  });
-})();
+// ---- d4 画像クリックでアニメ→結果表示 ----
+const fourDAnimFrames = ['4da1.png','4da2.png','4da3.png']; // アニメ用
+let fourDRolling = false;
 
-// クリック中の多重実行防止フラグ
-let._d4Busy = false;
+// 画像プリロード（任意）
+[...fourDAnimFrames, '4d1.png','4d2.png','4d3.png','4d4.png'].forEach(src=>{
+  const img = new Image(); img.src = src;
+});
 
-if (d4Img){
-  d4Img.addEventListener('click', ()=>{
-    if (state._d4Busy) return;
-    state._d4Busy = true;
+function play4dAnimationThenResult(){
+  if (fourDRolling) return; // 連打防止
+  fourDRolling = true;
 
-    const duration = 1000; // 1秒
-    const start = performance.now();
-    let idx = 0;
+  const start = Date.now();
+  let idx = 0;
 
-    function tick(now){
-      const elapsed = now - start;
-      if (elapsed < duration){
-        // 3枚を高速で切り替え（requestAnimationFrameに任せて約60fps）
-        d4Img.src = D4_ANIM_FRAMES[idx % D4_ANIM_FRAMES.length];
-        idx++;
-        requestAnimationFrame(tick);
-      }else{
-        // 終了時にランダムで1〜4の目を表示
-        const n = Math.floor(Math.random() * 4); // 0..3
-        d4Img.src = D4_RESULTS[n];
-        state._d4Busy = false;
-      }
+  // 高速で3枚を入れ替え（約80ms間隔）
+  const iv = setInterval(()=>{
+    roll4dImg.src = fourDAnimFrames[idx % fourDAnimFrames.length];
+    idx++;
+    if (Date.now() - start >= 1000){ // 1秒経過で停止
+      clearInterval(iv);
+
+      // 1～4 の結果をランダム表示（4d1.png ～ 4d4.png）
+      const result = 1 + Math.floor(Math.random() * 4);
+      roll4dImg.src = `4d${result}.png`;
+
+      fourDRolling = false;
     }
-    requestAnimationFrame(tick);
-  });
+  }, 80);
 }
+
+if (roll4dImg){
+  // 初期画像（安全のため再設定：タイプミス防止）
+  if (!roll4dImg.getAttribute('src')) roll4dImg.src = '4d1.png';
+  roll4dImg.addEventListener('click', play4dAnimationThenResult);
+}
+
+  
 
   const hostGear      = document.getElementById('hostGear');
   const hostPanel     = document.getElementById('hostPanel');
