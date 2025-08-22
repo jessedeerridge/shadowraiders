@@ -240,10 +240,6 @@
 <div id="myDealMini" class="hidden" title="カードを開く">裏</div>
 
 
-  
-<!-- 装備所持バー -->
-<div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
-
 <!-- ☆ 修正：正体カード公開ポップ（黒背景、公開するのみ） -->
 <div id="revealPopover" class="hidden"
      style="position:fixed; z-index:2147483607;
@@ -325,7 +321,7 @@ const D4_RESULTS     = ['4d1.png', '4d2.png', '4d3.png', '4d4.png'];
 })();
 
 // クリック中の多重実行防止フラグ
-state._d4Busy = false;
+let._d4Busy = false;
 
 if (d4Img){
   d4Img.addEventListener('click', ()=>{
@@ -2040,7 +2036,6 @@ async function becomeHostIfVacant(){
 
     // ダイス
     rollD6Btn.onclick = ()=>{ resD6.textContent = String(1 + Math.floor(Math.random()*6)); };
-    rollD4Btn.onclick = ()=>{ resD4.textContent = String(1 + Math.floor(Math.random()*4)); };
 
     // 色選択の購読・表示
     observeColors();
