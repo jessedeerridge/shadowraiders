@@ -1332,6 +1332,52 @@ function makeEquipIcon(name, colorName){
     state.unsub.push(off);
   }
 
+  // ▼ 装備一覧の描画（自分の行が先頭に来る）
+  function renderEquipments(equipData, participants){
+    const equipBar = document.getElementById('equipBar');
+    equipBar.innerHTML = '';
+
+    // 並べ替え：自分(uid)を先頭に
+    const entries = Object.entries(equipData || {});
+    entries.sort(([uidA],[uidB])=>{
+      if (uidA === state.uid) return -1;
+      if (uidB === state.uid) return 1;
+      return 0;
+    });
+
+    entries.forEach(([uid, cards])=>{
+      const holder = document.createElement('div');
+      holder.className = 'equip-holder';
+
+      // 名前＋色アイコン
+      const p = participants?.[uid] || {};
+      holder.appendChild(makeEquipIcon(p.name, p.color));
+
+      // 装備カード群
+      Object.keys(cards).forEach(card=>{
+        const cardDiv = document.createElement('div');
+        cardDiv.className = 'equip-card';
+        cardDiv.textContent = card;
+        holder.appendChild(cardDiv);
+      });
+
+      equipBar.appendChild(holder);
+    });
+
+    show(equipBar, entries.length > 0);
+  }
+
+  // ▼ 装備購読
+  function observeEquipments(){
+    const equipRef = ref(db, `rooms/${state.code}/equipment`);
+    const off = onValue(equipRef, (snap)=>{
+      const equipData = snap.val() || {};
+      renderEquipments(equipData, state.participants);
+    });
+    state.unsub.push(off);
+  }
+  
+
 // ====== 正体カード定義 ======
 const ROLE_CARDS = {
   raider: [
