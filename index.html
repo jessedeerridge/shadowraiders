@@ -1712,16 +1712,8 @@ async function hostStartIfNotStarted(){
   const dist = ROLE_DISTRIBUTION[uids.length];
   if (!dist) return;
 
-  // ★ 追加：3デッキの“順序”をスタート時に確定
-  const gOrder = makeShuffledOrder('green');
-  const wOrder = makeShuffledOrder('white');
-  const bOrder = makeShuffledOrder('black');
 
-  const updates = {};
-  updates[`rooms/${state.code}/decks/green`] = { idx: -1, order: gOrder, at: Date.now() };
-  updates[`rooms/${state.code}/decks/white`] = { idx: -1, order: wOrder, at: Date.now() };
-  updates[`rooms/${state.code}/decks/black`] = { idx: -1, order: bOrder, at: Date.now() };
-  await update(ref(db), updates);
+  
   // 各役職ごとにシャッフル
   function shuffle(arr){ return [...arr].sort(()=>Math.random()-0.5); }
   const raiders  = shuffle(ROLE_CARDS.raider).slice(0, dist.raider);
