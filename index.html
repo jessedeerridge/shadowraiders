@@ -431,10 +431,18 @@ function rollBothDice(){
   play6dAnimationThenResult();   // 1.0秒で止まる
 
   // 最長の方に合わせて少し余裕を見てロック解除
-  setTimeout(()=>{
+  setTimeout(async ()=>{
     bothRolling = false;
 
-    // ★ 追加：ダイスを振った“後”に、山札（裏）を合計1回だけめくれる
+    // ★ 追加：ダイスを振ったことを共有（誰が・いつ）
+    try{
+      await update(ref(db), {
+        [`rooms/${state.code}/dice/lastRollAt`]: Date.now(),
+        [`rooms/${state.code}/dice/lastRoller`]: state.uid,
+      });
+    }catch(e){ console.error('dice write failed', e); }
+
+    // ★ 自分の画面では “自分が振った” 場合にだけ1回分を付与
     if (typeof setDeckQuota === 'function') setDeckQuota(1);
   }, 1200);
 }
@@ -452,7 +460,7 @@ function rollBothDice(){
   const dealViewer    = document.getElementById('dealViewer');
   const dealCardFace  = document.getElementById('dealCardFace');
 
-  // --- 状態 ---
+// --- 状態 ---
 const state = {
   uid: crypto.randomUUID(),
   name: "",
@@ -465,12 +473,13 @@ const state = {
   dragOffset: {x:0,y:0},
   isHost: false,
   started: false,
- lockScrollOnRect: false,   // ← 左長方形内タッチ中はスクロール禁止
-  localMoveVer: {},          // 自分の移動バージョン管理（uid→ver）
-  dragSettleGuardUid: null,  // ドロップ直後のエコー抑止
-  dragSettleGuardUntil: 0,   // 抑止の期限(ms)
-  deckClicksLeft: 0,         // ダイス後に山札（裏）をめくれる残回数（ローカル）
+  lockScrollOnRect: false,   // ← 追加：左長方形内タッチ中はスクロール禁止
+  localMoveVer: {},          // ★ 追加：自分の移動バージョン管理（uid→ver）
+  dragSettleGuardUid: null,  // ★ 追加：ドロップ直後のエコー抑止
+  dragSettleGuardUntil: 0,   // ★ 追加：抑止の期限(ms)
+  deckClicksLeft: 0,         // ★ 追加：ダイス後に山札（裏）をめくれる残回数（ローカル）
 };
+
 
   // --- ユーティリティ ---
   // --- ユーティリティ ---
@@ -864,8 +873,25 @@ function setupDecks(){
     refreshDeckEnable();
   });
 
+  // ★ 追加：ダイスの共有イベント購読
+  const diceRef = ref(db, `rooms/${state.code}/dice`);
+  const offDice = onValue(diceRef, (snap)=>{
+    const v = snap.val() || {};
+    const lastRoller = v.lastRoller || null;
+
+    // 誰かがダイスを振った → まず全員のローカル残回数を0に
+    if (typeof setDeckQuota === 'function') setDeckQuota(0);
+
+    // その上で「自分がローラーだった」場合のみ 1 を付与
+    if (lastRoller && lastRoller === state.uid){
+      if (typeof setDeckQuota === 'function') setDeckQuota(1);
+    }
+  });
+
   state.unsub.push(off);
+  state.unsub.push(offDice);
 }
+
 
 
   // ルーム制限に従ってクリック可否を判定
@@ -879,15 +905,15 @@ function setupDecks(){
     }
   }
 
-  // ★ 追加：残回数のセット（UI更新つき）
+  // ★ 追加：残回数セット＋UI反映
   function setDeckQuota(n){
     state.deckClicksLeft = Math.max(0, Number(n || 0));
     refreshDeckEnable();
   }
 
-  // ★ 差し替え：山札の「裏」クリック可否＝部屋制限 × 残回数
+  // ★ 置換：山札「裏」のクリック許可＝部屋制限 × 残回数
   function refreshDeckEnable(){
-    const backs = decksEl.querySelectorAll('.deck-back'); // 裏のみ対象
+    const backs = decksEl.querySelectorAll('.deck-back'); // 裏のみ
     backs.forEach(back=>{
       const deckId = back.dataset.deck;
       const roomOk = canFlip(deckId, state.myRoomNumber || null);
@@ -898,9 +924,8 @@ function setupDecks(){
       back.style.pointerEvents = enabled ? 'auto' : 'none';
       back.title = enabled ? `${DECKS_DEF[deckId].label}デッキをめくる` : 'ダイスを振ると再びめくれます';
     });
-    // 「表」（拡大）は制限しない（face はそのまま）
+    // 表（拡大用）は制限しない
   }
-
 
 async function advanceDeckGuarded(deckId, flipperUid){
   // ★ 追加：ローカル残回数（裏クリックの総量）が無ければ中止
