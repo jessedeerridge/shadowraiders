@@ -2067,9 +2067,11 @@ function showParticipantSelectPopup(cardText){
       btn.style.width = '100%';
  btn.onclick = async ()=>{
   // 1) 相手に“共有”を書き込む
-  await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
-    card: cardText, from: state.uid, at: Date.now()
-  });
+ const cardId = push(h1Ref).key;   // ★ ここでキーを作って変数に保存
+ await set(ref(db, `rooms/${state.code}/greenCards/${cardId}`), {
+  from: state.uid, card: cardText, at: Date.now()
+ });
+ state.currentGreenCardId = cardId;  // ★ ローカルにも保持しておく
 
   // ※送信時は履歴に書かない（未回答は保存しない）
 
@@ -2196,8 +2198,9 @@ async function finish(answer){
   await remove(ref(db, `rooms/${state.code}/greenShare`));
 
   // ★ greenCards も削除（これを忘れると未回答者に残る）
-  await remove(ref(db, `rooms/${state.code}/greenCards/${cardId}`));
-
+ if(state.currentGreenCardId){
+   await remove(ref(db, `rooms/${state.code}/greenCards/${state.currentGreenCardId}`));
+ }
 
   state.pinDealViewer = false;
   show(dealViewer, false);
