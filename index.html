@@ -193,7 +193,7 @@
 }
 
 .diceimg{
-  width:44px;       /* 必要に応じて調整 */
+  width:60px;       /* 必要に応じて調整 */
   height:auto;
   cursor:pointer;
   user-select:none;
@@ -234,11 +234,12 @@
 
     <!-- ダイス（左長方形の下／ローカル表示） -->
 <div class="dicebar" id="diceBar">
-  <button class="dicebtn" id="rollD6">d6 を振る</button>
-  <span class="diceres" id="resD6">-</span>
-  <!-- d4 は画像クリックに変更：初期は 4d1.png を表示 -->
+  <!-- d4 ダイス（初期 4d1.png） -->
   <img id="roll4dImg" class="diceimg" src="4d1.png" alt="d4" role="button" />
-</div>
+
+  <!-- d6 ダイス（初期 6d1.png） -->
+  <img id="roll6dImg" class="diceimg" src="6d1.png" alt="d6" role="button" />
+
 
     <!-- ▼ 右図形の真下：山札 -->
     <div class="decks-wrap"><div id="decks" class="decks" aria-label="山札（左から緑・白・黒）"></div></div>
@@ -332,10 +333,43 @@ import {
   const btnJoin       = document.getElementById('btnJoin');
   const roomPanel     = document.getElementById('roomPanel');
   const decksEl       = document.getElementById('decks');
-const rollD6Btn     = document.getElementById('rollD6');
-const resD6         = document.getElementById('resD6');
 const roll4dImg     = document.getElementById('roll4dImg'); // ← 新規
+const roll6dImg     = document.getElementById('roll6dImg'); // ← 新規
 
+// ---- d6 画像クリックでアニメ→結果表示 ----
+const sixDAnimFrames = ['6da1.png','6da2.png','6da3.png'];
+let sixDRolling = false;
+
+// プリロード
+[...sixDAnimFrames,'6d1.png','6d2.png','6d3.png','6d4.png','6d5.png','6d6.png'].forEach(src=>{
+  const img=new Image(); img.src=src;
+});
+
+function play6dAnimationThenResult(){
+  if (sixDRolling) return;
+  sixDRolling = true;
+
+  const start = Date.now();
+  let idx = 0;
+
+  const iv = setInterval(()=>{
+    roll6dImg.src = sixDAnimFrames[idx % sixDAnimFrames.length];
+    idx++;
+    if (Date.now() - start >= 500){ // 1秒
+      clearInterval(iv);
+      const result = 1 + Math.floor(Math.random() * 6);
+      roll6dImg.src = `6d${result}.png`;
+      sixDRolling = false;
+    }
+  },80);
+}
+
+if (roll6dImg){
+  if (!roll6dImg.getAttribute('src')) roll6dImg.src = '6d1.png';
+  roll6dImg.addEventListener('click', play6dAnimationThenResult);
+}
+
+  
 // ---- d4 画像クリックでアニメ→結果表示 ----
 const fourDAnimFrames = ['4da1.png','4da2.png','4da3.png']; // アニメ用
 let fourDRolling = false;
