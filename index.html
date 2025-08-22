@@ -1911,35 +1911,49 @@ async function hostStartIfNotStarted(){
   const startedSnap = await get(startedRef);
   if (startedSnap.val()) return;
 
-  // 参加者
-  const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-  const ps = psSnap.val() || {};
-  const uids = Object.keys(ps);
+  // 色を選んだ人（colors）∩ 在室者（participants）だけを対象
+  const [colorsSnap, partsSnap] = await Promise.all([
+    get(ref(db, `rooms/${state.code}/colors`)),
+    get(ref(db, `rooms/${state.code}/participants`))
+  ]);
+  const colors = colorsSnap.val() || {};
+  const parts  = partsSnap.val()  || {};
+  const uids = [];
+  for (const claim of Object.values(colors)){
+    const uid = claim?.uid;
+    if (uid && parts[uid]) uids.push(uid);
+  }
   if (uids.length === 0) return;
 
-  const dist = ROLE_DISTRIBUTION[uids.length];
-  if (!dist) return;
+  // 役職セットを決定（既存の優先度：computeRoleSetByHeadcount → ROLE_DISTRIBUTION → フォールバック）
+  let selected;
+  if (typeof computeRoleSetByHeadcount === 'function'){
+    selected = computeRoleSetByHeadcount(uids.length);
+  } else if (ROLE_DISTRIBUTION && ROLE_DISTRIBUTION[uids.length]){
+    const dist = ROLE_DISTRIBUTION[uids.length];
+    const shuffle = arr => [...arr].sort(()=>Math.random()-0.5);
+    const raiders  = shuffle(ROLE_CARDS.raider).slice(0, dist.raider);
+    const shadows  = shuffle(ROLE_CARDS.shadow).slice(0, dist.shadow);
+    const citizens = shuffle(ROLE_CARDS.citizen).slice(0, dist.citizen);
+    selected = shuffle([...raiders, ...shadows, ...citizens]);
+  } else {
+    const pool = [];
+    if (Array.isArray(ROLE_CARDS?.shadow))  pool.push(...ROLE_CARDS.shadow);
+    if (Array.isArray(ROLE_CARDS?.raider))  pool.push(...ROLE_CARDS.raider);
+    if (Array.isArray(ROLE_CARDS?.citizen)) pool.push(...ROLE_CARDS.citizen);
+    selected = shuffleArray(pool).slice(0, uids.length);
+  }
 
-  // 各役職ごとにシャッフル
-  function shuffle(arr){ return [...arr].sort(()=>Math.random()-0.5); }
-  const raiders  = shuffle(ROLE_CARDS.raider).slice(0, dist.raider);
-  const shadows  = shuffle(ROLE_CARDS.shadow).slice(0, dist.shadow);
-  const citizens = shuffle(ROLE_CARDS.citizen).slice(0, dist.citizen);
-
-  const selected = shuffle([...raiders, ...shadows, ...citizens]);
-
-  // 参加者に割り当て
+  // UIDもシャッフルして1:1割当
+  const shuffledUids = shuffleArray(uids);
   const assign = {};
-  uids.forEach((uid, i)=>{
-    assign[uid] = selected[i];
+  shuffledUids.forEach((uid, i)=> assign[uid] = selected[i] ?? null);
+
+  await update(ref(db), {
+    [`rooms/${state.code}/deal/v1/cards`]: assign,
+    [`rooms/${state.code}/deal/v1/at`]: Date.now(),
+    [`rooms/${state.code}/game/started`]: true
   });
-
-  const updates = {};
-  updates[`rooms/${state.code}/deal/v1/cards`] = assign;
-  updates[`rooms/${state.code}/deal/v1/at`] = Date.now();
-  updates[`rooms/${state.code}/game/started`] = true;
-
-  await update(ref(db), updates);
 }
 
   
