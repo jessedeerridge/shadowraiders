@@ -1181,10 +1181,24 @@ function makeEquipIcon(name, colorName){
 
 // ====== 正体カード定義 ======
 const ROLE_CARDS = {
-  raider:  ['ああ','いい','うう','ええ','おお','かかか','ききき','くくく','けけけ'],
-  shadow:  ['さささ','ししし','すすす','せせせ','そそそ','たたた','ちちち','つつつ','ててて'],
-  citizen: ['ままま','みみみ','むむむ','めめめ','ももも','ががが'],
+  raider: [
+    'Eエミ','Eエマ','Eエリカ',
+    'Fフェリックス','Fフレディ','Fフェリシア',
+    'Gゴードン','Gゴドウィン','Gグラハド'
+  ],
+  shadow: [
+    'Uウルリッヒ','Uウラヌス','Uアルスター',
+    'Vヴァンパイア','Vヴェンデッタ','Vヴェノム',
+    'Wワーウルフ','Wワイト','Wワルプルギス'
+  ],
+  citizen: [
+    'Aアリス','Aアンジェラ','Aアガサ',
+    'Bバイロン','Bベンジャミン','Bブルース',
+    'Cクレイグ','Cクレア','Cキャロル',
+    'Dダニエル','Dデーヴィッド','Dデボラ'
+  ],
 };
+
 
 // 人数ごとの役職割り当て
 const ROLE_DISTRIBUTION = {
@@ -1485,6 +1499,14 @@ function showYesNoPopoverForGreen(cardText, fromUid){
       (myRole === 'シャドウ' && containsShadow) ||
       (myRole === 'シチズン' && containsCitizen);
 
+const initial = String(myRoleCard).charAt(0).toUpperCase();
+
+if (cardText.includes('D / F / G / V / W')) {
+  shouldYes = ['D','F','G','V','W'].includes(initial);
+} else if (cardText.includes('A / B / C / E / U')) {
+  shouldYes = ['A','B','C','E','U'].includes(initial);
+}
+    
     // --- ポップ生成（片方のみ表示） ---
     const pop = document.createElement('div');
     pop.id = 'greenYesNo';
