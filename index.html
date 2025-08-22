@@ -631,43 +631,6 @@ if (!myHasCard && oldCard){
     rect.addEventListener('click', onRectClickWithDupCheck);
   }
 
-// --- 共通：カード色適用ユーティリティ（拡大／装備所持欄／テーブル表示で共通使用） ---
-function applyCardStyle(el, val){
-  if (!el) return;
-  // 既定
-  let bg = '#fff';
-  let fg = '#111';
-
-  // 正体カード（青＝シャドウ／赤＝レイダー／黄＝シチズン）
-  if (ROLE_CARDS && ROLE_CARDS.shadow && Array.isArray(ROLE_CARDS.shadow) && ROLE_CARDS.shadow.includes(val)) {
-    bg = '#1e88e5';
-    fg = '#fff';
-  } else if (ROLE_CARDS && ROLE_CARDS.raider && Array.isArray(ROLE_CARDS.raider) && ROLE_CARDS.raider.includes(val)) {
-    bg = '#e53935';
-    fg = '#fff';
-  } else if (ROLE_CARDS && ROLE_CARDS.citizen && Array.isArray(ROLE_CARDS.citizen) && ROLE_CARDS.citizen.includes(val)) {
-    bg = '#fdd835';
-    fg = '#111';
-  } else {
-    // デッキ起源で色分け（白／黒／緑）
-    if (DECKS_DEF && DECKS_DEF.white && Array.isArray(DECKS_DEF.white.cards) && DECKS_DEF.white.cards.includes(val)) {
-      bg = '#ffffff';
-      fg = '#111';
-    }
-    if (DECKS_DEF && DECKS_DEF.black && Array.isArray(DECKS_DEF.black.cards) && DECKS_DEF.black.cards.includes(val)) {
-      bg = '#000000';
-      fg = '#ffffff';
-    }
-    if (DECKS_DEF && DECKS_DEF.green && Array.isArray(DECKS_DEF.green.cards) && DECKS_DEF.green.cards.includes(val)) {
-      bg = '#c7f5c1';
-      fg = '#111';
-    }
-  }
-  el.style.background = bg;
-  el.style.color = fg;
-}
-
-  
 // ===== 山札 =====
  const DECKS_DEF = {
   green: { 
@@ -731,7 +694,6 @@ if (deckId === 'green') face.style.display = 'none'; // ★ 緑の表はDOMご�
 
 // ▼追加：クリックで拡大表示
 // ▼追加：クリックで拡大表示
-// ▼追加：クリックで拡大表示
 face.addEventListener('click', async ()=>{
   if (deckId === 'green'){ 
     // DBから自分のカードを直接読む（他人には表示しない）
@@ -740,18 +702,15 @@ face.addEventListener('click', async ()=>{
     if (idx >= 0){
       const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
       dealCardFace.textContent = card;
-      applyCardStyle(dealCardFace, card);   // ← 追加：色適用
       show(dealViewer, true);
     }
   }else{
     if (face.textContent){
       dealCardFace.textContent = face.textContent;
-      applyCardStyle(dealCardFace, face.textContent); // ← 追加：色適用
       show(dealViewer, true);
     }
   }
 });
-
 
 
       const label = document.createElement('div');
@@ -1185,87 +1144,6 @@ function makeEquipIcon(name, colorName){
   return div;
 }
 
-  /* === 装備所持欄の購読＋描画 === */
-function observeEquipment(){
-  const bar = document.getElementById('equipBar');
-  const eqRef = ref(db, `rooms/${state.code}/equipment`);
-  const psRef = ref(db, `rooms/${state.code}/participants`);
-  const colorsRef = ref(db, `rooms/${state.code}/colors`);
-
-  // uid→色名（日本語の「赤」「白」など）にするマップ
-  async function fetchUserColorNameMap(){
-    const snap = await get(colorsRef);
-    const claims = snap.val() || {};
-    const map = {};
-    Object.entries(claims).forEach(([colorId, v])=>{
-      if (v && v.uid && v.name){
-        map[v.uid] = v.name;
-      }
-    });
-    return map;
-  }
-
-  const off = onValue(eqRef, async (snap)=>{
-    const allEquip = snap.val() || {};
-    const psSnap = await get(psRef);
-    const ps = psSnap.val() || {};
-    const colorNameMap = await fetchUserColorNameMap();
-
-    // 一旦クリア
-    bar.innerHTML = '';
-
-    // 参加者ごとに所持品を描画
-    Object.entries(ps).forEach(([uid, pinfo])=>{
-      const items = allEquip[uid] || null;
-      if (!items) return;
-
-      const holder = document.createElement('div');
-      holder.className = 'equip-holder';
-
-      // 左側：小アイコン（名前1文字）
-      const icon = makeEquipIcon(pinfo?.name || '?', colorNameMap[uid] || '');
-      holder.appendChild(icon);
-
-      // 右側：カードたち
-      const cardsWrap = document.createElement('div');
-      cardsWrap.style.display = 'flex';
-      cardsWrap.style.gap = '8px';
-      holder.appendChild(cardsWrap);
-
-      // items は { 'きき': true, 'みみ': true } のような形式
-      const allCards = Object.keys(items);
-
-      // 正体カードを先頭に、それ以外（白黒緑）を後ろに並べる
-      const isRoleCard = (v)=>{
-        return (
-          (ROLE_CARDS.raider.includes(v)) ||
-          (ROLE_CARDS.shadow.includes(v)) ||
-          (ROLE_CARDS.citizen.includes(v))
-        );
-      };
-      const roleCards = allCards.filter(isRoleCard);
-      const otherCards = allCards.filter(v => !isRoleCard(v));
-      const arranged = [...roleCards, ...otherCards];
-
-      arranged.forEach(card=>{
-        const dv = document.createElement('div');
-        dv.className = 'equip-card';
-        dv.textContent = card;
-        applyCardStyle(dv, card);   // ★ ここで色を適用
-        cardsWrap.appendChild(dv);
-      });
-
-      bar.appendChild(holder);
-    });
-
-    // 空なら非表示、1人でも持ってたら表示
-    const hasAny = bar.children.length > 0;
-    bar.classList.toggle('hidden', !hasAny);
-  });
-
-  state.unsub.push(off);
-}
-
   
   function renderColorGrid(claims){
     colorGrid.innerHTML = '';
@@ -1402,11 +1280,23 @@ function observeMyDeal(){
     if (has){
       myDealMini.onclick = ()=>{
 // 自分のカード表示
-// 自分のカード表示
 dealCardFace.textContent = String(val);
-applyCardStyle(dealCardFace, String(val));  // ← ここで統一的に色適用
-show(dealViewer, true);
 
+// ★ 正体カードの色分け（拡大ビュー用）
+if (ROLE_CARDS.shadow.includes(val)) {
+  dealCardFace.style.background = '#1e88e5'; // 青
+  dealCardFace.style.color = '#fff';
+} else if (ROLE_CARDS.raider.includes(val)) {
+  dealCardFace.style.background = '#e53935'; // 赤
+  dealCardFace.style.color = '#fff';
+} else if (ROLE_CARDS.citizen.includes(val)) {
+  dealCardFace.style.background = '#fdd835'; // 黄
+  dealCardFace.style.color = '#111';
+} else {
+  // その他カードは白背景に戻す
+  dealCardFace.style.background = '#fff';
+  dealCardFace.style.color = '#111';
+}
 
 show(dealViewer, true);
 
