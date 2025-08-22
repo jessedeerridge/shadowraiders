@@ -366,7 +366,7 @@ function play6dAnimationThenResult(){
 
 if (roll6dImg){
   if (!roll6dImg.getAttribute('src')) roll6dImg.src = '6d1.png';
-  roll6dImg.addEventListener('click', play6dAnimationThenResult);
+  roll6dImg.addEventListener('click', rollBothDice);
 }
 
   
@@ -405,7 +405,21 @@ function play4dAnimationThenResult(){
 if (roll4dImg){
   // 初期画像（安全のため再設定：タイプミス防止）
   if (!roll4dImg.getAttribute('src')) roll4dImg.src = '4d1.png';
-  roll4dImg.addEventListener('click', play4dAnimationThenResult);
+  roll4dImg.addEventListener('click', rollBothDice);
+}
+
+// ---- 同時起動ハンドラ（連打ロックつき）----
+let bothRolling = false;
+function rollBothDice(){
+  if (bothRolling) return;
+  bothRolling = true;
+
+  // 個別のガード(fourDRolling / sixDRolling)は各関数内で有効
+  play4dAnimationThenResult();   // 0.5秒で止まる
+  play6dAnimationThenResult();   // 1.0秒で止まる
+
+  // 最長の方に合わせて少し余裕を見てロック解除
+  setTimeout(()=>{ bothRolling = false; }, 1200);
 }
 
   
@@ -2093,9 +2107,6 @@ async function becomeHostIfVacant(){
 
     // 山札UI
     setupDecks();
-
-    // ダイス
-    rollD6Btn.onclick = ()=>{ resD6.textContent = String(1 + Math.floor(Math.random()*6)); };
 
     // 色選択の購読・表示
     observeColors();
