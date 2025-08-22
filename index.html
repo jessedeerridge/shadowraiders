@@ -43,10 +43,12 @@
 /* 山札UI（右図形の真下に横並び） */
 .decks-wrap{display:flex;justify-content:flex-end}
 .decks{
-  display:flex;gap:16px;justify-content:flex-end;align-items:flex-start;margin-top:-30px;
-  margin-right:24px;              /* ★追加：右余白で全体を“少し左へ”移動 */
-  /* もしくは transform で移動したい場合は下行を使う（どちらか片方でOK）
-     transform: translateX(-24px);  */
+  display:flex;
+  gap:16px;
+  justify-content:flex-end;
+  align-items:flex-start;
+  margin-top:40px;   /* ← 元は -30px、正の値にして間隔を空ける */
+  margin-right:24px;
 }
   .deck{display:flex;flex-direction:column;align-items:center;gap:8px}
   .deck-back,.deck-face{
@@ -64,8 +66,15 @@
 .deck-face.green{ background:#c7f5c1; color:#111; }
 
   /* ダイス欄 */
-  .dicebar{display:flex;gap:8px;align-items:center;margin-top:6px;margin-left:8px;flex-wrap:wrap}
-  .dicebtn{padding:8px 10px;border:1px solid #ddd;border-radius:10px;background:#fafafa;cursor:pointer}
+.dicebar{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  margin-top:6px;
+  margin-left:8px;   /* ←これを削除 */
+  justify-content:flex-end; /* ←追加：右寄せ */
+  flex-wrap:wrap;
+}  .dicebtn{padding:8px 10px;border:1px solid #ddd;border-radius:10px;background:#fafafa;cursor:pointer}
   .diceres{font-weight:700}
 
   /* ホスト用 設定マーク（左下固定） */
