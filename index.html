@@ -1857,6 +1857,9 @@ function observeMyDeal(){
 // 自分のカード表示
 dealCardFace.textContent = String(val);
 
+  state.expandedContext = { source: 'mydeal', ownerUid: state.uid, cardName: String(val) };
+
+        
 // ★ 正体カードの色分け（拡大ビュー用）
 if (ROLE_CARDS.shadow.includes(val)) {
   dealCardFace.style.background = '#1e88e5'; // 青
@@ -1878,6 +1881,8 @@ show(dealViewer, true);
 
         // ☆ 追加：拡大カードを押すと「公開する」ポップ表示
 dealCardFace.onclick = ()=>{
+    const ctx = state.expandedContext || null;
+  if (!ctx || ctx.source !== 'mydeal') return;
   const val = (dealCardFace.textContent || '').trim();
   if (DECKS_DEF.green.cards.includes(val)){
     // ★ 緑カード用：参加者選択ポップを開く
@@ -2435,6 +2440,12 @@ ordered.forEach(cardName=>{
     if (!name) return;
   state.expandedContext = { source: 'equip', ownerUid: uid, cardName: name };
 
+  // ③ 右下カード専用の公開ハンドラを明示的にOFF
+  dealCardFace.onclick = null;
+  const rp = document.getElementById('revealPopover');
+  if (rp) rp.classList.add('hidden');
+
+    
     // テキストを反映
     dealCardFace.textContent = name;
 
