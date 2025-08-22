@@ -891,8 +891,15 @@ if (type === 'back'){
   back.dataset.role = 'back';
   back.textContent = '裏';
   back.title = `${def.label}デッキをめくる`;
-  back.addEventListener('click', ()=> advanceDeckGuarded(deckId, state.uid));
-
+back.addEventListener('click', (ev)=>{
+  // ブランクなら「山札を作る（シャッフル）」ポップ
+  if (back.classList.contains('blank')) {
+    showShufflePopover(back, deckId, ev);
+    return;
+  }
+  // 通常時は既存の山札めくり
+  advanceDeckGuarded(deckId, state.uid);
+});
   // ★ 追加：残り枚数表示用
   const count = document.createElement('div');
   count.className = 'deck-count';
@@ -1020,6 +1027,16 @@ if (backEl){
   function refreshDeckEnable(){
     const backs = decksEl.querySelectorAll('.deck-back'); // 裏のみ
     backs.forEach(back=>{
+
+   // ★追加: ブランク（0枚）のときは常にクリック可能
+    const isBlank = back.classList.contains('blank');
+    if (isBlank){
+      back.classList.remove('disabled');
+      back.style.pointerEvents = 'auto';
+      back.title = '山札を作る（シャッフル）';
+      return;
+    }
+      
       const deckId = back.dataset.deck;
       const roomOk = canFlip(deckId, state.myRoomNumber || null);
       const quotaOk = (state.deckClicksLeft > 0);
@@ -1088,6 +1105,49 @@ async function advanceDeck(deckId, flipperUid){
   }
 }
 
+// ★ 追加：ブランク時の「山札を作る（シャッフル）」ポップ
+function showShufflePopover(targetEl, deckId, ev){
+  // 既存を消す
+  const old = document.getElementById('shufflePopover');
+  if (old) old.remove();
+
+  const pop = document.createElement('div');
+  pop.id = 'shufflePopover';
+  pop.className = 'popover';
+
+  // 位置（カードの少し上）
+  const r = targetEl.getBoundingClientRect();
+  pop.style.left = `${r.left + r.width/2}px`;
+  pop.style.top  = `${Math.max(8, r.top - 10)}px`;
+  pop.style.transform = 'translate(-50%, -100%)';
+
+  // ボタンだけのシンプルUI
+  const btn = document.createElement('button');
+  btn.textContent = '山札を作る（シャッフル）';
+  btn.onclick = async ()=>{
+    await rebuildDeck(deckId);   // idx を初期化
+    pop.remove();
+  };
+
+  pop.appendChild(btn);
+  document.body.appendChild(pop);
+
+  // 外側クリックで閉じる
+  const closer = (e)=>{
+    if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('mousedown', closer, true); }
+  };
+  setTimeout(()=> document.addEventListener('mousedown', closer, true), 0);
+}
+
+// ★ 追加：デッキ再構築（idx を -1 に戻す）
+async function rebuildDeck(deckId){
+  const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
+  await set(deckPath, { idx: -1, at: Date.now() });
+  // updateCount が走り、ブランク解除→裏表示＆枚数満タンになります（監視ロジック既存）。 
+}
+
+
+  
   // ===== 右側：部屋クリック =====
   async function onRoomClick(ev){
     const svg = document.getElementById('art');
