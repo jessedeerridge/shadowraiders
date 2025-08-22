@@ -1192,12 +1192,18 @@ function showShufflePopover(targetEl, deckId, ev){
   setTimeout(()=> document.addEventListener('mousedown', closer, true), 0);
 }
 
-// ★ 追加：デッキ再構築（idx を -1 に戻す）
+// ★ 修正：デッキ再構築（シャッフル付き）
 async function rebuildDeck(deckId){
+  // --- まずシャッフル ---
+  DECKS_DEF[deckId].cards = shuffleArray(DECKS_DEF[deckId].cards);
+
+  // --- DBを初期化 ---
   const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
   await set(deckPath, { idx: -1, at: Date.now() });
-  // updateCount が走り、ブランク解除→裏表示＆枚数満タンになります（監視ロジック既存）。 
+
+  // → updateCount が走り、ブランク解除→裏表示＆枚数満タンになります
 }
+
 
 
   
