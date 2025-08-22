@@ -53,6 +53,7 @@ header{
   .roomhit{fill:transparent;stroke:none;pointer-events:auto}
   .roomhit.flash{fill:#eee;transition:fill 60ms}
 
+  
 /* 山札UI（右図形の真下に横並び） */
 .decks-wrap{display:flex;justify-content:flex-end}
 .decks{
@@ -77,6 +78,10 @@ header{
 .deck-face.white{ background:#ffffff; color:#111; }
 .deck-face.black{ background:#000000; color:#ffffff; }
 .deck-face.green{ background:#c7f5c1; color:#111; }
+.deck-count {
+  font-size: 11px;
+  opacity: 0.7;
+}
 
   /* ダイス欄 */
 .dicebar{
@@ -874,19 +879,32 @@ function setupDecks(){
   order.forEach(({deck:deckId, type})=>{
     const def = DECKS_DEF[deckId];
 
-    if (type === 'back'){
-      const back = document.createElement('div');
-      back.className = `deck-back ${def.colorClass}`;
-      back.dataset.deck = deckId;     // ★識別
-      back.dataset.role = 'back';
-      back.textContent = '裏';
-      back.title = `${def.label}デッキをめくる`;
-      back.addEventListener('click', ()=> advanceDeckGuarded(deckId, state.uid));
-      decksEl.appendChild(back);
-    }else{
-      // type === 'face'
-      const face = document.createElement('div');
-      face.className = 'deck-face';
+if (type === 'back'){
+  const back = document.createElement('div');
+  back.className = `deck-back ${def.colorClass}`;
+  back.dataset.deck = deckId;     // ★識別
+  back.dataset.role = 'back';
+  back.textContent = '裏';
+  back.title = `${def.label}デッキをめくる`;
+  back.addEventListener('click', ()=> advanceDeckGuarded(deckId, state.uid));
+
+  // ★ 追加：残り枚数表示用
+  const count = document.createElement('div');
+  count.className = 'deck-count';
+  count.dataset.deck = deckId;
+  count.textContent = `${def.cards.length}`;
+
+  // ★ 追加：deckコンテナでまとめる
+  const wrapper = document.createElement('div');
+  wrapper.className = 'deck';
+  wrapper.appendChild(back);
+  wrapper.appendChild(count);
+
+  decksEl.appendChild(wrapper);
+}else{
+  // type === 'face'
+  const face = document.createElement('div');
+  face.className = 'deck-face';
       face.dataset.deck = deckId;     // ★識別
       face.dataset.role = 'face';
       face.textContent = '';
@@ -899,33 +917,59 @@ function setupDecks(){
 
   // DB同期購読（face要素のテキストを更新）
   const decksRef = ref(db, `rooms/${state.code}/decks`);
-  const off = onValue(decksRef, (snap)=>{
-    const v = snap.val() || {};
+const off = onValue(decksRef, (snap)=>{
+  const v = snap.val() || {};
 
-    // 白の表
-    {
-      const idx = (v.white?.idx ?? -1);
-      const faceEl = decksEl.querySelector('.deck-face[data-deck="white"][data-role="face"]');
-      if (faceEl){
-        const card = (idx >= 0) ? DECKS_DEF.white.cards[idx % DECKS_DEF.white.cards.length] : '';
-        faceEl.textContent = card;
-        applyDeckTheme(faceEl, 'white');
+  // 白の表
+  {
+    const idx = (v.white?.idx ?? -1);
+    const faceEl = decksEl.querySelector('.deck-face[data-deck="white"][data-role="face"]');
+    if (faceEl){
+      const card = (idx >= 0) ? DECKS_DEF.white.cards[idx % DECKS_DEF.white.cards.length] : '';
+      faceEl.textContent = card;
+      applyDeckTheme(faceEl, 'white');
+    }
+  }
+  // 黒の表
+  {
+    const idx = (v.black?.idx ?? -1);
+    const faceEl = decksEl.querySelector('.deck-face[data-deck="black"][data-role="face"]');
+    if (faceEl){
+      const card = (idx >= 0) ? DECKS_DEF.black.cards[idx % DECKS_DEF.black.cards.length] : '';
+      faceEl.textContent = card;
+      applyDeckTheme(faceEl, 'black');
+    }
+  }
+  // 緑は表共有なし（face自体を置いていない）
+
+  // ★ 追加：残り枚数更新
+  function updateCount(deckId){
+    const idx = (v[deckId]?.idx ?? -1);
+    const def = DECKS_DEF[deckId];
+    const remain = def.cards.length - (idx + 1);
+    const countEl = decksEl.querySelector(`.deck-count[data-deck="${deckId}"]`);
+    const backEl  = decksEl.querySelector(`.deck-back[data-deck="${deckId}"]`);
+
+    if (countEl){
+      countEl.textContent = remain >= 0 ? remain : def.cards.length;
+    }
+    if (backEl){
+      if (remain <= 0){
+        backEl.textContent = '';            // ブランク
+        backEl.classList.add('disabled');   // 灰色
+      }else{
+        backEl.textContent = '裏';
+        backEl.classList.remove('disabled');
       }
     }
-    // 黒の表
-    {
-      const idx = (v.black?.idx ?? -1);
-      const faceEl = decksEl.querySelector('.deck-face[data-deck="black"][data-role="face"]');
-      if (faceEl){
-        const card = (idx >= 0) ? DECKS_DEF.black.cards[idx % DECKS_DEF.black.cards.length] : '';
-        faceEl.textContent = card;
-        applyDeckTheme(faceEl, 'black');
-      }
-    }
-    // 緑は表共有なし（face自体を置いていない）
+  }
+  updateCount('white');
+  updateCount('black');
+  updateCount('green');
 
-    refreshDeckEnable();
-  });
+  refreshDeckEnable();
+});
+
 
   // ★ 追加：ダイスの共有イベント購読
   const diceRef = ref(db, `rooms/${state.code}/dice`);
