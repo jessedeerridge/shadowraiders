@@ -292,6 +292,7 @@ header{
 <div id="hostPanel" class="hidden">
   <span>ホスト設定</span>
   <button id="btnStart">スタート</button>
+    <button id="btnRestart" class="hidden">リスタート</button>
 </div>
 
 <!-- 自分用 ミニカード（配布後） -->
@@ -475,6 +476,15 @@ function rollBothDice(){
   const hostGear      = document.getElementById('hostGear');
   const hostPanel     = document.getElementById('hostPanel');
   const btnStart      = document.getElementById('btnStart');
+  // ★追加：リスタートボタン参照
+  const btnRestart    = document.getElementById('btnRestart');
+
+  // ★追加：クリック処理
+  btnRestart.addEventListener('click', ()=>{
+    if (!state.isHost) return;
+    if (!confirm('リセットしますか？')) return;
+    doFullReset();
+  });
 
 
 function shuffleArray(arr){
@@ -485,7 +495,39 @@ function shuffleArray(arr){
   }
   return a;
 }
+// ★追加：フルリセット処理
+async function doFullReset(){
+  const updates = {};
 
+  // 装備リセット
+  updates[`rooms/${state.code}/equipment`] = null;
+
+  // デッキを再シャッフルしてリセット
+  ['green','white','black'].forEach(deckId=>{
+    DECKS_DEF[deckId].cards = shuffleArray(DECKS_DEF[deckId].cards);
+    updates[`rooms/${state.code}/decks/${deckId}`] = { idx: -1, at: Date.now() };
+  });
+
+  // 正体カード削除
+  updates[`rooms/${state.code}/deal/v1/cards`] = null;
+
+  // 緑履歴削除
+  updates[`rooms/${state.code}/greenHistory`] = null;
+
+  // 左長方形と星のアイコン削除
+  updates[`rooms/${state.code}/icons`] = null;
+  updates[`rooms/${state.code}/seats`] = null;
+
+  await update(ref(db), updates);
+
+  // ローカル状態を初期化
+  state.started = false;
+  show(colorModal, true); 
+  document.getElementById('btnRestart').classList.add('hidden');
+}
+
+
+  
 btnStart.addEventListener('click', async ()=>{
   if (!state.isHost) return;
 
@@ -503,6 +545,7 @@ btnStart.addEventListener('click', async ()=>{
 
   state.started = true;
   show(colorModal, false); // 既存処理をそのまま残す
+  document.getElementById('btnRestart').classList.remove('hidden');
 });
 
 
