@@ -485,7 +485,41 @@ function rollBothDice(){
     if (!confirm('リセットしますか？')) return;
     doFullReset();
   });
+// 在室者(participants)にいない uid の colors を削除し、名前がズレていれば整合させる
+async function cleanColorsKeepingParticipants(){
+  const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+  const colorsSnap = await get(ref(db, `rooms/${state.code}/colors`));
+  const ps = psSnap.val() || {};
+  const colors = colorsSnap.val() || {};
 
+  const presentUids = new Set(Object.keys(ps));
+  const updates = {};
+
+  for (const [colorId, claim] of Object.entries(colors)){
+    const uid = claim?.uid;
+    const nameInColors = claim?.name || '';
+    if (!uid || !presentUids.has(uid)){
+      // 退出者（participants にいない）→ 色を消す
+      updates[`rooms/${state.code}/colors/${colorId}`] = null;
+      continue;
+    }
+    // 在室者だが、名前がズレていたら participants の名前に寄せて整合
+    const nameInParticipants = ps[uid]?.name || nameInColors || '';
+    if (nameInParticipants && nameInParticipants !== nameInColors){
+      updates[`rooms/${state.code}/colors/${colorId}`] = {
+        uid,
+        name: nameInParticipants,
+        at: Date.now(),
+      };
+    }
+  }
+
+  if (Object.keys(updates).length){
+    await update(ref(db), updates);
+  }
+}
+
+  
 
 function shuffleArray(arr){
   const a = arr.slice();
@@ -513,6 +547,7 @@ async function doFullReset(){
 
   // 緑履歴削除
   updates[`rooms/${state.code}/greenHistory`] = null;
+  await cleanColorsKeepingParticipants();
 
   // 左長方形と星のアイコン削除
   updates[`rooms/${state.code}/icons`] = null;
