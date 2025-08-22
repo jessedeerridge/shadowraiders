@@ -2136,15 +2136,33 @@ async function becomeHostIfVacant(){
       hostPanel.classList.toggle('hidden');
     };
 
-    btnStart.onclick = async ()=>{
-      if (!state.isHost) return;
-      await hostStartIfNotStarted();
-      hostPanel.classList.add('hidden');
-    };
-    // カードビューア：外側クリックで閉じる
-    dealViewer.addEventListener('click', (e)=>{
-      if (e.target === dealViewer) show(dealViewer, false);
-    });
+ // ★ 追加：カード以外をクリックしたら閉じる（ただしピン留め中＝主に緑は除外）
+if (!state._dealViewerClickAwayInstalled) {
+  state._dealViewerClickAwayInstalled = true;
+
+  document.addEventListener('click', (e)=>{
+    const viewerOpen = dealViewer && !dealViewer.classList.contains('hidden');
+    if (!viewerOpen) return;
+
+    // 緑カードなど“ピン留め中”は元の設定を保持（閉じない）
+    if (state.pinDealViewer) return;
+
+    const card = document.getElementById('dealCardFace');
+    const clickedOnCard = card && (e.target === card || card.contains(e.target));
+
+    // 「公開する」ポップ内のクリックは、ボタン側で閉じるためここでは除外
+    const pop = document.getElementById('revealPopover');
+    const clickedOnPop = pop && pop.contains(e.target);
+
+    if (!clickedOnCard && !clickedOnPop){
+      show(dealViewer, false);
+    }
+  }, true); // ← captureで早めに拾う
+
+  // 緑カードの“外側タップ抑止”を有効化（未インストール時のみ）
+  installDealViewerPinGuard();
+}
+
 
     // ★ 同名引継ぎ（色／右下カード）
     try{
