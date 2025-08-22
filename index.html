@@ -123,6 +123,7 @@ header{
   /* ▼ 右下合計表示 */
   #colorModal .color-foot{margin-top:8px;display:flex;justify-content:flex-end;font-size:12px;opacity:.8}
   .color-tile .owner{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900}
+  .color-tile.taken-by-others{filter:grayscale(1) brightness(.8);cursor:not-allowed}
   .color-tile.mine{outline:3px solid #111}
 
   /* 自分用：配られたカード（右下に小さな黒裏） */
@@ -291,7 +292,6 @@ header{
 <div id="hostPanel" class="hidden">
   <span>ホスト設定</span>
   <button id="btnStart">スタート</button>
-    <button id="btnRestart" class="hidden">リスタート</button>
 </div>
 
 <!-- 自分用 ミニカード（配布後） -->
@@ -475,48 +475,7 @@ function rollBothDice(){
   const hostGear      = document.getElementById('hostGear');
   const hostPanel     = document.getElementById('hostPanel');
   const btnStart      = document.getElementById('btnStart');
-  // ★追加：リスタートボタン参照
-  const btnRestart    = document.getElementById('btnRestart');
 
-  // ★追加：クリック処理
-  btnRestart.addEventListener('click', ()=>{
-    if (!state.isHost) return;
-    if (!confirm('リセットしますか？')) return;
-    doFullReset();
-  });
-// 在室者(participants)にいない uid の colors を削除し、名前がズレていれば整合させる
-async function cleanColorsKeepingParticipants(){
-const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-const colorsSnap = await get(ref(db, `rooms/${state.code}/colors`));
-const ps = psSnap.val() || {};
-const colors = colorsSnap.val() || {};
-const psNameByUid = Object.fromEntries(Object.entries(ps).map(([uid, v])=>[uid, v?.name||'']));
-
-for (const [colorId, claim] of Object.entries(colors)){
-  const uid = claim?.uid;
-  const nameInColors = claim?.name || '';
-  if (!uid){
-    // uid が無い壊れレコードのみスキップ（削除はしない）
-    continue;
-  }
-  // participants に同名が居れば名前だけ整合（居なくても削除しない）
-  const nameInParticipants = psNameByUid[uid] || '';
-  if (nameInParticipants && nameInParticipants !== nameInColors){
-    updates[`rooms/${state.code}/colors/${colorId}`] = {
-      uid,
-      name: nameInParticipants,
-      at: Date.now(),
-    };
-  }
-}
-
-
-  if (Object.keys(updates).length){
-    await update(ref(db), updates);
-  }
-}
-
-  
 
 function shuffleArray(arr){
   const a = arr.slice();
@@ -527,93 +486,6 @@ function shuffleArray(arr){
   return a;
 }
 
-// NEW: 色を選んだ人（= colors に uid を持つ人）だけに正体カードを配る
-async function dealRolesByColors(){
-  const room = state.code;
-
-  // 色を選んだ人（colors）と、現在の入室者（participants）を取得
-// 現在の「色選択者（colors）」のみを取得（participants は参照しない）
-const colorsSnap = await get(ref(db, `rooms/${room}/colors`));
-const colors = colorsSnap.val() || {};
-
-// colors に載っている uid をユニークに収集（同一uidの多重登録は1回にまとめる）
-const seen = new Set();
-const uids = [];
-for (const claim of Object.values(colors)){
-  const uid = claim?.uid;
-  if (uid && !seen.has(uid)){
-    seen.add(uid);
-    uids.push(uid);
-  }
-}
-if (uids.length === 0) return; // 誰も色を選んでいなければ何もしない
-
-
-  // --- ここで「人数のルール」に従って、配布する正体カードの並びを用意する ---
-  // 既存プロジェクトに「人数→役職配分」を返す関数があるならそれを使う
-  // 例: computeRoleSetByHeadcount(n) が [ 'レイダーA', 'シャドウB', ... ] の配列を返す想定
-  let roleCards = [];
-  if (typeof computeRoleSetByHeadcount === 'function'){
-    roleCards = computeRoleSetByHeadcount(uids.length);
-  } else {
-    // フォールバック（仮）：ROLE_CARDS.* が定義されている前提で、均等っぽく配る
-    // ※ あなたの本来の配分ルールに合わせてここを差し替えてください
-    const pool = [];
-    if (Array.isArray(ROLE_CARDS?.shadow))  pool.push(...ROLE_CARDS.shadow);
-    if (Array.isArray(ROLE_CARDS?.raider))  pool.push(...ROLE_CARDS.raider);
-    if (Array.isArray(ROLE_CARDS?.citizen)) pool.push(...ROLE_CARDS.citizen);
-    roleCards = shuffleArray(pool).slice(0, uids.length);
-  }
-
-  // uid 側もシャッフルして 1:1 で割り当て
-  const shuffledUids = shuffleArray(uids);
-  const updates = {};
-  shuffledUids.forEach((uid, i)=>{
-    updates[`rooms/${room}/deal/v1/cards/${uid}`] = roleCards[i] ?? null;
-  });
-  updates[`rooms/${room}/deal/v1/at`] = Date.now();
-  await update(ref(db), updates);
-}
-
-
-  
-// ★追加：フルリセット処理
-async function doFullReset(){
-  const updates = {};
-
-  // 装備リセット
-  updates[`rooms/${state.code}/equipment`] = null;
-
-  // デッキを再シャッフルしてリセット
-  ['green','white','black'].forEach(deckId=>{
-    DECKS_DEF[deckId].cards = shuffleArray(DECKS_DEF[deckId].cards);
-    updates[`rooms/${state.code}/decks/${deckId}`] = { idx: -1, at: Date.now() };
-  });
-
-  // 正体カード削除
-  updates[`rooms/${state.code}/deal/v1/cards`] = null;
-
-  // 緑履歴削除
-  updates[`rooms/${state.code}/greenHistory`] = null;
-  await cleanColorsKeepingParticipants();
-
-  // 左長方形と星のアイコン削除
-  updates[`rooms/${state.code}/icons`] = null;
-  updates[`rooms/${state.code}/seats`] = null;
-  updates[`rooms/${state.code}/resetAt`] = Date.now();
-updates[`rooms/${state.code}/game/started`] = false; // ★ リスタート時に未開始へ
-
-  await update(ref(db), updates);
-
-  // ローカル状態を初期化
-  state.started = false;
-  show(colorModal, true); 
-  document.getElementById('btnRestart').classList.add('hidden');
-  document.getElementById('btnStart').classList.remove('hidden');  // ← ★追加（スタート復活）
-}
-
-
-  
 btnStart.addEventListener('click', async ()=>{
   if (!state.isHost) return;
 
@@ -629,15 +501,9 @@ btnStart.addEventListener('click', async ()=>{
   });
   await update(ref(db), updates);
 
-  // ★ 正体カードを再配布（人数ルールに従う）
-await dealRolesByColors();
-
   state.started = true;
-  show(colorModal, false);
-  document.getElementById('btnRestart').classList.remove('hidden');
-  document.getElementById('btnStart').classList.add('hidden');
+  show(colorModal, false); // 既存処理をそのまま残す
 });
-
 
 
   
@@ -666,7 +532,6 @@ const state = {
   dragSettleGuardUid: null,  // ★ 追加：ドロップ直後のエコー抑止
   dragSettleGuardUntil: 0,   // ★ 追加：抑止の期限(ms)
   deckClicksLeft: 0,         // ★ 追加：ダイス後に山札（裏）をめくれる残回数（ローカル）
- resetSeenAt: 0,  
 };
 
 
@@ -836,6 +701,7 @@ if (!myHasCard && oldCard){
     btn.onclick = ()=>{
       const url = new URL(location.href);
       url.searchParams.set('room', state.code);
+      url.searchParams.set('name', state.name);
       navigator.clipboard.writeText(url.toString());
       btn.textContent = 'コピー済み！';
       setTimeout(()=> btn.textContent='リンクコピー', 1200);
@@ -1187,28 +1053,6 @@ if (backEl){
 
   state.unsub.push(off);
   state.unsub.push(offDice);
-
-  // ★追加：リセット通知（resetAt）を購読：更新されたら全員を色選択へ戻す
-  const resetRef = ref(db, `rooms/${state.code}/resetAt`);
-  const offReset = onValue(resetRef, (snap)=>{
-    if (!snap.exists()) return;
-    const t = Number(snap.val() || 0);
-    if (!t) return;
-
-    // 初回や同一値への重複反応を抑制
-    if (t === state.resetSeenAt) return;
-    state.resetSeenAt = t;
-
-    // 全員いっせいに色選択に戻す
-    state.started = false;
-    show(colorModal, true);
-
-    // ボタン表示もスタート寄りに戻す（要素未生成ガードつき）
-    document.getElementById('btnRestart')?.classList.add('hidden');
-    document.getElementById('btnStart')?.classList.remove('hidden');
-  });
-  state.unsub.push(offReset);
-  
 }
 
 
@@ -1860,100 +1704,40 @@ const ROLE_DISTRIBUTION = {
  10: { raider:3, shadow:3, citizen:4 },
 };
 
-// ▼ 正体カードを人数ルールでシャッフル配布
-async function dealRolesByHeadcount(){
-  // 参加者一覧取得
+async function hostStartIfNotStarted(){
+  const startedRef = ref(db, `rooms/${state.code}/game/started`);
+  const startedSnap = await get(startedRef);
+  if (startedSnap.val()) return;
+
+  // 参加者
   const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
   const ps = psSnap.val() || {};
   const uids = Object.keys(ps);
   if (uids.length === 0) return;
 
   const dist = ROLE_DISTRIBUTION[uids.length];
-  if (!dist) return; // 未定義人数はスキップ
+  if (!dist) return;
 
-  // シャッフル用
-  const shuffle = (arr) => {
-    const a = arr.slice();
-    for (let i=a.length-1;i>0;i--){
-      const j = Math.floor(Math.random()*(i+1));
-      [a[i],a[j]] = [a[j],a[i]];
-    }
-    return a;
-  };
+  // 各役職ごとにシャッフル
+  function shuffle(arr){ return [...arr].sort(()=>Math.random()-0.5); }
+  const raiders  = shuffle(ROLE_CARDS.raider).slice(0, dist.raider);
+  const shadows  = shuffle(ROLE_CARDS.shadow).slice(0, dist.shadow);
+  const citizens = shuffle(ROLE_CARDS.citizen).slice(0, dist.citizen);
 
-  // 各役職から必要数を無作為抽出
-  const pick = (arr, n) => shuffle(arr).slice(0, Math.max(0,n));
-  const chosen = [
-    ...pick(ROLE_CARDS.raider,   dist.raider),
-    ...pick(ROLE_CARDS.shadow,   dist.shadow),
-    ...pick(ROLE_CARDS.citizen,  dist.citizen),
-  ];
+  const selected = shuffle([...raiders, ...shadows, ...citizens]);
 
-  // 最終配布順もシャッフル
-  const finalDeck = shuffle(chosen);
-
-  // UID順に割り当て（人数と枚数は ROLE_DISTRIBUTION で一致している想定）
+  // 参加者に割り当て
   const assign = {};
-  uids.forEach((uid, i) => { assign[uid] = finalDeck[i] || null; });
-
-  // DB へ書き込み
-  await update(ref(db), {
-    [`rooms/${state.code}/deal/v1/cards`]: assign,
-    [`rooms/${state.code}/deal/v1/at`]: Date.now(),
-    [`rooms/${state.code}/game/started`]: true
+  uids.forEach((uid, i)=>{
+    assign[uid] = selected[i];
   });
-}
 
+  const updates = {};
+  updates[`rooms/${state.code}/deal/v1/cards`] = assign;
+  updates[`rooms/${state.code}/deal/v1/at`] = Date.now();
+  updates[`rooms/${state.code}/game/started`] = true;
 
-  
-async function hostStartIfNotStarted(){
-  const startedRef = ref(db, `rooms/${state.code}/game/started`);
-  const startedSnap = await get(startedRef);
-  if (startedSnap.val()) return;
-
-  // 色を選んだ人（colors）∩ 在室者（participants）だけを対象
-  const [colorsSnap, partsSnap] = await Promise.all([
-    get(ref(db, `rooms/${state.code}/colors`)),
-    get(ref(db, `rooms/${state.code}/participants`))
-  ]);
-  const colors = colorsSnap.val() || {};
-  const parts  = partsSnap.val()  || {};
-  const uids = [];
-  for (const claim of Object.values(colors)){
-    const uid = claim?.uid;
-    if (uid && parts[uid]) uids.push(uid);
-  }
-  if (uids.length === 0) return;
-
-  // 役職セットを決定（既存の優先度：computeRoleSetByHeadcount → ROLE_DISTRIBUTION → フォールバック）
-  let selected;
-  if (typeof computeRoleSetByHeadcount === 'function'){
-    selected = computeRoleSetByHeadcount(uids.length);
-  } else if (ROLE_DISTRIBUTION && ROLE_DISTRIBUTION[uids.length]){
-    const dist = ROLE_DISTRIBUTION[uids.length];
-    const shuffle = arr => [...arr].sort(()=>Math.random()-0.5);
-    const raiders  = shuffle(ROLE_CARDS.raider).slice(0, dist.raider);
-    const shadows  = shuffle(ROLE_CARDS.shadow).slice(0, dist.shadow);
-    const citizens = shuffle(ROLE_CARDS.citizen).slice(0, dist.citizen);
-    selected = shuffle([...raiders, ...shadows, ...citizens]);
-  } else {
-    const pool = [];
-    if (Array.isArray(ROLE_CARDS?.shadow))  pool.push(...ROLE_CARDS.shadow);
-    if (Array.isArray(ROLE_CARDS?.raider))  pool.push(...ROLE_CARDS.raider);
-    if (Array.isArray(ROLE_CARDS?.citizen)) pool.push(...ROLE_CARDS.citizen);
-    selected = shuffleArray(pool).slice(0, uids.length);
-  }
-
-  // UIDもシャッフルして1:1割当
-  const shuffledUids = shuffleArray(uids);
-  const assign = {};
-  shuffledUids.forEach((uid, i)=> assign[uid] = selected[i] ?? null);
-
-  await update(ref(db), {
-    [`rooms/${state.code}/deal/v1/cards`]: assign,
-    [`rooms/${state.code}/deal/v1/at`]: Date.now(),
-    [`rooms/${state.code}/game/started`]: true
-  });
+  await update(ref(db), updates);
 }
 
   
@@ -2739,7 +2523,11 @@ async function becomeHostIfVacant(){
       hostPanel.classList.toggle('hidden');
     };
 
-
+    btnStart.onclick = async ()=>{
+      if (!state.isHost) return;
+      await hostStartIfNotStarted();
+      hostPanel.classList.add('hidden');
+    };
     // カードビューア：外側クリックで閉じる
     dealViewer.addEventListener('click', (e)=>{
       if (e.target === dealViewer) show(dealViewer, false);
