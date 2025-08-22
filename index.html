@@ -494,6 +494,33 @@ function rollBothDice(){
   const hostPanel     = document.getElementById('hostPanel');
   const btnStart      = document.getElementById('btnStart');
 
+btnStart.addEventListener('click', async ()=>{
+  if (!state.started){
+    // スタート時の処理
+    state.started = true;
+    btnStart.textContent = 'リセット';
+
+    // TODO: 必要ならここで正体カード配布など開始処理を呼ぶ
+  }else{
+    // リセット時の処理
+    if (!confirm('リセットしますか？')) return;
+
+    const updates = {};
+    updates[`rooms/${state.code}/icons`] = null;
+    updates[`rooms/${state.code}/equipment`] = null;
+    updates[`rooms/${state.code}/greenHistory`] = null;
+    updates[`rooms/${state.code}/deal/v1/cards`] = null;
+    updates[`rooms/${state.code}/resetAt`] = Date.now();
+    await update(ref(db), updates);
+
+    // ローカル状態をリセット
+    state.started = false;
+    show(colorModal, true);   // 色選択画面を再表示
+    btnStart.textContent = 'スタート';
+  }
+});
+
+  
   const colorModal    = document.getElementById('colorModal');
   const colorGrid     = document.getElementById('colorGrid');
 
