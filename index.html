@@ -496,20 +496,24 @@ function shuffleArray(arr){
   return a;
 }
 // ★追加：フルリセット処理
+async function doFullReset(){// ★修正：フルリセット処理（配り直しまでやる）
 async function doFullReset(){
   const updates = {};
 
   // 装備リセット
   updates[`rooms/${state.code}/equipment`] = null;
 
-  // デッキを再シャッフルしてリセット
+  // デッキ：再シャッフル & 初期化
   ['green','white','black'].forEach(deckId=>{
     DECKS_DEF[deckId].cards = shuffleArray(DECKS_DEF[deckId].cards);
     updates[`rooms/${state.code}/decks/${deckId}`] = { idx: -1, at: Date.now() };
   });
 
-  // 正体カード削除
+  // 正体カード削除（前のカード記録を削除）
   updates[`rooms/${state.code}/deal/v1/cards`] = null;
+
+  // ★重要：ゲーム開始フラグを下げる（これが無いと再配布が走らない）
+  updates[`rooms/${state.code}/game/started`] = false;
 
   // 緑履歴削除
   updates[`rooms/${state.code}/greenHistory`] = null;
@@ -520,11 +524,18 @@ async function doFullReset(){
 
   await update(ref(db), updates);
 
-  // ローカル状態を初期化
-  state.started = false;
-  show(colorModal, true); 
-  document.getElementById('btnRestart').classList.add('hidden');
+  // ★ここで即配り直し（人数に従って再配布）
+  //   hostStartIfNotStarted() は game/started が false の時だけ配る仕様
+  await hostStartIfNotStarted();  // ← 引用の通り started が true だと return される :contentReference[oaicite:3]{index=3}
+
+  // ローカルUI調整（必要なら色選択を閉じたままでもOK）
+  state.started = true; // 再配布が完了したので true に戻す
+  show(colorModal, false);
+
+  document.getElementById('btnStart').classList.add('hidden');
+  document.getElementById('btnRestart').classList.remove('hidden');
 }
+
 
 
   
@@ -545,6 +556,7 @@ btnStart.addEventListener('click', async ()=>{
 
   state.started = true;
   show(colorModal, false); // 既存処理をそのまま残す
+  document.getElementById('btnStart').classList.add('hidden');
   document.getElementById('btnRestart').classList.remove('hidden');
 });
 
