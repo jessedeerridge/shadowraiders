@@ -90,7 +90,18 @@
   /* 自分用：配られたカード（右下に小さな黒裏） */
   #myDealMini{position:fixed;right:16px;bottom:16px;width:60px;height:90px;border-radius:10px;border:1px solid #000;background:#000;color:#fff;
     display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2147483600}
-  #dealViewer .deal-card{min-width:240px;min-height:360px;border:1px solid #111;border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:42px;font-weight:900;padding:20px}
+#dealViewer .deal-card{
+  width:260px;            /* 固定幅 */
+  aspect-ratio: 2 / 3;    /* 比率固定。文字量の影響を受けない */
+  border:1px solid #111; border-radius:14px; background:#fff;
+  display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start;
+  padding:12px; box-sizing:border-box; /* 文字量に依存しない安定表示 */
+  font-size:14px; font-weight:400;
+}
+/* 拡大カード内部の見出し行と本文 */
+.deal-head{ display:flex; justify-content:space-between; align-items:center; font-weight:900; font-size:18px; }
+.deal-role{ font-weight:900; }
+.deal-body{ margin-top:8px; line-height:1.5; overflow:auto; }
 
   /* ホスト削除ポップ（既存） */
   .popover{
@@ -1179,63 +1190,87 @@ function makeEquipIcon(name, colorName){
     state.unsub.push(off);
   }
 
-// ====== 正体カード定義 ======
-// ====== 正体カード定義（差し替え） ======
-const ROLE_CARDS = {
-  raider: [
-    { name:"Eエミ", role:"レイダー", detail:"シャドウが全員脱落する" },
-    { name:"Eエマ", role:"レイダー", detail:"シャドウが全員脱落する" },
-    { name:"Eエリカ", role:"レイダー", detail:"シャドウが全員脱落する" },
-    { name:"Fフェリックス", role:"レイダー", detail:"シャドウが全員脱落する" },
-    { name:"Fフレディ", role:"レイダー", detail:"シャドウが全員脱落する" },
-    { name:"Fフェリシア", role:"レイダー", detail:"シャドウが全員脱落する" },
-    { name:"Gゴードン", role:"レイダー", detail:"シャドウが全員脱落する" },
-    { name:"Gゴドウィン", role:"レイダー", detail:"シャドウが全員脱落する" },
-    { name:"Gグラハド", role:"レイダー", detail:"シャドウが全員脱落する" },
-  ],
-  shadow: [
-    { name:"Uウルリッヒ", role:"シャドウ", detail:"レイダーが全滅する。またはシチズンが3人全滅する" },
-    { name:"Uウラヌス", role:"シャドウ", detail:"レイダーが全滅する。またはシチズンが3人全滅する" },
-    { name:"Uアルスター", role:"シャドウ", detail:"レイダーが全滅する。またはシチズンが3人全滅する" },
-    { name:"Vヴァンパイア", role:"シャドウ", detail:"レイダーが全滅する。またはシチズンが3人全滅する" },
-    { name:"Vヴェンデッタ", role:"シャドウ", detail:"レイダーが全滅する。またはシチズンが3人全滅する" },
-    { name:"Vヴェノム", role:"シャドウ", detail:"レイダーが全滅する。またはシチズンが3人全滅する" },
-    { name:"Wワーウルフ", role:"シャドウ", detail:"レイダーが全滅する。またはシチズンが3人全滅する" },
-    { name:"Wワイト", role:"シャドウ", detail:"レイダーが全滅する。またはシチズンが3人全滅する" },
-    { name:"Wワルプルギス", role:"シャドウ", detail:"レイダーが全滅する。またはシチズンが3人全滅する" },
-  ],
-  citizen: [
-    { name:"Aアリス", role:"シチズン", detail:"" },
-    { name:"Aアンジェラ", role:"シチズン", detail:"" },
-    { name:"Aアガサ", role:"シチズン", detail:"" },
-    { name:"Bバイロン", role:"シチズン", detail:"" },
-    { name:"Bベンジャミン", role:"シチズン", detail:"" },
-    { name:"Bブルース", role:"シチズン", detail:"" },
-    { name:"Cクレイグ", role:"シチズン", detail:"" },
-    { name:"Cクレア", role:"シチズン", detail:"" },
-    { name:"Cキャロル", role:"シチズン", detail:"" },
-    { name:"Dダニエル", role:"シチズン", detail:"" },
-    { name:"Dデーヴィッド", role:"シチズン", detail:"" },
-    { name:"Dデボラ", role:"シチズン", detail:"" },
-  ]
+/* ====== 正体カード定義（構造化） ======
+ * DBには cardId（例:'Eエミ'）の文字列だけを保存する。
+ * 表示は ROLE_CARD_DB を用いて描画する（[object Object]対策）。
+ */
+const ROLE_CARD_DB = {
+  // レイダー（E/F/G） 1〜9（数字は表示しない）
+  'Eエミ':        { name:'Eエミ',        role:'レイダー', detail:'シャドウが全員脱落する。' },
+  'Eエマ':        { name:'Eエマ',        role:'レイダー', detail:'シャドウが全員脱落する。' },
+  'Eエリカ':      { name:'Eエリカ',      role:'レイダー', detail:'シャドウが全員脱落する。' },
+  'Fフェリックス':{ name:'Fフェリックス',role:'レイダー', detail:'シャドウが全員脱落する。' },
+  'Fフレディ':    { name:'Fフレディ',    role:'レイダー', detail:'シャドウが全員脱落する。' },
+  'Fフェリシア':  { name:'Fフェリシア',  role:'レイダー', detail:'シャドウが全員脱落する。' },
+  'Gゴードン':    { name:'Gゴードン',    role:'レイダー', detail:'シャドウが全員脱落する。' },
+  'Gゴドウィン':  { name:'Gゴドウィン',  role:'レイダー', detail:'シャドウが全員脱落する。' },
+  'Gグラハド':    { name:'Gグラハド',    role:'レイダー', detail:'シャドウが全員脱落する。' },
+
+  // シャドウ（U/V/W） 10〜18
+  'Uウルリッヒ':  { name:'Uウルリッヒ',  role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+  'Uウラヌス':    { name:'Uウラヌス',    role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+  'Uアルスター':  { name:'Uアルスター',  role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+  'Vヴァンパイア':{ name:'Vヴァンパイア',role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+  'Vヴェンデッタ':{ name:'Vヴェンデッタ',role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+  'Vヴェノム':    { name:'Vヴェノム',    role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+  'Wワーウルフ':  { name:'Wワーウルフ',  role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+  'Wワイト':      { name:'Wワイト',      role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+  'Wワルプルギス':{ name:'Wワルプルギス',role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+
+  // シチズン（A/B/C/D） 19〜30（詳細文なし）
+  'Aアリス':      { name:'Aアリス',      role:'シチズン', detail:'' },
+  'Aアンジェラ':  { name:'Aアンジェラ',  role:'シチズン', detail:'' },
+  'Aアガサ':      { name:'Aアガサ',      role:'シチズン', detail:'' },
+  'Bバイロン':    { name:'Bバイロン',    role:'シチズン', detail:'' },
+  'Bベンジャミン':{ name:'Bベンジャミン',role:'シチズン', detail:'' },
+  'Bブルース':    { name:'Bブルース',    role:'シチズン', detail:'' },
+  'Cクレイグ':    { name:'Cクレイグ',    role:'シチズン', detail:'' },
+  'Cクレア':      { name:'Cクレア',      role:'シチズン', detail:'' },
+  'Cキャロル':    { name:'Cキャロル',    role:'シチズン', detail:'' },
+  'Dダニエル':    { name:'Dダニエル',    role:'シチズン', detail:'' },
+  'Dデーヴィッド':{ name:'Dデーヴィッド',role:'シチズン', detail:'' },
+  'Dデボラ':      { name:'Dデボラ',      role:'シチズン', detail:'' },
 };
 
-// 追加：カード(オブジェクト or 文字列)から役職名を取り出す
-function getRoleFromCard(card){
-  if (!card) return null;
-  // オブジェクト保存版（今回の実装）
-  if (typeof card === 'object' && card.role) return card.role;
+/* 抽選用の役職→ID一覧（DB保存はこれらの文字列） */
+const ROLE_CARDS = {
+  raider:  ['Eエミ','Eエマ','Eエリカ','Fフェリックス','Fフレディ','Fフェリシア','Gゴードン','Gゴドウィン','Gグラハド'],
+  shadow:  ['Uウルリッヒ','Uウラヌス','Uアルスター','Vヴァンパイア','Vヴェンデッタ','Vヴェノム','Wワーウルフ','Wワイト','Wワルプルギス'],
+  citizen: ['Aアリス','Aアンジェラ','Aアガサ','Bバイロン','Bベンジャミン','Bブルース','Cクレイグ','Cクレア','Cキャロル','Dダニエル','Dデーヴィッド','Dデボラ'],
+};
 
-  // 旧データなど、文字列で保存されていた場合に備えたフォールバック
-  if (typeof card === 'string'){
-    if (ROLE_CARDS?.raider?.some(c => c.name === card))  return 'レイダー';
-    if (ROLE_CARDS?.shadow?.some(c => c.name === card))  return 'シャドウ';
-    if (ROLE_CARDS?.citizen?.some(c => c.name === card)) return 'シチズン';
-  }
-  return null;
+/* 役職ID→役職名 */
+function getRoleOfCardId(cardId){
+  return ROLE_CARD_DB[cardId]?.role || null;
 }
 
+/* 役職に応じた配色（拡大／公開共通） */
+function applyRoleTheme(el, role){
+  if (!el) return;
+  if (role === 'シャドウ'){ el.style.background = '#1e88e5'; el.style.color = '#fff'; }
+  else if (role === 'レイダー'){ el.style.background = '#e53935'; el.style.color = '#fff'; }
+  else if (role === 'シチズン'){ el.style.background = '#fdd835'; el.style.color = '#111'; }
+  else { el.style.background = '#fff'; el.style.color = '#111'; }
+}
+
+/* 拡大カードの中身を「名前（役職）／詳細」で描画 */
+function renderDealCardFaceById(cardId){
+  const info = ROLE_CARD_DB[cardId];
+  if (!info){
+    // 緑・白・黒など別カードのときは従来通り
+    dealCardFace.textContent = String(cardId || '？');
+    dealCardFace.style.fontSize = '42px';
+    return;
+  }
+  dealCardFace.innerHTML =
+    `<div class="deal-head"><span>${info.name}</span><span class="deal-role">（${info.role}）</span></div>` +
+    `<div class="deal-body">${info.detail || ''}</div>`;
+  applyRoleTheme(dealCardFace, info.role);
+  dealCardFace.style.fontSize = ''; // テキスト量に依存しない
+}
   
+
+
 
 // 人数ごとの役職割り当て
 const ROLE_DISTRIBUTION = {
@@ -1296,41 +1331,37 @@ function observeMyDeal(){
     const has = !!val;
     show(myDealMini, has);
     if (has){
-      myDealMini.onclick = ()=>{
-// 自分のカード表示（val はオブジェクトが来る）
-const cardObj  = (val && typeof val === 'object') ? val : null;
-const cardName = cardObj ? cardObj.name : String(val || '');
-const cardRole = getRoleFromCard(val);
+myDealMini.onclick = ()=>{
+  // 自分のカード（= DBにはID文字列）を拡大表示
+  state.currentOpenCardId = String(val || '');   // ← ★ 公開ボタン用に保持
+  renderDealCardFaceById(state.currentOpenCardId);
+  show(dealViewer, true);
 
-// 表示：「上部=名前（役職）」「下部=詳細」
-dealCardFace.innerHTML = `
-  <div style="font-size:20px;font-weight:800;">${cardName}${cardRole ? `（${cardRole}）` : ''}</div>
-  <div style="margin-top:8px;font-size:14px;">${cardObj?.detail || ''}</div>
-`;
+  // ☆ 拡大カードを押すと「公開する」または緑共有の分岐
+  dealCardFace.onclick = ()=>{
+    const valNow = state.currentOpenCardId || '';
+    if (DECKS_DEF.green.cards.includes(valNow)){
+      showParticipantSelectPopup(valNow); // 緑カードは既存フロー
+      return;
+    }
+    // 正体カードなどは「公開する」ポップ
+    const pop = document.getElementById('revealPopover');
+    if (!pop) return;
+    pop.classList.remove('hidden');
+    const r = dealCardFace.getBoundingClientRect();
+    pop.style.left = (r.left + r.width/2 - 60) + 'px';
+    pop.style.top  = (r.top  + r.height/2 - 25) + 'px';
 
-// 色分け（役職）
-if (cardRole === 'シャドウ') {
-  dealCardFace.style.background = '#1e88e5'; // 青
-  dealCardFace.style.color = '#fff';
-} else if (cardRole === 'レイダー') {
-  dealCardFace.style.background = '#e53935'; // 赤
-  dealCardFace.style.color = '#fff';
-} else if (cardRole === 'シチズン') {
-  dealCardFace.style.background = '#fdd835'; // 黄
-  dealCardFace.style.color = '#111';
-} else {
-  dealCardFace.style.background = '#fff';
-  dealCardFace.style.color = '#111';
-}
-
-// 後続で使えるように保存
-dealCardFace.dataset.role = cardRole || '';
-dealCardFace.dataset.cardName = cardName;
-
-show(dealViewer, true);
-
-
-show(dealViewer, true);
+    setTimeout(()=>{
+      const onDocClick = (e)=>{
+        if (pop.contains(e.target)) return;
+        pop.classList.add('hidden');
+        document.removeEventListener('click', onDocClick, true);
+      };
+      document.addEventListener('click', onDocClick, true);
+    }, 0);
+  };
+};
 
 
         // ☆ 追加：拡大カードを押すと「公開する」ポップ表示
@@ -1376,18 +1407,18 @@ dealCardFace.onclick = ()=>{
 const btnReveal = document.getElementById('btnReveal');
 if (btnReveal){
   btnReveal.onclick = async ()=>{
-    const val = (dealCardFace.textContent || '').trim();
-    if (!val) return;
+    const cardId = String(state.currentOpenCardId || '').trim();
+    if (!cardId) return;
 
     // 1) 全員に1秒だけ拡大画像を共有
-    await set(ref(db, `rooms/${state.code}/reveal/${state.uid}`), { card: val, at: Date.now() });
+    await set(ref(db, `rooms/${state.code}/reveal/${state.uid}`), { card: cardId, at: Date.now() });
     setTimeout(()=> remove(ref(db, `rooms/${state.code}/reveal/${state.uid}`)), 1000);
 
     // 2) 装備所持データに追加（左端に来るよう render 側も修正する）
     const updates = {};
     // 既存のカードを壊さずマージしたいので、軽く read→write でもOKだが
     // ここでは単純にこのカードフラグを true で立てる
-    updates[`rooms/${state.code}/equipment/${state.uid}/${val}`] = true;
+    updates[`rooms/${state.code}/equipment/${state.uid}/${cardId}`] = true;
     updates[`rooms/${state.code}/equipment_at`] = Date.now();
     await update(ref(db), updates);
 
@@ -1398,7 +1429,6 @@ if (btnReveal){
   };
 }
 
-// ☆ 追加：公開購読（全員の画面で1秒だけ拡大カードを表示）
 function observeReveals(){
   const refAll = ref(db, `rooms/${state.code}/reveal`);
   const off = onValue(refAll, (snap)=>{
@@ -1406,20 +1436,26 @@ function observeReveals(){
     const any = Object.values(all)[0];
     if (!any) return;
 
-    // 表示内容
-    dealCardFace.textContent = any.card || '？';
+    const c = any.card || '';
 
-    // 配色（デッキ色優先）
-    if (DECKS_DEF.white.cards.includes(any.card)) {
-      applyDeckTheme(dealCardFace,'white');
-    } else if (DECKS_DEF.black.cards.includes(any.card)) {
-      applyDeckTheme(dealCardFace,'black');
-    } else if (DECKS_DEF.green.cards.includes(any.card)) {
-      applyDeckTheme(dealCardFace,'green');
-    } else {
-      dealCardFace.style.background = '#fff';
-      dealCardFace.style.color = '#111';
+    // 役職カードIDなら構造描画、そうでなければ従来のデッキ配色
+    if (ROLE_CARD_DB[c]){
+      renderDealCardFaceById(c);
+    }else{
+      dealCardFace.textContent = String(c || '？');
+      if (DECKS_DEF.white.cards.includes(c)) applyDeckTheme(dealCardFace,'white');
+      else if (DECKS_DEF.black.cards.includes(c)) applyDeckTheme(dealCardFace,'black');
+      else if (DECKS_DEF.green.cards.includes(c)) applyDeckTheme(dealCardFace,'green');
+      else { dealCardFace.style.background = '#fff'; dealCardFace.style.color = '#111'; }
     }
+
+    state.pinDealViewer = true;
+    show(dealViewer, true);
+    setTimeout(()=>{ state.pinDealViewer = false; show(dealViewer,false); }, 1200);
+  });
+  state.unsub.push(off);
+}
+
 
     // 外側タップで閉じない
     state.pinDealViewer = true;
@@ -1533,19 +1569,21 @@ function showYesNoPopoverForGreen(cardText, fromUid){
     const myRoleCardSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${state.uid}`));
     const myRoleCard = myRoleCardSnap.val() || '';
 
-// DBから取ったカード(オブジェクト/文字列) → 役職名へ正規化
-const myRole = getRoleFromCard(myRoleCard);
+    // ROLE_CARDS（既存定義）で役職を特定
+// 自分の正体ID → 役職名
+const myRole = getRoleOfCardId(myRoleCard); // 'レイダー' | 'シャドウ' | 'シチズン' | null
 
+// 質問文（例：「あなたは レイダー か シャドウ？」や「正体カードを見せよ」）
+// ※「正体カードを見せよ」は別ハンドリングでOK（既存フロー）
+const containsRaider  = cardText.includes('レイダー');
+const containsShadow  = cardText.includes('シャドウ');
+const containsCitizen = cardText.includes('シチズン');
 
-    // 質問文に含まれる語と一致するか
-    const containsRaider  = cardText.includes('レイダー');
-    const containsShadow  = cardText.includes('シャドウ');
-    const containsCitizen = cardText.includes('シチズン');
-
-    const shouldYes =
-      (myRole === 'レイダー' && containsRaider) ||
-      (myRole === 'シャドウ' && containsShadow) ||
-      (myRole === 'シチズン' && containsCitizen);
+// （ ）内に自分の役職が含まれていれば「はい」
+const shouldYes =
+  (myRole === 'レイダー'  && containsRaider)  ||
+  (myRole === 'シャドウ'  && containsShadow)  ||
+  (myRole === 'シチズン' && containsCitizen);
 
     // --- ポップ生成（片方のみ表示） ---
     const pop = document.createElement('div');
