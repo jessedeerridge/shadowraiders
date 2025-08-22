@@ -868,10 +868,10 @@ if (!myHasCard && oldCard){
     label:'白',
     colorClass:'white',
     cards:['みみ','きき','ひひ','ぎぎ','しし','りり','にに','ちち','びび','じじ'],
-    equipIdx: ['みみ','きき','ひひ','ぎぎ]
+    equipIdx: [0,1,2,3,4,5,6,7,8]
   },
   black: { label:'黒', colorClass:'black', cards:['拳銃R','拳銃L','ガトリング','妖刀マサムネ','クロスボウガン','死神スコープ','死神スコープ ','サーベル','オリバーの子分','バナナの皮'],
-    equipIdx: [0,1,2,3,4,5,6,7,8]
+  equipNames: ['拳銃R','拳銃L','ガトリング','妖刀マサムネ','クロスボウガン','死神スコープ','サーベル','オリバーの子分']
 },
 };
 
@@ -1127,13 +1127,15 @@ async function advanceDeck(deckId, flipperUid){
   await set(deckPath, { idx: nextIdx, at: Date.now() });
 
   // ▼ 装備付与（白デッキのみ／equipIdx 該当時）
-  if ((deckId === 'white' || deckId === 'black')  &&  Array.isArray(def.equipIdx) && def.equipIdx.includes(nextIdx) && flipperUid){
-    const card = def.cards[nextIdx]; // 例: 'きき' など
-    const updates = {};
-    updates[`rooms/${state.code}/equipment/${flipperUid}/${card}`] = true;
-    updates[`rooms/${state.code}/equipment_at`] = Date.now();
-    await update(ref(db), updates);
-  }
+
+ const card = def.cards[nextIdx]; 
+ if ((deckId === 'white' || deckId === 'black')  
+     && Array.isArray(def.equipNames) && def.equipNames.includes(card) && flipperUid){
+   const updates = {};
+   updates[`rooms/${state.code}/equipment/${flipperUid}/${card}`] = true;
+   updates[`rooms/${state.code}/equipment_at`] = Date.now();
+   await update(ref(db), updates);
+ }
 }
 
 // ★ 追加：ブランク時の「山札を作る（シャッフル）」ポップ
