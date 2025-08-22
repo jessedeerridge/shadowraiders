@@ -1423,28 +1423,18 @@ function showParticipantSelectPopup(cardText){
       btn.className = 'btn';
       btn.textContent = (info?.name || '?');
       btn.style.width = '100%';
-      btn.onclick = async ()=>{
-        // 1) 相手に“共有”を書き込む
-        await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
-          card: cardText, from: state.uid, at: Date.now()
-        });
+ btn.onclick = async ()=>{
+  // 1) 相手に“共有”を書き込む
+  await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
+    card: cardText, from: state.uid, at: Date.now()
+  });
 
-        // 2) ★ ③ 履歴：送信ログを greenHistory に記録（answerは未確定）
-        //    push() でIDを採番し、 {type:'sent', from, to, card, answer:null, at} を保存
-        const hRef = ref(db, `rooms/${state.code}/greenHistory`);
-        const id = push(hRef).key;
-        await set(ref(db, `rooms/${state.code}/greenHistory/${id}`), {
-          type: 'sent',
-          from: state.uid,   // 送信者（自分）
-          to: uid,           // 受信者
-          card: cardText,    // 質問文
-          answer: null,      // この時点では未確定
-          at: Date.now()
-        });
+  // ※送信時は履歴に書かない（未回答は保存しない）
 
-        // 3) ポップを閉じる
-        pop.remove();
-      };
+  // 2) ポップを閉じる
+  pop.remove();
+};
+
       list.appendChild(btn);
     });
   });
