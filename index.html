@@ -1181,10 +1181,44 @@ function makeEquipIcon(name, colorName){
 
 // ====== 正体カード定義 ======
 const ROLE_CARDS = {
-  raider:  ['ああ','いい','うう','ええ','おお','かかか','ききき','くくく','けけけ'],
-  shadow:  ['さささ','ししし','すすす','せせせ','そそそ','たたた','ちちち','つつつ','ててて'],
-  citizen: ['ままま','みみみ','むむむ','めめめ','ももも','ががが'],
+  raider: [
+    { name:'エミ', role:'レイダー', detail:'シャドウが全員脱落する。' },
+    { name:'エマ', role:'レイダー', detail:'シャドウが全員脱落する。' },
+    { name:'エリカ', role:'レイダー', detail:'シャドウが全員脱落する。' },
+    { name:'フェリックス', role:'レイダー', detail:'シャドウが全員脱落する。' },
+    { name:'フレディ', role:'レイダー', detail:'シャドウが全員脱落する。' },
+    { name:'フェリシア', role:'レイダー', detail:'シャドウが全員脱落する。' },
+    { name:'ゴードン', role:'レイダー', detail:'シャドウが全員脱落する。' },
+    { name:'ゴドウィン', role:'レイダー', detail:'シャドウが全員脱落する。' },
+    { name:'グラハド', role:'レイダー', detail:'シャドウが全員脱落する。' },
+  ],
+  shadow: [
+    { name:'ウルリッヒ', role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+    { name:'ウラヌス', role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+    { name:'アルスター', role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+    { name:'ヴァンパイア', role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+    { name:'ヴェンデッタ', role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+    { name:'ヴェノム', role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+    { name:'ワーウルフ', role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+    { name:'ワイト', role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+    { name:'ワルプルギス', role:'シャドウ', detail:'レイダーが全滅する。またはシチズンが3人全滅する。' },
+  ],
+  citizen: [
+    { name:'アリス', role:'シチズン', detail:'' },
+    { name:'アンジェラ', role:'シチズン', detail:'' },
+    { name:'アガサ', role:'シチズン', detail:'' },
+    { name:'バイロン', role:'シチズン', detail:'' },
+    { name:'ベンジャミン', role:'シチズン', detail:'' },
+    { name:'ブルース', role:'シチズン', detail:'' },
+    { name:'クレイグ', role:'シチズン', detail:'' },
+    { name:'クレア', role:'シチズン', detail:'' },
+    { name:'キャロル', role:'シチズン', detail:'' },
+    { name:'ダニエル', role:'シチズン', detail:'' },
+    { name:'デーヴィッド', role:'シチズン', detail:'' },
+    { name:'デボラ', role:'シチズン', detail:'' },
+  ],
 };
+
 
 // 人数ごとの役職割り当て
 const ROLE_DISTRIBUTION = {
@@ -1247,8 +1281,15 @@ function observeMyDeal(){
     if (has){
       myDealMini.onclick = ()=>{
 // 自分のカード表示
-dealCardFace.textContent = String(val);
-
+dealCardFace.innerHTML = `
+  <div style="font-size:20px;font-weight:700;margin-bottom:8px">
+    ${cardObj.name}（${cardObj.role}）
+  </div>
+  <div style="font-size:14px;line-height:1.4">
+    ${cardObj.detail || ''}
+  </div>
+`;
+        
 // ★ 正体カードの色分け（拡大ビュー用）
 if (ROLE_CARDS.shadow.includes(val)) {
   dealCardFace.style.background = '#1e88e5'; // 青
@@ -1480,10 +1521,8 @@ function showYesNoPopoverForGreen(cardText, fromUid){
     const containsShadow  = cardText.includes('シャドウ');
     const containsCitizen = cardText.includes('シチズン');
 
-    const shouldYes =
-      (myRole === 'レイダー' && containsRaider) ||
-      (myRole === 'シャドウ' && containsShadow) ||
-      (myRole === 'シチズン' && containsCitizen);
+// 自分の正体カードのroleを取得済みとする（例: 'レイダー'）
+const shouldYes = cardText.includes(myRole);
 
     // --- ポップ生成（片方のみ表示） ---
     const pop = document.createElement('div');
