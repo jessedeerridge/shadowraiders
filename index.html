@@ -518,7 +518,6 @@ async function doFullReset(){
   updates[`rooms/${state.code}/icons`] = null;
   updates[`rooms/${state.code}/seats`] = null;
   updates[`rooms/${state.code}/resetAt`] = Date.now();
-  updates[`rooms/${state.code}/game/started`] = false;
 
   await update(ref(db), updates);
 
@@ -564,25 +563,7 @@ btnStart.addEventListener('click', async ()=>{
   const myDealMini    = document.getElementById('myDealMini');
   const dealViewer    = document.getElementById('dealViewer');
   const dealCardFace  = document.getElementById('dealCardFace');
-  // ★追加：ゲーム開始フラグの購読（全員共通）
-  const gameStartedRef = ref(db, `rooms/${state.code}/game/started`);
-  const offGame = onValue(gameStartedRef, (snap)=>{
-    const started = !!snap.val();
-    state.started = started;
-    // started=true なら色選択を閉じる／false なら開く
-    show(colorModal, !started);
 
-    // ボタン表示の同期（ホストのみリスタート可）
-    if (started){
-      document.getElementById('btnStart')?.classList.add('hidden');
-      if (state.isHost) document.getElementById('btnRestart')?.classList.remove('hidden');
-      else document.getElementById('btnRestart')?.classList.add('hidden');
-    }else{
-      document.getElementById('btnRestart')?.classList.add('hidden');
-      if (state.isHost) document.getElementById('btnStart')?.classList.remove('hidden');
-    }
-  });
-  state.unsub.push(offGame);
 // --- 状態 ---
 const state = {
   uid: crypto.randomUUID(),
