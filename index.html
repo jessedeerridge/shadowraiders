@@ -596,6 +596,46 @@ btnStart.addEventListener('click', async ()=>{
   const colorModal    = document.getElementById('colorModal');
   const colorGrid     = document.getElementById('colorGrid');
 
+// === 色選択タイルの生成（文字色も colorToStyle で統一） ===
+function renderColorGrid(){
+  if (!colorGrid) return;
+  colorGrid.innerHTML = '';
+  COLOR_LIST.forEach(c=>{
+    const tile = document.createElement('div');
+    tile.className = 'color-tile';
+    tile.style.background = c.bg;
+    if (c.border) tile.style.border = `1px solid ${c.border}`;
+
+    // ここで文字色を決定（ゲーム中と同じルール）
+    const { text } = colorToStyle(c.id);
+
+    // ラベル
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = c.name;
+    label.style.color = text;             // ★ 重要：黒固定をやめて適切な色に
+    // （もし白帯が邪魔なら） label.style.background = 'transparent';
+
+    // 取られている／自分の色など既存の装飾があればここで付与
+    // if (taken) tile.classList.add('taken-by-others');
+
+    tile.appendChild(label);
+
+    // クリックで色選択（あなたの既存の選択処理をここで呼ぶ）
+    tile.addEventListener('click', ()=> {
+      // chooseColor(c.id) など既存の関数を呼ぶ
+    });
+
+    colorGrid.appendChild(tile);
+  });
+}
+
+// モーダルを開くタイミングなど、最初に1回描画
+renderColorGrid();
+
+// 既に「onValue」で colors 変更を監視しているなら、そこで再描画してもOK
+
+  
   const myDealMini    = document.getElementById('myDealMini');
   const dealViewer    = document.getElementById('dealViewer');
   const dealCardFace  = document.getElementById('dealCardFace');
