@@ -1133,14 +1133,17 @@ async function advanceDeck(deckId, flipperUid){
   // 進行を保存（orderは維持）
   await set(deckPath, { idx: nextIdx, order: order || null, at: Date.now() });
 
- const card = def.cards[nextIdx]; 
- if ((deckId === 'white' || deckId === 'black')  
-     && Array.isArray(def.equipNames) && def.equipNames.includes(card) && flipperUid){
-   const updates = {};
-   updates[`rooms/${state.code}/equipment/${flipperUid}/${card}`] = true;
-   updates[`rooms/${state.code}/equipment_at`] = Date.now();
-   await update(ref(db), updates);
- }
+  if ((deckId === 'white' || deckId === 'black') && flipperUid){
+    const eqList = Array.isArray(def.equipNames) ? def.equipNames : [];
+    // 末尾・先頭空白の差を吸収して判定だけ厳密化（キーは実カード名をそのまま使う）
+    const eqSetTrim = new Set(eqList.map(s => String(s).trim()));
+    if (eqSetTrim.has(String(cardName).trim())){
+      const updates = {};
+      updates[`rooms/${state.code}/equipment/${flipperUid}/${cardName}`] = true;
+     updates[`rooms/${state.code}/equipment_at`] = Date.now();
+      await update(ref(db), updates);
+    }
+  }
 }
 
 // ★ 追加：ブランク時の「山札を作る（シャッフル）」ポップ
