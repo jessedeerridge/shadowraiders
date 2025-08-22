@@ -315,6 +315,22 @@ header{
   </button>
 </div>
 
+<!-- 奪うポップ -->
+<div id="stealPopover" class="hidden"
+     style="position:fixed; z-index:2147483607;
+            background:#fff; color:#000;
+            border:1px solid #111; border-radius:10px;
+            padding:8px 12px; box-shadow:0 6px 16px rgba(0,0,0,.12);
+            display:flex; align-items:center; justify-content:center;">
+  <button id="btnSteal"
+          style="padding:8px 14px; border:1px solid #ddd; border-radius:8px;
+                 background:#111; color:#fff; font-weight:700; cursor:pointer;">
+    奪う
+  </button>
+</div>
+
+
+  
 <!-- カード拡大ビューア -->
 <div id="dealViewer" class="modal hidden" role="dialog" aria-modal="true">
   <div class="modal-panel">
@@ -566,6 +582,63 @@ function colorizeDealFaceByCardName(cardName){
   dealCardFace.style.background = '#fff';
   dealCardFace.style.color = '#111';
 }
+
+
+// 拡大カード共通クリック（文脈で分岐）
+dealCardFace.addEventListener('click', ()=>{
+  const ctx = state.expandedContext || null;
+  const card = (dealCardFace.textContent || '').trim();
+
+  if (!ctx || ctx.source !== 'equip') return; // 装備欄からじゃなければ無視
+  if (ctx.ownerUid === state.uid) return;     // 自分の装備は無視
+  if (isRoleCard(card)) return;              // 正体カードは禁止
+
+  const pop = document.getElementById('stealPopover');
+  if (!pop) return;
+  pop.classList.remove('hidden');
+
+  const r = dealCardFace.getBoundingClientRect();
+  pop.style.left = (r.left + r.width/2 - 60) + 'px';
+  pop.style.top  = (r.top + r.height/2 - 25) + 'px';
+
+  // 外側クリックで閉じる
+  setTimeout(()=>{
+    const onDocClick = (e)=>{
+      if (pop.contains(e.target)) return;
+      pop.classList.add('hidden');
+      document.removeEventListener('click', onDocClick, true);
+    };
+    document.addEventListener('click', onDocClick, true);
+  }, 0);
+});
+
+
+  const btnSteal = document.getElementById('btnSteal');
+if (btnSteal){
+  btnSteal.onclick = async ()=>{
+    const ctx = state.expandedContext || null;
+    const card = (dealCardFace.textContent || '').trim();
+    if (!ctx || ctx.source !== 'equip') return;
+    if (!card || isRoleCard(card)) return;  // 正体カードは禁止
+    if (ctx.ownerUid === state.uid) return; // 自分の装備は対象外
+
+    try{
+      const updates = {};
+      updates[`rooms/${state.code}/equipment/${ctx.ownerUid}/${card}`] = null;
+      updates[`rooms/${state.code}/equipment/${state.uid}/${card}`] = true;
+      updates[`rooms/${state.code}/equipment_at`] = Date.now();
+      await update(ref(db), updates);
+
+      const pop = document.getElementById('stealPopover');
+      if (pop) pop.classList.add('hidden');
+      show(dealViewer, false);
+      state.expandedContext = null;
+    }catch(e){
+      console.error('steal failed', e);
+    }
+  };
+}
+
   
   // ===== 同名引継ぎ：旧UIDから「色」と「右下カード」を移す =====
   async function onlySelfHasThisName(){
@@ -1631,12 +1704,29 @@ function makeEquipIcon(name, colorName){
       holder.appendChild(makeEquipIcon(p.name, p.color));
 
       // 装備カード群
-      Object.keys(cards).forEach(card=>{
-        const cardDiv = document.createElement('div');
-        cardDiv.className = 'equip-card';
-        cardDiv.textContent = card;
-        holder.appendChild(cardDiv);
-      });
+// 装備カード群
+Object.keys(cards).forEach(cardName=>{
+  const cardDiv = document.createElement('div');
+  cardDiv.className = 'equip-card';
+  cardDiv.textContent = cardName;
+
+  // ① このカードが「誰の装備欄にあるか」を覚えておく
+  cardDiv.dataset.ownerUid = uid;
+  cardDiv.dataset.source   = 'equip';
+
+  // ② クリックで拡大ビューを開く（配色も適用）
+  cardDiv.onclick = ()=>{
+    dealCardFace.textContent = String(cardName);
+    colorizeDealFaceByCardName(cardName); // 既存ヘルパーを使って色付け :contentReference[oaicite:2]{index=2}
+
+    // ③ この拡大が「装備欄から来た」ことを覚える（奪う判定に使用）
+    state.expandedContext = { source:'equip', ownerUid: uid, cardName };
+
+    show(dealViewer, true);
+  };
+
+  holder.appendChild(cardDiv);
+});
 
       
       equipBar.appendChild(holder);
@@ -1675,7 +1765,11 @@ const ROLE_CARDS = {
     'Dダニエル','Dデーヴィッド','Dデボラ'
   ],
 };
-
+function isRoleCard(cardName){
+  return ROLE_CARDS.shadow.includes(cardName)
+      || ROLE_CARDS.raider.includes(cardName)
+      || ROLE_CARDS.citizen.includes(cardName);
+}
 
 // 人数ごとの役職割り当て
 const ROLE_DISTRIBUTION = {
@@ -1816,6 +1910,10 @@ dealCardFace.onclick = ()=>{
   });
   state.unsub.push(off);
 }
+
+
+
+  
 
 // ☆ 追加：公開ボタンの挙動（1秒間の公開→装備欄の左へ固定）
 const btnReveal = document.getElementById('btnReveal');
