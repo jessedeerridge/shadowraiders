@@ -201,8 +201,6 @@
   border:1px solid #111; border-radius:6px;
   display:flex; align-items:center; justify-content:center;
   font-size:14px; font-weight:700;
-  cursor:pointer;      /* 追加：クリック可能に見せる */
-  user-select:none;    /* 追加：ドラッグ選択を防いで操作感UP */
 }
 
 .diceimg{
@@ -793,6 +791,15 @@ function setupDecks(){
     { deck:'black', type:'back' },
     { deck:'black', type:'face' },
   ];
+// 追加：カード名からデッキ色を推定（装備カード用）
+function getDeckIdByCardName(name){
+  if (!name) return null;
+  const w = DECKS_DEF.white?.cards || [];
+  const b = DECKS_DEF.black?.cards || [];
+  if (w.includes(name)) return 'white';
+  if (b.includes(name)) return 'black';
+  return null; // 不明（正体カードなど）
+}
 
   // クリック用ヘルパ
   function attachFaceClick(faceEl, deckId){
@@ -1422,52 +1429,46 @@ function makeEquipIcon(name, colorName){
       holder.appendChild(makeEquipIcon(p.name, p.color));
 
       // 装備カード群
-      Object.keys(cards).forEach(card=>{
-        const cardDiv = document.createElement('div');
-cardDiv.className = 'equip-card';
-cardDiv.textContent = card;
+Object.keys(cards).forEach(card=>{
+  const cardDiv = document.createElement('div');
+  cardDiv.className = 'equip-card';
+  cardDiv.textContent = card;
 
-/* クリックで拡大表示＋色分け */
-cardDiv.addEventListener('click', ()=>{
-  // 表示文字
-  dealCardFace.textContent = card;
-
-  // 1) 役職カード（赤=レイダー / 青=シャドウ / 黄=シチズン）を最優先で判定
-  //    ※ 既存の ROLE_CARDS を利用（青/赤/黄の配色は他所と揃えています）
-  //       シャドウ=青 #1e88e5 / レイダー=赤 #e53935 / シチズン=黄 #fdd835
-  if (ROLE_CARDS.shadow.includes(card)) {
-    dealCardFace.style.background = '#1e88e5';  // 青
-    dealCardFace.style.color = '#fff';
-  } else if (ROLE_CARDS.raider.includes(card)) {
-    dealCardFace.style.background = '#e53935';  // 赤
-    dealCardFace.style.color = '#fff';
-  } else if (ROLE_CARDS.citizen.includes(card)) {
-    dealCardFace.style.background = '#fdd835';  // 黄
-    dealCardFace.style.color = '#111';
-  } else {
-    // 2) 役職でなければ、白/黒/緑のデッキ色で判定して拡大（既存関数を流用）
-    //    例：白表/黒表拡大でも applyDeckTheme を使っているのと同じ流れ
-    //         dealCardFace.textContent = ...; applyDeckTheme(...); show(...);
-    let deckId = null;
-    if (DECKS_DEF.white.cards.includes(card)) deckId = 'white';
-    else if (DECKS_DEF.black.cards.includes(card)) deckId = 'black';
-    else if (DECKS_DEF.green?.cards?.includes(card)) deckId = 'green';
-    if (deckId) {
-      applyDeckTheme(dealCardFace, deckId);
-    } else {
-      // 念のための保険（どれにも属さない特殊文字列など）
-      dealCardFace.style.background = '#fff';
-      dealCardFace.style.color = '#111';
-    }
+  // ▼ 追加：装備カードならデッキ色（white/black）を当てて保持
+  const deckTheme = getDeckIdByCardName(card);
+  if (deckTheme){
+    cardDiv.dataset.theme = deckTheme;         // 拡大時に再利用
+    applyDeckTheme(cardDiv, deckTheme);        // 小さな表示側もデッキ色に
   }
 
-  // モーダルを開く
-  show(dealViewer, true);
+  // ▼ 追加：クリックで拡大（色は「登録通り＝表示通り」を維持）
+  cardDiv.addEventListener('click', ()=>{
+    dealCardFace.textContent = card;
+
+    // 1) テーマがあればテーマ適用
+    if (cardDiv.dataset.theme){
+      applyDeckTheme(dealCardFace, cardDiv.dataset.theme);
+    } else {
+      // 2) 不明（正体カードなど）は“今表示されている色”をそのままコピー
+      const cs = getComputedStyle(cardDiv);
+      dealCardFace.style.background = cs.backgroundColor || '';
+      dealCardFace.style.color       = cs.color || '';
+    }
+
+    show(dealViewer, true);
+
+    // 外側クリックで閉じる（緑カードの固定表示を邪魔しない）
+    if (!state.pinDealViewer){
+      const onBgClick = (e)=>{
+        if (e.target === dealViewer) show(dealViewer, false);
+      };
+      dealViewer.addEventListener('click', onBgClick, { once:true });
+    }
+  });
+
+  holder.appendChild(cardDiv);
 });
 
-holder.appendChild(cardDiv);
-
-      });
 
       
       equipBar.appendChild(holder);
