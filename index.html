@@ -1654,9 +1654,13 @@ function observeGreenHistory(){
       .filter(r => r && r.from === state.uid)
       .sort((a,b)=> (a.at||0) - (b.at||0));
 
-    // 2) 参加者情報（名前・色）を取得
-    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-    const ps = psSnap.val() || {};
+// 2) 参加者情報（名前・色）を取得
+const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+const ps = psSnap.val() || {};
+
+// 2.5) 全員の正体カードMap（uid → カード文字列）
+const roleMapSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards`));
+const roleMap = roleMapSnap.val() || {};
 
   // 3) 描画：通常は「質問文 → アイコン ：はい／いいえ」
 //         特例（正体カードを見せよ）は「アイコン：正体カード」
@@ -1676,14 +1680,30 @@ mine.forEach(r=>{
   iconWrap.style.alignItems = 'center';
   iconWrap.appendChild(makeEquipIcon(name, color));
 
-  const isRevealOrder = (r.card && r.card.trim() === '正体カードを見せよ');
-  if (isRevealOrder){
-    // ▼ 特例表示：アイコン：正体カード（1行）
-    const lab = document.createElement('span');
-    lab.textContent = '：正体カード';
-    row.appendChild(iconWrap);
-    row.appendChild(lab);
-  }else{
+const isRevealOrder = (r.card && r.card.trim() === '正体カードを見せよ');
+if (isRevealOrder){
+  // ▼ 特例表示：アイコン ＋ 回答者の正体カード（色付き）
+  row.appendChild(iconWrap);
+
+  const mini = document.createElement('div');      // equip-card を流用
+  mini.className = 'equip-card';
+  const cardName = String(roleMap[to] || '？');    // 回答者(to)の実カード
+  mini.textContent = cardName;
+
+  // 役職ごとの色分け
+  if (ROLE_CARDS.shadow.includes(cardName)) {
+    mini.style.background = '#1e88e5'; mini.style.color = '#fff';  // シャドウ＝青
+  } else if (ROLE_CARDS.raider.includes(cardName)) {
+    mini.style.background = '#e53935'; mini.style.color = '#fff';  // レイダー＝赤
+  } else if (ROLE_CARDS.citizen.includes(cardName)) {
+    mini.style.background = '#fdd835'; mini.style.color = '#111';  // シチズン＝黄
+  } else {
+    mini.style.background = '#fff'; mini.style.color = '#111';     // 不明時
+  }
+
+  row.appendChild(mini);
+}else{
+
     // ▼ 従来表示
     const qSpan = document.createElement('span');
     qSpan.textContent = r.card;
