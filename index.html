@@ -537,18 +537,40 @@ btnStart.addEventListener('click', async ()=>{
   DECKS_DEF.white.cards = shuffleArray(DECKS_DEF.white.cards);
   DECKS_DEF.black.cards = shuffleArray(DECKS_DEF.black.cards);
 
-  // ★ DB側のインデックスをリセット
   const updates = {};
   ['green','white','black'].forEach(deckId=>{
     updates[`rooms/${state.code}/decks/${deckId}`] = { idx: -1, at: Date.now() };
   });
+
+  // ★ 参加者を取得して正体カードを再配布
+  const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+  const ps = psSnap.val() || {};
+  const uids = Object.keys(ps);
+
+  // 必要枚数を決定（例：全員に1枚）
+  let roles = [];
+  // 例：シャドウ2、レイダー2、残りはシチズン
+  roles = [
+    ...ROLE_CARDS.shadow.slice(0,2),
+    ...ROLE_CARDS.raider.slice(0,2),
+  ];
+  while(roles.length < uids.length){
+    roles.push(ROLE_CARDS.citizen[Math.floor(Math.random()*ROLE_CARDS.citizen.length)]);
+  }
+  roles = shuffleArray(roles);
+
+  uids.forEach((uid,i)=>{
+    updates[`rooms/${state.code}/deal/v1/cards/${uid}`] = roles[i];
+  });
+
   await update(ref(db), updates);
 
   state.started = true;
-  show(colorModal, false); // 既存処理をそのまま残す
-document.getElementById('btnRestart').classList.remove('hidden');
-  document.getElementById('btnStart').classList.add('hidden'); // ★ スタート後は非表示
+  show(colorModal, false);
+  document.getElementById('btnRestart').classList.remove('hidden');
+  document.getElementById('btnStart').classList.add('hidden');
 });
+
 
 
   
