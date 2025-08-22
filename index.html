@@ -528,6 +528,55 @@ function shuffleArray(arr){
   }
   return a;
 }
+
+// NEW: 色を選んだ人（= colors に uid を持つ人）だけに正体カードを配る
+async function dealRolesByColors(){
+  const room = state.code;
+
+  // 色を選んだ人（colors）と、現在の入室者（participants）を取得
+  const [colorsSnap, partsSnap] = await Promise.all([
+    get(ref(db, `rooms/${room}/colors`)),
+    get(ref(db, `rooms/${room}/participants`))
+  ]);
+  const colors = colorsSnap.val() || {};
+  const parts  = partsSnap.val()  || {};
+
+  // colors に登録された uid のうち、participants にも居る uid だけを対象にする（孤児除外）
+  const uids = [];
+  for (const claim of Object.values(colors)){
+    const uid = claim?.uid;
+    if (uid && parts[uid]) uids.push(uid);
+  }
+  if (uids.length === 0) return; // 誰も色を選んでいなければ何もしない
+
+  // --- ここで「人数のルール」に従って、配布する正体カードの並びを用意する ---
+  // 既存プロジェクトに「人数→役職配分」を返す関数があるならそれを使う
+  // 例: computeRoleSetByHeadcount(n) が [ 'レイダーA', 'シャドウB', ... ] の配列を返す想定
+  let roleCards = [];
+  if (typeof computeRoleSetByHeadcount === 'function'){
+    roleCards = computeRoleSetByHeadcount(uids.length);
+  } else {
+    // フォールバック（仮）：ROLE_CARDS.* が定義されている前提で、均等っぽく配る
+    // ※ あなたの本来の配分ルールに合わせてここを差し替えてください
+    const pool = [];
+    if (Array.isArray(ROLE_CARDS?.shadow))  pool.push(...ROLE_CARDS.shadow);
+    if (Array.isArray(ROLE_CARDS?.raider))  pool.push(...ROLE_CARDS.raider);
+    if (Array.isArray(ROLE_CARDS?.citizen)) pool.push(...ROLE_CARDS.citizen);
+    roleCards = shuffleArray(pool).slice(0, uids.length);
+  }
+
+  // uid 側もシャッフルして 1:1 で割り当て
+  const shuffledUids = shuffleArray(uids);
+  const updates = {};
+  shuffledUids.forEach((uid, i)=>{
+    updates[`rooms/${room}/deal/v1/cards/${uid}`] = roleCards[i] ?? null;
+  });
+  updates[`rooms/${room}/deal/v1/at`] = Date.now();
+  await update(ref(db), updates);
+}
+
+
+  
 // ★追加：フルリセット処理
 async function doFullReset(){
   const updates = {};
@@ -581,7 +630,7 @@ btnStart.addEventListener('click', async ()=>{
   await update(ref(db), updates);
 
   // ★ 正体カードを再配布（人数ルールに従う）
-  await dealRolesByHeadcount();
+await dealRolesByColors();
 
   state.started = true;
   show(colorModal, false);
