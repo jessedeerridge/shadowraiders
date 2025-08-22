@@ -1431,9 +1431,9 @@ function showParticipantSelectPopup(cardText){
 
         // 2) ★ ③ 履歴：送信ログを greenHistory に記録（answerは未確定）
         //    push() でIDを採番し、 {type:'sent', from, to, card, answer:null, at} を保存
-        const hRef = ref(db, `rooms/${state.code}/greenHistory`);
-        const id = push(hRef).key;
-        await set(ref(db, `rooms/${state.code}/greenHistory/${id}`), {
+ const hRef = ref(db, `rooms/${state.code}/greenHistoryBySender/${state.uid}`);
+ const id = push(hRef).key;
+ await set(ref(db, `rooms/${state.code}/greenHistoryBySender/${state.uid}/${id}`), { ... });
           type: 'sent',
           from: state.uid,   // 送信者（自分）
           to: uid,           // 受信者
@@ -1532,8 +1532,9 @@ function showYesNoPopoverForGreen(cardText, fromUid){
   });
 
   // ★ 履歴：回答を記録
-  const h2Ref = ref(db, `rooms/${state.code}/greenHistory`);
-  await set(ref(db, `rooms/${state.code}/greenHistory/${push(h2Ref).key}`), {
+ const h2Ref = ref(db, `rooms/${state.code}/greenHistoryBySender/${fromUid}`);
+ await set(ref(db, `rooms/${state.code}/greenHistoryBySender/${fromUid}/${push(h2Ref).key}`), {
+
     type: 'answered',
     from: fromUid,        // 送信者
     to: state.uid,        // 自分（回答者）
@@ -1599,28 +1600,48 @@ function observeGreenResult(){
 }
 
 
-// ★ 緑カード履歴購読 → #greenHistory にappend
+// ★ 緑カード履歴購読 → #greenHistory に append（送信者=自分の履歴だけ）
 function observeGreenHistory(){
   const box = document.getElementById('greenHistory');
   if (!box) return;
-  const q = query(ref(db, `rooms/${state.code}/greenHistory`), orderByChild('at'), limitToLast(50));
+
+  // 送信者別に分割したツリーだけ購読
+  // rooms/{code}/greenHistoryBySender/{state.uid}/<autoId>
+  const q = query(
+    ref(db, `rooms/${state.code}/greenHistoryBySender/${state.uid}`),
+    orderByChild('at'),
+    limitToLast(50)
+  );
+
   const off = onValue(q, (snap)=>{
     const all = snap.val() || {};
+    // 自分のツリーだけを読んでいるので filter は不要
     const rows = Object.values(all).sort((a,b)=> (a.at||0)-(b.at||0));
+
     box.innerHTML = '';
     rows.forEach(r=>{
-      const who = (r.type==='sent')
+      const who = (r.type === 'sent')
         ? `→ ${String(r.to||'').slice(0,6)}`
         : `← ${String(r.from||'').slice(0,6)}`;
-      const ans = (r.type==='answered')
-        ? (r.answer==='yes' ? 'はい' : 'いいえ')
+      const ans = (r.type === 'answered')
+        ? (r.answer === 'yes' ? 'はい' : 'いいえ')
         : '送信';
+
       const div = document.createElement('div');
       div.className = 'row';
       div.innerHTML = `<span class="tag">[緑]</span><span>${r.card}</span><span>${who}</span><span>：${ans}</span>`;
       box.appendChild(div);
     });
+
+    if (rows.length === 0){
+      const empty = document.createElement('div');
+      empty.className = 'row';
+      empty.style.opacity = '.7';
+      empty.textContent = '（履歴なし）';
+      box.appendChild(empty);
+    }
   });
+
   state.unsub.push(off);
 }
 
