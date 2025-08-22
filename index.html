@@ -117,6 +117,14 @@ deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字
   background:#fff; border:1px solid #111; border-radius:12px; padding:8px 10px;
   margin-top:12px;           /* 山札との間に余白 */
 }
+/* ▼ 緑カードQ&A履歴 */
+.history{
+  background:#fff; border:1px solid #111; border-radius:12px;
+  padding:8px 10px; margin-top:10px; font-size:12px;
+}
+.history-item{ display:flex; gap:6px; align-items:center; padding:2px 0; }
+.history-item .q{ font-weight:700; }
+.history-item .sep{ opacity:.6; }
 
 /* 所持者1人分のボックス */
 .equip-holder{
@@ -182,6 +190,8 @@ deck-face.white{ background:#ffffff; color:#111; }   /* 白：白地＋黒文字
     <div class="decks-wrap"><div id="decks" class="decks" aria-label="山札（左から緑・白・黒）"></div></div>
   </section>
 </main>
+<!-- 緑カードQ&A履歴 -->
+<div id="greenHistory" class="history hidden" aria-label="質問履歴"></div>
 
 <!-- ホスト設定マークとパネル -->
 <button id="hostGear" class="hidden" title="設定">⚙️</button>
@@ -1591,9 +1601,46 @@ function observeGreenResult(){
   });
   state.unsub.push(off);
 }  
+// ▼ ここから追加：履歴に保存
+(async ()=>{
+  const toUid   = rec.from || '';
+  const toSnap  = await get(ref(db, `rooms/${state.code}/participants/${toUid}`));
+  const toName  = toSnap.val()?.name || '?';
+  const q       = rec.card || '';
+  const ansText = (rec.answer === 'yes') ? 'はい' : 'いいえ';
+  const key     = Date.now();
+
+  await set(ref(db, `rooms/${state.code}/greenHistory/${key}`), {
+    q, to: toName, ans: ansText, from: state.name || '', at: key
+  });
+})();
 
 
+function observeGreenHistory(){
+  const histRef = ref(db, `rooms/${state.code}/greenHistory`);
+  const off = onValue(histRef, (snap)=>{
+    const box = document.getElementById('greenHistory');
+    if (!box) return;
+    const val = snap.val() || {};
+    const items = Object.values(val).sort((a,b)=> (b.at||0)-(a.at||0)).slice(0,20);
+    if (items.length === 0){
+      box.classList.add('hidden');
+      box.innerHTML = '';
+      return;
+    }
+    box.classList.remove('hidden');
+    box.innerHTML = '<div style="font-weight:700;margin-bottom:4px">緑カード履歴</div>' +
+      items.map(it=>{
+        const q = it.q || '';
+        const to = it.to || '?';
+        const ans = it.ans || '?';
+        return `<div class="history-item"><span class="q">${q}</span><span class="sep">＞</span><span>${to}</span><span class="sep">＞</span><span>${ans}</span></div>`;
+      }).join('');
+  });
+  state.unsub.push(off);
+}
 
+  
   
 /* === 4b: 装備所持バーのレンダラ＋購読 === */
 function renderEquipmentBar(equipData, participants){
@@ -1816,7 +1863,7 @@ async function becomeHostIfVacant(){
 
     // ☆ 追加：公開の購読（全員に1秒共有を反映）
     observeReveals();
-
+　　observeGreenHistory();
     // ★ 追加：緑カードの個別共有（自分宛）を受信
     observeGreenShare();
 　　installDealViewerPinGuard();
