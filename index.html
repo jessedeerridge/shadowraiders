@@ -1641,6 +1641,7 @@ function showYesNoPopoverForGreen(cardText, fromUid){
     if (ROLE_CARDS.raider.includes(myRoleCard))   myRole = 'レイダー';
     else if (ROLE_CARDS.shadow.includes(myRoleCard))  myRole = 'シャドウ';
     else if (ROLE_CARDS.citizen.includes(myRoleCard)) myRole = 'シチズン';
+    const isUrlich = (myRoleCard === 'Uウルリッヒ'); // ★ 追加：Uウルリッヒ特例フラグ
 
     // 質問文に含まれる語と一致するか
     const containsRaider  = cardText.includes('レイダー');
@@ -1694,12 +1695,18 @@ noBtn.textContent = 'いいえ';
 // ★ 追加：特例判定
 const isRevealOrder = (cardText.trim() === '正体カードを見せよ');
 
-if (isRevealOrder){
-  btnWrap.appendChild(yesBtn);           // 「はい」だけ
-}else{
-  if (shouldYes) btnWrap.appendChild(yesBtn);
-  else           btnWrap.appendChild(noBtn);
-}
+  if (isRevealOrder){
+    // 「正体カードを見せよ」のときは従来どおり「はい」だけ
+    btnWrap.appendChild(yesBtn);
+  }else if (isUrlich){
+    // ★ Uウルリッヒ特例：その他の緑カードは常に「はい」「いいえ」両方
+    btnWrap.appendChild(yesBtn);
+    btnWrap.appendChild(noBtn);
+  }else{
+    // 従来どおり、質問内容と役職一致で片方のみ
+    if (shouldYes) btnWrap.appendChild(yesBtn);
+    else           btnWrap.appendChild(noBtn);
+  }
 
 async function finish(answer){
   await set(ref(db, `rooms/${state.code}/greenShareResult/${fromUid}`), {
