@@ -1542,7 +1542,12 @@ function makeEquipIcon(name, colorName){
     COLOR_LIST.forEach(c=>{
       const tile = document.createElement('div');
       tile.className = 'color-tile';
-      tile.style.background = c.bg;
+      
+          // ★ 追加：背景と文字色を両方適用
+    const { bg, text } = colorToStyle(c.id);
+    tile.style.background = bg;
+    tile.style.color = text;
+      
       if (c.border) tile.style.borderColor = c.border;
       const label = document.createElement('div');
       label.className = 'label';
