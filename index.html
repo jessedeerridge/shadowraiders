@@ -517,6 +517,7 @@ async function doFullReset(){
   // 左長方形と星のアイコン削除
   updates[`rooms/${state.code}/icons`] = null;
   updates[`rooms/${state.code}/seats`] = null;
+  updates[`rooms/${state.code}/resetAt`] = Date.now();
 
   await update(ref(db), updates);
 
@@ -581,6 +582,7 @@ const state = {
   dragSettleGuardUid: null,  // ★ 追加：ドロップ直後のエコー抑止
   dragSettleGuardUntil: 0,   // ★ 追加：抑止の期限(ms)
   deckClicksLeft: 0,         // ★ 追加：ダイス後に山札（裏）をめくれる残回数（ローカル）
+ resetSeenAt: 0,  
 };
 
 
@@ -1102,6 +1104,28 @@ if (backEl){
 
   state.unsub.push(off);
   state.unsub.push(offDice);
+
+  // ★追加：リセット通知（resetAt）を購読：更新されたら全員を色選択へ戻す
+  const resetRef = ref(db, `rooms/${state.code}/resetAt`);
+  const offReset = onValue(resetRef, (snap)=>{
+    if (!snap.exists()) return;
+    const t = Number(snap.val() || 0);
+    if (!t) return;
+
+    // 初回や同一値への重複反応を抑制
+    if (t === state.resetSeenAt) return;
+    state.resetSeenAt = t;
+
+    // 全員いっせいに色選択に戻す
+    state.started = false;
+    show(colorModal, true);
+
+    // ボタン表示もスタート寄りに戻す（要素未生成ガードつき）
+    document.getElementById('btnRestart')?.classList.add('hidden');
+    document.getElementById('btnStart')?.classList.remove('hidden');
+  });
+  state.unsub.push(offReset);
+  
 }
 
 
