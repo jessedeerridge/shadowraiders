@@ -1,5 +1,4 @@
 
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -1123,7 +1122,14 @@ if (backEl){
 });
 
 
+  // ★ 追加：ダイスの共有イベント購読
+  const diceRef = ref(db, `rooms/${state.code}/dice`);
+  const offDice = onValue(diceRef, (snap)=>{
+    const v = snap.val() || {};
+    if (typeof setDeckQuota === 'function') setDeckQuota(0);
+  });
 
+  state.unsub.push(off);
   state.unsub.push(offDice);
 }
 
@@ -1316,7 +1322,7 @@ async function rebuildDeck(deckId){
       y: p.y - 12,
       at: Date.now()
     });
-   // ★ 右図クリックで山札クリック残数を1回ぶん回復
+  // ★ 右図クリックで山札クリック残数を1回ぶん回復
   if (typeof setDeckQuota === 'function') setDeckQuota(1);
   }
 
