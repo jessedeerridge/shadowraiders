@@ -838,7 +838,7 @@ white: {
   colorClass:'white',
   cards:[
     '幸せのクッキー','光臨','いにしえの聖杯','恩恵','闇を祓う鏡',
-    'いやしの聖水','いやしの聖水','いやしの聖水',
+    'いやしの聖水','いやしの聖水 ','いやしの聖水  ',
     '銀のロザリオ','銀のロザリオ ',
     '幸運のブローチ','裁きの閃光','賢者のローブ','人魚の涙',
     'エクスカリバー','守護天使','神秘のコンパス','虹色のパラソル',
@@ -850,12 +850,12 @@ white: {
   label:'黒',
   colorClass:'black',
   cards:[
-    '妖刀マサムネ','吸血コウモリ','吸血コウモリ','吸血コウモリ',
+    '妖刀マサムネ','吸血コウモリ','吸血コウモリ ','吸血コウモリ  ',
     '拳銃R','拳銃L','暴動','バナナの皮',
     'クロスボウガン','死神スコープ','死神スコープ ',
     '三つ目の黒犬','三つ目の黒犬','呪いの人形',
     'サーベル','ガトリング',
-    'オリバーの子分','オリバーの子分','オリバーの子分',
+    'オリバーの子分','オリバーの子分','オリバーの子分 ',
     '戦慄の闇儀式'
   ],
   equipNames:[
@@ -953,25 +953,37 @@ const off = onValue(decksRef, (snap)=>{
   const v = snap.val() || {};
 
   // 白の表
-  {
-    const idx = (v.white?.idx ?? -1);
-    const faceEl = decksEl.querySelector('.deck-face[data-deck="white"][data-role="face"]');
-    if (faceEl){
-      const card = (idx >= 0) ? DECKS_DEF.white.cards[idx % DECKS_DEF.white.cards.length] : '';
-      faceEl.textContent = card;
-      applyDeckTheme(faceEl, 'white');
+// 白の表（order対応）
+{
+  const idx = (v.white?.idx ?? -1);
+  const order = Array.isArray(v.white?.order) ? v.white.order : null;
+  const faceEl = decksEl.querySelector('.deck-face[data-deck="white"][data-role="face"]');
+  if (faceEl){
+    if (idx >= 0){
+      const actual = order ? order[idx % order.length] : (idx % DECKS_DEF.white.cards.length);
+      faceEl.textContent = DECKS_DEF.white.cards[actual];
+    }else{
+      faceEl.textContent = '';
     }
+    applyDeckTheme(faceEl, 'white');
   }
-  // 黒の表
-  {
-    const idx = (v.black?.idx ?? -1);
-    const faceEl = decksEl.querySelector('.deck-face[data-deck="black"][data-role="face"]');
-    if (faceEl){
-      const card = (idx >= 0) ? DECKS_DEF.black.cards[idx % DECKS_DEF.black.cards.length] : '';
-      faceEl.textContent = card;
-      applyDeckTheme(faceEl, 'black');
+}
+// 黒の表（order対応）
+{
+  const idx = (v.black?.idx ?? -1);
+  const order = Array.isArray(v.black?.order) ? v.black.order : null;
+  const faceEl = decksEl.querySelector('.deck-face[data-deck="black"][data-role="face"]');
+  if (faceEl){
+    if (idx >= 0){
+      const actual = order ? order[idx % order.length] : (idx % DECKS_DEF.black.cards.length);
+      faceEl.textContent = DECKS_DEF.black.cards[actual];
+    }else{
+      faceEl.textContent = '';
     }
+    applyDeckTheme(faceEl, 'black');
   }
+}
+
   // 緑は表共有なし（face自体を置いていない）
 
   // ★ 追加：残り枚数更新
@@ -1111,18 +1123,27 @@ async function advanceDeck(deckId, flipperUid){
   const def = DECKS_DEF[deckId];
   const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
   const snap = await get(deckPath);
-  const curIdx = snap.exists() && typeof snap.val().idx === 'number' ? snap.val().idx : -1;
+  const v = snap.val() || {};
+  const curIdx = (typeof v.idx === 'number') ? v.idx : -1;
   const nextIdx = (curIdx + 1) % def.cards.length;
-  await set(deckPath, { idx: nextIdx, at: Date.now() });
 
-  // ▼ 装備付与（白デッキのみ／equipIdx 該当時）
- const card = def.cards[nextIdx]; 
- if ((deckId === 'white' || deckId === 'black')  
-     && Array.isArray(def.equipNames) && def.equipNames.includes(card) && flipperUid){
-   const updates = {};
-   updates[`rooms/${state.code}/equipment/${flipperUid}/${card}`] = true;
-   updates[`rooms/${state.code}/equipment_at`] = Date.now();
-   await update(ref(db), updates);
+  // ★ 追加：保存された order があれば、その順番で“実カード番号”を決める
+  const order = Array.isArray(v.order) ? v.order : null;
+  const actualCardIndex = order ? order[nextIdx] : nextIdx;
+  const cardName = def.cards[actualCardIndex];
+
+  // 進行を保存（orderは維持）
+  await set(deckPath, { idx: nextIdx, order: order || null, at: Date.now() });
+
+  // ▼ 装備付与（白・黒）: equipIdx は“実カード番号”で判定
+  if ((deckId === 'white' || deckId === 'black')
+      && Array.isArray(def.equipIdx)
+      && def.equipIdx.includes(actualCardIndex)
+      && flipperUid){
+    const updates = {};
+    updates[`rooms/${state.code}/equipment/${flipperUid}/${cardName}`] = true;
+    updates[`rooms/${state.code}/equipment_at`] = Date.now();
+    await update(ref(db), updates);
  }
 }
 
@@ -1163,8 +1184,8 @@ function showShufflePopover(targetEl, deckId, ev){
 // ★ 追加：デッキ再構築（idx を -1 に戻す）
 async function rebuildDeck(deckId){
   const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
-  await set(deckPath, { idx: -1, at: Date.now() });
-  // updateCount が走り、ブランク解除→裏表示＆枚数満タンになります（監視ロジック既存）。 
+  const order = makeShuffledOrder(deckId);
+  await set(deckPath, { idx: -1, order, at: Date.now() });
 }
 
 
@@ -1666,6 +1687,17 @@ const ROLE_DISTRIBUTION = {
  10: { raider:3, shadow:3, citizen:4 },
 };
 
+// 追加：デッキ順インデックス作成（フィッシャー–イェーツ）
+function makeShuffledOrder(deckId){
+  const def = DECKS_DEF[deckId];
+  const order = Array.from({length: def.cards.length}, (_, i)=> i);
+  for (let i = order.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+  
 async function hostStartIfNotStarted(){
   const startedRef = ref(db, `rooms/${state.code}/game/started`);
   const startedSnap = await get(startedRef);
