@@ -900,7 +900,6 @@ async function advanceDeckGuarded(deckId, flipperUid){
 }
 
 
-
 async function advanceDeck(deckId, flipperUid){
   const def = DECKS_DEF[deckId];
   const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
