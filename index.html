@@ -1355,12 +1355,31 @@ function makeEquipIcon(name, colorName){
       holder.appendChild(makeEquipIcon(p.name, p.color));
 
       // 装備カード群
-      Object.keys(cards).forEach(card=>{
-        const cardDiv = document.createElement('div');
-        cardDiv.className = 'equip-card';
-        cardDiv.textContent = card;
-        holder.appendChild(cardDiv);
-      });
+Object.keys(cards).forEach(card=>{
+  const cardDiv = document.createElement('div');
+  cardDiv.className = 'equip-card';
+  cardDiv.textContent = card;
+
+  // ▼ 役職カード（レイダー／シャドウ／シチズン）はクリック不可
+  const isRoleCard =
+    (ROLE_CARDS.raider  && ROLE_CARDS.raider.includes(card))  ||
+    (ROLE_CARDS.shadow  && ROLE_CARDS.shadow.includes(card))  ||
+    (ROLE_CARDS.citizen && ROLE_CARDS.citizen.includes(card));
+
+  if (isRoleCard){
+    // 見た目のフィードバック（任意）
+    cardDiv.style.cursor = 'not-allowed';
+    cardDiv.title = '役職カードは奪えません';
+    // クリックは付与しない
+  }else{
+    // ▼ 前回追加の「奪う」ポップ起動（自分の行は内部で弾く）
+    cardDiv.addEventListener('click', (ev)=>{
+      showStealPopover(ev, uid, card);
+    });
+  }
+
+  holder.appendChild(cardDiv);
+});
 
       equipBar.appendChild(holder);
     });
