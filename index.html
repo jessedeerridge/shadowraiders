@@ -200,6 +200,20 @@
   image-rendering:-webkit-optimize-contrast;
 }
 
+.dicebar{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  margin:6px 0 12px 8px;   /* 下に余白を追加 */
+  flex-wrap:wrap;
+}
+
+.decks-wrap{
+  display:flex;
+  justify-content:flex-end;
+  margin-top:0;            /* 上余白は dicebar で調整 */
+}
+  
   
 /* 既存のモバイル用カードサイズに追従（例：@media内のdeckサイズが50x69なら同じ） */
 @media (max-width:600px){
@@ -232,19 +246,17 @@
       <svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
     </div>
 
-    <!-- ダイス（左長方形の下／ローカル表示） -->
+<!-- 修正後 -->
 <div class="dicebar" id="diceBar">
-  <!-- d4 ダイス（初期 4d1.png） -->
   <img id="roll4dImg" class="diceimg" src="4d1.png" alt="d4" role="button" />
-
-  <!-- d6 ダイス（初期 6d1.png） -->
   <img id="roll6dImg" class="diceimg" src="6d1.png" alt="d6" role="button" />
+</div>
 
+<!-- 山札 -->
+<div class="decks-wrap">
+  <div id="decks" class="decks"></div>
+</div>
 
-    <!-- ▼ 右図形の真下：山札 -->
-    <div class="decks-wrap"><div id="decks" class="decks" aria-label="山札（左から緑・白・黒）"></div></div>
-  </section>
-</main>
 
   <!-- 装備所持バー（※ 上に移動） -->
 <div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
