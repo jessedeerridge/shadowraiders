@@ -486,32 +486,30 @@ function rollBothDice(){
   });
 // 在室者(participants)にいない uid の colors を削除し、名前がズレていれば整合させる
 async function cleanColorsKeepingParticipants(){
-  const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-  const colorsSnap = await get(ref(db, `rooms/${state.code}/colors`));
-  const ps = psSnap.val() || {};
-  const colors = colorsSnap.val() || {};
+const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+const colorsSnap = await get(ref(db, `rooms/${state.code}/colors`));
+const ps = psSnap.val() || {};
+const colors = colorsSnap.val() || {};
+const psNameByUid = Object.fromEntries(Object.entries(ps).map(([uid, v])=>[uid, v?.name||'']));
 
-  const presentUids = new Set(Object.keys(ps));
-  const updates = {};
-
-  for (const [colorId, claim] of Object.entries(colors)){
-    const uid = claim?.uid;
-    const nameInColors = claim?.name || '';
-    if (!uid || !presentUids.has(uid)){
-      // 退出者（participants にいない）→ 色を消す
-      updates[`rooms/${state.code}/colors/${colorId}`] = null;
-      continue;
-    }
-    // 在室者だが、名前がズレていたら participants の名前に寄せて整合
-    const nameInParticipants = ps[uid]?.name || nameInColors || '';
-    if (nameInParticipants && nameInParticipants !== nameInColors){
-      updates[`rooms/${state.code}/colors/${colorId}`] = {
-        uid,
-        name: nameInParticipants,
-        at: Date.now(),
-      };
-    }
+for (const [colorId, claim] of Object.entries(colors)){
+  const uid = claim?.uid;
+  const nameInColors = claim?.name || '';
+  if (!uid){
+    // uid が無い壊れレコードのみスキップ（削除はしない）
+    continue;
   }
+  // participants に同名が居れば名前だけ整合（居なくても削除しない）
+  const nameInParticipants = psNameByUid[uid] || '';
+  if (nameInParticipants && nameInParticipants !== nameInColors){
+    updates[`rooms/${state.code}/colors/${colorId}`] = {
+      uid,
+      name: nameInParticipants,
+      at: Date.now(),
+    };
+  }
+}
+
 
   if (Object.keys(updates).length){
     await update(ref(db), updates);
@@ -534,20 +532,22 @@ async function dealRolesByColors(){
   const room = state.code;
 
   // 色を選んだ人（colors）と、現在の入室者（participants）を取得
-  const [colorsSnap, partsSnap] = await Promise.all([
-    get(ref(db, `rooms/${room}/colors`)),
-    get(ref(db, `rooms/${room}/participants`))
-  ]);
-  const colors = colorsSnap.val() || {};
-  const parts  = partsSnap.val()  || {};
+// 現在の「色選択者（colors）」のみを取得（participants は参照しない）
+const colorsSnap = await get(ref(db, `rooms/${room}/colors`));
+const colors = colorsSnap.val() || {};
 
-  // colors に登録された uid のうち、participants にも居る uid だけを対象にする（孤児除外）
-  const uids = [];
-  for (const claim of Object.values(colors)){
-    const uid = claim?.uid;
-    if (uid && parts[uid]) uids.push(uid);
+// colors に載っている uid をユニークに収集（同一uidの多重登録は1回にまとめる）
+const seen = new Set();
+const uids = [];
+for (const claim of Object.values(colors)){
+  const uid = claim?.uid;
+  if (uid && !seen.has(uid)){
+    seen.add(uid);
+    uids.push(uid);
   }
-  if (uids.length === 0) return; // 誰も色を選んでいなければ何もしない
+}
+if (uids.length === 0) return; // 誰も色を選んでいなければ何もしない
+
 
   // --- ここで「人数のルール」に従って、配布する正体カードの並びを用意する ---
   // 既存プロジェクトに「人数→役職配分」を返す関数があるならそれを使う
