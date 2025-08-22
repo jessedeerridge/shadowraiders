@@ -1494,7 +1494,7 @@ function showYesNoPopoverForGreen(cardText, fromUid){
     const containsShadow  = cardText.includes('シャドウ');
     const containsCitizen = cardText.includes('シチズン');
 
-    const shouldYes =
+    let shouldYes =
       (myRole === 'レイダー' && containsRaider) ||
       (myRole === 'シャドウ' && containsShadow) ||
       (myRole === 'シチズン' && containsCitizen);
