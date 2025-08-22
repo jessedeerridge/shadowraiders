@@ -212,24 +212,6 @@
   </button>
 </div>
 
-<!-- ★ 追加：緑カードの「対象プレイヤー選択」ポップ -->
-<div id="selectTargetPopover" class="hidden"
-     style="position:fixed; z-index:2147483608;
-            background:#fff; color:#111; border:1px solid #111;
-            border-radius:12px; padding:10px; box-shadow:0 8px 20px rgba(0,0,0,.18);">
-  <div id="selectTargetList" style="display:grid;grid-template-columns:repeat(5, 44px);gap:8px;"></div>
-</div>
-
-<!-- ★ 追加：選ばれた側の「はい／いいえ」ポップ -->
-<div id="ynPopover" class="hidden"
-     style="position:fixed; z-index:2147483609;
-            background:#000; color:#fff; border-radius:10px;
-            padding:10px; display:flex; gap:8px;">
-  <button id="ynYes" style="padding:8px 12px;border:none;border-radius:8px;background:#fff;color:#000;font-weight:700;cursor:pointer;">はい</button>
-  <button id="ynNo"  style="padding:8px 12px;border:1px solid #fff;border-radius:8px;background:transparent;color:#fff;cursor:pointer;">いいえ</button>
-</div>
-
-  
 <!-- カード拡大ビューア -->
 <div id="dealViewer" class="modal hidden" role="dialog" aria-modal="true">
   <div class="modal-panel">
@@ -257,25 +239,6 @@
     getDatabase, ref, set, onValue, onDisconnect, remove, get, update, runTransaction
   } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
-// ★ 追加：回答処理
-const ynYes = document.getElementById('ynYes');
-const ynNo  = document.getElementById('ynNo');
-if (ynYes && ynNo){
-  const finish = async(answer)=>{
-    const rec = { from: state.uid, answer, at: Date.now() };
-    await update(ref(db), {
-      [`rooms/${state.code}/greenShareAnswers/${state.uid}/${Date.now()}`]: rec
-    });
-
-    document.getElementById('ynPopover')?.classList.add('hidden');
-    show(dealViewer, false);
-    await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
-  };
-  ynYes.onclick = ()=> finish('yes');
-  ynNo.onclick  = ()=> finish('no');
-}
-
-  
   /* Firebase 設定 */
   const firebaseConfig = {
     apiKey: "AIzaSyASUJcPyybcD9q77XDatI5bCzZxDvsBH_o",
@@ -668,16 +631,17 @@ if (!myHasCard && oldCard){
     rect.addEventListener('click', onRectClickWithDupCheck);
   }
 
-  // ===== 山札 =====
+// ===== 山札 =====
  const DECKS_DEF = {
-  green: {
-    label:'緑',
-    colorClass:'green',
+  green: { 
+    label:'緑', 
+    colorClass:'green', 
+    // ★ 正体質問カード群
     cards:[
       'あなたは シチズン か シャドウ？',
       'あなたは シチズン か シャドウ？',
       'あなたは シチズン か レイダー？',
-      'あなたは  シチズン か レイダー？',
+      'あなたは シチズン か レイダー？',
       'あなたは レイダー か シャドウ？',
       'あなたは レイダー か シャドウ？',
       'あなたは レイダー？',
@@ -697,14 +661,14 @@ if (!myHasCard && oldCard){
     ]
   },
   white: {
-
     label:'白',
     colorClass:'white',
     cards:['みみ','きき','ひひ','ぎぎ','しし','りり','にに','ちち','びび','じじ'],
-    equipIdx: [1,2,3,4] // 0始まり → 2,3,4,5番が装備
+    equipIdx: [1,2,3,4]
   },
   black: { label:'黒', colorClass:'black', cards:['ろ','も','こ','ど','そ','ぼ'] },
 };
+
 
   function setupDecks(){
     decksEl.innerHTML = '';
@@ -719,55 +683,59 @@ if (!myHasCard && oldCard){
       back.className = `deck-back ${def.colorClass}`;
       back.textContent = '裏';
       back.title = `${def.label}デッキをめくる`;
-back.addEventListener('click', ()=>{
-  if (deckId === 'green'){
-    flipGreenLocal(state.uid);            // ← 自分だけ拡大＆進行
+back.addEventListener('click', ()=> advanceDeckGuarded(deckId, state.uid));
+
+const face = document.createElement('div');
+face.className = 'deck-face';
+face.dataset.role = 'face';
+face.textContent = '';
+
+// ▼追加：クリックで拡大表示
+// ▼追加：クリックで拡大表示
+face.addEventListener('click', async ()=>{
+  if (deckId === 'green'){ 
+    // DBから自分のカードを直接読む（他人には表示しない）
+    const snap = await get(ref(db, `rooms/${state.code}/decks/${deckId}`));
+    const idx = (snap.val()?.idx ?? -1);
+    if (idx >= 0){
+      const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
+      dealCardFace.textContent = card;
+      show(dealViewer, true);
+    }
   }else{
-    advanceDeckGuarded(deckId, state.uid);
+    if (face.textContent){
+      dealCardFace.textContent = face.textContent;
+      show(dealViewer, true);
+    }
   }
 });
 
-      // ★ 緑デッキは「表の場所」自体を作らない（＝常に非表示）
-      if (deckId !== 'green'){
-        const face = document.createElement('div');
-        face.className = 'deck-face';
-        face.dataset.role = 'face';
-        face.textContent = '';
-
-        // 既存：表クリックで拡大
-        face.addEventListener('click', ()=>{
-          if (face.textContent){
-            dealCardFace.textContent = face.textContent;
-            show(dealViewer, true);
-          }
-        });
-        wrap.appendChild(face);
-      }
 
       const label = document.createElement('div');
       label.className = 'deck-label';
       label.textContent = `${def.label}デッキ`;
 
       wrap.appendChild(back);
+      wrap.appendChild(face);
       wrap.appendChild(label);
-
       decksEl.appendChild(wrap);
     });
 
     // DB同期購読
     const decksRef = ref(db, `rooms/${state.code}/decks`);
-    const off = onValue(decksRef, (snap)=>{
-      const v = snap.val() || {};
-      ['green','white','black'].forEach(id=>{
-        if (id === 'green') return; // ★ 緑は face 同期しない（＝常に非表示）
-        const idx = (v[id]?.idx ?? -1);
-        const faceEl = decksEl.querySelector(`.deck[data-deck="${id}"] .deck-face`);
-        if (!faceEl) return;
-        const card = (idx >= 0) ? DECKS_DEF[id].cards[idx % DECKS_DEF[id].cards.length] : '';
-        faceEl.textContent = card;
-      });
-      refreshDeckEnable();
-    });
+const off = onValue(decksRef, (snap)=>{
+  const v = snap.val() || {};
+  ['green','white','black'].forEach(id=>{
+    const idx = (v[id]?.idx ?? -1);
+    const faceEl = decksEl.querySelector(`.deck[data-deck="${id}"] .deck-face`);
+    let card = '';
+    if (id !== 'green'){   // ★ 緑デッキは表を共有しない
+      card = (idx >= 0) ? DECKS_DEF[id].cards[idx % DECKS_DEF[id].cards.length] : '';
+    }
+    faceEl.textContent = card;
+  });
+  refreshDeckEnable();
+});
 
     state.unsub.push(off);
   }
@@ -1313,11 +1281,18 @@ show(dealViewer, true);
 
 
         // ☆ 追加：拡大カードを押すと「公開する」ポップ表示
-        dealCardFace.onclick = ()=>{
-          const pop = document.getElementById('revealPopover');
-          if (!pop) return;
-          pop.classList.remove('hidden');
-          const r = dealCardFace.getBoundingClientRect();
+dealCardFace.onclick = ()=>{
+  const val = (dealCardFace.textContent || '').trim();
+  if (DECKS_DEF.green.cards.includes(val)){
+    // ★ 緑カード用：参加者選択ポップを開く
+    showParticipantSelectPopup(val);
+    return;
+  }
+
+  // ▼ それ以外（正体カードなど）は従来の「公開する」ポップ
+  const pop = document.getElementById('revealPopover');
+  if (!pop) return;
+  pop.classList.remove('hidden');          const r = dealCardFace.getBoundingClientRect();
           // 拡大カードの中央に重ねる
           pop.style.left = (r.left + r.width/2 - 60) + 'px';
           pop.style.top  = (r.top + r.height/2 - 25) + 'px';
@@ -1344,47 +1319,6 @@ show(dealViewer, true);
   state.unsub.push(off);
 }
 
-// ★ 追加：拡大カード（dealViewer 内の面）クリックで「対象選択」ポップ
-dealCardFace.addEventListener('click', async ()=>{
-  const isGreenCard = (dealCardFace.style.background || '').includes('43a047');
-  if (!isGreenCard) return;
-
-  const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-  const ps = psSnap.val() || {};
-
-  const list = document.getElementById('selectTargetList');
-  const pop  = document.getElementById('selectTargetPopover');
-  list.innerHTML = '';
-
-  Object.entries(ps).forEach(([uid, info])=>{
-    if (uid === state.uid) return;
-    const btn = document.createElement('button');
-    btn.textContent = info?.name || '?';
-    btn.style.width = '44px';
-    btn.style.height = '44px';
-    btn.style.border = '1px solid #111';
-    btn.style.borderRadius = '8px';
-    const { bg, text } = colorToStyle(info?.color || '');
-    btn.style.background = bg;
-    btn.style.color = text;
-
-    btn.onclick = async ()=>{
-      pop.classList.add('hidden');
-      const card = dealCardFace.textContent || '';
-      await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
-        from: state.uid, card, at: Date.now()
-      });
-    };
-    list.appendChild(btn);
-  });
-
-  const r = dealCardFace.getBoundingClientRect();
-  pop.style.left = (r.left + r.width/2 - 120) + 'px';
-  pop.style.top  = (r.top  + r.height/2 - 80) + 'px';
-  pop.classList.remove('hidden');
-});
-
-  
 // ☆ 追加：公開ボタンの挙動（1秒間の公開→装備欄の左へ固定）
 const btnReveal = document.getElementById('btnReveal');
 if (btnReveal){
@@ -1429,30 +1363,6 @@ function observeReveals(){
   state.unsub.push(off);
 }
 
- // ★ 追加：選ばれた側の購読
-function observeGreenShare(){
-  const meRef = ref(db, `rooms/${state.code}/greenShare/${state.uid}`);
-  const off = onValue(meRef, (snap)=>{
-    const v = snap.val();
-    if (!v || !v.card) return;
-
-    dealCardFace.textContent = v.card;
-    dealCardFace.style.writingMode = 'vertical-rl';
-    dealCardFace.style.background = '#43a047';
-    dealCardFace.style.color = '#fff';
-    show(dealViewer, true);
-
-    dealCardFace.onclick = ()=>{
-      const pop = document.getElementById('ynPopover');
-      const r = dealCardFace.getBoundingClientRect();
-      pop.style.left = (r.left + r.width/2 - 80) + 'px';
-      pop.style.top  = (r.top + r.height/2 - 24) + 'px';
-      pop.classList.remove('hidden');
-    };
-  });
-  state.unsub.push(off);
-}
- 
   
 /* === 4b: 装備所持バーのレンダラ＋購読 === */
 function renderEquipmentBar(equipData, participants){
@@ -1642,32 +1552,6 @@ async function becomeHostIfVacant(){
     });
     state.unsub.push(offSeats);
 
-// ★ 追加：次に出るカードを事前に計算して返す（サーバ書込はしない）
-async function peekNextCard(deckId){
-  const def = DECKS_DEF[deckId];
-  const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
-  const snap = await get(deckPath);
-  const curIdx = snap.exists() && typeof snap.val().idx === 'number' ? snap.val().idx : -1;
-  const nextIdx = (curIdx + 1) % def.cards.length;
-  return { nextIdx, card: def.cards[nextIdx] };
-}
-
-// ★ 追加：緑デッキをめくる（表示は自分だけ／サーバには通常の idx 更新）
-async function flipGreenLocal(flipperUid){
-  const { nextIdx, card } = await peekNextCard('green');
-
-  // 自分だけ拡大。縦長に＆緑背景。
-  dealCardFace.textContent = card;
-  dealCardFace.style.writingMode = 'vertical-rl';  // 縦カード
-  dealCardFace.style.background = '#43a047';
-  dealCardFace.style.color = '#fff';
-  show(dealViewer, true);
-
-  // 共有の山札進行は通常どおり（表は誰にも表示されないよう #3/#5 で制御）
-  await advanceDeck('green', flipperUid);
-}
-
-    
     // 山札UI
     setupDecks();
 
@@ -1693,7 +1577,7 @@ async function flipGreenLocal(flipperUid){
 
     // 装備所持の購読と描画
     observeEquipment();
-       observeGreenShare(); 
+    
     // ホスト設定UI
     hostGear.onclick = ()=>{
       hostPanel.classList.toggle('hidden');
