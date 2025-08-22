@@ -300,18 +300,6 @@
   </div>
 </div>
 
-<!-- 山札再構築ポップ -->
-<div id="rebuildModal" class="modal hidden" role="dialog" aria-modal="true">
-  <div class="modal-panel" style="min-width:280px">
-    <div id="rebuildText" style="margin-bottom:10px">この山札を作り直しますか？（装備カードは除外）</div>
-    <div style="display:flex; gap:8px; justify-content:flex-end">
-      <button id="rebuildCancel" class="btn" style="background:#aaa">キャンセル</button>
-      <button id="rebuildOk" class="btn">山札を作る</button>
-    </div>
-  </div>
-</div>
-
-
 
 <!-- 色選択モーダル -->
 <div id="colorModal" class="modal hidden" role="dialog" aria-modal="true">
@@ -461,50 +449,16 @@ function rollBothDice(){
 
   
 
-const hostGear      = document.getElementById('hostGear');
-const hostPanel     = document.getElementById('hostPanel');
-const btnStart      = document.getElementById('btnStart');
-
-btnStart?.addEventListener('click', async ()=>{
-  // 役職配布（既存）
-  await hostStartIfNotStarted?.();
-
-  // ★ 山札初期化（緑・白・黒をシャッフルして order/idx を用意）
-  await initAllDecksOnStart();
-
-  state.started = true;
-});
-
+  const hostGear      = document.getElementById('hostGear');
+  const hostPanel     = document.getElementById('hostPanel');
+  const btnStart      = document.getElementById('btnStart');
 
   const colorModal    = document.getElementById('colorModal');
   const colorGrid     = document.getElementById('colorGrid');
 
-const myDealMini    = document.getElementById('myDealMini');
-const dealViewer    = document.getElementById('dealViewer');
-const dealCardFace  = document.getElementById('dealCardFace');
-
-// ▼ 追加：再構築ポップ
-const rebuildModal  = document.getElementById('rebuildModal');
-const rebuildText   = document.getElementById('rebuildText');
-const rebuildCancel = document.getElementById('rebuildCancel');
-const rebuildOk     = document.getElementById('rebuildOk');
-state.rebuildTargetDeck = null;
-
-function openRebuildModal(deckId){
-  state.rebuildTargetDeck = deckId;
-  const label = DECKS_DEF[deckId]?.label || deckId;
-  rebuildText.textContent = `${label}デッキを作り直しますか？（装備カードは除外）`;
-  show(rebuildModal, true);
-}
-rebuildCancel?.addEventListener('click', ()=> show(rebuildModal,false));
-rebuildOk?.addEventListener('click', async ()=>{
-  const deckId = state.rebuildTargetDeck;
-  if (deckId){
-    const exclude = (deckId !== 'green'); // 緑は装備なし→除外不要
-    await shuffleDeck(deckId, { excludeEquip: exclude });
-  }
-  show(rebuildModal,false);
-});
+  const myDealMini    = document.getElementById('myDealMini');
+  const dealViewer    = document.getElementById('dealViewer');
+  const dealCardFace  = document.getElementById('dealCardFace');
 
 // --- 状態 ---
 const state = {
@@ -549,6 +503,45 @@ function applyDeckTheme(el, deckId){
   else if (deckId === 'green'){ el.style.background = '#c7f5c1'; el.style.color = '#111'; }
 }
 
+// --- 奪取ポップ（拡大カードの“前”に表示）---
+function ensureStealPopover(){
+  let pop = document.getElementById('stealPopover');
+  if (pop) return pop;
+
+  pop = document.createElement('div');
+  pop.id = 'stealPopover';
+  pop.style.cssText = `
+    position:fixed; z-index:2147483608; /* dealViewer(3602)より前面 */
+    inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.0); /* 透過、黒幕は出さない */
+  `;
+  const btn = document.createElement('button');
+  btn.textContent = '奪う';
+  btn.style.cssText = `
+    padding:10px 20px; border:1px solid #111; border-radius:10px;
+    background:#111; color:#fff; font-weight:700; cursor:pointer;
+    box-shadow:0 6px 16px rgba(0,0,0,.18);
+  `;
+  btn.id = 'btnDoSteal';
+  pop.appendChild(btn);
+  document.body.appendChild(pop);
+  pop.classList.add('hidden');
+  return pop;
+}
+
+async function performSteal(ownerUid, card){
+  if (!state.code || !state.uid || !ownerUid || !card) return;
+  if (ownerUid === state.uid) return; // 既に自分の物は無視
+
+  const updates = {};
+  // 旧所有者から外す → 自分に付与（participantsは触らない＝アイコンは変化しない）
+  updates[`rooms/${state.code}/equipment/${ownerUid}/${card}`] = null;
+  updates[`rooms/${state.code}/equipment/${state.uid}/${card}`] = true;
+  updates[`rooms/${state.code}/equipment_at`] = Date.now();
+  await update(ref(db), updates);
+}
+
+  
   
   // ===== 同名引継ぎ：旧UIDから「色」と「右下カード」を移す =====
   async function onlySelfHasThisName(){
@@ -826,53 +819,6 @@ if (!myHasCard && oldCard){
 },
 };
 
-// ▼▼▼ ここから追加：シャッフル＆再構築ユーティリティ ▼▼▼
-function _shuffle(arr){
-  return [...arr].sort(()=>Math.random()-0.5);
-}
-
-// deckId の「元配列 index リスト」を作る（0..N-1）
-function _allIdxOf(deckId){
-  const def = DECKS_DEF[deckId];
-  return def ? [...def.cards.keys()] : [];
-}
-
-// シャッフルして DB に {order, idx:-1} を保存
-async function shuffleDeck(deckId, { excludeEquip=false } = {}){
-  const def = DECKS_DEF[deckId];
-  if (!def) return;
-
-  let base = _allIdxOf(deckId);
-  if (excludeEquip && Array.isArray(def.equipIdx)){
-    base = base.filter(i=>!def.equipIdx.includes(i));
-  }
-  const order = _shuffle(base);
-  await set(ref(db, `rooms/${state.code}/decks/${deckId}`), {
-    order, idx: -1, at: Date.now()
-  });
-}
-
-// 3山まとめて初期化（スタート時）
-async function initAllDecksOnStart(){
-  await Promise.all([
-    shuffleDeck('green'),
-    shuffleDeck('white'),
-    shuffleDeck('black'),
-  ]);
-}
-
-// 残り枚数を算出（order と idx から）
-function deckRemain(obj){
-  const order = Array.isArray(obj?.order) ? obj.order : [];
-  const idx = typeof obj?.idx === 'number' ? obj.idx : -1;
-  return Math.max(0, order.length - (idx + 1));
-}
-
-// デッキが枯渇しているか（残り0）
-function deckDepleted(obj){
-  return deckRemain(obj) === 0;
-}
-  
 function setupDecks(){
   decksEl.innerHTML = '';
 
@@ -909,117 +855,62 @@ function setupDecks(){
     });
   }
 
-// 要素を順番に配置
-order.forEach(({deck:deckId, type})=>{
-  const def = DECKS_DEF[deckId];
+  // 要素を順番に配置
+  order.forEach(({deck:deckId, type})=>{
+    const def = DECKS_DEF[deckId];
 
-  if (type === 'back'){
-    const back = document.createElement('div');
-    back.className = `deck-back ${def.colorClass}`;
-    back.dataset.deck = deckId;     // ★識別
-    back.dataset.role = 'back';
-    back.textContent = '裏';
-    back.title = `${def.label}デッキをめくる`;
-    back.addEventListener('click', ()=> advanceDeckGuarded(deckId, state.uid));
-    decksEl.appendChild(back);
-
-    // ★ 追加：残り枚数ラベル
-    const cnt = document.createElement('div');
-    cnt.className = 'deck-label';
-    cnt.dataset.kind = 'count';
-    cnt.dataset.deck = deckId;
-    cnt.textContent = '残り: -';
-    decksEl.appendChild(cnt);
-
-  }else{
-    // type === 'face'
-    const face = document.createElement('div');
-    face.className = 'deck-face';
-    face.dataset.deck = deckId;     // ★識別
-    face.dataset.role = 'face';
-    face.textContent = '';
-    attachFaceClick(face, deckId);
-    decksEl.appendChild(face);
-  }
-});
-
+    if (type === 'back'){
+      const back = document.createElement('div');
+      back.className = `deck-back ${def.colorClass}`;
+      back.dataset.deck = deckId;     // ★識別
+      back.dataset.role = 'back';
+      back.textContent = '裏';
+      back.title = `${def.label}デッキをめくる`;
+      back.addEventListener('click', ()=> advanceDeckGuarded(deckId, state.uid));
+      decksEl.appendChild(back);
+    }else{
+      // type === 'face'
+      const face = document.createElement('div');
+      face.className = 'deck-face';
+      face.dataset.deck = deckId;     // ★識別
+      face.dataset.role = 'face';
+      face.textContent = '';
+      attachFaceClick(face, deckId);
+      decksEl.appendChild(face);
+    }
+  });
 
   // ★ 緑の「表」は作らない（orderに含めない）＝表示されない
 
-  // DB同期購読（face要素のテキスト・残数・ブランクを更新）
-const decksRef = ref(db, `rooms/${state.code}/decks`);
-const off = onValue(decksRef, (snap)=>{
-  const v = snap.val() || {};
+  // DB同期購読（face要素のテキストを更新）
+  const decksRef = ref(db, `rooms/${state.code}/decks`);
+  const off = onValue(decksRef, (snap)=>{
+    const v = snap.val() || {};
 
-  // ヘルパ：現在表のカード文字列を求める
-  function currentFace(def, obj){
-    const order = Array.isArray(obj?.order) ? obj.order : [];
-    const idx = typeof obj?.idx === 'number' ? obj.idx : -1;
-    if (idx < 0 || idx >= order.length) return '';
-    const cardIdx = order[idx];
-    return def.cards[cardIdx] || '';
-  }
+    // 白の表
+    {
+      const idx = (v.white?.idx ?? -1);
+      const faceEl = decksEl.querySelector('.deck-face[data-deck="white"][data-role="face"]');
+      if (faceEl){
+        const card = (idx >= 0) ? DECKS_DEF.white.cards[idx % DECKS_DEF.white.cards.length] : '';
+        faceEl.textContent = card;
+        applyDeckTheme(faceEl, 'white');
+      }
+    }
+    // 黒の表
+    {
+      const idx = (v.black?.idx ?? -1);
+      const faceEl = decksEl.querySelector('.deck-face[data-deck="black"][data-role="face"]');
+      if (faceEl){
+        const card = (idx >= 0) ? DECKS_DEF.black.cards[idx % DECKS_DEF.black.cards.length] : '';
+        faceEl.textContent = card;
+        applyDeckTheme(faceEl, 'black');
+      }
+    }
+    // 緑は表共有なし（face自体を置いていない）
 
-  // 白の表＋残数＋ブランク
-  {
-    const faceEl = decksEl.querySelector('.deck-face[data-deck="white"][data-role="face"]');
-    const backEl = decksEl.querySelector('.deck-back[data-deck="white"][data-role="back"]');
-    const cntEl  = decksEl.querySelector('.deck-label[data-kind="count"][data-deck="white"]');
-    const obj = v.white || {};
-    if (faceEl){
-      faceEl.textContent = currentFace(DECKS_DEF.white, obj);
-      applyDeckTheme(faceEl, 'white');
-    }
-    if (cntEl){
-      cntEl.textContent = `残り: ${deckRemain(obj)}`;
-    }
-    if (backEl){
-      const depleted = deckDepleted(obj);
-      backEl.textContent = depleted ? '—' : '裏';
-      backEl.title = depleted ? '山札を作り直す' : `${DECKS_DEF.white.label}デッキをめくる`;
-      backEl.classList.toggle('disabled', depleted);
-    }
-  }
-
-  // 黒の表＋残数＋ブランク
-  {
-    const faceEl = decksEl.querySelector('.deck-face[data-deck="black"][data-role="face"]');
-    const backEl = decksEl.querySelector('.deck-back[data-deck="black"][data-role="back"]');
-    const cntEl  = decksEl.querySelector('.deck-label[data-kind="count"][data-deck="black"]');
-    const obj = v.black || {};
-    if (faceEl){
-      faceEl.textContent = currentFace(DECKS_DEF.black, obj);
-      applyDeckTheme(faceEl, 'black');
-    }
-    if (cntEl){
-      cntEl.textContent = `残り: ${deckRemain(obj)}`;
-    }
-    if (backEl){
-      const depleted = deckDepleted(obj);
-      backEl.textContent = depleted ? '—' : '裏';
-      backEl.title = depleted ? '山札を作り直す' : `${DECKS_DEF.black.label}デッキをめくる`;
-      backEl.classList.toggle('disabled', depleted);
-    }
-  }
-
-  // 緑：残数のみ（表共有なし）
-  {
-    const backEl = decksEl.querySelector('.deck-back[data-deck="green"][data-role="back"]');
-    const cntEl  = decksEl.querySelector('.deck-label[data-kind="count"][data-deck="green"]');
-    const obj = v.green || {};
-    if (cntEl){
-      cntEl.textContent = `残り: ${deckRemain(obj)}`;
-    }
-    if (backEl){
-      const depleted = deckDepleted(obj);
-      backEl.textContent = depleted ? '—' : '裏';
-      backEl.title = depleted ? '山札を作り直す' : `${DECKS_DEF.green.label}デッキをめくる`;
-      backEl.classList.toggle('disabled', depleted);
-    }
-  }
-
-  refreshDeckEnable(); // 既存の部屋/ダイス制限のUIも更新
-});
+    refreshDeckEnable();
+  });
 
   // ★ 追加：ダイスの共有イベント購読
   const diceRef = ref(db, `rooms/${state.code}/dice`);
@@ -1081,18 +972,6 @@ async function advanceDeckGuarded(deckId, flipperUid){
     if (typeof state.deckClicksLeft === 'number' && state.deckClicksLeft <= 0) return;
   }
 
-  // 枯渇していたら「作り直す」ポップを出す
-  {
-    const snap = await get(ref(db, `rooms/${state.code}/decks/${deckId}`));
-    const obj = snap.val() || {};
-    if (deckDepleted(obj)){
-      openRebuildModal(deckId);
-      return;
-    }
-  }
-
-
-  
   const ok = canFlip(deckId, state.myRoomNumber || null);
   if (!ok) return; // 禁止
 
@@ -1129,34 +1008,19 @@ async function advanceDeck(deckId, flipperUid){
   const def = DECKS_DEF[deckId];
   const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
   const snap = await get(deckPath);
-  const obj = snap.val() || {};
+  const curIdx = snap.exists() && typeof snap.val().idx === 'number' ? snap.val().idx : -1;
+  const nextIdx = (curIdx + 1) % def.cards.length;
+  await set(deckPath, { idx: nextIdx, at: Date.now() });
 
-  const order = Array.isArray(obj.order) ? obj.order : _allIdxOf(deckId); // 未初期化でも動く
-  let idx = typeof obj.idx === 'number' ? obj.idx : -1;
-
-  // 枯渇時は何もしない（ガード）
-  if (idx >= order.length - 1){
-    return;
-  }
-
-  // 次へ
-  idx += 1;
-  const cardIdx = order[idx];                 // ← “元の配列”のindex
-  await set(deckPath, { order, idx, at: Date.now() });
-
-  // ▼ 装備付与（白・黒のみ／equipIdx 該当時）
-  if ((deckId === 'white' || deckId === 'black')
-      && Array.isArray(def.equipIdx)
-      && def.equipIdx.includes(cardIdx)
-      && flipperUid){
-    const card = def.cards[cardIdx]; // 例: 'きき' など
+  // ▼ 装備付与（白デッキのみ／equipIdx 該当時）
+  if ((deckId === 'white' || deckId === 'black')  &&  Array.isArray(def.equipIdx) && def.equipIdx.includes(nextIdx) && flipperUid){
+    const card = def.cards[nextIdx]; // 例: 'きき' など
     const updates = {};
     updates[`rooms/${state.code}/equipment/${flipperUid}/${card}`] = true;
     updates[`rooms/${state.code}/equipment_at`] = Date.now();
     await update(ref(db), updates);
   }
 }
-
 
   // ===== 右側：部屋クリック =====
   async function onRoomClick(ev){
@@ -1594,21 +1458,52 @@ function makeEquipIcon(name, colorName){
       const p = participants?.[uid] || {};
       holder.appendChild(makeEquipIcon(p.name, p.color));
 
-      // 装備カード群
-      Object.keys(cards).forEach(card=>{
-        const cardDiv = document.createElement('div');
-        cardDiv.className = 'equip-card';
-        cardDiv.textContent = card;
-        holder.appendChild(cardDiv);
+    // 装備カード群
+    Object.keys(cards).forEach(cardName=>{
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'equip-card';
+      cardDiv.textContent = cardName;
+
+      // どのデッキ由来か推定（配色は必ず applyDeckTheme を通す）
+      const fromWhite = (DECKS_DEF.white.cards || []).includes(cardName);
+      const fromBlack = (DECKS_DEF.black.cards || []).includes(cardName);
+      const deckIdForTheme = fromWhite ? 'white' : (fromBlack ? 'black' : null);
+      if (deckIdForTheme) applyDeckTheme(cardDiv, deckIdForTheme);  // ★色のリセット防止
+
+      // 後工程で使うメタ
+      cardDiv.dataset.ownerUid = uid;
+      cardDiv.dataset.card = cardName;
+      cardDiv.dataset.deck = deckIdForTheme || '';
+
+      // 1) クリックで拡大（既存 dealViewer を利用）
+      cardDiv.addEventListener('click', ()=>{
+        const card = cardDiv.dataset.card || '';
+        const deckHint = cardDiv.dataset.deck || '';
+
+        // 表示文字と配色
+        dealCardFace.textContent = card;
+        if (deckHint) applyDeckTheme(dealCardFace, deckHint);
+
+        // 奪取対象を保持（拡大カードクリック時に参照）
+        state._stealTarget = {
+          ownerUid: cardDiv.dataset.ownerUid,
+          card: card,
+          deck: deckHint
+        };
+
+        // 拡大は常に可能（仕様）
+        state.pinDealViewer = true; // 背景クリックで閉じない
+        show(dealViewer, true);
       });
 
-      
-      equipBar.appendChild(holder);
+      holder.appendChild(cardDiv);
     });
 
-    show(equipBar, entries.length > 0);
-  }
+    equipBar.appendChild(holder);
+  });
 
+  show(equipBar, entries.length > 0);
+}
   // ▼ 装備購読
   function observeEquipments(){
     const equipRef = ref(db, `rooms/${state.code}/equipment`);
@@ -2441,6 +2336,37 @@ async function becomeHostIfVacant(){
 　　observeGreenResult();
     // 装備所持の購読と描画
     observeEquipment();
+
+// 拡大カード押下 → 奪うポップ
+dealCardFace.addEventListener('click', ()=>{
+  const tgt = state._stealTarget;
+  if (!tgt) return;
+
+  // 正体カード（A〜Zで始まる）は何もしない（拡大のみ）
+  if (/^[A-Z]/.test(tgt.card)) return;
+
+  const pop = ensureStealPopover();
+  pop.classList.remove('hidden');
+
+  // ボタン押下で奪取
+  const btn = document.getElementById('btnDoSteal');
+  const once = async ()=>{
+    btn.removeEventListener('click', once);
+    pop.classList.add('hidden');
+    await performSteal(tgt.ownerUid, tgt.card);
+
+    // 閉じる
+    state.pinDealViewer = false;
+    show(dealViewer, false);
+    state._stealTarget = null;
+  };
+  btn.addEventListener('click', once);
+});
+
+// dealViewerの外側クリックで閉じる動作は既存ピン留めガードで抑止中。
+// 明示的に閉じたい場合は state.pinDealViewer=false; show(dealViewer,false) を呼ぶ。
+
+
     
     // ホスト設定UI
     hostGear.onclick = ()=>{
