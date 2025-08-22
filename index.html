@@ -605,20 +605,20 @@ if (!myHasCard && oldCard){
     // ★ 正体質問カード群
     cards:[
       'あなたは シチズン か シャドウ？',
-      'あなたは シチズン か シャドウ？',
-      'あなたは シチズン か レイダー？',
-      'あなたは シチズン か レイダー？',
-      'あなたは レイダー か シャドウ？',
-      'あなたは レイダー か シャドウ？',
-      'あなたは レイダー？',
-      'あなたは レイダー？',
-      'あなたは レイダー？',
-      'あなたは レイダー？',
-      'あなたは シャドウ？',
-      'あなたは シャドウ？',
-      'あなたは シャドウ？',
-      'あなたは シャドウ？',
       '正体カードを見せよ',
+      'あなたは シチズン か レイダー？',
+      'あなたは シチズン か レイダー？',
+      'あなたは レイダー か シャドウ？',
+      'あなたは レイダー か シャドウ？',
+      'あなたは レイダー？',
+      'あなたは レイダー？',
+      'あなたは レイダー？',
+      'あなたは レイダー？',
+      'あなたは シャドウ？',
+      'あなたは シャドウ？',
+      'あなたは シャドウ？',
+      'あなたは シャドウ？',
+      'あなたは シチズン か シャドウ？',
       'あなたは シチズン？',
       'あなたは シチズン？',
       'あなたは シャドウ？',
@@ -1503,7 +1503,7 @@ function showYesNoPopoverForGreen(cardText, fromUid){
     pop.appendChild(panel);
     document.body.appendChild(pop);
 
-  // ボタン生成：通常は役職一致で片方のみ／「正体カードを見せよ」は常に「はい」だけ
+// ボタン生成：通常は役職一致で片方のみ／特例は常に「はい」だけ
 const btnWrap = panel.querySelector('#ynBtns');
 const yesBtn = document.createElement('button');
 yesBtn.id = 'ansYes';
@@ -1516,14 +1516,12 @@ noBtn.className = 'btn';
 noBtn.style.background = '#555';
 noBtn.textContent = 'いいえ';
 
-// ▼ 追加：特例判定
+// ★ 追加：特例判定
 const isRevealOrder = (cardText.trim() === '正体カードを見せよ');
 
 if (isRevealOrder){
-  // 強制公開カードは「はい」だけ
-  btnWrap.appendChild(yesBtn);
+  btnWrap.appendChild(yesBtn);           // 「はい」だけ
 }else{
-  // 従来ロジック（役職一致なら「はい」、不一致なら「いいえ」）
   if (shouldYes) btnWrap.appendChild(yesBtn);
   else           btnWrap.appendChild(noBtn);
 }
@@ -1550,7 +1548,7 @@ async function finish(answer){
 }
 
 yesBtn.onclick = ()=> finish('yes');
-// ▼ 追加：特例時は「いいえ」ハンドラを付けない
+// ★ 追加：特例時は「いいえ」を付けない
 if (!isRevealOrder){
   noBtn.onclick  = ()=> finish('no');
 }
@@ -1586,17 +1584,55 @@ function observeGreenShare(){
 /// === 追加：送信者側 結果購読（相手の「はい／いいえ」受領で閉じる） ===
 function observeGreenResult(){
   const myResultRef = ref(db, `rooms/${state.code}/greenShareResult/${state.uid}`);
-  const off = onValue(myResultRef, (snap)=>{
+  const off = onValue(myResultRef, async (snap)=>{
     const rec = snap.val();
     if (!rec) return;
-    // 受領したら送信者の拡大を閉じる
-    state.pinDealViewer = false;
-    show(dealViewer, false);
-    // 一度受け取ったら掃除
+
+    const isRevealOrder = (rec.card && rec.card.trim() === '正体カードを見せよ');
+    const answeredYes   = (rec.answer === 'yes');
+
+    if (isRevealOrder && answeredYes && rec.from){
+      // ★ 相手（回答者）の正体カード文字列を取得
+      const otherSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards/${rec.from}`));
+      const otherCard = otherSnap.val() || '';
+
+      // 表示内容
+      dealCardFace.textContent = String(otherCard);
+
+      // ★ 正体カードの色分け（拡大ビュー用）
+      if (ROLE_CARDS.shadow.includes(otherCard)) {
+        dealCardFace.style.background = '#1e88e5'; // 青
+        dealCardFace.style.color = '#fff';
+      } else if (ROLE_CARDS.raider.includes(otherCard)) {
+        dealCardFace.style.background = '#e53935'; // 赤
+        dealCardFace.style.color = '#fff';
+      } else if (ROLE_CARDS.citizen.includes(otherCard)) {
+        dealCardFace.style.background = '#fdd835'; // 黄
+        dealCardFace.style.color = '#111';
+      } else {
+        dealCardFace.style.background = '#fff';
+        dealCardFace.style.color = '#111';
+      }
+
+      // 送信者画面に1.2秒だけ拡大表示
+      state.pinDealViewer = true;
+      show(dealViewer, true);
+      setTimeout(()=>{
+        state.pinDealViewer = false;
+        show(dealViewer, false);
+      }, 1200);
+    }else{
+      // 従来挙動（閉じるだけ）
+      state.pinDealViewer = false;
+      show(dealViewer, false);
+    }
+
+    // 受領後掃除
     setTimeout(()=> remove(myResultRef), 0);
   });
   state.unsub.push(off);
 }
+
 
 
 // ★ 緑カード履歴購読（自分がめくった分のみ表示）→ #greenHistory に描画
