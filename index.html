@@ -1966,7 +1966,11 @@ function renderEquipmentBar(equipData, participants){
   if (!bar) return;
   bar.innerHTML = '';
 
-  const uids = Object.keys(equipData || {});
+const uids = Object.keys(equipData || {}).sort((a,b)=>{
+  if (a === state.uid) return -1;
+  if (b === state.uid) return 1;
+  return 0;
+});
   if (uids.length === 0){ bar.classList.add('hidden'); return; }
 
   uids.forEach(uid=>{
