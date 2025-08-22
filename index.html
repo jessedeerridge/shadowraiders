@@ -1503,55 +1503,58 @@ function showYesNoPopoverForGreen(cardText, fromUid){
     pop.appendChild(panel);
     document.body.appendChild(pop);
 
-    // ボタン生成：shouldYes が真なら「はい」だけ、偽なら「いいえ」だけ
-    const btnWrap = panel.querySelector('#ynBtns');
-    const yesBtn = document.createElement('button');
-    yesBtn.id = 'ansYes';
-    yesBtn.className = 'btn';
-    yesBtn.textContent = 'はい';
+  // ボタン生成：通常は役職一致で片方のみ／「正体カードを見せよ」は常に「はい」だけ
+const btnWrap = panel.querySelector('#ynBtns');
+const yesBtn = document.createElement('button');
+yesBtn.id = 'ansYes';
+yesBtn.className = 'btn';
+yesBtn.textContent = 'はい';
 
-    const noBtn = document.createElement('button');
-    noBtn.id = 'ansNo';
-    noBtn.className = 'btn';
-    noBtn.style.background = '#555';
-    noBtn.textContent = 'いいえ';
+const noBtn = document.createElement('button');
+noBtn.id = 'ansNo';
+noBtn.className = 'btn';
+noBtn.style.background = '#555';
+noBtn.textContent = 'いいえ';
 
-    if (shouldYes){
-      btnWrap.appendChild(yesBtn);
-    }else{
-      btnWrap.appendChild(noBtn);
-    }
+// ▼ 追加：特例判定
+const isRevealOrder = (cardText.trim() === '正体カードを見せよ');
 
-   async function finish(answer){
-  // 送信者側へ結果通知
+if (isRevealOrder){
+  // 強制公開カードは「はい」だけ
+  btnWrap.appendChild(yesBtn);
+}else{
+  // 従来ロジック（役職一致なら「はい」、不一致なら「いいえ」）
+  if (shouldYes) btnWrap.appendChild(yesBtn);
+  else           btnWrap.appendChild(noBtn);
+}
+
+async function finish(answer){
   await set(ref(db, `rooms/${state.code}/greenShareResult/${fromUid}`), {
     from: state.uid, answer, card: cardText, at: Date.now()
   });
 
-  // ★ 履歴：回答を記録
   const h2Ref = ref(db, `rooms/${state.code}/greenHistory`);
   await set(ref(db, `rooms/${state.code}/greenHistory/${push(h2Ref).key}`), {
     type: 'answered',
-    from: fromUid,        // 送信者
-    to: state.uid,        // 自分（回答者）
+    from: fromUid,
+    to: state.uid,
     card: cardText,
-    answer,               // 'yes' | 'no'
+    answer,
     at: Date.now()
   });
 
-  // 自分宛の共有を掃除（再表示防止）
   await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
-
-  // 自分側の拡大を閉じる（送信者側は observeGreenResult が閉じる）
   state.pinDealViewer = false;
   show(dealViewer, false);
-
   pop.remove();
 }
 
+yesBtn.onclick = ()=> finish('yes');
+// ▼ 追加：特例時は「いいえ」ハンドラを付けない
+if (!isRevealOrder){
+  noBtn.onclick  = ()=> finish('no');
+}
 
-    yesBtn.onclick = ()=> finish('yes');
-    noBtn.onclick  = ()=> finish('no');
 
     // 外側クリックで閉じない（誤タップ防止／ピン留め継続）
   })();
@@ -1619,43 +1622,52 @@ function observeGreenHistory(){
     const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
     const ps = psSnap.val() || {};
 
-    // 3) 描画：「質問文 → 名前アイコン ：はい／いいえ」
-    box.innerHTML = '';
-    mine.forEach(r=>{
-      const to = r.to || '';
-      const p  = ps[to] || {};
-      const name  = p.name  || '?';
-      const color = p.color || '';
+  // 3) 描画：通常は「質問文 → アイコン ：はい／いいえ」
+//         特例（正体カードを見せよ）は「アイコン：正体カード」
+box.innerHTML = '';
+mine.forEach(r=>{
+  const to = r.to || '';
+  const p  = ps[to] || {};
+  const name  = p.name  || '?';
+  const color = p.color || '';
 
-      const row = document.createElement('div');
-      row.className = 'row';
+  const row = document.createElement('div');
+  row.className = 'row';
 
-      // 質問文
-      const qSpan = document.createElement('span');
-      qSpan.textContent = r.card;
+  // 名前アイコン（共通）
+  const iconWrap = document.createElement('span');
+  iconWrap.style.display = 'inline-flex';
+  iconWrap.style.alignItems = 'center';
+  iconWrap.appendChild(makeEquipIcon(name, color));
 
-      // 矢印
-      const arrow = document.createTextNode(' → ');
+  const isRevealOrder = (r.card && r.card.trim() === '正体カードを見せよ');
+  if (isRevealOrder){
+    // ▼ 特例表示：アイコン：正体カード（1行）
+    const lab = document.createElement('span');
+    lab.textContent = '：正体カード';
+    row.appendChild(iconWrap);
+    row.appendChild(lab);
+  }else{
+    // ▼ 従来表示
+    const qSpan = document.createElement('span');
+    qSpan.textContent = r.card;
 
-      // 名前アイコン（既存の makeEquipIcon を使用）
-      const iconWrap = document.createElement('span');
-      iconWrap.style.display = 'inline-flex';
-      iconWrap.style.alignItems = 'center';
-      iconWrap.appendChild(makeEquipIcon(name, color));
+    const arrow = document.createTextNode(' → ');
 
-      // 回答（未回答は …）
-      const ansSpan = document.createElement('span');
-      const ansText = (r.type === 'answered')
-        ? (r.answer === 'yes' ? 'はい' : 'いいえ')
-        : '…';
-      ansSpan.textContent = `：${ansText}`;
+    const ansSpan = document.createElement('span');
+    const ansText = (r.type === 'answered')
+      ? (r.answer === 'yes' ? 'はい' : 'いいえ')
+      : '…';
+    ansSpan.textContent = `：${ansText}`;
 
-      row.appendChild(qSpan);
-      row.appendChild(arrow);
-      row.appendChild(iconWrap);
-      row.appendChild(ansSpan);
-      box.appendChild(row);
-    });
+    row.appendChild(qSpan);
+    row.appendChild(arrow);
+    row.appendChild(iconWrap);
+    row.appendChild(ansSpan);
+  }
+  box.appendChild(row);
+});
+
   });
 
   state.unsub.push(off);
