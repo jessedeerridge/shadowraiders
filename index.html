@@ -518,6 +518,7 @@ async function doFullReset(){
   updates[`rooms/${state.code}/icons`] = null;
   updates[`rooms/${state.code}/seats`] = null;
   updates[`rooms/${state.code}/resetAt`] = Date.now();
+updates[`rooms/${state.code}/game/started`] = false; // ★ リスタート時に未開始へ
 
   await update(ref(db), updates);
 
