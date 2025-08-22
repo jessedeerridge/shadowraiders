@@ -689,6 +689,8 @@ const face = document.createElement('div');
 face.className = 'deck-face';
 face.dataset.role = 'face';
 face.textContent = '';
+if (deckId === 'green') face.style.display = 'none'; // ★ 緑の表はDOMごと非表示
+
 
 // ▼追加：クリックで拡大表示
 // ▼追加：クリックで拡大表示
@@ -755,8 +757,24 @@ const off = onValue(decksRef, (snap)=>{
 async function advanceDeckGuarded(deckId, flipperUid){
   const ok = canFlip(deckId, state.myRoomNumber || null);
   if (!ok) return; // 禁止
+
   await advanceDeck(deckId, flipperUid);
+
+  // ★ 緑デッキは共有表を出さないので、めくった本人だけ即プレビュー
+  if (deckId === 'green' && flipperUid === state.uid){
+    const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
+    const snap = await get(deckPath);
+    const idx = (snap.val()?.idx ?? -1);
+    if (idx >= 0){
+      const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
+      dealCardFace.textContent = card;
+      show(dealViewer, true);
+      // ★ 拡大画像クリック → 参加者選択ポップ（③へ）
+      dealCardFace.onclick = ()=> showParticipantSelectPopup(card);
+    }
+  }
 }
+
 
 async function advanceDeck(deckId, flipperUid){
   const def = DECKS_DEF[deckId];
@@ -1350,8 +1368,6 @@ function observeReveals(){
   const refReveal = ref(db, `rooms/${state.code}/reveal`);
   const off = onValue(refReveal, (snap)=>{
     const all = snap.val() || {};
-    // 複数同時に公開される可能性があるなら、すべて順に見せてもよいが
-    // まずは「最初の1件だけ」表示する簡易仕様
     const firstKey = Object.keys(all)[0];
     const rec = firstKey ? all[firstKey] : null;
     if (rec?.card){
@@ -1362,6 +1378,76 @@ function observeReveals(){
   });
   state.unsub.push(off);
 }
+
+// === 緑カード共有：参加者選択ポップ ===
+function showParticipantSelectPopup(cardText){
+  const ex = document.getElementById('greenSharePopup');
+  if (ex) ex.remove();
+
+  const pop = document.createElement('div');
+  pop.id = 'greenSharePopup';
+  pop.style.cssText = `
+    position:fixed; inset:0; z-index:2147483608;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.35);
+  `;
+  const panel = document.createElement('div');
+  panel.className = 'modal-panel';
+  panel.innerHTML = `<div style="font-weight:700;margin-bottom:8px">共有先を選んでください</div>`;
+  const list = document.createElement('div');
+  list.style.display = 'grid';
+  list.style.gridTemplateColumns = 'repeat(3, 140px)';
+  list.style.gap = '8px';
+
+  panel.appendChild(list);
+  pop.appendChild(panel);
+  document.body.appendChild(pop);
+
+  // 自分以外の参加者を列挙
+  get(ref(db, `rooms/${state.code}/participants`)).then(snap=>{
+    const ps = snap.val() || {};
+    Object.entries(ps).forEach(([uid, info])=>{
+      if (uid === state.uid) return;
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = (info?.name || '?');
+      btn.style.width = '100%';
+      btn.onclick = async ()=>{
+        await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
+          card: cardText, from: state.uid, at: Date.now()
+        });
+        pop.remove();
+      };
+      list.appendChild(btn);
+    });
+  });
+
+  // クリックアウェイで閉じる
+  setTimeout(()=>{
+    const onDocClick = (e)=>{
+      if (panel.contains(e.target)) return;
+      pop.remove();
+      document.removeEventListener('click', onDocClick, true);
+    };
+    document.addEventListener('click', onDocClick, true);
+  }, 0);
+}
+
+// === 緑カード共有：受信者側購読（自分宛の共有が来たら拡大表示） ===
+function observeGreenShare(){
+  const myShareRef = ref(db, `rooms/${state.code}/greenShare/${state.uid}`);
+  const off = onValue(myShareRef, (snap)=>{
+    const rec = snap.val();
+    if (rec?.card){
+      dealCardFace.textContent = rec.card;
+      show(dealViewer, true);
+      // 受信後クリーンアップ（1回表示）
+      setTimeout(()=> remove(myShareRef), 0);
+    }
+  });
+  state.unsub.push(off);
+}
+
 
   
 /* === 4b: 装備所持バーのレンダラ＋購読 === */
@@ -1574,6 +1660,9 @@ async function becomeHostIfVacant(){
 
     // ☆ 追加：公開の購読（全員に1秒共有を反映）
     observeReveals();
+
+    // ★ 追加：緑カードの個別共有（自分宛）を受信
+    observeGreenShare();
 
     // 装備所持の購読と描画
     observeEquipment();
