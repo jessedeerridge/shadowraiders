@@ -1431,16 +1431,21 @@ function showParticipantSelectPopup(cardText){
 
         // 2) ★ ③ 履歴：送信ログを greenHistory に記録（answerは未確定）
         //    push() でIDを採番し、 {type:'sent', from, to, card, answer:null, at} を保存
- const hRef = ref(db, `rooms/${state.code}/greenHistoryBySender/${state.uid}`);
- const id = push(hRef).key;
- await set(ref(db, `rooms/${state.code}/greenHistoryBySender/${state.uid}/${id}`), { ... });
-          type: 'sent',
-          from: state.uid,   // 送信者（自分）
-          to: uid,           // 受信者
-          card: cardText,    // 質問文
-          answer: null,      // この時点では未確定
-          at: Date.now()
-        });
+// 2) ★ 履歴：送信ログを greenHistoryBySender（送信者専用ツリー）に記録
+const hRef = ref(db, `rooms/${state.code}/greenHistoryBySender/${state.uid}`);
+const id = push(hRef).key;
+await set(
+  ref(db, `rooms/${state.code}/greenHistoryBySender/${state.uid}/${id}`),
+  {
+    type: 'sent',
+    from: state.uid,   // 送信者（自分）
+    to: uid,           // 受信者
+    card: cardText,    // 質問文
+    answer: null,      // この時点では未確定
+    at: Date.now()
+  }
+);
+
 
         // 3) ポップを閉じる
         pop.remove();
