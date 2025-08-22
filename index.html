@@ -1536,17 +1536,14 @@ function showYesNoPopoverForGreen(cardText, fromUid){
     from: state.uid, answer, card: cardText, at: Date.now()
   });
 
-  // ★ 履歴：回答を記録
- const h2Ref = ref(db, `rooms/${state.code}/greenHistoryBySender/${fromUid}`);
- await set(ref(db, `rooms/${state.code}/greenHistoryBySender/${fromUid}/${push(h2Ref).key}`), {
+ // ★ 履歴：回答を記録
+ // ★ 新：送信者の履歴に「送信＋返信まとめ1行」を追加
+ // 送信者名・回答者名を確定させて保存
+ const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+ const ps = psSnap.val() || {};
+ const senderName = (ps?.[fromUid]?.name) || '';
+ const receiverName = state.name || '';
 
-    type: 'answered',
-    from: fromUid,        // 送信者
-    to: state.uid,        // 自分（回答者）
-    card: cardText,
-    answer,               // 'yes' | 'no'
-    at: Date.now()
-  });
 
   // 自分宛の共有を掃除（再表示防止）
   await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
@@ -1604,52 +1601,49 @@ function observeGreenResult(){
   state.unsub.push(off);
 }
 
-
-// ★ 緑カード履歴購読 → #greenHistory に append（送信者=自分の履歴だけ）
-function observeGreenHistory(){
-  const box = document.getElementById('greenHistory');
-  if (!box) return;
-
-  // 送信者別に分割したツリーだけ購読
-  // rooms/{code}/greenHistoryBySender/{state.uid}/<autoId>
+function observeGreenHistoryCombined(){
+  // 送信者＝自分 のツリーのみ購読
   const q = query(
     ref(db, `rooms/${state.code}/greenHistoryBySender/${state.uid}`),
     orderByChild('at'),
-    limitToLast(50)
+    limitToLast(100)
   );
 
-  const off = onValue(q, (snap)=>{
-    const all = snap.val() || {};
-    // 自分のツリーだけを読んでいるので filter は不要
-    const rows = Object.values(all).sort((a,b)=> (a.at||0)-(b.at||0));
-
-    box.innerHTML = '';
-    rows.forEach(r=>{
-      const who = (r.type === 'sent')
-        ? `→ ${String(r.to||'').slice(0,6)}`
-        : `← ${String(r.from||'').slice(0,6)}`;
-      const ans = (r.type === 'answered')
-        ? (r.answer === 'yes' ? 'はい' : 'いいえ')
-        : '送信';
-
-      const div = document.createElement('div');
-      div.className = 'row';
-      div.innerHTML = `<span class="tag">[緑]</span><span>${r.card}</span><span>${who}</span><span>：${ans}</span>`;
-      box.appendChild(div);
-    });
-
-    if (rows.length === 0){
-      const empty = document.createElement('div');
-      empty.className = 'row';
-      empty.style.opacity = '.7';
-      empty.textContent = '（履歴なし）';
-      box.appendChild(empty);
+  const render = (rows)=>{
+    // コンテナ確保（なければ作る）
+    let hist = document.getElementById('equipHistory');
+    if (!hist){
+      const bar = document.getElementById('equipBar');
+      hist = document.createElement('div');
+      hist.id = 'equipHistory';
+      hist.className = 'history';
+      bar && bar.appendChild(hist);
     }
-  });
+    // 1行形式で描画：「質問 → 質問者の名前：はい/いいえ」
+    hist.innerHTML = '';
+    const list = rows
+      .filter(r => r && (r.type === 'pair' || (r.answer==='yes' || r.answer==='no')))
+      .sort((a,b)=> (a.at||0) - (b.at||0));
+    if (list.length === 0){
+      hist.textContent = '（質問履歴なし）';
+      return;
+    }
+    list.forEach(r=>{
+      const div = document.createElement('div');
+      div.className = 'history-item';
+      const ansJp = (r.answer === 'yes') ? 'はい' : 'いいえ';
+      const senderName = r.fromName || state.name || '';
+      div.textContent = `${r.card} → ${senderName}：${ansJp}`;
+      hist.appendChild(div);
+    });
+  };
 
+  const off = onValue(q, (snap)=>{
+    const val = snap.val() || {};
+    render(Object.values(val));
+  });
   state.unsub.push(off);
 }
-
 
 
   
@@ -1886,8 +1880,7 @@ async function becomeHostIfVacant(){
 
     // ☆ 追加：公開の購読（全員に1秒共有を反映）
     observeReveals();
-　　observeGreenHistory();
-    // ★ 追加：緑カードの個別共有（自分宛）を受信
+ observeGreenHistoryCombined();     // ★ 追加：緑カードの個別共有（自分宛）を受信
     observeGreenShare();
 　　installDealViewerPinGuard();
 　　observeGreenResult();
