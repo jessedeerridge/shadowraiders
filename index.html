@@ -478,6 +478,7 @@ const state = {
   dragSettleGuardUid: null,  // ★ 追加：ドロップ直後のエコー抑止
   dragSettleGuardUntil: 0,   // ★ 追加：抑止の期限(ms)
   deckClicksLeft: 0,         // ★ 追加：ダイス後に山札（裏）をめくれる残回数（ローカル）
+  stealContext: null,
 };
 
 
@@ -503,6 +504,22 @@ function applyDeckTheme(el, deckId){
   else if (deckId === 'green'){ el.style.background = '#c7f5c1'; el.style.color = '#111'; }
 }
 
+// ★ 追加：正体カード（先頭がA〜Z）判定
+function isRoleCardStart(text){
+  if (!text) return false;
+  const ch = String(text).trim().charAt(0);
+  return /[A-ZＡ-Ｚ]/.test(ch);
+}
+
+// ★ 追加：装備の所有権を ownerUid → 自分(state.uid) に移す
+async function transferEquipment(ownerUid, card){
+  if (!ownerUid || !card || ownerUid === state.uid) return; // 自分の物は何もしない
+  const updates = {};
+  updates[`rooms/${state.code}/equipment/${ownerUid}/${card}`] = null;
+  updates[`rooms/${state.code}/equipment/${state.uid}/${card}`] = true;
+  updates[`rooms/${state.code}/equipment_at`] = Date.now();
+  await update(ref(db), updates);
+}
   
   // ===== 同名引継ぎ：旧UIDから「色」と「右下カード」を移す =====
   async function onlySelfHasThisName(){
@@ -1419,13 +1436,79 @@ function makeEquipIcon(name, colorName){
       const p = participants?.[uid] || {};
       holder.appendChild(makeEquipIcon(p.name, p.color));
 
-      // 装備カード群
+      // 装備カード群（クリックで拡大→拡大側クリックで“奪う”）
       Object.keys(cards).forEach(card=>{
         const cardDiv = document.createElement('div');
         cardDiv.className = 'equip-card';
         cardDiv.textContent = card;
+
+        // ★ 追加：拡大表示 → 奪取フロー
+        cardDiv.addEventListener('click', ()=>{
+          // 1) 拡大カードに表示
+          const text = card;
+          dealCardFace.textContent = text;
+
+          // 2) 配色（白/黒デッキのカードならテーマを合わせる）
+          if (DECKS_DEF.white.cards.includes(text)) {
+            applyDeckTheme(dealCardFace,'white');
+          } else if (DECKS_DEF.black.cards.includes(text)) {
+            applyDeckTheme(dealCardFace,'black');
+          } else {
+            dealCardFace.style.background = '#fff';
+            dealCardFace.style.color = '#111';
+          }
+
+          // 3) 奪取用の文脈を保持
+          state.stealContext = { ownerUid: uid, card: text };
+
+          // 4) 拡大を表示
+          show(dealViewer, true);
+
+          // 5) 拡大カード自体のクリックで「奪う」ポップ
+          dealCardFace.onclick = (ev)=>{
+            const ctx = state.stealContext;
+            if (!ctx) return;
+
+            // ★ 正体カード（A〜Z開始）は何もしない
+            if (isRoleCardStart(ctx.card)) return;
+
+            // 既存のホスト削除ポップと同じ見た目の簡易ポップを中央付近に出す
+            const pop = document.createElement('div');
+            pop.className = 'popover';
+            pop.style.left = (window.innerWidth/2 - 80) + 'px';
+            pop.style.top  = (window.innerHeight/2 + 180) + 'px';
+            pop.innerHTML = `
+              <span>この装備を奪う？</span>
+              <button id="btnStealNow">奪う</button>
+            `;
+            document.body.appendChild(pop);
+
+            // 奪う → 所有権を移す
+            document.getElementById('btnStealNow').onclick = async ()=>{
+              try{
+                await transferEquipment(ctx.ownerUid, ctx.card);
+              }finally{
+                pop.remove();
+                state.stealContext = null;
+                show(dealViewer, false);
+              }
+            };
+
+            // ポップの外クリックで閉じる
+            const onDocClick = (e)=>{
+              if (!pop.contains(e.target)) {
+                pop.remove();
+                document.removeEventListener('click', onDocClick);
+              }
+            };
+            // 直後の同一クリックで閉じないよう、登録はタイマーで少し遅らせる
+            setTimeout(()=> document.addEventListener('click', onDocClick), 0);
+          };
+        });
+
         holder.appendChild(cardDiv);
       });
+
 
       
       equipBar.appendChild(holder);
