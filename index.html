@@ -194,12 +194,21 @@ header{
   #myRoomBadge{white-space:nowrap;}      /* 強制的に改行しない */
   #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
   #dealViewer .deal-card{ width:180px; height:260px; font-size:28px; }
-    /* プレイヤー選択ポップも縮小 */
-  .popover, #stealPopover, #revealPopover {
-    max-width: 90vw;    /* 画面幅の90%以内に制限 */
-    font-size: 14px;    /* 文字を小さく */
-    padding: 6px 8px;
+  #greenSharePopup .list {
+    /* 横幅に合わせて自動折返し */
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
   }
+
+  #greenSharePopup .modal-panel {
+    /* 横方向にはみ出さないように */
+    width: 92vw;          /* 画面幅の92%以内 */
+    max-width: 520px;     /* 上限（PCと共通感覚） */
+    box-sizing: border-box;
+    max-height: 80vh;     /* 縦にも収める */
+    overflow: auto;       /* 多すぎるときはスクロール */
+  }
+  
 }
 
 /* ▼ 装備所持エリア（通常フロー） */
