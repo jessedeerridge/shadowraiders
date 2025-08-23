@@ -88,6 +88,11 @@ header{
   color: transparent;       /* 文字も非表示 */
 }
 
+.deck-face.blank {
+  border: 2px dashed #999;
+  background: transparent !important;
+  color: transparent !important;
+}  
   /* ダイス欄 */
 .dicebar{
   display:flex;
@@ -1073,13 +1078,14 @@ back.addEventListener('click', (ev)=>{
   decksEl.appendChild(wrapper);
 }else{
   // type === 'face'
-  const face = document.createElement('div');
-  face.className = 'deck-face';
-      face.dataset.deck = deckId;     // ★識別
-      face.dataset.role = 'face';
-      face.textContent = '';
-      attachFaceClick(face, deckId);
-      decksEl.appendChild(face);
+const face = document.createElement('div');
+face.className = 'deck-face blank'; // ← 追加
+face.dataset.deck = deckId;
+face.dataset.role = 'face';
+face.textContent = '';
+attachFaceClick(face, deckId);
+decksEl.appendChild(face);
+
     }
   });
 
@@ -1093,32 +1099,40 @@ const off = onValue(decksRef, (snap)=>{
   // 白の表
 // 白の表（order対応）
 {
-  const idx = (v.white?.idx ?? -1);
+  const idx   = (v.white?.idx ?? -1);
   const order = Array.isArray(v.white?.order) ? v.white.order : null;
   const faceEl = decksEl.querySelector('.deck-face[data-deck="white"][data-role="face"]');
   if (faceEl){
     if (idx >= 0){
       const actual = order ? order[idx % order.length] : (idx % DECKS_DEF.white.cards.length);
       faceEl.textContent = DECKS_DEF.white.cards[actual];
+      faceEl.classList.remove('blank');      // ← 追加
+      applyDeckTheme(faceEl, 'white');       // ← 既存どおり
     }else{
       faceEl.textContent = '';
+      faceEl.classList.add('blank');         // ← 追加
+      faceEl.style.background = '';          // ← 追加（インライン色を消す）
+      faceEl.style.color = '';
     }
-    applyDeckTheme(faceEl, 'white');
   }
 }
 // 黒の表（order対応）
 {
-  const idx = (v.black?.idx ?? -1);
+  const idx   = (v.black?.idx ?? -1);
   const order = Array.isArray(v.black?.order) ? v.black.order : null;
   const faceEl = decksEl.querySelector('.deck-face[data-deck="black"][data-role="face"]');
   if (faceEl){
     if (idx >= 0){
       const actual = order ? order[idx % order.length] : (idx % DECKS_DEF.black.cards.length);
       faceEl.textContent = DECKS_DEF.black.cards[actual];
+      faceEl.classList.remove('blank');      // ← 追加
+      applyDeckTheme(faceEl, 'black');       // ← 既存どおり
     }else{
       faceEl.textContent = '';
+      faceEl.classList.add('blank');         // ← 追加
+      faceEl.style.background = '';          // ← 追加
+      faceEl.style.color = '';
     }
-    applyDeckTheme(faceEl, 'black');
   }
 }
 
