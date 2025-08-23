@@ -61,7 +61,7 @@ header{
   gap:16px;
   justify-content:flex-end;
   align-items:flex-start;
-  margin-top:10px;   /* ← 元は -30px、正の値にして間隔を空ける */
+  margin-top: -140px; /* ← ここを調整 */
   margin-right:24px;
 }
   .deck{display:flex;flex-direction:column;align-items:center;gap:8px}
@@ -291,7 +291,7 @@ header{
 
   <!-- ルーム -->
   <section id="roomPanel" class="hidden">
-    <div style="margin-top:10px;">
+    <div style="margin-top:0px;">
       <!-- 図形②：左に狭い長方形＋右に星形（中央六角形＋外周五角形6） -->
       <svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
     </div>
@@ -930,7 +930,7 @@ const rectH = starBox.height + 85
 
     // viewBox 調整
     (function fit(){
-      const pad=14, box=svg.getBBox();
+      const pad=0, box=svg.getBBox();
       svg.setAttribute('viewBox',[box.x-pad, box.y-pad, box.width+pad*2, box.height+pad*2].join(' '));
     })();
 
