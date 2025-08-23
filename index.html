@@ -1441,21 +1441,39 @@ function positionRoomPops(){
     let left = r.left + r.width/2;
     let top  = r.top + r.height/2;
 
+
     // --- スマホ用調整 ---
     if (window.innerWidth <= 600) {
-      if (roomNo === 2 || roomNo === 7) {
-        left = window.innerWidth - el.offsetWidth/2 - 8; // 右端から8px余白   
-      }
      if (roomNo === 4 || roomNo === 5) {
         // 左に10pxずらす
-        left -= 10;
+        left -= 40;
       }
+    
+
+    // --- 追加：ルーム2と7は右端まで伸ばす ---
+    if (roomNo === 2) {
+  el.style.left = (r.left + 60) + "px";     // 右に10px移動
+      el.style.textAlign = "left";         // 左寄せ
+      el.style.maxWidth = (window.innerWidth - 2 - r.left) + "px";   el.style.whiteSpace = "nowrap";           // 折り返し防止
+    el.style.top = (top + 15) + "px";        // 下に5px
+  }
+ else {
+      el.style.left = left + 'px';
+    el.style.top  = top + 'px';
     }
 
-    el.style.left = left + 'px';
-    el.style.top  = top  + 'px';
+
+    if (roomNo === 7) {
+  el.style.left = (r.left + 60) + "px";     // 右に10px移動
+      el.style.textAlign = "left";         // 左寄せ
+      el.style.maxWidth = (window.innerWidth - 2 - r.left) + "px";   el.style.whiteSpace = "nowrap";           // 折り返し防止
+    el.style.top = (top - 15) + "px";        // 下に5px
+ }
+
+}
   });
 }
+
 
 
 function toggleRoomHelp(){
