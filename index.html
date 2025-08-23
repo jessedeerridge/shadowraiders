@@ -1443,13 +1443,16 @@ function positionRoomPops(){
 
     // --- スマホ用調整 ---
     if (window.innerWidth <= 600) {
-      if (roomNo === 1 || roomNo === 7) {
-        // 右端まで伸ばす
-        left = window.innerWidth - el.offsetWidth/2 - 8; // 右端から8px余白
-      }
-      if (roomNo === 4 || roomNo === 5) {
-        // 左に10pxずらす
-        left -= 10;
+      if (roomNo === 2 || roomNo === 7) {
+        const marginRight = 2;                           // 右端の余白（必要なら調整）
+        const rightEdge   = window.innerWidth - marginRight;
+        const widthPx     = Math.max(0, 2 * (rightEdge - centerX));
+        el.style.width    = widthPx + 'px';
+       }
+      if (roomNo === 4) {
+        left -= 70;
+      if (roomNo === 5) {
+        left -= 50;
       }
     }
 
