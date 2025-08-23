@@ -562,7 +562,31 @@ btnStart.addEventListener('click', async ()=>{
   }
 });
 
-  
+  // === リセット：確認→DBの対象を全削除→started=false → resetAt 記録 ===
+async function hostResetWithConfirm(){
+  if (!confirm('リセットしますか？')) return;
+
+  const now = Date.now();
+  const updates = {};
+
+  // テーブル上の状態をクリア
+  updates[`rooms/${state.code}/icons`]           = null; // テーブルのアイコン
+  updates[`rooms/${state.code}/equipment`]       = null; // 装備一覧
+  updates[`rooms/${state.code}/greenHistory`]    = null; // 緑履歴
+  updates[`rooms/${state.code}/deal/v1/cards`]   = null; // 配布正体カード
+
+  // デッキも初期化（次回スタートで必ず新シャッフル）
+  updates[`rooms/${state.code}/decks/green`]     = null;
+  updates[`rooms/${state.code}/decks/white`]     = null;
+  updates[`rooms/${state.code}/decks/black`]     = null;
+
+  // スタートフラグを落とす（全員の色ポップが再び開く）
+  updates[`rooms/${state.code}/game/started`]    = false;
+  updates[`rooms/${state.code}/resetAt`]         = now;
+
+  await update(ref(db), updates);
+}
+
   const colorModal    = document.getElementById('colorModal');
   const colorGrid     = document.getElementById('colorGrid');
 
@@ -2888,6 +2912,9 @@ ensureRoomTips();
     const offStarted = onValue(startedRef, (snap)=>{
       state.started = !!snap.val();
       show(colorModal, !state.started); // スタートまでは色ポップのまま
+ if (state.isHost && btnStart) {
+   btnStart.textContent = state.started ? 'リセット' : 'スタート';
+ }
     });
     state.unsub.push(offStarted);
 
@@ -2909,11 +2936,20 @@ ensureRoomTips();
       hostPanel.classList.toggle('hidden');
     };
 
-    btnStart.onclick = async ()=>{
-      if (!state.isHost) return;
-      await hostStartIfNotStarted();
-      hostPanel.classList.add('hidden');
-    };
+// === btnStart の新 onclick（トグル） ===
+btnStart.onclick = async ()=>{
+  if (!state.isHost) return;
+
+  if (!state.started){
+    // スタート：色選択済みの人数に基づいて正体カード配布＆デッキ初期化
+    await hostStartIfNotStarted();
+  }else{
+    // リセット：確認→DB掃除→started=false
+    await hostResetWithConfirm();
+  }
+  hostPanel.classList.add('hidden');
+};
+
     // カードビューア：外側クリックで閉じる
     dealViewer.addEventListener('click', (e)=>{
       if (e.target === dealViewer) show(dealViewer, false);
