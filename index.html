@@ -1410,7 +1410,7 @@ function buildRoomPops(){
     const roomNo = Number(hit.dataset.room || 0);
     const div = document.createElement('div');
     div.className = 'room-pop';
-    div.textContent = wrapEvery(ROOM_TEXT[roomNo] || "", 6);
+div.textContent = wrapEvery(ROOM_TEXT[roomNo] || "");
     document.body.appendChild(div);
     roomPopEls.push(div);
   });
