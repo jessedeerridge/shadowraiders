@@ -882,8 +882,8 @@ await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
 
     // 左の長方形
     const starBox = g.getBBox();
-    const rectH = starBox.height;
-    const rectW = rectH * rectScale;
+const rectH = starBox.height + 30
+  const rectW = rectH * rectScale;
     const rectX = starBox.x - gap - rectW;
     const rectY = starBox.y;
 
