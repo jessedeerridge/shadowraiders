@@ -1448,10 +1448,9 @@ function positionRoomPops(){
         width = window.innerWidth - 2; // 右端に余白
         el.style.textAlign = "center"; // 中央揃え      
       }
-      if (roomNo === 4) {
-        left -= 70; }
-      if (roomNo === 5) {
-        left -= 50;
+     if (roomNo === 4 || roomNo === 5) {
+        // 左に10pxずらす
+        left -= 10;
       }
     }
 
