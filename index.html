@@ -882,7 +882,7 @@ await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
 
     // 左の長方形
     const starBox = g.getBBox();
-const rectH = starBox.height + 30
+const rectH = starBox.height + 50
   const rectW = rectH * rectScale;
     const rectX = starBox.x - gap - rectW;
     const rectY = starBox.y;
@@ -1370,24 +1370,17 @@ async function rebuildDeck(deckId){
   await set(deckPath, { idx: -1, order, at: Date.now() });
 }
 
-function wrapEvery(str, n=9){
-  const s = String(str || "");
-  let out = "";
-  for (let i=0; i<s.length; i+=n){
-    out += s.slice(i, i+n) + (i+n < s.length ? "\n" : "");
-  }
-  return out;
-}
+
 
 // 部屋ごとの説明テキスト
 const ROOM_TEXT = {
-  1: "次の手番に好きな部屋に移動できる。",
+  1: "次の手番は\n任意の場所に\n移動できる。",
   2: "白カードが引ける",
   3: "黒カードが引ける",
-  4: "任意のプレイヤーを1回復、または2ダメージ与える",
-  5: "他プレイヤーの装備カードを1つ奪う",
-  6: "推理カードが引ける",
-  7: "推理、白、黒カードが引ける",
+  4: "任意のプレイヤーを\n1回復するか2ダメージ\n与える",
+  5: "他プレイヤーの\n装備カードを\n1つ奪う",
+  6: "推理カードが\n引ける",
+  7: "推理,白,黒の\nカードが引ける",
 };
 
 let roomHelpOn = false;
@@ -1406,14 +1399,15 @@ function buildRoomPops(){
 
   removeRoomPops();
 
-  hits.forEach(hit => {
-    const roomNo = Number(hit.dataset.room || 0);
-    const div = document.createElement('div');
-    div.className = 'room-pop';
-div.textContent = wrapEvery(ROOM_TEXT[roomNo] || "");
-    document.body.appendChild(div);
-    roomPopEls.push(div);
-  });
+/* ROOM_TEXT をそのまま出す（手動改行を使う） */
+hits.forEach(hit => {
+  const roomNo = Number(hit.dataset.room || 0);
+  const div = document.createElement('div');
+  div.className = 'room-pop';
+  div.textContent = (ROOM_TEXT[roomNo] || "");            // ← wrapEvery を外す
+  document.body.appendChild(div);
+  roomPopEls.push(div);
+});
 
   positionRoomPops();
 }
