@@ -985,16 +985,22 @@ function setupDecks(){
   function attachFaceClick(faceEl, deckId){
     faceEl.addEventListener('click', async ()=>{
       if (deckId === 'green'){
-        // 緑表は共有しない：自分だけ参照
-        const snap = await get(ref(db, `rooms/${state.code}/decks/${deckId}`));
-        const idx = (snap.val()?.idx ?? -1);
+        const deckRef = ref(db, `rooms/${state.code}/decks/${deckId}`);
+        const snap = await get(deckRef);
+        const v = snap.val() || {};
+        const idx   = (v.idx ?? -1);
+        const order = Array.isArray(v.order) ? v.order : null;
         if (idx >= 0){
-          const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
+          const actual = order
+            ? order[idx % order.length]
+            : (idx % DECKS_DEF[deckId].cards.length);
+          const card = DECKS_DEF[deckId].cards[actual];
           dealCardFace.textContent = card;
           applyDeckTheme(dealCardFace, 'green');
           show(dealViewer, true);
         }
       }else{
+
         // 白・黒の表は faceEl のテキストを拡大
         if (faceEl.textContent){
           dealCardFace.textContent = faceEl.textContent;
@@ -1243,18 +1249,21 @@ async function advanceDeckGuarded(deckId, flipperUid){
   if (deckId === 'green' && flipperUid === state.uid){
     const deckPath = ref(db, `rooms/${state.code}/decks/${deckId}`);
     const snap = await get(deckPath);
-    const idx = (snap.val()?.idx ?? -1);
+    const v = snap.val() || {};
+    const idx   = (v.idx ?? -1);
+    const order = Array.isArray(v.order) ? v.order : null;
     if (idx >= 0){
-      const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
+      const actual = order
+        ? order[idx % order.length]
+        : (idx % DECKS_DEF[deckId].cards.length);
+      const card = DECKS_DEF[deckId].cards[actual];
 
-      // ★ ピン留め（外側タップで閉じない）
       state.pinDealViewer = true;
-
       dealCardFace.textContent = card;
-      applyDeckTheme(dealCardFace, 'green');      // ★ 追加
+      applyDeckTheme(dealCardFace, 'green');
       show(dealViewer, true);
       dealCardFace.onclick = ()=> showParticipantSelectPopup(card);
-    // ★ 緑カードの返信終了フラグをセット
+      // ★ 緑カードの返信終了フラグをセット
     const cardKey = `rooms/${state.code}/greenActive`;
     await set(ref(db, cardKey), { text: card, active: true });
     }
