@@ -125,12 +125,13 @@ header{
 /* 各部屋の上に出す点線枠のポップ（薄い灰・黒字、6文字ごと改行） */
 .room-pop{
   position:fixed; z-index:2147483603;
-  background:#eee; color:#111;
+  background:rgba(238,238,238,0.8); /* ← 半透明に変更 */
+  color:#111;
   border:1px dashed #999; border-radius:10px;
   padding:6px 8px; font-size:12px; line-height:1.3; font-weight:700;
   white-space:pre-line;         /* \n を改行として表示 */
   pointer-events:none;          /* 下のUI操作を邪魔しない */
-  transform:translate(-50%, -100%); /* 基準点：中央上 */
+  transform:translate(-50%, -50%); /* 基準点：中央上 */
 }
 .room-pop.hidden{ display:none !important; }
   
@@ -1369,7 +1370,7 @@ async function rebuildDeck(deckId){
   await set(deckPath, { idx: -1, order, at: Date.now() });
 }
 
-function wrapEvery(str, n=6){
+function wrapEvery(str, n=9){
   const s = String(str || "");
   let out = "";
   for (let i=0; i<s.length; i+=n){
@@ -1426,7 +1427,7 @@ function positionRoomPops(){
     const el = roomPopEls[i];
     if (!el) return;
     el.style.left = (r.left + r.width/2) + 'px';
-    el.style.top  = (Math.max(8, r.top) - 8) + 'px'; // 図形の上へ
+    el.style.top  = (r.top + r.height/2) + 'px'; // 図形の上へ
   });
 }
 
