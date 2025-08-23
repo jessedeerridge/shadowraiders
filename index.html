@@ -885,70 +885,26 @@ await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
       poly(p);
     }
 
-// ★ L字（1本の path で外周を描く：真ん中の線が出ない）
-const starBox = g.getBBox();
-const rectH = starBox.height;           // 縦バーの高さ（従来どおり星の高さ）
-const barW = 90;   // 常に幅40pxに
-const rectX = starBox.x - gap - barW;   // 左端X（従来どおり）
-const rectY = starBox.y;                // 上端Y（従来どおり）
+    // 左の長方形
+    const starBox = g.getBBox();
+const rectH = starBox.height + 85
+  const rectW = rectH * rectScale;
+    const rectX = starBox.x - gap - rectW;
+    const rectY = starBox.y;
 
-// ルーム4（= pentPoints[2]）の下に下バー上辺が来るように
-const room4Pts = pentPoints[2];
-const room4Box = (()=>{
-  const xs = room4Pts.map(p=>p[0]);
-  const ys = room4Pts.map(p=>p[1]);
-  return { x: Math.min(...xs), y: Math.min(...ys),
-           w: Math.max(...xs)-Math.min(...xs),
-           h: Math.max(...ys)-Math.min(...ys) };
-})();
-const lGap = 8;  // ルーム4の「少し下」
-const bottomBarTop = room4Box.y + room4Box.h + lGap;
-const bottomW = (room4Box.x + room4Box.w) - rectX - 80;
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', rectX);
+    rect.setAttribute('y', rectY);
+    rect.setAttribute('width', rectW);
+    rect.setAttribute('height', rectH);
+    rect.setAttribute('class','shape');
+    rect.setAttribute('id','leftRect');
+    svg.appendChild(rect);
 
-// L字の外周座標（補助）
-const x0 = rectX;              // 左端
-const x1 = rectX + barW;       // 縦バー右端
-const x2 = rectX + bottomW;    // 下バー右端
-const y0 = rectY;              // 上端
-const y1 = bottomBarTop;       // 下バー上辺
-const y2 = bottomBarTop + barW;// 下バー下辺
-const y3 = rectY + rectH;      // 縦バー下端
-
-// 1本の path でL字（塗りつぶし）
-const lPath = document.createElementNS('http://www.w3.org/2000/svg','path');
-lPath.setAttribute('d', [
-  `M ${x0} ${y0}`,   // 左上
-  `H ${x1}`,         // → 縦バー右端
-  `V ${y1}`,         // ↓ 下バー上辺まで
-  `H ${x2}`,         // → 下バー右端
-  `V ${y2}`,         // ↓ 下バー下辺
-  `H ${x0}`,         // ← 左端
-  `V ${y3}`,         // ↓ 縦バー下端
-  `H ${x0}`,         // （同じxなので実質そのまま）
-  `V ${y0}`,         // ↑ 左上に戻る
-  'Z'
-].join(' '));
-lPath.setAttribute('class','shape');
-lPath.setAttribute('id','leftL');
-lPath.setAttribute('fill-rule','nonzero'); // （既定でOK）
-svg.appendChild(lPath);
-
-// クリックで自分アイコン出現（従来 rect クリック相当）
-lPath.addEventListener('click', onRectClickWithDupCheck);
-
-// 左エリアのアイコン用レイヤ（従来どおり）
-const iconsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
-iconsLayer.setAttribute('id','icons');
-svg.appendChild(iconsLayer);
-
-// ★ L字のヒット用に、縦バー＋下バーの2矩形を保持（ドラッグのクランプ等に流用）
-state.rectBBox = {
-  bars: [
-    { x: x0, y: y0, w: (x1 - x0), h: (y3 - y0) },     // 縦バー
-    { x: x0, y: y1, w: (x2 - x0), h: (y2 - y1) }      // 下バー
-  ]
-};
-
+    // 左長方形内のアイコン用レイヤ
+    const iconsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
+    iconsLayer.setAttribute('id','icons');
+    svg.appendChild(iconsLayer);
 
     // 7部屋ヒット層
     const roomsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
