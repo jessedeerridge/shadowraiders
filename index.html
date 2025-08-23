@@ -539,31 +539,7 @@ function rollBothDice(){
   const btnStart      = document.getElementById('btnStart');
 const helpBtn   = document.getElementById('helpBtn');
 
-btnStart.addEventListener('click', async ()=>{
-  if (!state.started){
-    // スタート時の処理
-    state.started = true;
-    btnStart.textContent = 'リセット';
 
-    // TODO: 必要ならここで正体カード配布など開始処理を呼ぶ
-  }else{
-    // リセット時の処理
-    if (!confirm('リセットしますか？')) return;
-
-    const updates = {};
-    updates[`rooms/${state.code}/icons`] = null;
-    updates[`rooms/${state.code}/equipment`] = null;
-    updates[`rooms/${state.code}/greenHistory`] = null;
-    updates[`rooms/${state.code}/deal/v1/cards`] = null;
-    updates[`rooms/${state.code}/resetAt`] = Date.now();
-    await update(ref(db), updates);
-
-    // ローカル状態をリセット
-    state.started = false;
-    show(colorModal, true);   // 色選択画面を再表示
-    btnStart.textContent = 'スタート';
-  }
-});
 
   
   const colorModal    = document.getElementById('colorModal');
@@ -2097,6 +2073,24 @@ if (!dist) return;
   await update(ref(db), updates);
 }
 
+async function hostReset(){
+  const now = Date.now();
+  const updates = {};
+  // 指定どおりの初期化
+  updates[`rooms/${state.code}/icons`]            = null;                // テーブルのアイコン削除
+  updates[`rooms/${state.code}/equipment`]        = null;                // 装備一覧削除
+  updates[`rooms/${state.code}/greenHistory`]     = null;                // 緑履歴削除
+  updates[`rooms/${state.code}/deal/v1/cards`]    = null;                // 配布した正体カード削除
+  updates[`rooms/${state.code}/greenActive`]      = { active:false, text:null };
+  // デッキも初期状態に（表はブランクへ戻る）
+  updates[`rooms/${state.code}/decks/green`]      = { idx:-1, order: makeShuffledOrder('green'), at: now };
+  updates[`rooms/${state.code}/decks/white`]      = { idx:-1, order: makeShuffledOrder('white'), at: now };
+  updates[`rooms/${state.code}/decks/black`]      = { idx:-1, order: makeShuffledOrder('black'), at: now };
+  // 全員に色選択画面を戻す
+  updates[`rooms/${state.code}/game/started`]     = false;
+  updates[`rooms/${state.code}/resetAt`]          = now;
+  await update(ref(db), updates);
+}
 
   
   // 自分のカード購読
@@ -2890,7 +2884,8 @@ ensureRoomTips();
     const startedRef = ref(db, `rooms/${code}/game/started`);
     const offStarted = onValue(startedRef, (snap)=>{
       state.started = !!snap.val();
-      show(colorModal, !state.started); // スタートまでは色ポップのまま
+  show(colorModal, !state.started);                  // スタートで全員の色ポップを閉じる
+  btnStart.textContent = state.started ? 'リセット' : 'スタート'; // ★ 文言も全員で同期  
     });
     state.unsub.push(offStarted);
 
@@ -2912,11 +2907,16 @@ ensureRoomTips();
       hostPanel.classList.toggle('hidden');
     };
 
-    btnStart.onclick = async ()=>{
-      if (!state.isHost) return;
-      await hostStartIfNotStarted();
-      hostPanel.classList.add('hidden');
-    };
+ btnStart.onclick = async ()=>{
+   if (!state.isHost) return;
+   if (state.started) {
+     if (!confirm('リセットしますか？')) return;
+     await hostReset();                    // ★ 新設（下記C）
+   } else {
+     await hostStartIfNotStarted();        // 既存：正体配布＋デッキ初期化
+   }
+   hostPanel.classList.add('hidden');
+ };
     // カードビューア：外側クリックで閉じる
     dealViewer.addEventListener('click', (e)=>{
       if (e.target === dealViewer) show(dealViewer, false);
