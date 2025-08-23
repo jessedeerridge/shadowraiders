@@ -1453,10 +1453,19 @@ function positionRoomPops(){
     el.style.left = left + 'px';
     el.style.top  = (top - 10) + 'px';   // ★ 追加
   }else if (roomNo === 7) {
-  el.style.left = (r.left + 60) + "px";     // 右に10px移動
-      el.style.textAlign = "left";         // 左寄せ
-      el.style.maxWidth = (window.innerWidth - 2 - r.left) + "px";     // 折り返し防止
-    el.style.top = (top - 16) + "px";        // 下に5px
+    const leftPx = r.left + 60;              // 左を基準にする
+  el.style.transform = 'translate(0, -50%)'; // 中央基準を解除（Xは左基準）
+  el.style.left = leftPx + "px";
+  el.style.textAlign = "left";
+
+  // 右端2px余白まで。padding(左右8px×2=16)とborder(左右1px×2=2)を考慮
+  const padBorder = 18; // 16 + 2
+  el.style.maxWidth = Math.max(0, window.innerWidth - 2 - leftPx - padBorder) + "px";
+
+  // 必要なら改行抑制（任意）
+  // el.style.whiteSpace = "nowrap";
+
+  el.style.top = (top - 16) + "px";
  }
  else {   if (roomNo ===  5) {
         left -= 40;      }
