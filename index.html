@@ -193,7 +193,13 @@ header{
   .small{font-size:10px; gap:4px;}       /* 補助テキストをさらに小さく */
   #myRoomBadge{white-space:nowrap;}      /* 強制的に改行しない */
   #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
-#dealViewer .deal-card{ width:80px; height:60px; font-size:16px; }
+  #dealViewer .deal-card{ width:180px; height:260px; font-size:28px; }
+    /* プレイヤー選択ポップも縮小 */
+  .popover, #stealPopover, #revealPopover {
+    max-width: 90vw;    /* 画面幅の90%以内に制限 */
+    font-size: 14px;    /* 文字を小さく */
+    padding: 6px 8px;
+  }
 }
 
 /* ▼ 装備所持エリア（通常フロー） */
