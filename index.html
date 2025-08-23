@@ -112,6 +112,28 @@ header{
   padding:10px;display:flex;gap:10px;align-items:center}
   #hostPanel button{padding:8px 12px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
 
+/* 非ホスト向けヘルプ（左下の黒丸「？」） */
+#helpBtn{
+  position:fixed; left:14px; bottom:14px; z-index:2147483604;
+  width:44px; height:44px; border-radius:50%;
+  border:1px solid #111; background:#000; color:#fff;
+  box-shadow:0 4px 14px rgba(0,0,0,.12);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; font-size:20px; font-weight:900; line-height:1;
+}
+
+/* 各部屋の上に出す点線枠のポップ（薄い灰・黒字、6文字ごと改行） */
+.room-pop{
+  position:fixed; z-index:2147483603;
+  background:#eee; color:#111;
+  border:1px dashed #999; border-radius:10px;
+  padding:6px 8px; font-size:12px; line-height:1.3; font-weight:700;
+  white-space:pre-line;         /* \n を改行として表示 */
+  pointer-events:none;          /* 下のUI操作を邪魔しない */
+  transform:translate(-50%, -100%); /* 基準点：中央上 */
+}
+.room-pop.hidden{ display:none !important; }
+  
   /* 汎用モーダル */
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:2147483602}
   .modal-panel{background:#fff;border:1px solid #111;border-radius:14px;box-shadow:0 10px 26px rgba(0,0,0,.2);padding:16px}
@@ -296,6 +318,9 @@ header{
   <button id="btnStart">スタート</button>
 </div>
 
+<!-- プレイヤーヘルプ（左下の黒丸「？」） -->
+<button id="helpBtn" title="ヘルプ">？</button>
+  
 <!-- 自分用 ミニカード（配布後） -->
 <div id="myDealMini" class="hidden" title="カードを開く">裏</div>
 
@@ -491,6 +516,7 @@ function rollBothDice(){
   const hostGear      = document.getElementById('hostGear');
   const hostPanel     = document.getElementById('hostPanel');
   const btnStart      = document.getElementById('btnStart');
+const helpBtn   = document.getElementById('helpBtn');
 
 btnStart.addEventListener('click', async ()=>{
   if (!state.started){
@@ -1343,7 +1369,86 @@ async function rebuildDeck(deckId){
   await set(deckPath, { idx: -1, order, at: Date.now() });
 }
 
+function wrapEvery(str, n=6){
+  const s = String(str || "");
+  let out = "";
+  for (let i=0; i<s.length; i+=n){
+    out += s.slice(i, i+n) + (i+n < s.length ? "\n" : "");
+  }
+  return out;
+}
 
+// 部屋ごとの説明テキスト
+const ROOM_TEXT = {
+  1: "次の手番に好きな部屋に移動できる。",
+  2: "白カードが引ける",
+  3: "黒カードが引ける",
+  4: "任意のプレイヤーを1回復、または2ダメージ与える",
+  5: "他プレイヤーの装備カードを1つ奪う",
+  6: "推理カードが引ける",
+  7: "推理、白、黒カードが引ける",
+};
+
+let roomHelpOn = false;
+let roomPopEls = []; // 生成した .room-pop の参照
+
+function removeRoomPops(){
+  roomPopEls.forEach(el => el.remove());
+  roomPopEls = [];
+}
+
+function buildRoomPops(){
+  const svg = document.getElementById('art');
+  if (!svg) return;
+  const hits = [...svg.querySelectorAll('.roomhit')];
+  if (!hits.length) return;
+
+  removeRoomPops();
+
+  hits.forEach(hit => {
+    const roomNo = Number(hit.dataset.room || 0);
+    const div = document.createElement('div');
+    div.className = 'room-pop';
+    div.textContent = wrapEvery(ROOM_TEXT[roomNo] || "", 6);
+    document.body.appendChild(div);
+    roomPopEls.push(div);
+  });
+
+  positionRoomPops();
+}
+
+function positionRoomPops(){
+  const svg = document.getElementById('art');
+  if (!svg || !roomPopEls.length) return;
+  const hits = [...svg.querySelectorAll('.roomhit')];
+  hits.forEach((hit, i) => {
+    const r = hit.getBoundingClientRect();
+    const el = roomPopEls[i];
+    if (!el) return;
+    el.style.left = (r.left + r.width/2) + 'px';
+    el.style.top  = (Math.max(8, r.top) - 8) + 'px'; // 図形の上へ
+  });
+}
+
+function toggleRoomHelp(){
+  roomHelpOn = !roomHelpOn;
+  if (roomHelpOn){
+    buildRoomPops();
+    window.addEventListener('resize', positionRoomPops);
+    window.addEventListener('scroll', positionRoomPops, { passive:true });
+  }else{
+    removeRoomPops();
+    window.removeEventListener('resize', positionRoomPops);
+    window.removeEventListener('scroll', positionRoomPops);
+  }
+}
+
+// 図形が描き直されたあとに再配置するためのフック
+function ensureRoomTips(){
+  if (roomHelpOn){
+    buildRoomPops(); // 図面変化に追従
+  }
+}
   
   // ===== 右側：部屋クリック =====
   async function onRoomClick(ev){
@@ -2654,7 +2759,17 @@ async function becomeHostIfVacant(){
 
     // 図形構築
     drawFigure2();
+ensureRoomTips();
 
+if (helpBtn){
+  // ホストは⚙️があるので「？」は非表示、非ホストのみ表示
+  helpBtn.classList.toggle('hidden', !!state.isHost);
+  helpBtn.onclick = toggleRoomHelp;
+}
+
+ensureRoomTips();
+
+    
     // 左長方形アイコンの同期
     const iconsRef = ref(db, `rooms/${code}/icons`);
     const offIcons = onValue(iconsRef, async (snap)=>{
