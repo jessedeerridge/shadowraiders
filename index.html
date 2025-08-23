@@ -1898,38 +1898,27 @@ function makeEquipIcon(name, colorName){
         }
       }
 
-tile.addEventListener('click', async ()=>{
-  if (state.started) return;
+      tile.addEventListener('click', async ()=>{
+        if (state.started) return;
+        // 既に他者が取っていれば何もしない
+        const snap = await get(ref(db, `rooms/${state.code}/colors/${c.id}`));
+        const cur = snap.val();
+        if (cur && cur.uid && cur.uid !== state.uid) return;
 
-  // 現在の所有状況を確認
-  const snap = await get(ref(db, `rooms/${state.code}/colors/${c.id}`));
-  let cur = snap.val();
+        // 自分が持っている別色の解放
+        const colorsSnap = await get(ref(db, `rooms/${state.code}/colors`));
+        const all = colorsSnap.val() || {};
+        const mine = Object.entries(all).find(([id, v])=> v?.uid === state.uid);
+        if (mine) await remove(ref(db, `rooms/${state.code}/colors/${mine[0]}`));
 
-  if (cur && cur.uid && cur.uid !== state.uid){
-    // 在室者かどうか確認
-    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-    const ps = psSnap.val() || {};
-    if (ps[cur.uid]){
-      // 在室中の他人が保持 → ブロック
-      return;
-    }else{
-      // 離脱済みの保持者 → 古いclaimを掃除して続行
-      await remove(ref(db, `rooms/${state.code}/colors/${c.id}`));
-      cur = null;
-    }
-  }
+        // この色にセット
+        await set(ref(db, `rooms/${state.code}/colors/${c.id}`), { uid: state.uid, name: state.name, at: Date.now() });
+        // 参加者カラーにも保存
+        await update(ref(db, `rooms/${state.code}/participants/${state.uid}`), { color: c.name });
+      });
 
-  // 自分が持っている別色の解放
-  const colorsSnap = await get(ref(db, `rooms/${state.code}/colors`));
-  const all = colorsSnap.val() || {};
-  const mine = Object.entries(all).find(([id, v])=> v?.uid === state.uid);
-  if (mine) await remove(ref(db, `rooms/${state.code}/colors/${mine[0]}`));
-
-  // この色にセット（colors と participants の色も更新）
-  await set(ref(db, `rooms/${state.code}/colors/${c.id}`), { uid: state.uid, name: state.name, at: Date.now() });
-  await update(ref(db, `rooms/${state.code}/participants/${state.uid}`), { color: c.name });
-});
-
+      colorGrid.appendChild(tile);
+    });
 
     // ▼ 追加：色を選択済みの「ユニークUID数」を合計として右下に表示
     const countEl = document.getElementById('colorCount');
@@ -1942,25 +1931,14 @@ tile.addEventListener('click', async ()=>{
   }
 
 
-function observeColors(){
-  const colorsRef = ref(db, `rooms/${state.code}/colors`);
-  const off = onValue(colorsRef, async (snap)=>{
-    const claims = snap.val() || {};
-
-    // 参加者（=在室者）を取得
-    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-    const ps = psSnap.val() || {};
-
-    // 在室していないUIDのclaimは表示から除外
-    const filtered = {};
-    for (const [colorId, claim] of Object.entries(claims)){
-      if (claim && ps[claim.uid]) filtered[colorId] = claim;
-    }
-    renderColorGrid(filtered); // ← 表示は在室者のみ
-  });
-  state.unsub.push(off);
-}
-
+  function observeColors(){
+    const colorsRef = ref(db, `rooms/${state.code}/colors`);
+    const off = onValue(colorsRef, (snap)=>{
+      const claims = snap.val() || {};
+      renderColorGrid(claims);
+    });
+    state.unsub.push(off);
+  }
 
   // ▼ 装備一覧の描画（自分の行が先頭に来る）
   function renderEquipments(equipData, participants){
