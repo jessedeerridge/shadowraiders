@@ -467,24 +467,24 @@ function rollBothDice(){
   if (bothRolling) return;
   bothRolling = true;
 
-  // 個別のガード(fourDRolling / sixDRolling)は各関数内で有効
-  play4dAnimationThenResult();   // 0.5秒で止まる
-  play6dAnimationThenResult();   // 1.0秒で止まる
+  // 全員で同じ時刻に始めるため少し先の時刻を指定
+  const startAt   = Date.now() + 200;   // 200ms後にスタート
+  const dur6      = 1000;               // d6アニメ 1000ms
+  const dur4      = 500;                // d4アニメ  500ms
+  const result6   = 1 + Math.floor(Math.random() * 6);
+  const result4   = 1 + Math.floor(Math.random() * 4);
+  const payload = {
+    startAt, dur6, dur4, result6, result4,
+    roller: state.uid,
+    nonce: crypto.randomUUID()
+  };
 
-  // 最長の方に合わせて少し余裕を見てロック解除
-  setTimeout(async ()=>{
-    bothRolling = false;
-
-    // ★ 追加：ダイスを振ったことを共有（誰が・いつ）
-    try{
-      await update(ref(db), {
-        [`rooms/${state.code}/dice/lastRollAt`]: Date.now(),
-        [`rooms/${state.code}/dice/lastRoller`]: state.uid,
-      });
-    }catch(e){ console.error('dice write failed', e); }
-
-  }, 1200);
+  // DBへ「現在のロール」を書く（※上書きでOK）
+  set(ref(db, `rooms/${state.code}/dice/current`), payload)
+    .catch(e => console.error('dice write failed', e))
+    .finally(()=>{ setTimeout(()=>{ bothRolling = false; }, 1200); });
 }
+
 
   
 
@@ -984,18 +984,17 @@ function setupDecks(){
   // クリック用ヘルパ
   function attachFaceClick(faceEl, deckId){
     faceEl.addEventListener('click', async ()=>{
-if (deckId === 'green'){
-  const snap = await get(ref(db, `rooms/${state.code}/decks/${deckId}`));
-  const idx = (snap.val()?.idx ?? -1);
-  const order = Array.isArray(snap.val()?.order) ? snap.val().order : null;
-  if (idx >= 0){
-    const actual = order ? order[idx % order.length] : (idx % DECKS_DEF.green.cards.length);
-    const card = DECKS_DEF[deckId].cards[actual];
-    dealCardFace.textContent = card;
-    applyDeckTheme(dealCardFace, 'green');
-    show(dealViewer, true);
-  }
-}else{
+      if (deckId === 'green'){
+        // 緑表は共有しない：自分だけ参照
+        const snap = await get(ref(db, `rooms/${state.code}/decks/${deckId}`));
+        const idx = (snap.val()?.idx ?? -1);
+        if (idx >= 0){
+          const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
+          dealCardFace.textContent = card;
+          applyDeckTheme(dealCardFace, 'green');
+          show(dealViewer, true);
+        }
+      }else{
         // 白・黒の表は faceEl のテキストを拡大
         if (faceEl.textContent){
           dealCardFace.textContent = faceEl.textContent;
@@ -1131,12 +1130,49 @@ onValue(greenDoneRef, (snap)=>{
 });
 
 
-  // ★ 追加：ダイスの共有イベント購読
-  const diceRef = ref(db, `rooms/${state.code}/dice`);
+  // ★ ダイスの共有イベント購読（同期アニメ＆出目表示）
+  let lastDiceNonce = null;
+  const diceRef = ref(db, `rooms/${state.code}/dice/current`);
   const offDice = onValue(diceRef, (snap)=>{
-    const v = snap.val() || {};
+    const v = snap.val();
+    if (!v || !v.nonce || v.nonce === lastDiceNonce) return;
+    lastDiceNonce = v.nonce;
+
+    // 山札クリック残数は0に
     if (typeof setDeckQuota === 'function') setDeckQuota(0);
+
+    // 同期開始までの待機
+    const now = Date.now();
+    const wait = Math.max(0, (v.startAt || now) - now);
+
+    // d4 / d6 のアニメを同時起動
+    setTimeout(()=>{
+      // d4アニメ開始
+      playDiceAnim(roll4dImg, ['4da1.png','4da2.png','4da3.png'], v.dur4, ()=> {
+        roll4dImg.src = `4d${v.result4}.png`;
+      });
+      // d6アニメ開始
+      playDiceAnim(roll6dImg, ['6da1.png','6da2.png','6da3.png'], v.dur6, ()=> {
+        roll6dImg.src = `6d${v.result6}.png`;
+      });
+    }, wait);
   });
+
+  // 共通：指定時間だけフレームを回してからfinishを呼ぶ
+  function playDiceAnim(imgEl, frames, durationMs, finish){
+    if (!imgEl) return;
+    let i = 0;
+    const start = Date.now();
+    const timer = setInterval(()=>{
+      imgEl.src = frames[i % frames.length];
+      i++;
+      if (Date.now() - start >= durationMs){
+        clearInterval(timer);
+        finish && finish();
+      }
+    }, 80);
+  }
+
 
   state.unsub.push(off);
   state.unsub.push(offDice);
