@@ -984,17 +984,18 @@ function setupDecks(){
   // クリック用ヘルパ
   function attachFaceClick(faceEl, deckId){
     faceEl.addEventListener('click', async ()=>{
-      if (deckId === 'green'){
-        // 緑表は共有しない：自分だけ参照
-        const snap = await get(ref(db, `rooms/${state.code}/decks/${deckId}`));
-        const idx = (snap.val()?.idx ?? -1);
-        if (idx >= 0){
-          const card = DECKS_DEF[deckId].cards[idx % DECKS_DEF[deckId].cards.length];
-          dealCardFace.textContent = card;
-          applyDeckTheme(dealCardFace, 'green');
-          show(dealViewer, true);
-        }
-      }else{
+if (deckId === 'green'){
+  const snap = await get(ref(db, `rooms/${state.code}/decks/${deckId}`));
+  const idx = (snap.val()?.idx ?? -1);
+  const order = Array.isArray(snap.val()?.order) ? snap.val().order : null;
+  if (idx >= 0){
+    const actual = order ? order[idx % order.length] : (idx % DECKS_DEF.green.cards.length);
+    const card = DECKS_DEF[deckId].cards[actual];
+    dealCardFace.textContent = card;
+    applyDeckTheme(dealCardFace, 'green');
+    show(dealViewer, true);
+  }
+}else{
         // 白・黒の表は faceEl のテキストを拡大
         if (faceEl.textContent){
           dealCardFace.textContent = faceEl.textContent;
@@ -1243,7 +1244,7 @@ async function advanceDeck(deckId, flipperUid){
   // 進行を保存（orderは維持）
   await set(deckPath, { idx: nextIdx, order: order || null, at: Date.now() });
 
-  if ((deckId === 'white' || deckId === 'black'　|| deckId === 'green') && flipperUid){
+  if ((deckId === 'white' || deckId === 'black') && flipperUid){
     const eqList = Array.isArray(def.equipNames) ? def.equipNames : [];
     // 末尾・先頭空白の差を吸収して判定だけ厳密化（キーは実カード名をそのまま使う）
     const eqSetTrim = new Set(eqList.map(s => String(s).trim()));
