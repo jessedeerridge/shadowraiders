@@ -1444,11 +1444,10 @@ function positionRoomPops(){
     // --- スマホ用調整 ---
     if (window.innerWidth <= 600) {
       if (roomNo === 2 || roomNo === 7) {
-        const marginRight = 2;                           // 右端の余白（必要なら調整）
-        const rightEdge   = window.innerWidth - marginRight;
-        const widthPx     = Math.max(0, 2 * (rightEdge - centerX));
-        el.style.width    = widthPx + 'px';
-       }
+        left = 0;
+        width = window.innerWidth - 2; // 右端に余白
+        el.style.textAlign = "center"; // 中央揃え      
+      }
       if (roomNo === 4) {
         left -= 70; }
       if (roomNo === 5) {
