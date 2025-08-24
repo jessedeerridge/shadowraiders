@@ -216,7 +216,7 @@ header{
 
 #dealViewer .deal-card .green-table td{
   padding:8px 10px;
-  font-size:20px;              /* ← 指定どおり20px */
+  font-size:18px;              /* ← 指定どおり20px */
   line-height:1.4;
   text-align:left;
 }
@@ -258,7 +258,7 @@ header{
   .small{font-size:10px; gap:4px;}       /* 補助テキストをさらに小さく */
   #myRoomBadge{white-space:nowrap;}      /* 強制的に改行しない */
   #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
-  #dealViewer .deal-card{ width:180px; height:260px; font-size:28px; }
+  #dealViewer .deal-card{ width:180px; height:260px; font-size:12px; }
   #greenSharePopup .list {
     /* 横幅に合わせて自動折返し */
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -1009,18 +1009,7 @@ const rectH = starBox.height + 85
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room2.jpg');
 
-const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
-const offsetY = 20;  // 例: -10 で上に10px
 
-// 画像サイズは今のまま（等倍の例）
-const newW = w; 
-const newH = h;
-
-// 中心基準で配置し、そこからオフセット
-const cx = (minX + maxX) / 2;
-const cy = (minY + maxY) / 2;
-const newX = cx - newW / 2 + offsetX;
-const newY = cy - newH / 2 + offsetY;
 
 
     img.setAttribute('x', String(newX));
@@ -1061,18 +1050,7 @@ const newY = cy - newH / 2 + offsetY;
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room3.jpg');
 
-const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
-const offsetY = 20;  // 例: -10 で上に10px
 
-// 画像サイズは今のまま（等倍の例）
-const newW = w; 
-const newH = h;
-
-// 中心基準で配置し、そこからオフセット
-const cx = (minX + maxX) / 2;
-const cy = (minY + maxY) / 2;
-const newX = cx - newW / 2 + offsetX;
-const newY = cy - newH / 2 + offsetY;
 
 
     img.setAttribute('x', String(newX));
@@ -1113,18 +1091,7 @@ const newY = cy - newH / 2 + offsetY;
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room4.jpg');
 
-const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
-const offsetY = 0;  // 例: -10 で上に10px
 
-// 画像サイズは今のまま（等倍の例）
-const newW = w; 
-const newH = h;
-
-// 中心基準で配置し、そこからオフセット
-const cx = (minX + maxX) / 2;
-const cy = (minY + maxY) / 2;
-const newX = cx - newW / 2 + offsetX;
-const newY = cy - newH / 2 + offsetY;
 
 
     img.setAttribute('x', String(newX));
@@ -1165,18 +1132,7 @@ const newY = cy - newH / 2 + offsetY;
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room5.jpg');
 
-const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
-const offsetY = 0;  // 例: -10 で上に10px
 
-// 画像サイズは今のまま（等倍の例）
-const newW = w; 
-const newH = h;
-
-// 中心基準で配置し、そこからオフセット
-const cx = (minX + maxX) / 2;
-const cy = (minY + maxY) / 2;
-const newX = cx - newW / 2 + offsetX;
-const newY = cy - newH / 2 + offsetY;
 
 
     img.setAttribute('x', String(newX));
@@ -1186,6 +1142,7 @@ const newY = cy - newH / 2 + offsetY;
     img.setAttribute('preserveAspectRatio','xMidYMid slice');
     img.setAttribute('clip-path','url(#clip-room5)');
     img.style.pointerEvents = 'none';
+img.setAttribute('transform', `rotate(-60, ${cx}, ${cy})`);
 
     g.insertBefore(img, g.firstChild);
   }
@@ -1217,18 +1174,6 @@ const newY = cy - newH / 2 + offsetY;
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room7.jpg');
 
-const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
-const offsetY = 0;  // 例: -10 で上に10px
-
-// 画像サイズは今のまま（等倍の例）
-const newW = w; 
-const newH = h;
-
-// 中心基準で配置し、そこからオフセット
-const cx = (minX + maxX) / 2;
-const cy = (minY + maxY) / 2;
-const newX = cx - newW / 2 + offsetX;
-const newY = cy - newH / 2 + offsetY;
 
 
     img.setAttribute('x', String(newX));
@@ -1273,29 +1218,16 @@ const newY = cy - newH / 2 + offsetY;
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room6.jpg'); // 画像パス
 
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
 
-  // ===== 4パラだけで調整 =====
-  // cfg.scale   … 倍率（全体拡大縮小）
-  // cfg.moveX   … x軸移動（px。右＋ / 左−）
-  // cfg.moveY   … y軸移動（px。下＋ / 上−）
-  // cfg.rotate  … 回転角度（deg。時計回り＋）
-  const scale  = (cfg.scale  ?? 1);
-  const moveX  = (cfg.moveX  ?? 0);
-  const moveY  = (cfg.moveY  ?? 30);
-  const rotate = (cfg.rotate ?? 0);
 
-  const newW = w * scale;
-  const newH = h * scale;
-  const newX = cx - newW/2 + moveX;
-  const newY = cy - newH/2 + moveY;
 
         
     img.setAttribute('x', String(minX));
-    img.setAttribute('y', String(minY));
+img.setAttribute('y', String(newY + 10));  // 画像を10px下げる
     img.setAttribute('width',  String(w));
     img.setAttribute('height', String(h));
+img.setAttribute('transform', `rotate(-60, ${cx}, ${cy})`);
+
     img.setAttribute('preserveAspectRatio','xMidYMid slice'); // 中央トリミングで見切れOK
     img.setAttribute('clip-path','url(#clip-room6)');
     img.style.pointerEvents = 'none'; // 画像がクリック判定を邪魔しない
