@@ -2327,7 +2327,7 @@ function showParticipantSelectPopup(cardText){
   pop.style.cssText = `
     position:fixed; inset:0; z-index:2147483608;
     display:flex; align-items:center; justify-content:center;
-    background:rgba(0,0,0,35);
+  background:transparent;   // ← ここを透明にする
   `;
   const panel = document.createElement('div');
   panel.className = 'modal-panel';
