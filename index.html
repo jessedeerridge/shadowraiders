@@ -38,7 +38,7 @@ header{
     display:block;margin:auto;max-width:96vmin;height:auto;
     touch-action: none; /* ★ 追加：ブラウザのパン/ズーム既定動作を無効化 */
   }
-  .shape{fill:transparent;stroke:#111;stroke-width:0.8;stroke-linejoin:round;stroke-linecap:round}
+  .shape{fill:transparent;stroke:transparent;stroke-width:0.8;stroke-linejoin:round;stroke-linecap:round}
 
   /* 左長方形内のユーザーアイコン（正方形＋角丸） */
   .usericon rect{fill:#fff;stroke:#111;stroke-width:0.8;rx:6;ry:6}
@@ -956,9 +956,9 @@ await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
     const rt3 = Math.sqrt(3);
 
     // ---- パラメータ ----
-const s0 = 48 * 1.3;  // 62.4
-const s1 = 82 * 1.3;  // 106.6
-const rectScale = 0.35;  // 幅を小さめに
+const s0 = 48  // 62.4
+const s1 = 82   // 106.6
+const rectScale = 0.3;  // 幅を小さめに
     const gap = 20;
 
     function hexFlat(cx, cy, s){
@@ -1018,7 +1018,7 @@ const rectScale = 0.35;  // 幅を小さめに
 
     // 左の長方形
     const starBox = g.getBBox();
-const rectH = starBox.height + 60
+const rectH = starBox.height + 85
   const rectW = rectH * rectScale;
     const rectX = starBox.x - gap - rectW;
     const rectY = starBox.y;
@@ -1031,6 +1031,7 @@ const rectH = starBox.height + 60
     rect.setAttribute('class','shape');
     rect.setAttribute('id','leftRect');
     svg.appendChild(rect);
+rect.setAttribute('fill','none');
 
     // 左長方形内のアイコン用レイヤ
     const iconsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
@@ -1458,7 +1459,38 @@ img.setAttribute('height', String(newH));
 
     // 左長方形クリック：同名が既に存在すれば新規出現しない
     rect.addEventListener('click', onRectClickWithDupCheck);
+ // === 左長方形に hp.png を挿入 ===
+{
+  const svg = document.getElementById('art');
+  const rect = document.getElementById('leftRect');
+  if (svg && rect) {
+    // rect の座標とサイズを取得
+    const x = parseFloat(rect.getAttribute('x'));
+    const y = parseFloat(rect.getAttribute('y'));
+    const w = parseFloat(rect.getAttribute('width'));
+    const h = parseFloat(rect.getAttribute('height'));
+
+    // 枠と塗りを透明に
+    rect.setAttribute('fill', 'none');
+    rect.setAttribute('stroke', 'none');
+
+    // 画像を作成
+    const img = document.createElementNS('http://www.w3.org/2000/svg','image');
+    img.setAttributeNS('http://www.w3.org/1999/xlink','href','hp.png'); 
+    img.setAttribute('x', x);
+    img.setAttribute('y', y);
+    img.setAttribute('width',  w);
+    img.setAttribute('height', h);
+    img.setAttribute('preserveAspectRatio','xMidYMid slice'); // はみ出し防止
+    img.style.pointerEvents = 'none'; // クリック邪魔しない
+
+    // rect の直後に追加
+    rect.parentNode.insertBefore(img, rect.nextSibling);
   }
+}
+ }
+
+
 
 // ===== 山札 =====
  const DECKS_DEF = {
