@@ -143,7 +143,13 @@ header{
   /* 汎用モーダル */
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:2147483602}
   .modal-panel{background:#fff;border:1px solid #111;border-radius:14px;box-shadow:0 10px 26px rgba(0,0,0,.2);padding:16px}
-
+#dealViewer .modal-panel{
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+  
    /* 色選択ポップ */
   #colorModal .color-grid{display:grid;grid-template-columns:repeat(5, 64px);gap:10px;justify-content:center}
   .color-tile{width:64px;height:64px;border:1px solid #111;border-radius:10px;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700}
