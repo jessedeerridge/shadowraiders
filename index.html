@@ -1189,6 +1189,59 @@ const newY = cy - newH / 2 + offsetY;
 
     g.insertBefore(img, g.firstChild);
   }
+
+       if (2 + i === 7) {
+    const xs = pentPoints[i].map(p => p[0]);
+    const ys = pentPoints[i].map(p => p[1]);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const w = maxX - minX, h = maxY - minY;
+
+    const defs = svg.querySelector('defs') 
+              || (()=>{
+                   const d = document.createElementNS('http://www.w3.org/2000/svg','defs');
+                   svg.insertBefore(d, svg.firstChild);
+                   return d;
+                 })();
+
+    let cp = svg.querySelector('#clip-room7');
+    if (!cp) {
+      cp = document.createElementNS('http://www.w3.org/2000/svg','clipPath');
+      cp.setAttribute('id','clip-room7');
+      const clipPoly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+      clipPoly.setAttribute('points', pentPoints[i].map(p=>p.join(',')).join(' '));
+      cp.appendChild(clipPoly);
+      defs.appendChild(cp);
+    }
+
+    const img = document.createElementNS('http://www.w3.org/2000/svg','image');
+    img.setAttributeNS('http://www.w3.org/1999/xlink','href','room7.jpg');
+
+const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
+const offsetY = 0;  // 例: -10 で上に10px
+
+// 画像サイズは今のまま（等倍の例）
+const newW = w; 
+const newH = h;
+
+// 中心基準で配置し、そこからオフセット
+const cx = (minX + maxX) / 2;
+const cy = (minY + maxY) / 2;
+const newX = cx - newW / 2 + offsetX;
+const newY = cy - newH / 2 + offsetY;
+
+
+    img.setAttribute('x', String(newX));
+    img.setAttribute('y', String(newY));
+    img.setAttribute('width',  String(newW));
+    img.setAttribute('height', String(newH));
+    img.setAttribute('preserveAspectRatio','xMidYMid slice');
+    img.setAttribute('clip-path','url(#clip-room7)');
+    img.style.pointerEvents = 'none';
+
+    g.insertBefore(img, g.firstChild);
+  }
+
       
       if (2 + i === 6) {
     // 1) room6 五角形の外接矩形（画像配置用のサイズ）
@@ -1220,19 +1273,23 @@ const newY = cy - newH / 2 + offsetY;
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room6.jpg'); // 画像パス
 
-const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
-const offsetY = 50;  // 例: -10 で上に10px
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
 
-// 画像サイズは今のまま（等倍の例）
-const newW = w; 
-const newH = h;
+  // ===== 4パラだけで調整 =====
+  // cfg.scale   … 倍率（全体拡大縮小）
+  // cfg.moveX   … x軸移動（px。右＋ / 左−）
+  // cfg.moveY   … y軸移動（px。下＋ / 上−）
+  // cfg.rotate  … 回転角度（deg。時計回り＋）
+  const scale  = (cfg.scale  ?? 1);
+  const moveX  = (cfg.moveX  ?? 0);
+  const moveY  = (cfg.moveY  ?? 30);
+  const rotate = (cfg.rotate ?? 0);
 
-// 中心基準で配置し、そこからオフセット
-const cx = (minX + maxX) / 2;
-const cy = (minY + maxY) / 2;
-const newX = cx - newW / 2 + offsetX;
-const newY = cy - newH / 2 + offsetY;
-
+  const newW = w * scale;
+  const newH = h * scale;
+  const newX = cx - newW/2 + moveX;
+  const newY = cy - newH/2 + moveY;
 
         
     img.setAttribute('x', String(minX));
