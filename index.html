@@ -188,21 +188,16 @@ header{
   text-align:center;     /* 文字が長くても中央寄せ */
   word-break:break-word; /* 長文は折り返す */
 }
+
+
+
 #dealViewer .deal-card.green-layout{
   display:flex;
   flex-direction:column;
   justify-content:flex-start; /* 上から詰める（テーブルは下に押し下げる） */
   gap:8px;
+padding-top: 12px;
 }
-
-
-/* 緑カードの最上部タイトル（テーブルの外） */
-#dealViewer .deal-card .green-title{
-  font-size:20px;
-  font-weight:900;
-  text-align:center;
-}
- 
 
 
 #dealViewer .deal-card .green-table{
@@ -216,7 +211,7 @@ header{
 
 #dealViewer .deal-card .green-table td{
   padding:8px 10px;
-  font-size:20px;              /* ← 指定どおり20px */
+  font-size:15px;              /* ← 指定どおり20px */
   line-height:1.4;
   text-align:left;
 }
@@ -258,12 +253,20 @@ header{
   .small{font-size:10px; gap:4px;}       /* 補助テキストをさらに小さく */
   #myRoomBadge{white-space:nowrap;}      /* 強制的に改行しない */
   #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
-  #dealViewer .deal-card{ width:180px; height:260px; font-size:28px; }
-  #greenSharePopup .list {
-    /* 横幅に合わせて自動折返し */
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 8px;
+  #dealViewer .deal-card{ width:180px; height:260px; font-size:15px; }
+  #dealViewer .deal-card .green-table td {
+    font-size: 12px;   /* モバイル時は小さめ */
   }
+
+
+#dealViewer .deal-card.green-layout{padding-top: 8px;
+    gap: 5px;   }
+
+
+  #greenSharePopup .list {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;  }
+  #dealViewer .deal-card .green-title {    font-size: 12px;   /* 小さくする */  }
 
   #greenSharePopup .modal-panel {
     /* 横方向にはみ出さないように */
@@ -1164,12 +1167,12 @@ const newY = cy - newH / 2 + offsetY;
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room5.jpg');
 
- const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
-const offsetY = 0;  // 例: -10 で上に10px
+ const offsetX = -20;    // 例: +12 で右に12px、-8 で左に8px
+const offsetY = -17;  // 例: -10 で上に10px
 
-// 画像サイズは今のまま（等倍の例）
-const newW = w; 
-const newH = h;
+const scale = 1.8;           // ← 拡大倍率
+const newW = w * scale; 
+const newH = h * scale;
 
 // 中心基準で配置し、そこからオフセット
 const cx = (minX + maxX) / 2;
@@ -1177,8 +1180,8 @@ const cy = (minY + maxY) / 2;
 const newX = cx - newW / 2 + offsetX;
 const newY = cy - newH / 2 + offsetY;
 
-    img.setAttribute('x', String(newX));
-    img.setAttribute('y', String(newY));
+img.setAttribute('x', String(newX));   // ← newX に変更
+img.setAttribute('y', String(newY));   // ← newY に変更
     img.setAttribute('width',  String(newW));
     img.setAttribute('height', String(newH));
     img.setAttribute('preserveAspectRatio','xMidYMid slice');
@@ -1218,14 +1221,12 @@ const newY = cy - newH / 2 + offsetY;
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room6.jpg'); // 画像パス
 
-const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
-const offsetY = 50;  // 例: -10 で上に10px
+const offsetX = 0;    
+const offsetY = 0;   // ← 少し下げる（以前は 50）
 
-// 画像サイズは今のまま（等倍の例）
 const newW = w; 
 const newH = h;
 
-// 中心基準で配置し、そこからオフセット
 const cx = (minX + maxX) / 2;
 const cy = (minY + maxY) / 2;
 const newX = cx - newW / 2 + offsetX;
@@ -1233,10 +1234,10 @@ const newY = cy - newH / 2 + offsetY;
 
 
         
-    img.setAttribute('x', String(minX));
-    img.setAttribute('y', String(minY));
-    img.setAttribute('width',  String(w));
-    img.setAttribute('height', String(h));
+img.setAttribute('x', String(newX));   // ← newX に変更
+img.setAttribute('y', String(newY));   // ← newY に変更
+img.setAttribute('width',  String(newW));
+img.setAttribute('height', String(newH));
     img.setAttribute('preserveAspectRatio','xMidYMid slice'); // 中央トリミングで見切れOK
     img.setAttribute('clip-path','url(#clip-room6)');
     img.style.pointerEvents = 'none'; // 画像がクリック判定を邪魔しない
@@ -1273,22 +1274,22 @@ const newY = cy - newH / 2 + offsetY;
     cards:[
       'あなたは シチズン か シャドウ？<br>だったら装備を渡すか、1ダメージ受けよ。',
       '正体カードを見せよ',
-      'あなたは  D / F / G / V / W ?（HP12以上）<br>だったら 2 ダメージ受けよ。',
-      'あなたは  A / B / C / E / U ?（HP11以下）',
+      'あなたは  D / F / G / V / W ?（HP12以上）<br>だったら2ダメージ受けよ。',
+      'あなたは  A / B / C / E / U ?（HP11以下）<br>だったら1ダメージ受けよ。',
       'あなたは レイダー か シャドウ？<br>だったら装備を渡すか、1ダメージ受けよ。',
       'あなたは レイダー か シャドウ？<br>だったら装備を渡すか、1ダメージ受けよ。',
-      'あなたは レイダー？<br>だったら 1 ダメージ回復せよ。<br>ダメージが0なら、1ダメージ受けよ。',
-      'あなたは レイダー？<br>だったら 1 ダメージ受けよ。',
-      'あなたは レイダー？<br>だったら 1 ダメージ受けよ。',
+      'あなたは レイダー？<br>だったら1ダメージ回復せよ。<br>ダメージが0なら、1ダメージ受けよ。',
+      'あなたは レイダー？<br>だったら1ダメージ受けよ。',
+      'あなたは レイダー？<br>だったら1ダメージ受けよ。',
       'あなたは レイダー？<br>だったら❿に移動せよ。<br>既に➓にいる場合、1ダメージ受けよ。',
-      'あなたは シャドウ？<br>だったら 2 ダメージ受けよ。',
+      'あなたは シャドウ？<br>だったら2ダメージ受けよ。',
       'あなたは シャドウ？<br>だったら❿に移動せよ。<br>既に➓にいる場合、1ダメージ受けよ。',
-      'あなたは シャドウ？<br>だったら 1 ダメージ回復せよ。<br>ダメージが0なら、1ダメージ受けよ。',
-      'あなたは シャドウ？<br>だったら 1 ダメージ受けよ。',
+      'あなたは シャドウ？<br>だったら1ダメージ回復せよ。<br>ダメージが0なら、1ダメージ受けよ。',
+      'あなたは シャドウ？<br>だったら1ダメージ受けよ。',
       'あなたは シチズン か シャドウ？<br>だったら装備を渡すか、1ダメージ受けよ。',
       'あなたは シチズン？<br>だったら❿に移動せよ。<br>既に➓にいる場合、1ダメージ受けよ。',
-      'あなたは シチズン？<br>だったら 1 ダメージ回復せよ。<br>ダメージが0なら、1ダメージ受けよ。',
-      'あなたは シャドウ？<br>だったら 1 ダメージ受けよ。',
+      'あなたは シチズン？<br>だったら1ダメージ回復せよ。<br>ダメージが0なら、1ダメージ受けよ。',
+      'あなたは シャドウ？<br>だったら1ダメージ受けよ。',
       'あなたは シチズン か レイダー？<br>だったら装備を渡すか、1ダメージ受けよ。',
       'あなたは シチズン か レイダー？<br>だったら装備を渡すか、1ダメージ受けよ。'
     ]
@@ -2877,8 +2878,7 @@ function observeGreenShare(){
       tbl.className = 'green-table';
       const tr  = document.createElement('tr');
       const td  = document.createElement('td');
-      td.textContent = rec.card;                    // カード文面
-      tr.appendChild(td);
+ td.innerHTML = rec.card;                     tr.appendChild(td);
       tbl.appendChild(tr);
       dealCardFace.appendChild(tbl);
       // ▲▲▲ 変更ここまで ▲▲▲
