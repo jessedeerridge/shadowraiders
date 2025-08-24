@@ -1,5 +1,6 @@
 
 <!DOCTYPE html>
+
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
@@ -199,6 +200,13 @@ header{
 padding-top: 12px;
 }
 
+#dealViewer .deal-card.white-layout{
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-start;
+  gap:8px;
+  padding-top: 12px;
+}
 
 #dealViewer .deal-card .green-table{
   width:100%;
@@ -231,6 +239,62 @@ padding-top: 12px;
   display:inline-block;   /* 枠が文字に沿うように */
   width:90%;          /* 好きな割合やpx数に調整 */
   margin:0 auto;      /* 中央に配置 */
+}
+
+/* ▼ 白デッキカードのタイトル（緑と同じデザイン） ▼ */
+#dealViewer .deal-card .white-title {
+  font-size:20px;
+  font-weight:900;
+  text-align:center;
+
+  background:#000;        /* 黒いバー */
+  color:#fff;             /* 白字 */
+  border:2px solid gold;  /* 金枠 */
+  border-radius:6px;
+  padding:4px 8px;
+  display:inline-block;
+  width:90%;
+  margin:0 auto;          /* 緑と同じ：中央寄せ、下余白なし */
+}
+
+#dealViewer .deal-card .white-table {
+  width: 100%;
+  background: #f2f2f2;     /* 薄グレー背景 */
+  border: 2px solid #666;  /* 外枠：濃いグレー、太め */
+  border-radius: 8px;
+  border-collapse: separate;  /* ← collapseをやめる */
+  border-spacing: 0;          /* 枠間隔をゼロに */
+  overflow: hidden;
+}
+
+#dealViewer .deal-card .white-table td {
+  padding:8px 10px;
+  font-size:15px;          /* 緑と同じサイズ *
+  line-height: 1.4;
+  text-align: left;
+}
+
+
+
+/* ▼ 白カード：タイトルとテーブルの間に入れる画像 ▼ */
+#dealViewer .deal-card .item-image{
+  display:block;
+  width:70%;
+  max-height:80px;
+  height:auto;
+  margin:4px auto 6px;     /* タイトルとテーブルの間 */
+  border:1px solid #666;   /* 濃いグレー枠 */
+  border-radius:8px;
+  object-fit:cover;        /* はみ出しをカットしつつフィット */
+}
+
+
+@media (max-width:600px){
+  #dealViewer .deal-card .item-image{
+    width:92%;
+    max-height:100px;
+    margin:2px auto 4px;
+  }
 }
 
 
@@ -704,6 +768,13 @@ function colorizeDealFaceByCardName(cardName){
 }
 
 
+// カード名からjpg画像のパスを作る（例：「銀のロザリオ」→「銀のロザリオ.jpg」）
+function makeWhiteImageSrc(name){
+  const t = (name || '').trim();  // 空白や余計なスペースを削除
+  return `${t}.jpg`;              // 同じフォルダに置いた場合
+  // return `white_imgs/${t}.jpg`; // サブフォルダに置くならこちら
+}
+
 // 拡大カード共通クリック（文脈で分岐）
 dealCardFace.addEventListener('click', ()=>{
   const ctx = state.expandedContext || null;
@@ -976,6 +1047,74 @@ const rectH = starBox.height + 85
     hitHex.dataset.room = '1';
     hitHex.addEventListener('click', onRoomClick);
 
+// === room1 に画像を入れる（白塗りの上に重ね、枠線は描き直す） ===
+{
+  // 六角形の外接矩形など
+  const xs = H0.map(p => p[0]), ys = H0.map(p => p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const w = maxX - minX, h = maxY - minY;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+
+  // 4パラメータ：①倍率 ②x移動 ③y移動 ④角度（deg）
+  const scale  = 1.0;   // 例: 1.2 で拡大
+  const moveX  = 0;     // 右＋ / 左−（px）
+  const moveY  = 0;     // 下＋ / 上−（px）
+  const rotate = 0;     // 時計回り＋（deg）
+
+  // clipPath 準備（ユーザー座標系で）
+  const defs = svg.querySelector('defs') || (()=>{
+    const d = document.createElementNS('http://www.w3.org/2000/svg','defs');
+    svg.insertBefore(d, svg.firstChild);
+    return d;
+  })();
+  let cp = svg.querySelector('#clip-room1');
+  if(!cp){
+    cp = document.createElementNS('http://www.w3.org/2000/svg','clipPath');
+    cp.setAttribute('id','clip-room1');
+    cp.setAttribute('clipPathUnits','userSpaceOnUse'); // ←重要：座標ずれ防止
+    const clipPoly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    clipPoly.setAttribute('points', H0.map(p=>p.join(',')).join(' '));
+    cp.appendChild(clipPoly);
+    defs.appendChild(cp);
+  }
+
+  // 画像：白ポリゴンの「上」に来るように、roomsLayer の直前へ差し込む
+  const newW = w * scale, newH = h * scale;
+  const newX = cx - newW/2 + moveX;
+  const newY = cy - newH/2 + moveY;
+
+  const img = document.createElementNS('http://www.w3.org/2000/svg','image');
+  // ファイル名は実ファイルに合わせて：'room1jpg' ならそのまま、拡張子ありなら 'room1.jpg'
+  img.setAttributeNS('http://www.w3.org/1999/xlink','href','room1.jpg');
+  img.setAttribute('x', String(newX));
+  img.setAttribute('y', String(newY));
+  img.setAttribute('width',  String(newW));
+  img.setAttribute('height', String(newH));
+  img.setAttribute('preserveAspectRatio','xMidYMid slice');
+  img.setAttribute('clip-path','url(#clip-room1)');
+  img.style.pointerEvents = 'none';
+
+  // 画像の中心で回転
+  const rotCx = newX + newW/2, rotCy = newY + newH/2;
+  img.setAttribute('transform', `rotate(${rotate}, ${rotCx}, ${rotCy})`);
+
+  // g（白ポリゴン群）の“上”に出す：roomsLayer の直前に入れる
+  svg.insertBefore(img, roomsLayer);
+
+  // 枠線を上に描き直す（fillは無し、strokeだけ）
+  const outline = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+  outline.setAttribute('points', H0.map(p=>p.join(',')).join(' '));
+  outline.setAttribute('fill', 'none');
+  outline.setAttribute('stroke', '#111');
+  outline.setAttribute('stroke-width', '0.8');
+  outline.setAttribute('stroke-linejoin', 'round');
+  outline.setAttribute('stroke-linecap', 'round');
+  svg.insertBefore(outline, roomsLayer);
+}
+
+
     // 外周五角形（room 2〜7）
     for(let i=0;i<6;i++){
       const hitPent = poly(pentPoints[i], 'roomhit', roomsLayer);
@@ -1015,8 +1154,10 @@ const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
 const offsetY = 0;  // 例: -10 で上に10px
 
 // 画像サイズは今のまま（等倍の例）
-const newW = w; 
-const newH = h;
+const scale = 2;           // ← 拡大倍率
+const newW = w * scale; 
+const newH = h * scale;
+
 
 // 中心基準で配置し、そこからオフセット
 const cx = (minX + maxX) / 2;
@@ -1066,9 +1207,10 @@ const newY = cy - newH / 2 + offsetY;
 const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
 const offsetY = 0;  // 例: -10 で上に10px
 
-// 画像サイズは今のまま（等倍の例）
-const newW = w; 
-const newH = h;
+const scale = 2;           // ← 拡大倍率
+const newW = w * scale; 
+const newH = h * scale;
+
 
 // 中心基準で配置し、そこからオフセット
 const cx = (minX + maxX) / 2;
@@ -1118,9 +1260,9 @@ const newY = cy - newH / 2 + offsetY;
 const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
 const offsetY = 0;  // 例: -10 で上に10px
 
-// 画像サイズは今のまま（等倍の例）
-const newW = w; 
-const newH = h;
+const scale = 2;           // ← 拡大倍率
+const newW = w * scale; 
+const newH = h * scale;
 
 // 中心基準で配置し、そこからオフセット
 const cx = (minX + maxX) / 2;
@@ -1170,7 +1312,7 @@ const newY = cy - newH / 2 + offsetY;
  const offsetX = -20;    // 例: +12 で右に12px、-8 で左に8px
 const offsetY = -17;  // 例: -10 で上に10px
 
-const scale = 1.8;           // ← 拡大倍率
+const scale = 2;           // ← 拡大倍率
 const newW = w * scale; 
 const newH = h * scale;
 
@@ -1191,6 +1333,58 @@ img.setAttribute('y', String(newY));   // ← newY に変更
     g.insertBefore(img, g.firstChild);
   }
       
+    if (2 + i === 7) {
+    const xs = pentPoints[i].map(p => p[0]);
+    const ys = pentPoints[i].map(p => p[1]);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const w = maxX - minX, h = maxY - minY;
+
+    const defs = svg.querySelector('defs') 
+              || (()=>{
+                   const d = document.createElementNS('http://www.w3.org/2000/svg','defs');
+                   svg.insertBefore(d, svg.firstChild);
+                   return d;
+                 })();
+
+    let cp = svg.querySelector('#clip-room7');
+    if (!cp) {
+      cp = document.createElementNS('http://www.w3.org/2000/svg','clipPath');
+      cp.setAttribute('id','clip-room7');
+      const clipPoly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+      clipPoly.setAttribute('points', pentPoints[i].map(p=>p.join(',')).join(' '));
+      cp.appendChild(clipPoly);
+      defs.appendChild(cp);
+    }
+
+    const img = document.createElementNS('http://www.w3.org/2000/svg','image');
+    img.setAttributeNS('http://www.w3.org/1999/xlink','href','room7.jpg');
+
+ const offsetX = -20;    // 例: +12 で右に12px、-8 で左に8px
+const offsetY = -17;  // 例: -10 で上に10px
+
+const scale = 2;           // ← 拡大倍率
+const newW = w * scale; 
+const newH = h * scale;
+
+// 中心基準で配置し、そこからオフセット
+const cx = (minX + maxX) / 2;
+const cy = (minY + maxY) / 2;
+const newX = cx - newW / 2 + offsetX;
+const newY = cy - newH / 2 + offsetY;
+
+img.setAttribute('x', String(newX));   // ← newX に変更
+img.setAttribute('y', String(newY));   // ← newY に変更
+    img.setAttribute('width',  String(newW));
+    img.setAttribute('height', String(newH));
+    img.setAttribute('preserveAspectRatio','xMidYMid slice');
+    img.setAttribute('clip-path','url(#clip-room7)');
+    img.style.pointerEvents = 'none';
+
+    g.insertBefore(img, g.firstChild);
+  }
+
+
       if (2 + i === 6) {
     // 1) room6 五角形の外接矩形（画像配置用のサイズ）
     const xs = pentPoints[i].map(p => p[0]);
@@ -1220,12 +1414,13 @@ img.setAttribute('y', String(newY));   // ← newY に変更
     // 3) 画像を作成してクリップを適用
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room6.jpg'); // 画像パス
+  const scale = 2;       // ← 拡大倍率
 
 const offsetX = 0;    
 const offsetY = 0;   // ← 少し下げる（以前は 50）
 
-const newW = w; 
-const newH = h;
+const newW = w * scale; 
+const newH = h * scale;
 
 const cx = (minX + maxX) / 2;
 const cy = (minY + maxY) / 2;
@@ -1358,12 +1553,102 @@ function setupDecks(){
       }else{
 
         // 白・黒の表は faceEl のテキストを拡大
-        if (faceEl.textContent){
-          dealCardFace.classList.remove('green-layout'); 
-          dealCardFace.textContent = faceEl.textContent;
-          applyDeckTheme(dealCardFace, deckId);
-          show(dealViewer, true);
-        }
+if (faceEl.textContent){
+  dealCardFace.classList.remove('green-layout'); 
+  const cardName = faceEl.textContent.trim();
+dealCardFace.classList.add('white-layout');
+
+  // デフォルトはカード名だけ
+  dealCardFace.textContent = '';
+  const wrapper = document.createElement('div');
+  wrapper.style.flex = '1';
+  wrapper.style.display = 'flex';
+  wrapper.style.flexDirection = 'column';
+
+
+// 上：カード名（白タイトル用デザイン）
+const title = document.createElement('div');
+title.textContent = cardName;
+title.className = 'white-title';
+wrapper.appendChild(title);
+
+
+// 中：カード画像（カード名.jpg）
+const img = document.createElement('img');
+img.className = 'item-image';
+img.alt = cardName;
+img.src = makeWhiteImageSrc(cardName);
+
+img.style.transform = 'scale(0.9)';   // 幅高さを0.8倍
+img.style.transformOrigin = 'center'; // 中心基準で縮小
+
+
+// 画像が見つからない場合は邪魔にならないように非表示
+img.addEventListener('error', ()=> img.remove());
+
+wrapper.appendChild(img);
+
+
+  // 下：白デッキ効果（例）
+  if (deckId === 'white'){
+    const table = document.createElement('table');
+    table.className = 'white-table';
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+
+    // ここでカードごとの効果を判定して入れる
+if (cardName.includes('銀のロザリオ')){
+  td.textContent = 'ダイスの攻撃によって倒したPLの全ての装備を奪う。';
+}else if (cardName.includes('銀のロザリオ ')){
+  td.textContent = 'ダイスの攻撃によって倒したPLの全ての装備を奪う。';
+}else if (cardName.includes('虹色のパラソル')){
+  td.textContent = '手番で攻撃する代わりに、攻撃レンジのPLに推理カードを渡すことができる';
+}else if (cardName.includes('エクスカリバー')){
+  td.textContent = 'あなたがレイダーでカードを公開したら、攻撃ダメージが 2 上がる。';
+}else if (cardName.includes('神秘のコンパス')){
+  td.textContent = '移動の時にダイスを二回振って、選ぶことができる。';
+}else if (cardName.includes('幸運のブローチ')){
+  td.textContent = '市庁舎(8)の効果ダメージを受けない。';
+}else if (cardName.includes('賢者のローブ')){
+  td.textContent = '攻撃ダメージが 1 減少する。攻撃を受けた時に受けるダメージが 1 減少する。';
+}else if (cardName.includes('いにしえの聖杯')){
+  td.textContent = '三つ目の黒犬、吸血コウモリ、呪いの人形の効果ダメージを受けない。';
+}else if (cardName.includes('光臨')){
+  td.textContent = 'あなたがレイダーで、カードを公開したら全回復する。';
+}else if (cardName.includes('守護天使')){
+  td.textContent = '次の自分の手番の始めまで、攻撃ダメージを受けない。';
+}else if (cardName.includes('封印の知恵')){
+  td.textContent = 'この手番の終了後、もう1手番を行う。';
+}else if (cardName.includes('応急手当')){
+  td.textContent = '任意のPLを選び、そのPLのダメージを7にする。（自分でも可）';
+}else if (cardName.includes('人魚の涙')){
+  td.textContent = '最もダメージが多い人を 3 回復する。';
+}else if (cardName.includes('幸せのクッキー')){
+  td.textContent = 'あなたが A または U で、カードを公開したら、HPを全回復する。';
+}else if (cardName.includes('闇を祓う鏡')){
+  td.textContent = 'あなたがシャドウ陣営でウルリッヒでないなら、必ず正体カードを公開する。';
+}else if (cardName.includes('いやしの聖水')){
+  td.textContent = '自分のダメージを 2 回復する。';
+}else if (cardName.includes('いやしの聖水 ')){
+  td.textContent = '自分のダメージを 2 回復する。';
+}else if (cardName.includes('いやしの聖水  ')){
+  td.textContent = '自分のダメージを 2 回復する。';
+}else if (cardName.includes('恩恵')){
+  td.textContent = '自分以外のPLを選んで、6面ダイスを振る。目の数だけそのPLのダメージを回復する';
+}else{
+  td.textContent = '効果未設定';
+}
+
+    tr.appendChild(td);
+    table.appendChild(tr);
+    wrapper.appendChild(table);
+  }
+
+  dealCardFace.appendChild(wrapper);
+  applyDeckTheme(dealCardFace, deckId);
+  show(dealViewer, true);
+}
+
       }
     });
   }
