@@ -71,13 +71,13 @@ header{
   }
   .deck-back{cursor:pointer}
   .deck-back.disabled{opacity:.35;cursor:not-allowed;filter:grayscale(1)}
-  .deck-back.green{background:#c7f5c1;}
+  .deck-back.green{background:#005731;}
   .deck-back.white{background:#ffffff;}
   .deck-back.black{background:#000;color:#fff;}
   .deck-label{font-size:12px;opacity:.8}
 .deck-face.white{ background:#ffffff; color:#111; }
 .deck-face.black{ background:#000000; color:#ffffff; }
-.deck-face.green{ background:#c7f5c1; color:#111; }
+.deck-face.green{ background:#005731; color:#111; }
 .deck-count {
   font-size: 11px;
   opacity: 0.7;
@@ -188,6 +188,59 @@ header{
   text-align:center;     /* 文字が長くても中央寄せ */
   word-break:break-word; /* 長文は折り返す */
 }
+#dealViewer .deal-card.green-layout{
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-start; /* 上から詰める（テーブルは下に押し下げる） */
+  gap:8px;
+}
+
+
+/* 緑カードの最上部タイトル（テーブルの外） */
+#dealViewer .deal-card .green-title{
+  font-size:20px;
+  font-weight:900;
+  text-align:center;
+}
+ 
+
+
+#dealViewer .deal-card .green-table{
+  margin-top:auto;             /* テーブルを一番下に配置 */
+  width:100%;
+  border-collapse:collapse;
+  background:#eafbe6;          /* 薄い緑背景 */
+  border:1px solid #a8d9a8;
+  border-radius:8px;
+  overflow:hidden;             /* 角丸を有効にするため */
+}
+
+#dealViewer .deal-card .green-table td{
+  padding:8px 10px;
+  font-size:20px;              /* ← 指定どおり20px */
+  line-height:1.4;
+  text-align:left;
+}
+
+
+#dealViewer .deal-card .green-title {
+  font-size:20px;
+  font-weight:900;
+  text-align:center;
+
+  /* ★ ここを追加 ★ */
+  background:#000;        /* 黒いバー */
+  color:#fff;             /* 白字（好みに応じて） */
+  border:2px solid gold;  /* 金色の枠 */
+  border-radius:6px;      /* 角を少し丸める */
+  padding:4px 8px;        /* 余白 */
+  display:inline-block;   /* 枠が文字に沿うように */
+  width:90%;          /* 好きな割合やpx数に調整 */
+  margin:0 auto;      /* 中央に配置 */
+}
+
+
+
 
   /* ホスト削除ポップ（既存） */
   .popover{
@@ -223,6 +276,7 @@ header{
   }
   
 }
+
 
 /* ▼ 装備所持エリア（通常フロー） */
 .equipbar{
@@ -602,7 +656,7 @@ function applyDeckTheme(el, deckId){
   el.style.color = '';
   if (deckId === 'white'){ el.style.background = '#ffffff'; el.style.color = '#111'; }
   else if (deckId === 'black'){ el.style.background = '#000000'; el.style.color = '#fff'; }
-  else if (deckId === 'green'){ el.style.background = '#c7f5c1'; el.style.color = '#111'; }
+  else if (deckId === 'green'){ el.style.background = '#005731'; el.style.color = '#111'; }
 }
 
 // 任意のカード名に対して dealViewer の見た目を適切に設定するヘルパ
@@ -1039,6 +1093,7 @@ function setupDecks(){
 
         // 白・黒の表は faceEl のテキストを拡大
         if (faceEl.textContent){
+          dealCardFace.classList.remove('green-layout'); 
           dealCardFace.textContent = faceEl.textContent;
           applyDeckTheme(dealCardFace, deckId);
           show(dealViewer, true);
@@ -1176,6 +1231,7 @@ const greenDoneRef = ref(db, `rooms/${state.code}/greenActive`);
 onValue(greenDoneRef, (snap)=>{
   const v = snap.val();
   if (v && v.active === false){
+ dealCardFace.classList.remove('green-layout'); 
     show(dealViewer, false);  // 強制的に非表示
   }
 });
@@ -1274,6 +1330,8 @@ onValue(greenDoneRef, (snap)=>{
     // 表（拡大用）は制限しない
   }
 
+
+
 async function advanceDeckGuarded(deckId, flipperUid){
   // ★ 自分のクリック以外ではローカル残回数を消費しない
   if (flipperUid === state.uid){
@@ -1304,12 +1362,44 @@ async function advanceDeckGuarded(deckId, flipperUid){
       const card = DECKS_DEF[deckId].cards[actual];
 
       state.pinDealViewer = true;
-      dealCardFace.textContent = card;
+
+      // ▼▼▼ ここから追加：緑カードは下部に薄緑テーブルで内容を表示 ▼▼▼
+      dealCardFace.classList.add('green-layout');  // CSSの専用レイアウトをON
+      dealCardFace.innerHTML = '';                 // いったん空に
+
+     // 最上部タイトル（テーブルの外）
+     const title = document.createElement('div');
+     title.className = 'green-title';
+     title.textContent = '推理カード';
+     dealCardFace.appendChild(title);
+
+     // ★ 追加：推理カードとテーブルの間に画像を入れる
+     const img = document.createElement('img');
+     img.src = 'suiri.jpg';
+     img.alt = '推理カード画像';
+     img.style.maxWidth = '80%';   // 幅をカード内に収める（調整可）
+     img.style.margin = '8px auto'; // 上下の余白を付ける
+     img.style.display = 'block';  // 中央寄せ
+     dealCardFace.appendChild(img);
+
+      // テーブルを生成してカード文言を書き込む（下部に出る）
+      const tbl = document.createElement('table');
+      tbl.className = 'green-table';
+      const tr  = document.createElement('tr');
+      const td  = document.createElement('td');
+      td.textContent = card;       // 各カード内容
+      tr.appendChild(td);
+      tbl.appendChild(tr);
+      dealCardFace.appendChild(tbl);
+      // ▲▲▲ 追加ここまで ▲▲▲
+
+      // 既存の配色＆表示処理
       applyDeckTheme(dealCardFace, 'green');
       show(dealViewer, true);
       dealCardFace.onclick = ()=> showParticipantSelectPopup(card);
+
       // ★ 緑カードの返信終了フラグをセット
-    const cardKey = `rooms/${state.code}/greenActive`;
+      const cardKey = `rooms/${state.code}/greenActive`;
     await set(ref(db, cardKey), { text: card, active: true });
     }
   }
@@ -2471,6 +2561,7 @@ async function finish(answer){
   
   await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
   state.pinDealViewer = false;
+dealCardFace.classList.remove('green-layout');
   show(dealViewer, false);
   pop.remove();
 }
@@ -2488,6 +2579,7 @@ if (!isRevealOrder){
 
   
 // === 緑カード共有：受信者側購読（自分宛の共有が来たら拡大表示） ===
+// === 緑カード共有：受信者側購読（自分宛の共有が来たら拡大表示） ===
 function observeGreenShare(){
   const myShareRef = ref(db, `rooms/${state.code}/greenShare/${state.uid}`);
   const off = onValue(myShareRef, (snap)=>{
@@ -2496,9 +2588,38 @@ function observeGreenShare(){
       // ★ ピン留め（外側タップで閉じない）
       state.pinDealViewer = true;
 
-      dealCardFace.textContent = rec.card;
-       applyDeckTheme(dealCardFace, 'green');      // ★ 追加
-　　　 show(dealViewer, true);
+      // ▼▼▼ ここから変更：送信側と同じ構成（タイトル＋下部テーブル）に統一 ▼▼▼
+      dealCardFace.classList.add('green-layout');   // レイアウトON
+      dealCardFace.innerHTML = '';                  // いったん空に
+
+      // ① 最上部タイトル（テーブルの外）
+      const title = document.createElement('div');
+      title.className = 'green-title';
+      title.textContent = '推理カード';
+      dealCardFace.appendChild(title);
+
+     // ★ 追加：推理カードとテーブルの間に画像を入れる
+     const img = document.createElement('img');
+     img.src = 'suiri.jpg';
+     img.alt = '推理カード画像';
+     img.style.maxWidth = '80%';   // 幅をカード内に収める（調整可）
+     img.style.margin = '8px auto'; // 上下の余白を付ける
+     img.style.display = 'block';  // 中央寄せ
+     dealCardFace.appendChild(img);
+
+      // ② 下部テーブル（20px／薄緑）
+      const tbl = document.createElement('table');
+      tbl.className = 'green-table';
+      const tr  = document.createElement('tr');
+      const td  = document.createElement('td');
+      td.textContent = rec.card;                    // カード文面
+      tr.appendChild(td);
+      tbl.appendChild(tr);
+      dealCardFace.appendChild(tbl);
+      // ▲▲▲ 変更ここまで ▲▲▲
+
+      applyDeckTheme(dealCardFace, 'green');
+      show(dealViewer, true);
 
       // ★ 拡大をクリック → はい/いいえポップ（送信者uidを渡す）
       dealCardFace.onclick = ()=> showYesNoPopoverForGreen(rec.card, rec.from || '');
@@ -2508,6 +2629,7 @@ function observeGreenShare(){
   });
   state.unsub.push(off);
 }
+
 
 /// === 追加：送信者側 結果購読（相手の「はい／いいえ」受領で閉じる） ===
 function observeGreenResult(){
@@ -2716,7 +2838,7 @@ ordered.forEach(cardName=>{
     } else if (DECKS_DEF.black.cards.includes(cardName)){
       c.style.background = '#000000'; c.style.color = '#fff';
     } else if (DECKS_DEF.green.cards.includes(cardName)){
-      c.style.background = '#c7f5c1'; c.style.color = '#111';
+      c.style.background = '#005731'; c.style.color = '#111';
     }
   }
 
