@@ -37,7 +37,7 @@ header{
     display:block;margin:auto;max-width:96vmin;height:auto;
     touch-action: none; /* ★ 追加：ブラウザのパン/ズーム既定動作を無効化 */
   }
-  .shape{fill:#fff;stroke:#111;stroke-width:0.8;stroke-linejoin:round;stroke-linecap:round}
+  .shape{fill:transparent;stroke:#111;stroke-width:0.8;stroke-linejoin:round;stroke-linecap:round}
 
   /* 左長方形内のユーザーアイコン（正方形＋角丸） */
   .usericon rect{fill:#fff;stroke:#111;stroke-width:0.8;rx:6;ry:6}
@@ -978,7 +978,48 @@ const rectH = starBox.height + 85
       const hitPent = poly(pentPoints[i], 'roomhit', roomsLayer);
       hitPent.dataset.room = String(2 + i); // 2..7
       hitPent.addEventListener('click', onRoomClick);
+      // ★ 追加：room6 のときだけ背景画像を“中にだけ”表示（はみ出しカット）
+  if (2 + i === 6) {
+    // 1) room6 五角形の外接矩形（画像配置用のサイズ）
+    const xs = pentPoints[i].map(p => p[0]);
+    const ys = pentPoints[i].map(p => p[1]);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const w = maxX - minX, h = maxY - minY;
+
+    // 2) <defs><clipPath> を準備（五角形そのものをクリップに）
+    const defs = svg.querySelector('defs')
+              || (()=>{
+                   const d = document.createElementNS('http://www.w3.org/2000/svg','defs');
+                   svg.insertBefore(d, svg.firstChild);
+                   return d;
+                 })();
+
+    let cp = svg.querySelector('#clip-room6');
+    if (!cp) {
+      cp = document.createElementNS('http://www.w3.org/2000/svg','clipPath');
+      cp.setAttribute('id','clip-room6');
+      const clipPoly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+      clipPoly.setAttribute('points', pentPoints[i].map(p=>p.join(',')).join(' '));
+      cp.appendChild(clipPoly);
+      defs.appendChild(cp);
     }
+
+    // 3) 画像を作成してクリップを適用
+    const img = document.createElementNS('http://www.w3.org/2000/svg','image');
+    img.setAttributeNS('http://www.w3.org/1999/xlink','href','room6.jpg'); // 画像パス
+    img.setAttribute('x', String(minX));
+    img.setAttribute('y', String(minY));
+    img.setAttribute('width',  String(w));
+    img.setAttribute('height', String(h));
+    img.setAttribute('preserveAspectRatio','xMidYMid slice'); // 中央トリミングで見切れOK
+    img.setAttribute('clip-path','url(#clip-room6)');
+    img.style.pointerEvents = 'none'; // 画像がクリック判定を邪魔しない
+
+    // 4) レイヤー最背面に配置：星形グループ g の先頭に挿入
+    g.insertBefore(img, g.firstChild);
+  }
+}
 
     // 席アイコン用レイヤ
     const seatsLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
