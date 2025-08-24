@@ -2401,19 +2401,31 @@ g.addEventListener('click', async (e)=>{
     g.dataset.dragMoved = '0';            // リセット
     return;
   }
-  const curX = parseFloat(g.getAttribute('data-x') || data.x || 0);
-  const curY = parseFloat(g.getAttribute('data-y') || data.y || 0);
-  const step = 24;                        // アイコン1個ぶんの高さ
-  const pos  = clampToRect(curX, curY - step);
+const curX = parseFloat(g.getAttribute('data-x') || data.x || 0);
+const curY = parseFloat(g.getAttribute('data-y') || data.y || 0);
+const step = 24;
+const pos  = clampToRect(curX, curY - step);
 
-  const nextVer = (state.localMoveVer[uid] || 0) + 1;
-  state.localMoveVer[uid] = nextVer;
+// ① DOMを即時に反映（ここが追加）
+g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+g.setAttribute('data-x', pos.x);
+g.setAttribute('data-y', pos.y);
 
-  await update(ref(db, `rooms/${state.code}/icons/${uid}`), {
-    x: pos.x,
-    y: pos.y,
-    ver: nextVer
-  });
+// ② バージョンを進めてローカルに記録
+const nextVer = (state.localMoveVer[uid] || 0) + 1;
+state.localMoveVer[uid] = nextVer;
+
+// ③ クリック反映中はDBエコーで“戻らない”ように短いガード（任意）
+state.dragKickGuardUid   = uid;
+state.dragKickGuardUntil = Date.now() + 180;
+
+// ④ DB更新
+await update(ref(db, `rooms/${state.code}/icons/${uid}`), {
+  x: pos.x,
+  y: pos.y,
+  ver: nextVer
+});
+
 });
 
 layer.appendChild(g);
