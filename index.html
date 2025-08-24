@@ -42,7 +42,7 @@ header{
 
   /* 左長方形内のユーザーアイコン（正方形＋角丸） */
   .usericon rect{fill:#fff;stroke:#111;stroke-width:0.8;rx:6;ry:6}
-  .usericon text{font-size:20px;font-weight:700;dominant-baseline:middle;text-anchor:middle}
+  .usericon text{font-size:12px;font-weight:700;dominant-baseline:middle;text-anchor:middle}
   .usericon{cursor:grab}
   .usericon.dragging{cursor:grabbing;opacity:.85}
 
@@ -956,8 +956,8 @@ await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
     const rt3 = Math.sqrt(3);
 
     // ---- パラメータ ----
-const s0 = 115  // 62.4
-const s1 = 205   // 106.6
+const s0 = 48  // 62.4
+const s1 = 82   // 106.6
 const rectScale = 0.3;  // 幅を小さめに
     const gap = 20;
 
