@@ -216,7 +216,7 @@ header{
 
 #dealViewer .deal-card .green-table td{
   padding:8px 10px;
-  font-size:18px;              /* ← 指定どおり20px */
+  font-size:20px;              /* ← 指定どおり20px */
   line-height:1.4;
   text-align:left;
 }
@@ -258,7 +258,7 @@ header{
   .small{font-size:10px; gap:4px;}       /* 補助テキストをさらに小さく */
   #myRoomBadge{white-space:nowrap;}      /* 強制的に改行しない */
   #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
-  #dealViewer .deal-card{ width:180px; height:260px; font-size:12px; }
+  #dealViewer .deal-card{ width:180px; height:260px; font-size:28px; }
   #greenSharePopup .list {
     /* 横幅に合わせて自動折返し */
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -1010,8 +1010,6 @@ const rectH = starBox.height + 85
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room2.jpg');
 
 
-
-
     img.setAttribute('x', String(newX));
     img.setAttribute('y', String(newY));
     img.setAttribute('width',  String(newW));
@@ -1049,9 +1047,6 @@ const rectH = starBox.height + 85
 
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room3.jpg');
-
-
-
 
     img.setAttribute('x', String(newX));
     img.setAttribute('y', String(newY));
@@ -1092,8 +1087,6 @@ const rectH = starBox.height + 85
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room4.jpg');
 
 
-
-
     img.setAttribute('x', String(newX));
     img.setAttribute('y', String(newY));
     img.setAttribute('width',  String(newW));
@@ -1132,17 +1125,13 @@ const rectH = starBox.height + 85
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room5.jpg');
 
-
-
-
     img.setAttribute('x', String(newX));
-    img.setAttribute('y', String(newY));
+img.setAttribute('y', String(newY + 40));  // 画像を10px下げる
     img.setAttribute('width',  String(newW));
     img.setAttribute('height', String(newH));
     img.setAttribute('preserveAspectRatio','xMidYMid slice');
     img.setAttribute('clip-path','url(#clip-room5)');
     img.style.pointerEvents = 'none';
-img.setAttribute('transform', `rotate(-60, ${cx}, ${cy})`);
 
     g.insertBefore(img, g.firstChild);
   }
@@ -1173,8 +1162,6 @@ img.setAttribute('transform', `rotate(-60, ${cx}, ${cy})`);
 
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room7.jpg');
-
-
 
     img.setAttribute('x', String(newX));
     img.setAttribute('y', String(newY));
@@ -1218,16 +1205,10 @@ img.setAttribute('transform', `rotate(-60, ${cx}, ${cy})`);
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room6.jpg'); // 画像パス
 
-
-
-
-        
     img.setAttribute('x', String(minX));
-img.setAttribute('y', String(newY + 10));  // 画像を10px下げる
+    img.setAttribute('y', String(minY));
     img.setAttribute('width',  String(w));
     img.setAttribute('height', String(h));
-img.setAttribute('transform', `rotate(-60, ${cx}, ${cy})`);
-
     img.setAttribute('preserveAspectRatio','xMidYMid slice'); // 中央トリミングで見切れOK
     img.setAttribute('clip-path','url(#clip-room6)');
     img.style.pointerEvents = 'none'; // 画像がクリック判定を邪魔しない
