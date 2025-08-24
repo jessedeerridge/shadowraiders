@@ -1846,6 +1846,7 @@ function makeEquipIcon(name, colorName){
   
   function renderColorGrid(claims){
     colorGrid.innerHTML = '';
+    const present = state.present || {};                 // ★ 在籍者表（uidキー）
     COLOR_LIST.forEach(c=>{
       const tile = document.createElement('div');
       tile.className = 'color-tile';
@@ -1862,7 +1863,8 @@ function makeEquipIcon(name, colorName){
       tile.appendChild(label);
 
       const claim = claims?.[c.id] || null;
-      if (claim){
+         const isPresent = !!(claim && claim.uid && present[claim.uid]);   // ★ 在籍チェック
+    if (claim && isPresent){                                          // ★ 在籍者のみ表示
         const o = document.createElement('div');
         o.className = 'owner';
         o.textContent = claim.name || '?';
@@ -1896,15 +1898,17 @@ function makeEquipIcon(name, colorName){
       colorGrid.appendChild(tile);
     });
 
-    // ▼ 追加：色を選択済みの「ユニークUID数」を合計として右下に表示
-    const countEl = document.getElementById('colorCount');
-    if (countEl){
-      const uidSet = new Set(
-        Object.values(claims || {}).map(v => v && v.uid).filter(Boolean)
-      );
-      countEl.textContent = `ゲーム参加者合計：${uidSet.size}`;
-    }
+  // 合計人数表示（在籍者だけ数える）★
+  const countEl = document.getElementById('colorCount');
+  if (countEl){
+    const uidSet = new Set(
+      Object.values(claims || {})
+        .map(v => v && v.uid)
+        .filter(uid => uid && present[uid])             // ★ 在籍者のみ
+    );
+    countEl.textContent = `ゲーム参加者合計：${uidSet.size}`;
   }
+}
 
 
   function observeColors(){
@@ -2850,6 +2854,14 @@ ensureRoomTips();
       }
     });
     state.unsub.push(offIcons);
+
+    // 参加者（在籍者）を購読：state.present に常時保持
+const participantsRef = ref(db, `rooms/${code}/participants`);
+const offParticipants = onValue(participantsRef, (snap)=>{
+  state.present = snap.val() || {};  // uid -> {name, color, ...}
+});
+state.unsub.push(offParticipants);
+    
 
     // 席アイコンの同期＋自分の部屋/バッジ（色反映込み）
     const seatsRef = ref(db, `rooms/${code}/seats`);
