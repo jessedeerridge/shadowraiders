@@ -2335,6 +2335,9 @@ function showParticipantSelectPopup(cardText){
   `;
   const panel = document.createElement('div');
   panel.className = 'modal-panel';
+  panel.style.background = "rgba(0,0,0,0.35)"; // ← ここで色付きにする
+  panel.style.padding = "16px";                // ← 内側に余白
+panel.style.borderRadius = "12px";           // ← 角を丸める
   panel.innerHTML = `<div style="font-weight:700;margin-bottom:8px">共有先を選んでください</div>`;
 
   const list = document.createElement('div');
