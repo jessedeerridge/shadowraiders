@@ -979,51 +979,6 @@ const rectH = starBox.height + 85
       const hitPent = poly(pentPoints[i], 'roomhit', roomsLayer);
       hitPent.dataset.room = String(2 + i); // 2..7
       hitPent.addEventListener('click', onRoomClick);
-
-  // ★ 追加：room6 のときだけ背景画像を“中にだけ”表示（はみ出しカット）
-  if (2 + i === 6) {
-    // 1) pentagon の外接矩形を計算
-    const xs = pentPoints[i].map(p => p[0]);
-    const ys = pentPoints[i].map(p => p[1]);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
-    const w = maxX - minX, h = maxY - minY;
-
-    // 2) <defs><clipPath> を用意（なければ作成）
-    const defs = svg.querySelector('defs') 
-              || (()=>{
-                   const d = document.createElementNS('http://www.w3.org/2000/svg','defs');
-                   // 図形グループ g より前に置く（どこでも可）
-                   svg.insertBefore(d, svg.firstChild);
-                   return d;
-                 })();
-    // 同名があれば再利用、なければ作成
-    let cp = svg.querySelector('#clip-room6');
-    if (!cp) {
-      cp = document.createElementNS('http://www.w3.org/2000/svg','clipPath');
-      cp.setAttribute('id','clip-room6');
-      // クリップ形状＝room6 五角形そのもの
-      const clipPoly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-      clipPoly.setAttribute('points', pentPoints[i].map(p=>p.join(',')).join(' '));
-      cp.appendChild(clipPoly);
-      defs.appendChild(cp);
-    }
-
-    // 3) 画像を作成して clip-path を適用
-    const img = document.createElementNS('http://www.w3.org/2000/svg','image');
-    // 互換性のため xlink:href を使う（SVG2 では href でも可）
-    img.setAttributeNS('http://www.w3.org/1999/xlink','href','room6.jpg');
-    img.setAttribute('x', String(minX));
-    img.setAttribute('y', String(minY));
-    img.setAttribute('width',  String(w));
-    img.setAttribute('height', String(h));
-    img.setAttribute('preserveAspectRatio','xMidYMid slice'); // 見切れてOK（中央トリミング）
-    img.setAttribute('clip-path','url(#clip-room6)');
-    img.style.pointerEvents = 'none'; // 画像がクリック判定を邪魔しない
-
-    // 4) 背景として配置（星形ポリゴンより“後ろ”に置く）
-    g.insertBefore(img, g.firstChild);
-  }
     }
 
     // 席アイコン用レイヤ
@@ -1422,8 +1377,8 @@ async function advanceDeckGuarded(deckId, flipperUid){
      const img = document.createElement('img');
      img.src = 'suiri.jpg';
      img.alt = '推理カード画像';
-     img.style.maxWidth = '80%';   // 幅をカード内に収める（調整可）
-     img.style.margin = '8px auto'; // 上下の余白を付ける
+     img.style.maxWidth = '90%';   // 幅をカード内に収める（調整可）
+     img.style.margin = '0px auto'; // 上下の余白を付ける
      img.style.display = 'block';  // 中央寄せ
      dealCardFace.appendChild(img);
 
@@ -2647,8 +2602,8 @@ function observeGreenShare(){
      const img = document.createElement('img');
      img.src = 'suiri.jpg';
      img.alt = '推理カード画像';
-     img.style.maxWidth = '80%';   // 幅をカード内に収める（調整可）
-     img.style.margin = '8px auto'; // 上下の余白を付ける
+     img.style.maxWidth = '90%';   // 幅をカード内に収める（調整可）
+     img.style.margin = '0px auto'; // 上下の余白を付ける
      img.style.display = 'block';  // 中央寄せ
      dealCardFace.appendChild(img);
 
