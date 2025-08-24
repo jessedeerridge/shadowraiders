@@ -2293,12 +2293,16 @@ function showParticipantSelectPopup(cardText){
   pop.style.cssText = `
     position:fixed; inset:0; z-index:2147483608;
     display:flex; align-items:center; justify-content:center;
-    background:rgba(0,0,0,.35);
+    background:rgba(0,0,0,35);
   `;
   const panel = document.createElement('div');
   panel.className = 'modal-panel';
   panel.innerHTML = `<div style="font-weight:700;margin-bottom:8px">共有先を選んでください</div>`;
+
   const list = document.createElement('div');
+  // ▼ モバイル用の既存CSS（#greenSharePopup .list …）を効かせるため class を付与
+  list.className = 'list';
+  // 既存のインラインは残す（PCの3列レイアウト）
   list.style.display = 'grid';
   list.style.gridTemplateColumns = 'repeat(3, 140px)';
   list.style.gap = '8px';
@@ -2307,25 +2311,32 @@ function showParticipantSelectPopup(cardText){
   pop.appendChild(panel);
   document.body.appendChild(pop);
 
-  // 自分以外の参加者を列挙
   get(ref(db, `rooms/${state.code}/participants`)).then(snap=>{
     const ps = snap.val() || {};
     Object.entries(ps).forEach(([uid, info])=>{
       if (uid === state.uid) return;
+
       const btn = document.createElement('button');
       btn.className = 'btn';
       btn.textContent = (info?.name || '?');
       btn.style.width = '100%';
- btn.onclick = async ()=>{
-  // 1) 相手に“共有”を書き込む
-  await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
-    card: cardText, from: state.uid, at: Date.now()
-  });
 
-  // ※送信時は履歴に書かない（未回答は保存しない）
+      // ▼ ここを追加：そのプレイヤーが選んだ色で背景＆文字色を決定
+      // participants/{uid}.color には「赤/青/白…」等の“表示名”が保存されている想定
+      // colorToStyle() は 表示名/ID どちらでも受け取れる実装（COLOR_LISTと対） :contentReference[oaicite:3]{index=3}
+      const colorName = info?.color || '';           // 未選択なら空
+      const { bg, text } = colorToStyle(colorName);  // <- 既存ヘルパ
+      btn.style.background = bg;
+      btn.style.color = text;
 
-  // 2) ポップを閉じる
-  pop.remove();
+      // ※ 白タイルなど枠が必要なら必要に応じて：
+      // if (colorName === '白') { btn.style.border = '1px solid #111'; }
+
+      btn.onclick = async ()=>{
+        await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
+          card: cardText, from: state.uid, at: Date.now()
+        });
+        pop.remove();
 };
 
       list.appendChild(btn);
