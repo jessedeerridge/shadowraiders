@@ -482,7 +482,7 @@ padding-top: 12px;
 <button id="helpBtn" title="ヘルプ">？</button>
   
 <!-- 自分用 ミニカード（配布後） -->
-<div id="myDealMini" class="hidden" title="カードを開く">裏</div>
+<div id="myDealMini" class="hidden" title="カードを開く"></div>
 
 
   
@@ -1700,7 +1700,7 @@ if (type === 'back'){
   back.className = `deck-back ${def.colorClass}`;
   back.dataset.deck = deckId;     // ★識別
   back.dataset.role = 'back';
-  back.textContent = '裏';
+  back.textContent = '';
   back.title = `${def.label}デッキをめくる`;
 back.addEventListener('click', (ev)=>{
   // ブランクなら「山札を作る（シャッフル）」ポップ
