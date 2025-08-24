@@ -142,12 +142,8 @@ header{
   
   /* 汎用モーダル */
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:2147483602}
-.modal-panel{
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-}
+  .modal-panel{background:#fff;border:1px solid #111;border-radius:14px;box-shadow:0 10px 26px rgba(0,0,0,.2);padding:16px}
+
    /* 色選択ポップ */
   #colorModal .color-grid{display:grid;grid-template-columns:repeat(5, 64px);gap:10px;justify-content:center}
   .color-tile{width:64px;height:64px;border:1px solid #111;border-radius:10px;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700}
@@ -282,15 +278,6 @@ header{
   user-select:none;
   image-rendering:-webkit-optimize-contrast;
 }
-
-#greenSharePopup .modal-panel{
-  background:#fff !important;
-  border:1px solid #111 !important;
-  border-radius:12px !important;
-  box-shadow:0 6px 16px rgba(0,0,0,.12) !important;
-  padding:10px !important;
-}
-
 
   
 /* 既存のモバイル用カードサイズに追従（例：@media内のdeckサイズが50x69なら同じ） */
@@ -724,46 +711,12 @@ if (btnSteal){
       }
     }
 
-async function findOrphanUidBySameName(){
-  const allowedByName = new Set();
-
-  // colors: 同名の痕跡
-  const cSnap = await get(ref(db, `rooms/${state.code}/colors`));
-  const colors = cSnap.val() || {};
-  for (const [, claim] of Object.entries(colors)){
-    if ((claim?.name||'') === state.name && claim?.uid && claim.uid !== state.uid){
-      allowedByName.add(claim.uid);
+    // deal/v1/cards から旧UID候補
+    const dSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards`));
+    const deal = dSnap.val() || {};
+    for (const uid of Object.keys(deal)){
+      if (uid !== state.uid) candidates.add(uid);
     }
-  }
-
-  // seats: 同名の痕跡（残っていれば）
-  const sSnap = await get(ref(db, `rooms/${state.code}/seats`));
-  const seats = sSnap.val() || {};
-  for (const [uid, data] of Object.entries(seats)){
-    if ((data?.name||'') === state.name && uid !== state.uid){
-      allowedByName.add(uid);
-    }
-  }
-
-  // 候補 = 同名痕跡があるUIDのみ
-  const candidates = new Set(allowedByName);
-
-  // deal/v1/cards: 「同名」UIDだけ採用
-  const dSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards`));
-  const deal = dSnap.val() || {};
-  for (const uid of Object.keys(deal)){
-    if (uid !== state.uid && allowedByName.has(uid)) candidates.add(uid);
-  }
-
-  // participants に居ないUID（孤児）のみ返す
-  const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-  const ps = psSnap.val() || {};
-  for (const oldUid of candidates){
-    if (!ps[oldUid]) return oldUid;
-  }
-  return null;
-}
-
 
     // participants に居ないUIDのみ（＝孤児）
     const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
@@ -2340,17 +2293,12 @@ function showParticipantSelectPopup(cardText){
   pop.style.cssText = `
     position:fixed; inset:0; z-index:2147483608;
     display:flex; align-items:center; justify-content:center;
-  background:transparent;   // ← ここを透明にする
+    background:rgba(0,0,0,.35);
   `;
   const panel = document.createElement('div');
   panel.className = 'modal-panel';
-
   panel.innerHTML = `<div style="font-weight:700;margin-bottom:8px">共有先を選んでください</div>`;
-
   const list = document.createElement('div');
-  // ▼ モバイル用の既存CSS（#greenSharePopup .list …）を効かせるため class を付与
-  list.className = 'list';
-  // 既存のインラインは残す（PCの3列レイアウト）
   list.style.display = 'grid';
   list.style.gridTemplateColumns = 'repeat(3, 140px)';
   list.style.gap = '8px';
@@ -2359,32 +2307,25 @@ function showParticipantSelectPopup(cardText){
   pop.appendChild(panel);
   document.body.appendChild(pop);
 
+  // 自分以外の参加者を列挙
   get(ref(db, `rooms/${state.code}/participants`)).then(snap=>{
     const ps = snap.val() || {};
     Object.entries(ps).forEach(([uid, info])=>{
       if (uid === state.uid) return;
-
       const btn = document.createElement('button');
       btn.className = 'btn';
       btn.textContent = (info?.name || '?');
       btn.style.width = '100%';
+ btn.onclick = async ()=>{
+  // 1) 相手に“共有”を書き込む
+  await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
+    card: cardText, from: state.uid, at: Date.now()
+  });
 
-      // ▼ ここを追加：そのプレイヤーが選んだ色で背景＆文字色を決定
-      // participants/{uid}.color には「赤/青/白…」等の“表示名”が保存されている想定
-      // colorToStyle() は 表示名/ID どちらでも受け取れる実装（COLOR_LISTと対） :contentReference[oaicite:3]{index=3}
-      const colorName = info?.color || '';           // 未選択なら空
-      const { bg, text } = colorToStyle(colorName);  // <- 既存ヘルパ
-      btn.style.background = bg;
-      btn.style.color = text;
+  // ※送信時は履歴に書かない（未回答は保存しない）
 
-      // ※ 白タイルなど枠が必要なら必要に応じて：
-      // if (colorName === '白') { btn.style.border = '1px solid #111'; }
-
-      btn.onclick = async ()=>{
-        await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
-          card: cardText, from: state.uid, at: Date.now()
-        });
-        pop.remove();
+  // 2) ポップを閉じる
+  pop.remove();
 };
 
       list.appendChild(btn);
