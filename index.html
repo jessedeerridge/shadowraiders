@@ -1881,8 +1881,14 @@ function makeEquipIcon(name, colorName){
         // 既に他者が取っていれば何もしない
         const snap = await get(ref(db, `rooms/${state.code}/colors/${c.id}`));
         const cur = snap.val();
-        if (cur && cur.uid && cur.uid !== state.uid) return;
 
+
+  // ★ 追加：在籍チェック
+  const present = state.present || {};
+  const takenByPresentOther = !!(cur && cur.uid && present[cur.uid] && cur.uid !== state.uid);
+
+  if (takenByPresentOther) return;
+        
         // 自分が持っている別色の解放
         const colorsSnap = await get(ref(db, `rooms/${state.code}/colors`));
         const all = colorsSnap.val() || {};
