@@ -2086,7 +2086,7 @@ async function hostReset(){
   updates[`rooms/${state.code}/decks/green`]      = { idx:-1, order: makeShuffledOrder('green'), at: now };
   updates[`rooms/${state.code}/decks/white`]      = { idx:-1, order: makeShuffledOrder('white'), at: now };
   updates[`rooms/${state.code}/decks/black`]      = { idx:-1, order: makeShuffledOrder('black'), at: now };
-  // 全員に色選択画面を戻す
+updates[`rooms/${state.code}/seats`] = null;   // ★ 右図の席アイコンを全削除
   updates[`rooms/${state.code}/game/started`]     = false;
   updates[`rooms/${state.code}/resetAt`]          = now;
   await update(ref(db), updates);
