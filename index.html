@@ -956,9 +956,9 @@ await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
     const rt3 = Math.sqrt(3);
 
     // ---- パラメータ ----
-    const s0 = 48;   // 中央六角形の一辺
-    const s1 = 82;   // 中間六角形の一辺（五角形の根元）
-    const rectScale = 0.40;
+const s0 = 48 * 1.3;  // 62.4
+const s1 = 82 * 1.3;  // 106.6
+const rectScale = 0.35;  // 幅を小さめに
     const gap = 20;
 
     function hexFlat(cx, cy, s){
@@ -1018,7 +1018,7 @@ await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
 
     // 左の長方形
     const starBox = g.getBBox();
-const rectH = starBox.height + 85
+const rectH = starBox.height + 60
   const rectW = rectH * rectScale;
     const rectX = starBox.x - gap - rectW;
     const rectY = starBox.y;
