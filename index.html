@@ -2316,6 +2316,15 @@ function showParticipantSelectPopup(cardText){
       btn.className = 'btn';
       btn.textContent = (info?.name || '?');
       btn.style.width = '100%';
+
+    // participants/{uid}.color には「赤/青/白…」等の“表示名”が保存されている想定
+      // colorToStyle() は 表示名/ID どちらでも受け取れる実装（COLOR_LISTと対） :contentReference[oaicite:3]{index=3}
+      const colorName = info?.color || '';           // 未選択なら空
+      const { bg, text } = colorToStyle(colorName);  // <- 既存ヘルパ
+      btn.style.background = bg;
+      btn.style.color = text;
+
+      
  btn.onclick = async ()=>{
   // 1) 相手に“共有”を書き込む
   await set(ref(db, `rooms/${state.code}/greenShare/${uid}`), {
