@@ -1917,14 +1917,15 @@ function makeEquipIcon(name, colorName){
 }
 
 
-  function observeColors(){
-    const colorsRef = ref(db, `rooms/${state.code}/colors`);
-    const off = onValue(colorsRef, (snap)=>{
-      const claims = snap.val() || {};
-      renderColorGrid(claims);
-    });
-    state.unsub.push(off);
-  }
+function observeColors(){
+  const colorsRef = ref(db, `rooms/${state.code}/colors`);
+  const off = onValue(colorsRef, (snap)=>{
+    const claims = snap.val() || {};
+    state.colorClaims = claims;           // ★ 追加：常に最新をキャッシュ
+    renderColorGrid(claims);
+  });
+  state.unsub.push(off);
+}
 
   // ▼ 装備一覧の描画（自分の行が先頭に来る）
   function renderEquipments(equipData, participants){
