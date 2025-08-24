@@ -979,57 +979,8 @@ const rectH = starBox.height + 85
       hitPent.dataset.room = String(2 + i); // 2..7
       hitPent.addEventListener('click', onRoomClick);
       // ★ 追加：room6 のときだけ背景画像を“中にだけ”表示（はみ出しカット）
-        if (2 + i === 2) {
-    const xs = pentPoints[i].map(p => p[0]);
-    const ys = pentPoints[i].map(p => p[1]);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
-    const w = maxX - minX, h = maxY - minY;
+    
 
-    const defs = svg.querySelector('defs') 
-              || (()=>{
-                   const d = document.createElementNS('http://www.w3.org/2000/svg','defs');
-                   svg.insertBefore(d, svg.firstChild);
-                   return d;
-                 })();
-
-    let cp = svg.querySelector('#clip-room5');
-    if (!cp) {
-      cp = document.createElementNS('http://www.w3.org/2000/svg','clipPath');
-      cp.setAttribute('id','clip-room5');
-      const clipPoly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-      clipPoly.setAttribute('points', pentPoints[i].map(p=>p.join(',')).join(' '));
-      cp.appendChild(clipPoly);
-      defs.appendChild(cp);
-    }
-
-    const img = document.createElementNS('http://www.w3.org/2000/svg','image');
-    img.setAttributeNS('http://www.w3.org/1999/xlink','href','room2.jpg');
-
-const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
-const offsetY = 20;  // 例: -10 で上に10px
-
-// 画像サイズは今のまま（等倍の例）
-const newW = w; 
-const newH = h;
-
-// 中心基準で配置し、そこからオフセット
-const cx = (minX + maxX) / 2;
-const cy = (minY + maxY) / 2;
-const newX = cx - newW / 2 + offsetX;
-const newY = cy - newH / 2 + offsetY;
-
-
-    img.setAttribute('x', String(newX));
-    img.setAttribute('y', String(newY));
-    img.setAttribute('width',  String(newW));
-    img.setAttribute('height', String(newH));
-    img.setAttribute('preserveAspectRatio','xMidYMid slice');
-    img.setAttribute('clip-path','url(#clip-room2)');
-    img.style.pointerEvents = 'none';
-
-    g.insertBefore(img, g.firstChild);
-  }
       
         if (2 + i === 2) {
     const xs = pentPoints[i].map(p => p[0]);
@@ -1045,10 +996,10 @@ const newY = cy - newH / 2 + offsetY;
                    return d;
                  })();
 
-    let cp = svg.querySelector('#clip-room5');
+    let cp = svg.querySelector('#clip-room2');
     if (!cp) {
       cp = document.createElementNS('http://www.w3.org/2000/svg','clipPath');
-      cp.setAttribute('id','clip-room5');
+      cp.setAttribute('id','clip-room2');
       const clipPoly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
       clipPoly.setAttribute('points', pentPoints[i].map(p=>p.join(',')).join(' '));
       cp.appendChild(clipPoly);
@@ -1097,10 +1048,10 @@ const newY = cy - newH / 2 + offsetY;
                    return d;
                  })();
 
-    let cp = svg.querySelector('#clip-room5');
+    let cp = svg.querySelector('#clip-room3');
     if (!cp) {
       cp = document.createElementNS('http://www.w3.org/2000/svg','clipPath');
-      cp.setAttribute('id','clip-room5');
+      cp.setAttribute('id','clip-room3');
       const clipPoly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
       clipPoly.setAttribute('points', pentPoints[i].map(p=>p.join(',')).join(' '));
       cp.appendChild(clipPoly);
@@ -1149,10 +1100,10 @@ const newY = cy - newH / 2 + offsetY;
                    return d;
                  })();
 
-    let cp = svg.querySelector('#clip-room5');
+    let cp = svg.querySelector('#clip-room4');
     if (!cp) {
       cp = document.createElementNS('http://www.w3.org/2000/svg','clipPath');
-      cp.setAttribute('id','clip-room5');
+      cp.setAttribute('id','clip-room4');
       const clipPoly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
       clipPoly.setAttribute('points', pentPoints[i].map(p=>p.join(',')).join(' '));
       cp.appendChild(clipPoly);
@@ -1214,14 +1165,19 @@ const newY = cy - newH / 2 + offsetY;
     const img = document.createElementNS('http://www.w3.org/2000/svg','image');
     img.setAttributeNS('http://www.w3.org/1999/xlink','href','room5.jpg');
 
-    // 倍率を適用（必要なら scale 値を調整）
-    const scale = 1.0;
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
-    const newW = w * scale;
-    const newH = h * scale;
-    const newX = cx - newW / 2;
-    const newY = cy - newH / 2;
+const offsetX = 0;    // 例: +12 で右に12px、-8 で左に8px
+const offsetY = 0;  // 例: -10 で上に10px
+
+// 画像サイズは今のまま（等倍の例）
+const newW = w; 
+const newH = h;
+
+// 中心基準で配置し、そこからオフセット
+const cx = (minX + maxX) / 2;
+const cy = (minY + maxY) / 2;
+const newX = cx - newW / 2 + offsetX;
+const newY = cy - newH / 2 + offsetY;
+
 
     img.setAttribute('x', String(newX));
     img.setAttribute('y', String(newY));
