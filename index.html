@@ -2866,6 +2866,9 @@ ensureRoomTips();
 const participantsRef = ref(db, `rooms/${code}/participants`);
 const offParticipants = onValue(participantsRef, (snap)=>{
   state.present = snap.val() || {};  // uid -> {name, color, ...}
+    if (state && state.colorClaims) {
+    renderColorGrid(state.colorClaims);
+  }
 });
 state.unsub.push(offParticipants);
     
