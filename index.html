@@ -210,7 +210,7 @@ padding-top: 12px;
   display:flex;
   flex-direction:column;
   justify-content:flex-start;
-  gap:8px;
+  gap:0px;
   padding-top: 12px;
 }
 
@@ -285,23 +285,18 @@ padding-top: 12px;
 /* ▼ 白カード：タイトルとテーブルの間に入れる画像 ▼ */
 #dealViewer .deal-card .item-image{
   display:block;
-  width:90%;
+  width:100%;
   max-height:180px;
   height:auto;
-  margin:4px auto 6px;     /* タイトルとテーブルの間 */
+  margin:0px auto 0px;     /* タイトルとテーブルの間 */
   border:1px solid #666;   /* 濃いグレー枠 */
   border-radius:8px;
   object-fit:cover;        /* はみ出しをカットしつつフィット */
+  border: none;       /* 枠を消す */
+
 }
 
 
-@media (max-width:600px){
-  #dealViewer .deal-card .item-image{
-    width:92%;
-    max-height:100px;
-    margin:2px auto 4px;
-  }
-}
 
 
 
@@ -669,6 +664,28 @@ font-size:12px;
 }
 
   
+/* 1) インライン transform を殺して“見かけの余白”を退治 */
+#dealViewer .deal-card.white-layout .item-image{
+  transform: none !important;
+}
+
+/* 2) wrapper 内の縦間隔も 0（.deal-card の gap だけでは足りない） */
+#dealViewer .deal-card.white-layout > div{
+  gap:0 !important;
+  row-gap:0 !important;
+}
+
+/* 3) タイトル/セルの“内側の厚み”を上下だけ薄く（左右は維持） */
+#dealViewer .deal-card.white-layout .white-title{
+  display:block !important;
+  padding-top:0 !important;
+  padding-bottom:0 !important;
+  line-height:1 !important;
+}
+#dealViewer .deal-card.white-layout .white-table td{
+  padding-top:0 !important;
+  padding-bottom:0 !important;
+}
 
   
 
