@@ -313,8 +313,71 @@ padding-top: 12px;
   }
   .popover button{padding:6px 10px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
 
+
+/* 小さい白カード（表）の2段レイアウト */
+.deck-face[data-deck="white"][data-role="face"]{
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-start;  /* 上詰め */
+
+  gap:1px;
+  padding:3px;
+  box-sizing:border-box;
+  overflow:hidden;
+}
+
+.deck-face[data-deck="white"] .mini-title{
+  font-weight: 700;
+  font-size: 9px;
+  line-height: 1.2;
+  text-align: center;
+
+  /* ▼ 黒バー＋金枠にする設定 */
+  background: #000;             /* 黒背景 */
+  color: gold;                  /* 金色の文字 */
+  border: 2px solid gold;       /* 金色の枠線 */
+  border-radius: 4px;           /* 少し角丸に（要らなければ消してOK） */
+  padding: 2px 4px;             /* 内側余白 */
+display: block;
+  width: 100%;                /* カード幅いっぱいに広げる */
+  box-sizing: border-box;     /* 枠線込みで100% */
+}
+
+.deck-face[data-deck="white"] .mini-effect {
+  font-size: 7px;
+  line-height: 1.25;
+
+  background: #f9f9f9;         /* 内側の色（少し薄めのグレー） */
+  border: 1px solid #ccc;      /* グレーの枠線を追加 */
+  border-collapse: collapse;   /* テーブルっぽい感じに */
+  border-radius: 4px;          /* 角丸は残すならそのまま */
+  
+  padding: 2px 4px;
+  width: 100%;                 /* 枠いっぱいに広げる */
+  box-sizing: border-box;
+
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;       /* 行数制限 */
+
+}
+
+
+.deck-face[data-deck="white"] .mini-image {
+  max-width: 60%;       /* 枠いっぱいに収める */
+  height: auto;          /* 縦横比を維持 */
+  margin: 0px 0;         /* 上下にちょっと余白 */
+  border: 1px solid #ccc;/* 枠線つけたいなら */
+  border-radius: 2px;    /* 角丸にしたいなら */
+}
+
+
+
+
+
 @media (max-width:600px){
-  .deck-back,.deck-face{width:50px;height:69px}
+  .deck-back,.deck-face{width:75px;height:103.5px}
   .color-tile{width:44px;height:44px}
   #hostGear{width:36px;height:36px;font-size:16px}
   #myDealMini{width:40px;height:60px;font-size:12px}
@@ -324,9 +387,7 @@ padding-top: 12px;
   #myRoomBadge{white-space:nowrap;}      /* 強制的に改行しない */
   #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
   #dealViewer .deal-card{ width:180px; height:260px; font-size:15px; }
-  #dealViewer .deal-card .green-table td {
-    font-size: 11px;   /* モバイル時は小さめ */
-  }
+  #dealViewer .deal-card .green-table td { font-size: 11px;   /* モバイル時は小さめ */}
 
 
 #dealViewer .deal-card.green-layout{padding-top: 8px;
@@ -344,10 +405,37 @@ padding-top: 12px;
     max-width: 520px;     /* 上限（PCと共通感覚） */
     box-sizing: border-box;
     max-height: 80vh;     /* 縦にも収める */
-    overflow: auto;       /* 多すぎるときはスクロール */
-  }
+    overflow: auto;       /* 多すぎるときはスクロール */  }
   
-}
+.deck-face[data-deck="white"][data-role="face"]{
+  gap:1px;
+  padding:1px;}
+
+
+  /* タイトルバー */
+  .deck-face[data-deck="white"] .mini-title {
+    font-size: 7px;      /* ← 小さく */
+    padding: 1px 2px;    /* ← 内側余白を減らす */
+    border-width: 1px;   /* ← 枠線を細くする */
+  }
+
+  /* 効果欄 */
+  .deck-face[data-deck="white"] .mini-effect {
+    font-size: 7px;      /* ← 文字をさらに小さく */
+    -webkit-line-clamp: 3; /* ← 行数制限を短く */
+    padding: 1px 2px;
+  }
+
+  /* 画像 */
+  .deck-face[data-deck="white"] .mini-image {
+    max-width: 70%;   /* ← 横幅を縮小 */
+    max-height: 28px; /* ← 高さを制限 */
+    margin: 1px auto;
+  }
+
+
+}/*スマホここまで*/
+
 
 
 /* ▼ 装備所持エリア（通常フロー） */
@@ -772,6 +860,46 @@ function colorizeDealFaceByCardName(cardName){
   dealCardFace.style.background = '#fff';
   dealCardFace.style.color = '#111';
 }
+
+// === 追加：白カードの効果文を返す共通関数（表/拡大 両対応） ===
+function getWhiteEffectText(cardName){
+  const raw = String(cardName || '');
+  // 空白・全角空白を除去してマッチの揺れを吸収
+  const norm = raw.replace(/\s+/g, '');
+
+  // 名前→効果文 の対応表（必要に応じて増やす）
+  const TABLE = [
+    { key: '銀のロザリオ',   text: 'ダイスの攻撃によって倒したPLの全ての装備を奪う。' },
+    { key: '銀のロザリオ ',   text: 'ダイスの攻撃によって倒したPLの全ての装備を奪う。' },
+    { key: '虹色のパラソル', text: '攻撃する代わりに攻撃レンジのPLに推理カードを渡す。' },
+    { key: 'エクスカリバー', text: 'あなたがレイダーなら、攻撃ダメージが 2 上がる。' },
+    { key: '神秘のコンパス', text: '移動の時にダイスを二回振って、選ぶことができる。' },
+    { key: '幸運のブローチ', text: '市庁舎(8)の効果ダメージを受けない。' },
+    { key: '賢者のローブ',   text: '与える攻撃ダメージ、受ける攻撃ダメージが 1 減少する。' },
+    { key: 'いにしえの聖杯', text: '三つ目の黒犬,吸血コウモリ,呪いの人形の効果を受けない。' },
+    { key: '光臨',           text: 'あなたがレイダーなら、全ダメージを回復する。' },
+    { key: '守護天使',       text: '次の自分の手番の始めまで、攻撃ダメージを受けない。' },
+    { key: '封印の知恵',     text: 'この手番の終了後、もう1手番を行う。' },
+    { key: '応急手当',       text: '任意のPL（自分も可）を選び、そのPLのダメージを7にする。' },
+    { key: '人魚の涙',       text: '最もダメージが多い人を 3 回復する。' },
+    { key: '幸せのクッキー', text: 'あなたが A または U なら、HPを全回復する。' },
+    { key: '闇を祓う鏡',     text: 'あなたがシャドウ陣営でウルリッヒでないなら、必ず正体カードを公開する。' },
+    { key: 'いやしの聖水',   text: '自分のダメージを 2 回復する。' },
+    { key: 'いやしの聖水 ',   text: '自分のダメージを 2 回復する。' },
+    { key: 'いやしの聖水  ',   text: '自分のダメージを 2 回復する。' },
+    { key: '裁きの閃光',   text: '自分以外のPL全員に 2 ダメージ与える。' },
+    { key: '恩恵',           text: '自分以外のPLを選んで、6面ダイスを振る。目の数だけそのPLのダメージを回復する。' },
+  ];
+
+  // norm同士で部分一致（includes）を取りにいく
+  for (const row of TABLE){
+    const k = row.key.replace(/\s+/g, '');
+    if (norm.includes(k)) return row.text;
+  }
+  return '';
+}
+
+
 
 
 // カード名からjpg画像のパスを作る（例：「銀のロザリオ」→「銀のロザリオ.jpg」）
@@ -1593,8 +1721,10 @@ function setupDecks(){
         // 白・黒の表は faceEl のテキストを拡大
 if (faceEl.textContent){
   dealCardFace.classList.remove('green-layout'); 
-  const cardName = faceEl.textContent.trim();
-dealCardFace.classList.add('white-layout');
+ const cardName =
+   (faceEl.dataset.cardName && faceEl.dataset.cardName.trim()) ||
+   (faceEl.querySelector('.mini-title')?.textContent?.trim()) ||
+   faceEl.textContent.trim();dealCardFace.classList.add('white-layout');
 
   // デフォルトはカード名だけ
   dealCardFace.textContent = '';
@@ -1640,29 +1770,29 @@ if (cardName.includes('銀のロザリオ')){
 }else if (cardName.includes('銀のロザリオ ')){
   td.textContent = 'ダイスの攻撃によって倒したPLの全ての装備を奪う。';
 }else if (cardName.includes('虹色のパラソル')){
-  td.textContent = '手番で攻撃する代わりに、攻撃レンジのPLに推理カードを渡すことができる';
+  td.textContent = '攻撃する代わりに攻撃レンジのPLに推理カードを渡す。';
 }else if (cardName.includes('エクスカリバー')){
-  td.textContent = 'あなたがレイダーでカードを公開したら、攻撃ダメージが 2 上がる。';
+  td.textContent = 'あなたがレイダーなら、攻撃ダメージが 2 上がる。';
 }else if (cardName.includes('神秘のコンパス')){
   td.textContent = '移動の時にダイスを二回振って、選ぶことができる。';
 }else if (cardName.includes('幸運のブローチ')){
   td.textContent = '市庁舎(8)の効果ダメージを受けない。';
 }else if (cardName.includes('賢者のローブ')){
-  td.textContent = '攻撃ダメージが 1 減少する。攻撃を受けた時に受けるダメージが 1 減少する。';
+  td.textContent = '与える攻撃ダメージ、受ける攻撃ダメージが 1 減少する。';
 }else if (cardName.includes('いにしえの聖杯')){
-  td.textContent = '三つ目の黒犬、吸血コウモリ、呪いの人形の効果ダメージを受けない。';
+  td.textContent = '三つ目の黒犬,吸血コウモリ,呪いの人形の効果を受けない。';
 }else if (cardName.includes('光臨')){
-  td.textContent = 'あなたがレイダーで、カードを公開したら全回復する。';
+  td.textContent = 'あなたがレイダーなら、全ダメージを回復する。';
 }else if (cardName.includes('守護天使')){
   td.textContent = '次の自分の手番の始めまで、攻撃ダメージを受けない。';
 }else if (cardName.includes('封印の知恵')){
   td.textContent = 'この手番の終了後、もう1手番を行う。';
 }else if (cardName.includes('応急手当')){
-  td.textContent = '任意のPLを選び、そのPLのダメージを7にする。（自分でも可）';
+  td.textContent = '任意のPL（自分も可）を選び、そのPLのダメージを7にする。';
 }else if (cardName.includes('人魚の涙')){
   td.textContent = '最もダメージが多い人を 3 回復する。';
 }else if (cardName.includes('幸せのクッキー')){
-  td.textContent = 'あなたが A または U で、カードを公開したら、HPを全回復する。';
+  td.textContent = 'あなたが A または U なら、HPを全回復する。';
 }else if (cardName.includes('闇を祓う鏡')){
   td.textContent = 'あなたがシャドウ陣営でウルリッヒでないなら、必ず正体カードを公開する。';
 }else if (cardName.includes('いやしの聖水')){
@@ -1672,7 +1802,9 @@ if (cardName.includes('銀のロザリオ')){
 }else if (cardName.includes('いやしの聖水  ')){
   td.textContent = '自分のダメージを 2 回復する。';
 }else if (cardName.includes('恩恵')){
-  td.textContent = '自分以外のPLを選んで、6面ダイスを振る。目の数だけそのPLのダメージを回復する';
+  td.textContent = '自分以外のPLを選んで、6面ダイスを振る。目の数だけそのPLのダメージを回復する。';
+}else if (cardName.includes('裁きの閃光')){
+  td.textContent = '自分以外のPL全員に 2 ダメージ与える。';
 }else{
   td.textContent = '効果未設定';
 }
@@ -1753,11 +1885,21 @@ const off = onValue(decksRef, (snap)=>{
   if (faceEl){
     if (idx >= 0){
       const actual = order ? order[idx % order.length] : (idx % DECKS_DEF.white.cards.length);
-      faceEl.textContent = DECKS_DEF.white.cards[actual];
-      faceEl.classList.remove('blank');      // ← 追加
-      applyDeckTheme(faceEl, 'white');       // ← 既存どおり
+   const cardName = DECKS_DEF.white.cards[actual];
+
+faceEl.dataset.cardName = cardName;   // ← 追加：タイトル用に“名前だけ”保持
+
+const effect   = getWhiteEffectText(cardName);
+    faceEl.innerHTML = `
+      <div class="mini-title">${cardName}</div>
+  <img class="mini-image" src="${cardName}.jpg" alt="${cardName}">
+      <div class="mini-effect">${effect}</div>
+    `;
+    faceEl.classList.remove('blank');
+    applyDeckTheme(faceEl, 'white');
     }else{
       faceEl.textContent = '';
+ delete faceEl.dataset.cardName;   
       faceEl.classList.add('blank');         // ← 追加
       faceEl.style.background = '';          // ← 追加（インライン色を消す）
       faceEl.style.color = '';
