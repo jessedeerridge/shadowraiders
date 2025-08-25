@@ -595,6 +595,7 @@ font-size:12px;
 .deck-face[data-deck="black"] .mini-image {
   margin: 0;
 }
+
 }/*スマホここまで*/
 
 
@@ -686,7 +687,12 @@ font-size:12px;
 }
 
   
-
+@media (max-width:600px){
+  #dealViewer .deal-card.white-layout .white-title{
+    padding-top:5px !important;
+    padding-bottom:5px !important;
+    line-height:1.2 !important;
+  }
 </style>
 </head>
 <body>
@@ -3986,6 +3992,9 @@ async function becomeHostIfVacant(){
       if (!popEl.contains(e.target)) closePopover();
     }
   }
+
+
+
 
   // ===== 入室処理 =====
   async function join(){
