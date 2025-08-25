@@ -605,6 +605,7 @@ font-size:12px;
   display:flex; gap:12px; flex-wrap:wrap; align-items:center;
   background:#fff; border:1px solid #111; border-radius:12px; padding:8px 10px;
   margin-top:12px;           /* 山札との間に余白 */
+
 }
 /* ▼ 緑カード履歴（装備とは独立して常時表示） */
 #greenHistory{
@@ -693,6 +694,30 @@ font-size:12px;
     padding-bottom:5px !important;
     line-height:1.2 !important;
   }
+
+
+/* 所持者ボックス内のカードを折り返す */
+.equip-holder{
+  display: flex;
+  flex-wrap: wrap;        /* ★ これを追加 */
+  align-items: flex-start; /* 多段でも綺麗に揃える */
+  gap: 8px;               /* 既存と同じでOK（row-gapを足しても可） */
+  box-sizing: border-box; /* 幅計算の安定化 */
+  max-width: 100%;        /* 親幅を超えない保険 */
+}
+
+/* カード幅は固定のまま“折り返しやすく” */
+.equip-holder .equip-card{
+  flex: 0 0 60px;         /* 幅60pxで折り返す（既存の width:60px を補強） */
+}
+
+/* スマホで段間の詰めを微調整（任意） */
+@media (max-width:600px){
+  .equip-holder{
+    row-gap: 6px;         /* 段間を少し詰める（好みで） */
+  }
+}
+
 </style>
 </head>
 <body>
