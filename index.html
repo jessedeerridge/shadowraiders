@@ -1144,6 +1144,8 @@ const TABLE = [
 
 
 
+
+
 // カード名からjpg画像のパスを作る（例：「銀のロザリオ」→「銀のロザリオ.jpg」）
 function makeWhiteImageSrc(name){
   const t = (name || '').trim();  // 空白や余計なスペースを削除
@@ -2193,7 +2195,7 @@ faceEl.dataset.cardName = cardName;   // ← 追加：タイトル用に“名�
 const effect   = getWhiteEffectText(cardName);
     faceEl.innerHTML = `
       <div class="mini-title">${cardName}</div>
-  <img class="mini-image" src="${cardName}.jpg" alt="${cardName}">
+<img class="mini-image" src="${makeWhiteImageSrc(cardName)}" alt="${cardName}">
       <div class="mini-effect">${effect}</div>
     `;
     faceEl.classList.remove('blank');
@@ -2220,8 +2222,7 @@ const effect   = getWhiteEffectText(cardName);
       const effect   = getBlackEffectText(cardName);
       faceEl.innerHTML = `
         <div class="mini-title">${cardName}</div>
-        <img class="mini-image" src="${cardName}.jpg" alt="${cardName}">
-        <div class="mini-effect">${effect}</div>
+<img class="mini-image" src="${makBlackImageSrc(cardName)}" alt="${cardName}">        <div class="mini-effect">${effect}</div>
       `;
       faceEl.classList.remove('blank');
       applyDeckTheme(faceEl, 'black');
@@ -3878,7 +3879,7 @@ c.appendChild(title);
 const imgEl = document.createElement('img');
 imgEl.className = 'equip-image';
 imgEl.alt = cardName;
-imgEl.src = `${cardName}.jpg`;   // 同じフォルダに置く場合
+imgEl.src = makeWhiteImageSrc(cardName);
 // imgEl.src = `equip_imgs/${cardName}.jpg`; // サブフォルダならこちら
 imgEl.addEventListener('error', () => imgEl.remove()); // 画像がなければ非表示
 
