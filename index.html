@@ -496,7 +496,7 @@ display: block;
   .deck-face[data-deck="black"] .mini-image{ max-width:70%; max-height:28px; margin:1px auto; }
 
 
-  .deck-back,.deck-face{width:60px;height:82.8px}
+  .deck-back,.deck-face{width:60px;height:86px}
   .color-tile{width:44px;height:44px}
   #hostGear{width:36px;height:36px;font-size:16px}
   #myDealMini{width:40px;height:60px;font-size:12px}
@@ -570,8 +570,7 @@ font-size:12px;
   .deck-face[data-deck="black"] .mini-image {
     max-width: 100%;   /* ← 横幅を縮小 */
     max-height: 30px; /* ← 高さを制限 */
-    margin: 1px auto;
-  }
+    margin: 1px auto;  }
 
 
   .equip-card{ font-size:8px;}
@@ -582,8 +581,27 @@ font-size:12px;
     padding:1px 2px;
   }
 
-  .deck-face[data-deck="white"][data-role="face"],
-  .deck-face[data-deck="black"][data-role="face"]{ gap:0; }
+/* 外枠 */
+.deck-face[data-deck="white"][data-role="face"],
+.deck-face[data-deck="black"][data-role="face"] {
+  gap: 0;        /* スマホで復活する 1px を潰す */
+}
+
+/* タイトルと効果欄の上下余白を削除 */
+.deck-face[data-deck="white"] .mini-title,
+.deck-face[data-deck="white"] .mini-effect,
+.deck-face[data-deck="black"] .mini-title,
+.deck-face[data-deck="black"] .mini-effect {
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* 画像の上下マージンを削除 */
+.deck-face[data-deck="white"] .mini-image,
+.deck-face[data-deck="black"] .mini-image {
+  margin: 0;
+}
 }/*スマホここまで*/
 
 
