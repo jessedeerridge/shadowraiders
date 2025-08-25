@@ -254,7 +254,7 @@ padding-top: 12px;
   text-align:center;
 
   background:#000;        /* 黒いバー */
-  color:#fff;             /* 白字 */
+  color: gold;                  /* 金色の文字 */
   border:2px solid gold;  /* 金枠 */
   border-radius:6px;
   padding:4px 8px;
@@ -372,6 +372,83 @@ display: block;
   border-radius: 2px;    /* 角丸にしたいなら */
 }
 
+#dealViewer .deal-card .black-table {
+  width: 100%;
+  background: #d3d3d3;     /* 黒ミニと同じ灰色 */
+  border: 2px solid #666;
+  border-radius: 8px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+#dealViewer .deal-card .black-table td {
+  padding: 8px 10px;
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: left;
+  color: #000;             /* 黒文字に固定 */
+}
+
+/* 小さい黒カード（表）の2段レイアウト —— 白と同じ */
+.deck-face[data-deck="black"][data-role="face"]{
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-start;
+  gap:1px;
+  padding:3px;
+  box-sizing:border-box;
+  overflow:hidden;
+}
+
+.deck-face[data-deck="black"] .mini-title{
+  font-weight:700;
+  font-size:8px;
+  line-height:1.2;
+  text-align:center;
+  background:#000;
+  color:gold;
+  border:2px solid gold;
+  border-radius:4px;
+  padding:2px 4px;
+  display:block;
+  width:100%;
+  box-sizing:border-box;
+}
+
+.deck-face[data-deck="black"] .mini-effect{
+  font-size:7px;
+  line-height:1.25;
+  background:#d3d3d3;
+  color: #000;   /* ← ここで白文字を指定 */
+  border:1px solid #ccc;
+  border-radius:4px;
+  padding:2px 4px;
+  width:100%;
+  box-sizing:border-box;
+  overflow:hidden;
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:5;
+}
+
+.deck-face[data-deck="black"] .mini-image{
+  max-width:60%;
+  height:auto;
+  margin:0px 0;
+  border:1px solid #ccc;
+  border-radius:2px;
+}
+
+/* スマホ用の縮小（白ミニと同じ値） */
+@media (max-width:600px){
+  .deck-face[data-deck="black"][data-role="face"]{ gap:1px; padding:2px; }
+  .deck-face[data-deck="black"] .mini-title{ font-size:7px; padding:1px 2px; border-width:1px; }
+  .deck-face[data-deck="black"] .mini-effect{ font-size:7px; -webkit-line-clamp:5; padding:1px 2px; }
+  .deck-face[data-deck="black"] .mini-image{ max-width:70%; max-height:28px; margin:1px auto; }
+}
+
+
+
 
 
 
@@ -411,11 +488,16 @@ display: block;
     overflow: auto;       /* 多すぎるときはスクロール */  }
   
 #dealViewer .deal-card .white-title {
-
+font-size: 12px; 
   display:block; width:100%; box-sizing:border-box; margin:0;
   padding-left:5px; padding-right:5px; /* 余白で見た目を絞る */
 }
 
+#dealViewer .deal-card .white-table td {font-size:12px;          /* 緑と同じサイズ */}
+
+#dealViewer .deal-card .black-table td {
+font-size:12px; 
+}
 
 .deck-face[data-deck="white"][data-role="face"]{
   gap:1px;
@@ -829,6 +911,10 @@ function applyDeckTheme(el, deckId){
   else if (deckId === 'green'){ el.style.background = '#005731'; el.style.color = '#111'; }
 }
 
+
+
+
+
 // 任意のカード名に対して dealViewer の見た目を適切に設定するヘルパ
 function colorizeDealFaceByCardName(cardName){
   // まず完全リセット
@@ -904,6 +990,42 @@ function getWhiteEffectText(cardName){
   // norm同士で部分一致（includes）を取りにいく
   for (const row of TABLE){
     const k = row.key.replace(/\s+/g, '');
+    if (norm.includes(k)) return row.text;
+  }
+  return '';
+}
+
+
+// === 追加：黒カードの効果文を返す共通関数（表/拡大 両対応） ===
+function getBlackEffectText(cardName){
+  const raw = String(cardName || '');
+  const norm = raw.replace(/\s+/g, ''); // 半角/全角スペース吸収
+
+const TABLE = [
+  { key:'サーベル',        text:'攻撃ダメージが 1 増加する。' },
+  { key:'拳銃R',           text:'攻撃ダメージが 1 増加する。' },
+  { key:'拳銃L',           text:'攻撃ダメージが 1 増加する。' },
+  { key:'クロスボウガン',  text:'攻撃ダメージが 1 増加する。' },
+  { key:'妖刀マサムネ',    text:'攻撃の時、4面ダイスだけ使う。必ず攻撃レンジの1人を選んで攻撃しなければならない。' },
+  { key:'ガトリング',      text:'攻撃レンジのPL全員に攻撃する。' },
+  { key:'死神スコープ',    text:'攻撃レンジが 1 増加する。' },
+  { key:'死神スコープ　',  text:'攻撃レンジが 1 増加する。' }, // 全角スペース対策
+  { key:'オリバーの子分',  text:'任意のPLを選んで、装備を1つ奪う。' },
+  { key:'オリバーの子分 ', text:'任意のPLを選んで、装備を1つ奪う。' }, // 半角スペース対策
+  { key:'オリバーの子分　',text:'任意のPLを選んで、装備を1つ奪う。' }, // 全角スペース対策
+  { key:'吸血コウモリ',    text:'自分以外のPLに2ダメージ与える。' },
+  { key:'吸血コウモリ ',   text:'自分以外のPLに2ダメージ与える。' },
+  { key:'吸血コウモリ　',  text:'自分以外のPLに2ダメージ与える。' },
+  { key:'三つ目の黒犬',    text:'自分と選んだPLに2ダメージ与える。' },
+  { key:'三つ目の黒犬 ',   text:'自分と選んだPLに2ダメージ与える。' },
+  { key:'暴動',            text:'ダイスを2つ振り、目のエリアにいるPL全員に3ダメージ与える。' },
+  { key:'バナナの皮',      text:'装備を1つ誰かに渡す。なければ 1 ダメージ受ける。' },
+  { key:'呪いの人形',      text:'PLを一人選び、6面ダイスを振る。1-4なら選んだPLに、5-6なら自分に3ダメージ与える。' },
+  { key:'戦慄の闇儀式',    text:'あなたがシャドウなら、全回復する。' }
+];
+
+  for (const row of TABLE){
+    const k = row.key.replace(/\s+/g,'');
     if (norm.includes(k)) return row.text;
   }
   return '';
@@ -1824,6 +1946,65 @@ if (cardName.includes('銀のロザリオ')){
     wrapper.appendChild(table);
   }
 
+
+// 下：黒デッキ効果（白と同じUI形式）
+if (deckId === 'black'){
+  const table = document.createElement('table');
+  table.className = 'black-table'; // 白と同じ見た目にする
+  const tr = document.createElement('tr');
+  const td = document.createElement('td');
+
+  // 白と同じように if/else 群を直書きする場合
+if (cardName.includes('サーベル')){
+  td.textContent = '攻撃ダメージが 1 増加する。';
+}else if (cardName.includes('拳銃R')){
+  td.textContent = '攻撃ダメージが 1 増加する。';
+}else if (cardName.includes('拳銃L')){
+  td.textContent = '攻撃ダメージが 1 増加する。';
+}else if (cardName.includes('クロスボウガン')){
+  td.textContent = '攻撃ダメージが 1 増加する。';
+}else if (cardName.includes('妖刀マサムネ')){
+  td.textContent = '攻撃の時、4面ダイスだけ使う。必ず攻撃レンジの1人を選んで攻撃しなければならない。';
+}else if (cardName.includes('ガトリング')){
+  td.textContent = '攻撃レンジのPL全員に攻撃する。';
+}else if (cardName.includes('死神スコープ')){
+  td.textContent = '攻撃レンジが 1 増加する。';
+}else if (cardName.includes('死神スコープ ')){
+  td.textContent = '攻撃レンジが 1 増加する。';
+}else if (cardName.includes('オリバーの子分')){
+  td.textContent = '任意のPLを選んで、装備を1つ奪う。';
+}else if (cardName.includes('オリバーの子分 ')){
+  td.textContent = '任意のPLを選んで、装備を1つ奪う。';
+}else if (cardName.includes('オリバーの子分  ')){
+  td.textContent = '任意のPLを選んで、装備を1つ奪う。';
+}else if (cardName.includes('吸血コウモリ')){
+  td.textContent = '自分以外のPLに2ダメージ与える。';
+}else if (cardName.includes('吸血コウモリ ')){
+  td.textContent = '自分以外のPLに2ダメージ与える。';
+}else if (cardName.includes('吸血コウモリ  ')){
+  td.textContent = '自分以外のPLに2ダメージ与える。';
+}else if (cardName.includes('三つ目の黒犬')){
+  td.textContent = '自分と選んだPLに2ダメージ与える。';
+}else if (cardName.includes('三つ目の黒犬 ')){
+  td.textContent = '自分と選んだPLに2ダメージ与える。';
+}else if (cardName.includes('暴動')){
+  td.textContent = 'ダイスを2つ振り、目のエリアにいるPL全員に3ダメージ与える。';
+}else if (cardName.includes('バナナの皮')){
+  td.textContent = '装備を1つ誰かに渡す。なければ 1 ダメージ受ける。';
+}else if (cardName.includes('呪いの人形')){
+  td.textContent = 'PLを一人選び、6面ダイスを振る。1-4なら選んだPLに、5-6なら自分に3ダメージ与える。';
+}else if (cardName.includes('戦慄の闇儀式')){
+  td.textContent = 'あなたがシャドウなら、全回復する。';
+  }else{
+    td.textContent = '効果未設定';
+  }
+
+  tr.appendChild(td);
+  table.appendChild(tr);
+  wrapper.appendChild(table);
+}
+
+
   dealCardFace.appendChild(wrapper);
   applyDeckTheme(dealCardFace, deckId);
   show(dealViewer, true);
@@ -1924,11 +2105,19 @@ const effect   = getWhiteEffectText(cardName);
   if (faceEl){
     if (idx >= 0){
       const actual = order ? order[idx % order.length] : (idx % DECKS_DEF.black.cards.length);
-      faceEl.textContent = DECKS_DEF.black.cards[actual];
-      faceEl.classList.remove('blank');      // ← 追加
-      applyDeckTheme(faceEl, 'black');       // ← 既存どおり
-    }else{
-      faceEl.textContent = '';
+      const cardName = DECKS_DEF.black.cards[actual];
+      faceEl.dataset.cardName = cardName;  // タイトル/拡大用に保持
+      const effect   = getBlackEffectText(cardName);
+      faceEl.innerHTML = `
+        <div class="mini-title">${cardName}</div>
+        <img class="mini-image" src="${cardName}.jpg" alt="${cardName}">
+        <div class="mini-effect">${effect}</div>
+      `;
+      faceEl.classList.remove('blank');
+      applyDeckTheme(faceEl, 'black');
+     }else{
+       faceEl.textContent = '';
+      delete faceEl.dataset.cardName;
       faceEl.classList.add('blank');         // ← 追加
       faceEl.style.background = '';          // ← 追加
       faceEl.style.color = '';
