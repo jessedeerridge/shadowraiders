@@ -212,6 +212,15 @@ padding-top: 12px;
   padding-top: 12px;
 }
 
+/* 拡大・黒カード用：上詰め */
+#dealViewer .deal-card.black-layout{
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-start;
+  gap:0;
+  padding-top:12px;
+}
+
 #dealViewer .deal-card .green-table{
   width:100%;
   border-collapse:collapse;
@@ -1143,6 +1152,56 @@ const TABLE = [
 
 
 
+// === 装備カードの拡大ビューを、白/黒の“表”と同じUIで描画する ===
+function showEquipExpanded(cardName){
+  // 右下の拡大用フェイスを初期化
+  dealCardFace.className = 'deal-card';
+  dealCardFace.innerHTML = '';
+
+  dealCardFace.style.background = '';
+  dealCardFace.style.color = '';
+  colorizeDealFaceByCardName(cardName); 
+
+  // 白/黒デッキ判定（装備カードは白 or 黒）
+  const isWhite = Array.isArray(DECKS_DEF?.white?.cards) && DECKS_DEF.white.cards.includes(cardName);
+  const isBlack = Array.isArray(DECKS_DEF?.black?.cards) && DECKS_DEF.black.cards.includes(cardName);
+
+  // ラッパー
+  const wrapper = document.createElement('div');
+  wrapper.style.flex = '1';
+  wrapper.style.display = 'flex';
+  wrapper.style.flexDirection = 'column';
+
+  // タイトル（既存の黒バー金枠スタイルを流用：white-title）
+  const title = document.createElement('div');
+  title.textContent = cardName;
+  title.className = 'white-title';
+  wrapper.appendChild(title);
+
+  // 画像（<カード名>.jpg）。無ければ消す
+  const img = document.createElement('img');
+  img.className = 'item-image';
+  img.alt = cardName;
+  img.src = `${cardName}.jpg`;
+  img.addEventListener('error', () => img.remove());
+  wrapper.appendChild(img);
+
+  // 効果テーブル
+  const table = document.createElement('table');
+  table.className = isWhite ? 'white-table' : 'black-table';
+  const tr = document.createElement('tr');
+  const td = document.createElement('td');
+  td.textContent = isWhite ? getWhiteEffectText(cardName) : getBlackEffectText(cardName);
+  tr.appendChild(td);
+  table.appendChild(tr);
+  wrapper.appendChild(table);
+
+  // 白カードは既存の拡大レイアウト調整を適用
+  if (isWhite) dealCardFace.classList.add('white-layout');
+if (isBlack) dealCardFace.classList.add('black-layout');
+
+  dealCardFace.appendChild(wrapper);
+}
 
 
 
@@ -2222,7 +2281,8 @@ const effect   = getWhiteEffectText(cardName);
       const effect   = getBlackEffectText(cardName);
       faceEl.innerHTML = `
         <div class="mini-title">${cardName}</div>
-<img class="mini-image" src="${makBlackImageSrc(cardName)}" alt="${cardName}">        <div class="mini-effect">${effect}</div>
+<img class="mini-image" src="${makeWhiteImageSrc(cardName)}" alt="${cardName}">
+        <div class="mini-effect">${effect}</div>
       `;
       faceEl.classList.remove('blank');
       applyDeckTheme(faceEl, 'black');
@@ -3116,15 +3176,26 @@ Object.keys(cards).forEach(cardName=>{
   cardDiv.dataset.source   = 'equip';
 
   // ② クリックで拡大ビューを開く（配色も適用）
-  cardDiv.onclick = ()=>{
-    dealCardFace.textContent = String(cardName);
-    colorizeDealFaceByCardName(cardName); // 既存ヘルパーを使って色付け :contentReference[oaicite:2]{index=2}
+cardDiv.onclick = ()=>{
+  const name = String(cardName || '').trim();
+  if (!name) return;
 
-    // ③ この拡大が「装備欄から来た」ことを覚える（奪う判定に使用）
-    state.expandedContext = { source:'equip', ownerUid: uid, cardName };
+  // 装備欄からの拡大であることを記録（奪う等の判定で使用）
+  state.expandedContext = { source:'equip', ownerUid: uid, cardName: name };
 
-    show(dealViewer, true);
-  };
+  // 右下カード（正体公開ボタン）の誤作動を防止
+  dealCardFace.onclick = null;
+  const rp = document.getElementById('revealPopover');
+  if (rp) rp.classList.add('hidden');
+
+  // ★ここがポイント：白/黒の“表”と同じUIで拡大を描画
+  showEquipExpanded(name);
+
+  // 装備一覧からの拡大はピン留めしない
+  state.pinDealViewer = false;
+  show(dealViewer, true);
+};
+
 
   holder.appendChild(cardDiv);
 });
@@ -3879,7 +3950,7 @@ c.appendChild(title);
 const imgEl = document.createElement('img');
 imgEl.className = 'equip-image';
 imgEl.alt = cardName;
-imgEl.src = makeWhiteImageSrc(cardName);
+ imgEl.src = makeWhiteImageSrc(cardName);
 // imgEl.src = `equip_imgs/${cardName}.jpg`; // サブフォルダならこちら
 imgEl.addEventListener('error', () => imgEl.remove()); // 画像がなければ非表示
 
@@ -3908,27 +3979,24 @@ c.appendChild(imgEl); // ← ここを cardEl ではなく c にする！
   }
 
   // ▼ クリックで拡大（装備カード＝出自デッキ色、正体カード＝3色のまま）
-  c.addEventListener('click', ()=>{
-    const name = (cardName || '').trim();
-    if (!name) return;
-  state.expandedContext = { source: 'equip', ownerUid: uid, cardName: name };
+c.addEventListener('click', ()=>{
+  const name = (cardName || '').trim();
+  if (!name) return;
 
-  // ③ 右下カード専用の公開ハンドラを明示的にOFF
+  state.expandedContext = { source:'equip', ownerUid: uid, cardName: name };
+
+  // 右下カードの公開UIは閉じる
   dealCardFace.onclick = null;
   const rp = document.getElementById('revealPopover');
   if (rp) rp.classList.add('hidden');
 
-    
-    // テキストを反映
-    dealCardFace.textContent = name;
+  // ★白/黒の“表”と同じUIで拡大表示
+  showEquipExpanded(name);
 
-    // 色を統一ロジックで付与
-    colorizeDealFaceByCardName(name);
+  state.pinDealViewer = false;
+  show(dealViewer, true);
+});
 
-    // 装備一覧からの拡大は“ピン留め”しない（外側クリックで閉じる）
-    state.pinDealViewer = false;
-    show(dealViewer, true);
-  });
 
   
   holder.appendChild(c);
