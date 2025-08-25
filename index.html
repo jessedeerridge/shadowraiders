@@ -328,7 +328,7 @@ padding-top: 12px;
 
 .deck-face[data-deck="white"] .mini-title{
   font-weight: 700;
-  font-size: 9px;
+  font-size: 8px;
   line-height: 1.2;
   text-align: center;
 
@@ -376,7 +376,7 @@ display: block;
 
 
 
-@media (max-width:600px){
+@media (max-width:600px){ /*スマホサイズ*/
   .deck-back,.deck-face{width:60px;height:82.8px}
   .color-tile{width:44px;height:44px}
   #hostGear{width:36px;height:36px;font-size:16px}
@@ -389,7 +389,10 @@ display: block;
   #dealViewer .deal-card{ width:180px; height:260px; font-size:15px; }
   #dealViewer .deal-card .green-table td { font-size: 11px;   /* モバイル時は小さめ */}
 
-
+#dealViewer .deal-card .green-title {
+  display:block; width:100%; box-sizing:border-box; margin:0;
+  padding-left:8px; padding-right:8px; /* 余白で見た目を絞る */
+}
 #dealViewer .deal-card.green-layout{padding-top: 8px;
     gap: 5px;   }
 
@@ -407,9 +410,16 @@ display: block;
     max-height: 80vh;     /* 縦にも収める */
     overflow: auto;       /* 多すぎるときはスクロール */  }
   
+#dealViewer .deal-card .white-title {
+
+  display:block; width:100%; box-sizing:border-box; margin:0;
+  padding-left:5px; padding-right:5px; /* 余白で見た目を絞る */
+}
+
+
 .deck-face[data-deck="white"][data-role="face"]{
   gap:1px;
-  padding:1px;}
+  padding:2px;}
 
 
   /* タイトルバー */
@@ -422,7 +432,7 @@ display: block;
   /* 効果欄 */
   .deck-face[data-deck="white"] .mini-effect {
     font-size: 7px;      /* ← 文字をさらに小さく */
-    -webkit-line-clamp: 3; /* ← 行数制限を短く */
+    -webkit-line-clamp: 5; /* ← 行数制限を短く */
     padding: 1px 2px;
   }
 
@@ -888,7 +898,7 @@ function getWhiteEffectText(cardName){
     { key: 'いやしの聖水 ',   text: '自分のダメージを 2 回復する。' },
     { key: 'いやしの聖水  ',   text: '自分のダメージを 2 回復する。' },
     { key: '裁きの閃光',   text: '自分以外のPL全員に 2 ダメージ与える。' },
-    { key: '恩恵',           text: '自分以外のPLを選んで、6面ダイスを振る。目の数だけそのPLのダメージを回復する。' },
+    { key: '恩恵',           text: '自分以外のPLを選び、6面ダイスを振る。目の数回復する。' },
   ];
 
   // norm同士で部分一致（includes）を取りにいく
