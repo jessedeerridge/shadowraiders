@@ -52,7 +52,13 @@ header{
   .roomhit{fill:transparent;stroke:none;pointer-events:auto}
   .roomhit.flash{fill:#eee;transition:fill 60ms}
 
-  
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  background: url('back.jpg') no-repeat center center fixed;
+  background-size: cover;  /* 画面全体に拡大・縮小 */
+  color: #111;
+}  
 /* 山札UI（右図形の真下に横並び） */
 .decks-wrap{display:flex;justify-content:flex-end}
 .decks{
@@ -321,7 +327,7 @@ padding-top: 12px;
 .condition {
   background:#000;
   color:#fff;
-  padding:2px 4px;
+  padding:0px 4px;
   border-radius:4px;
   font-weight:bold;
 }
@@ -3944,32 +3950,40 @@ const FACTION_CLASS = { citizen:'citizen', raider:'raider', shadow:'shadow' };
 
 
 const ROLE_INFO = {
-  "Aアリス": '<span class="condition">勝利条件</span> 生存している。<br><span class="condition">特殊能力&lt;うさぎさんヒール&gt;</span> 手番の初めに使用する。ダメージを全回復する（1回のみ）',
-  "Aアンジェラ": '<span class="condition">勝利条件</span> 右隣りのプレイヤーが勝利する。<br><span class="condition">特殊能力&lt;移り気&gt;</span> 「勝利条件を左となりのプレイヤーが勝利する」に変更する。（1回のみ）',
-  "Aアガサ": '<span class="condition">勝利条件</span> あなたの手番でゲームが終了する。<br><span class="condition">特殊能力&lt;完全犯罪&gt;</span> 手番の最後に使用する。ダイスを2個振り、出目のエリアにいるPL全員に 3 ダメージ与える。（1回のみ）',
-  "Bバイロン": '<span class="condition">勝利条件</span> 装備カードを5枚以上所持する。<br><span class="condition">特殊能力&lt;念力の懐中時計&gt;</span> 2以上の攻撃ダメージを与えた場合、代わりに装備を1つ奪うことができる。',
-  "Bベンジャミン": '<span class="condition">勝利条件</span> あなた以外のPLが装備を5つ以上所持している。<br><span class="condition">特殊能力&lt;太鼓持ち&gt;</span> 手番の最後に使用する。同じエリアのPLに装備を1つ渡すことができる。',
-  "Bブルース": '<span class="condition">勝利条件</span> 「攻撃」してHP12以上のPLを脱落させる。またはゲーム終了時にエリア9にいる。<br><span class="condition">特殊能力&lt;国士無双&gt;</span> 「攻撃」してHP11以上のPLを脱落させた時、正体を公開しなければならない。',
-  "Cクレイグ": '<span class="condition">勝利条件</span> 2人脱落している状態で、他PLを「攻撃」して脱落させる。<br><span class="condition">特殊能力&lt;死の饗宴&gt;</span> 攻撃後、自分に2ダメージ与えた後、もう一度同じPLを攻撃できる。',
-  "Cキャロル": '<span class="condition">勝利条件</span> 最初に脱落する。またはあなたともう1人だけが脱落していない。<br><span class="condition">特殊能力&lt;聖痕&gt;</span> 手番の初めに2ダメージ回復する。',
-  "Cクレア": '<span class="condition">勝利条件</span> ゲーム終了時にあなたのダメージが「6～8」のいずれかである。<br><span class="condition">特殊能力&lt;キャスリング&gt;</span> 手番の初めに使用する。あなたと他PLのHPを入れ替える。',
+  "Aアリス": '<span class="condition">勝利条件</span> 生存している。<br><span class="condition">&lt;うさぎさんヒール&gt;</span> 手番の初めに使用する。ダメージを全回復する（1回のみ）',
+  "Aアンジェラ": '<span class="condition">勝利条件</span> 右隣りのプレイヤーが勝利する。<br><span class="condition">&lt;移り気&gt;</span> 「勝利条件を左となりのプレイヤーが勝利する」に変更する。（1回のみ）',
+  "Aアガサ": '<span class="condition">勝利条件</span> あなたの手番でゲームが終了する。<br><span class="condition">&lt;完全犯罪&gt;</span> 手番の最後に使用する。ダイスを2個振り、出目のエリアにいるPL全員に 3 ダメージ与える。（1回のみ）',
+  "Bバイロン": '<span class="condition">勝利条件</span> 装備カードを5枚以上所持する。<br><span class="condition">&lt;念力の懐中時計&gt;</span> 2以上の攻撃ダメージを与えた場合、代わりに装備を1つ奪うことができる。',
+  "Bベンジャミン": '<span class="condition">勝利条件</span> あなた以外のPLが装備を5つ以上所持している。<br><span class="condition">&lt;太鼓持ち&gt;</span> 手番の最後に使用する。同じエリアのPLに装備を1つ渡すことができる。',
+  "Bブルース": '<span class="condition">勝利条件</span> 「攻撃」してHP12以上のPLを脱落させる。またはゲーム終了時にエリア9にいる。<br><span class="condition">&lt;国士無双&gt;</span> 「攻撃」してHP11以上のPLを脱落させた時、正体を公開しなければならない。',
+  "Cクレイグ": '<span class="condition">勝利条件</span> 2人脱落している状態で、他PLを「攻撃」して脱落させる。<br><span class="condition">&lt;死の饗宴&gt;</span> 攻撃後、自分に2ダメージ与えた後、もう一度同じPLを攻撃できる。',
+  "Cキャロル": '<span class="condition">勝利条件</span> 最初に脱落する。またはあなたともう1人だけが脱落していない。<br><span class="condition">&lt;聖痕&gt;</span> 手番の初めに2ダメージ回復する。',
+  "Cクレア": '<span class="condition">勝利条件</span> ゲーム終了時にあなたのダメージが「6～8」のいずれかである。<br><span class="condition">&lt;キャスリング&gt;</span> 手番の初めに使用する。あなたと他PLのHPを入れ替える。',
   "Dダニエル": "ここあさ",
   "Dデーヴィッド": "ここあさ",
   "Dデボラ": "ここあさ",
 
   // RAIDER
-  "Eエミ":  '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;テレポート&gt;</span> 移動のダイスを振った後、出目のエリアに移動するか、その両隣のエリアに移動できる。',
-  "Eエリカ": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;癒しの光&gt;</span> 手番終了時に4面ダイスを振って、出目の数だけ他PLを回復できる。',
-  "Eエマ": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;封印の鎖&gt;</span> 手番の初めに他PLを1人選んで、ゲーム終了まで特殊能力を封印する。(1回)',
-  "Fフェリックス": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;アストラル・メイス&gt;</span> 手番の初めに他PLを1人選び6面ダイスを振ってダメージを与える。(1回)',
-  "Fフェリシア": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;スラム街の天使&gt;</span> 手番の初めに任意のPLを選びダメージを「7」にする。(1回)',
-  "Fフレディ": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;ドラゴンアタック&gt;</span> 正体を公開しているPLへの攻撃が成功した時、+2ダメージする。',
-  "Gゴードン": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;絶対無敵バリア&gt;</span> 手番の終了時に使う。あなたの次の手番の初めまであらゆるダーメージを受けない。(1回)',
-  "Gガラハド": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;魔剣の伝承者&gt;</span> エクスカリバーを所持している時に攻撃が失敗したらダイスを振り直す。',
-  "Gゴドウィン": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;蘇生装置TYPE-G&gt;</span> あなたが脱落した時、既に脱落しているPLを一人7ダメージの状態で復活させる。',
+  "Eエミ":  '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;テレポート&gt;</span> 移動のダイスを振った後、出目のエリアに移動するか、その両隣のエリアに移動できる。',
+  "Eエリカ": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;癒しの光&gt;</span> 手番終了時に4面ダイスを振って、出目の数だけ他PLを回復できる。',
+  "Eエマ": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;封印の鎖&gt;</span> 手番の初めに他PLを1人選んで、ゲーム終了まで特殊能力を封印する。(1回)',
+  "Fフェリックス": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;アストラル・メイス&gt;</span> 手番の初めに他PLを1人選び6面ダイスを振ってダメージを与える。(1回)',
+  "Fフェリシア": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;スラム街の天使&gt;</span> 手番の初めに任意のPLを選びダメージを「7」にする。(1回)',
+  "Fフレディ": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;ドラゴンアタック&gt;</span> 正体を公開しているPLへの攻撃が成功した時、+2ダメージする。',
+  "Gゴードン": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;絶対無敵バリア&gt;</span> 手番の終了時に使う。あなたの次の手番の初めまであらゆるダーメージを受けない。(1回)',
+  "Gガラハド": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;魔剣の伝承者&gt;</span> エクスカリバーを所持している時に攻撃が失敗したらダイスを振り直す。',
+  "Gゴドウィン": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;蘇生装置TYPE-G&gt;</span> あなたが脱落した時、既に脱落しているPLを一人7ダメージの状態で復活させる。',
 
   // SHADOW
-
+  "Uウルリッヒ": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br>あなたが推理カードを受け取った時、ウソをついてもよい。',
+  "Uウラヌス": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br><span class="condition">&lt;メテオストライク&gt;</span> 手番の初めに4-5,10にいるPL1人に3ダメージを与える。',
+  "Uアルスター": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br><span class="condition">&lt;デル・フリす&gt;</span> 2回攻撃ができる。',
+  "Vヴェノム": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br><span class="condition">&lt;反駁の猛毒&gt;</span> あなたを攻撃したPLは、1ダメージ受けるかあなたに装備を渡すか選ぶ。',
+  "Vヴァンパイア": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br><span class="condition">&lt;吸血&gt;</span> 攻撃に成功した時ダメージを2回復する。',
+  "Vヴェンデッタ": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br><span class="condition">&lt;冥府の大鎌&gt;</span> Aあなたの攻撃は4面ダイスのみを使用する。',
+  "Wワイト": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br><span class="condition">&lt;亡者の王&gt;</span> 手番の終了後「脱落しているPLの数だけ」手番を行う。(1回)',
+  "Wワルプルギス": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br><span class="condition">&lt;重力の虹&gt;</span> 攻撃を行う時に任意のPL1人とあなたの位置を交換できる。',
+  "Wワーウルフ": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br><span class="condition">&lt;反撃&gt;</span> 攻撃を受けた時、そのPLをただちに攻撃できる。',
 };
 
 
