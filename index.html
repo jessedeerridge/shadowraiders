@@ -1231,9 +1231,9 @@ dicebar{
 }
 #turnPop.hidden{ display:none !important; }
 
-main { padding-top: 0 !important; }
-#roomPanel > div:first-child { margin-top: 0 !important; }
-#roomPanel > div:first-child { margin-top: 0 !important; }
+
+#art { transform: translateY(-30px); }
+
 
 
 </style>
@@ -1304,6 +1304,7 @@ main { padding-top: 0 !important; }
 <audio id="sfxDeck" src="cardopen.mp3" preload="auto"></audio>
 <audio id="sfxDice" src="dice.mp3" preload="auto"></audio>
 <audio id="sfxIcon" src="icontap.mp3" preload="auto"></audio>
+<audio id="sfxTimer" src="timer.mp3" preload="auto" loop></audio>
 
 <!-- ☆ 修正：正体カード公開ポップ（黒背景、公開するのみ） -->
 <div id="revealPopover" class="hidden"
@@ -1547,6 +1548,25 @@ function playSfx(id){
   }catch(e){}
 }
 // カード配色ユーティリティ（表・拡大・装備で共通使用）
+
+// ★ 追加：緑カード用タイマー音
+function startTimerSfx(){
+  try{
+    const a = document.getElementById('sfxTimer');
+    if (!a) return;
+    a.loop = true;
+    a.currentTime = 0;
+    a.play && a.play().catch(()=>{});
+  }catch(e){}
+}
+function stopTimerSfx(){
+  try{
+    const a = document.getElementById('sfxTimer');
+    if (!a) return;
+    a.pause && a.pause();
+    a.currentTime = 0;
+  }catch(e){}
+}
 
 
 
@@ -2899,6 +2919,7 @@ onValue(greenDoneRef, (snap)=>{
   if (v && v.active === false){
  dealCardFace.classList.remove('green-layout'); 
     show(dealViewer, false);  // 強制的に非表示
+  stopTimerSfx(); 
   }
 });
 
@@ -4611,6 +4632,7 @@ async function finish(answer){
   await remove(ref(db, `rooms/${state.code}/greenShare/${state.uid}`));
   state.pinDealViewer = false;
 dealCardFace.classList.remove('green-layout');
+stopTimerSfx(); 
   show(dealViewer, false);
   pop.remove();
 }
@@ -4668,7 +4690,7 @@ function observeGreenShare(){
 
       applyDeckTheme(dealCardFace, 'green');
       show(dealViewer, true);
-
+startTimerSfx(); 
       // ★ 拡大をクリック → はい/いいえポップ（送信者uidを渡す）
       dealCardFace.onclick = ()=> showYesNoPopoverForGreen(rec.card, rec.from || '');
 
