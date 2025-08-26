@@ -1492,6 +1492,8 @@ function showEquipExpanded(cardName){
   dealCardFace.className = 'deal-card';
   dealCardFace.innerHTML = '';
 
+  dealCardFace.removeAttribute('style');
+
   dealCardFace.style.background = '';
   dealCardFace.style.color = '';
   colorizeDealFaceByCardName(cardName); 
@@ -3524,9 +3526,12 @@ const display = raw.trim();
   const rp = document.getElementById('revealPopover');
   if (rp) rp.classList.add('hidden');
 
-  // ★ここがポイント：白/黒の“表”と同じUIで拡大を描画
-showEquipExpanded(display); 
-  // 装備一覧からの拡大はピン留めしない
+
+    if (isRoleCard(display)) {
+        showRoleExpanded(display);   // ← 正体カード拡大：背景に `${display}.jpg`
+      } else {
+        showEquipExpanded(display);  // ← 従来の装備拡大：画像/効果テーブル
+      }
   state.pinDealViewer = false;
   show(dealViewer, true);
 };
@@ -4547,8 +4552,11 @@ c.addEventListener('click', ()=>{
   const rp = document.getElementById('revealPopover');
   if (rp) rp.classList.add('hidden');
 
-  // ★白/黒の“表”と同じUIで拡大表示
-  showEquipExpanded(name);
+  if (isRoleCard(name)) {
+    showRoleExpanded(name);
+  } else {
+    showEquipExpanded(name);
+  }
 
   state.pinDealViewer = false;
   show(dealViewer, true);
