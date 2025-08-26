@@ -278,6 +278,20 @@ padding-top: 12px;
   border-collapse: separate;  /* ← collapseをやめる */
   border-spacing: 0;          /* 枠間隔をゼロに */
   overflow: hidden;
+  /* 4行クランプ＋省略 */
+  display: -webkit-box;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* 高さを4行分に固定 */
+  height: 120px;       /* 8 * 1.25 * 4 */
+  min-height: 120px;
+
+  /* 縮み防止（縦フレックス内で潰れないように） */
+  flex: 0 0 auto;
+
+
 }
 
 #dealViewer .deal-card .white-table td {
@@ -360,8 +374,20 @@ display: block;
 
   overflow: hidden;
   display: -webkit-box;
+
+  /* 4行クランプ＋省略 */
+  display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;       /* 行数制限 */
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* 高さを4行分に固定 */
+  height: 40px;       /* 8 * 1.25 * 4 */
+  min-height: 40px;
+
+  /* 縮み防止（縦フレックス内で潰れないように） */
+  flex: 0 0 auto;
 
 }
 
@@ -382,6 +408,20 @@ display: block;
   border-collapse: separate;
   border-spacing: 0;
   overflow: hidden;
+
+  /* 4行クランプ＋省略 */
+  display: -webkit-box;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* 高さを4行分に固定 */
+  height: 120px;       /* 8 * 1.25 * 4 */
+  min-height: 120px;
+
+  /* 縮み防止（縦フレックス内で潰れないように） */
+  flex: 0 0 auto;
+
 }
 #dealViewer .deal-card .black-table td {
   padding: 8px 10px;
@@ -429,8 +469,20 @@ display: block;
   box-sizing:border-box;
   overflow:hidden;
   display:-webkit-box;
-  -webkit-box-orient:vertical;
-  -webkit-line-clamp:5;
+
+  /* 4行クランプ＋省略 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* 高さを4行分に固定 */
+  height: 40px;       /* 8 * 1.25 * 4 */
+  min-height: 40px;
+
+  /* 縮み防止（縦フレックス内で潰れないように） */
+  flex: 0 0 auto;
 }
 
 .deck-face[data-deck="black"] .mini-image{
@@ -464,6 +516,7 @@ display: block;
   text-overflow:ellipsis;
 
     border-width:1px;
+ flex: 0 0 auto; 
 }
 
 
@@ -481,7 +534,7 @@ display: block;
 .equip-card .equip-image {
   display: block;
   width: 90%;             /* カード枠に収める */
-  max-height: 40px;       /* 高さ制限（好みに調整） */
+  max-height: 30px;       /* 高さ制限（好みに調整） */
   margin: 0px auto;       /* タイトルの下に少し余白 */
   border: 1px solid #666; /* 枠線（必要なければ削除） */
   border-radius: 4px;     /* 角丸 */
@@ -581,6 +634,7 @@ font-size:12px;
     font-size:7px;
     border-width:1px;
     padding:1px 2px;
+
   }
 
 /* 外枠 */
@@ -605,8 +659,64 @@ font-size:12px;
   margin: 0;
 }
 
+
+#dealViewer .deal-card .black-table {
+  text-overflow: ellipsis;
+  height: 70px;       /* 8 * 1.25 * 4 */
+  min-height: 70px;
+  /* 縮み防止（縦フレックス内で潰れないように） */
+  flex: 0 0 auto;
+}
+#dealViewer .deal-card .white-table {
+  text-overflow: ellipsis;
+  height: 70px;       /* 8 * 1.25 * 4 */
+  min-height: 70px;
+  /* 縮み防止（縦フレックス内で潰れないように） */
+  flex: 0 0 auto;
+}
+
+
 }/*スマホここまで*/
 
+/* ▼ 装備一覧：効果テーブル（白/黒） */
+.equip-card .equip-table{
+  width: 92%;
+  margin: 2px auto 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 4px;
+  overflow: hidden;
+
+  /* 4行クランプ＋省略 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* 高さを4行分に固定 */
+  height: 40px;       /* 8 * 1.25 * 4 */
+  min-height: 40px;
+
+  /* 縮み防止（縦フレックス内で潰れないように） */
+  flex: 0 0 auto;
+
+}
+.equip-card .equip-table.white{
+  background: #f2f2f2; /* 白ミニのトーンに合わせる */
+  border: 1px solid #ccc;
+}
+.equip-card .equip-table.black{
+  background: #d3d3d3; /* 黒ミニのトーンに合わせる */
+  border: 1px solid #999;
+}
+.equip-card .equip-table td{
+  padding: 2px 3px;
+  font-size: 7px;     /* ← 指定どおり 8px */
+  line-height: 1.25;
+  color: #000;
+  text-align: left;
+}
 
 
 /* ▼ 装備所持エリア（通常フロー） */
@@ -3953,8 +4063,26 @@ imgEl.alt = cardName;
  imgEl.src = makeWhiteImageSrc(cardName);
 // imgEl.src = `equip_imgs/${cardName}.jpg`; // サブフォルダならこちら
 imgEl.addEventListener('error', () => imgEl.remove()); // 画像がなければ非表示
-
 c.appendChild(imgEl); // ← ここを cardEl ではなく c にする！
+
+// ▼ 効果テーブル（白/黒のみ）
+const isWhite = DECKS_DEF.white.cards.includes(cardName);
+const isBlack = DECKS_DEF.black.cards.includes(cardName);
+const effectText = isWhite ? getWhiteEffectText(cardName)
+               : isBlack ? getBlackEffectText(cardName)
+               : '';
+if (effectText) {
+  const table = document.createElement('table');
+  table.className = `equip-table ${isWhite ? 'white' : 'black'}`;
+  const tr = document.createElement('tr');
+  const td = document.createElement('td');
+  td.textContent = effectText;
+  tr.appendChild(td);
+  table.appendChild(tr);
+  c.appendChild(table);
+}
+
+
   // ★ 正体カードの色分け
   if (ROLE_CARDS.shadow.includes(cardName)) {
     c.style.background = '#1e88e5'; // シャドウ＝青
@@ -3967,6 +4095,9 @@ c.appendChild(imgEl); // ← ここを cardEl ではなく c にする！
     c.style.color = '#111';
   }
 
+
+
+
   // 役職で未着色のカードは、デッキ色で配色（白／黒／緑）
   if (!c.style.background){
     if (DECKS_DEF.white.cards.includes(cardName)){
@@ -3977,6 +4108,8 @@ c.appendChild(imgEl); // ← ここを cardEl ではなく c にする！
       c.style.background = '#005731'; c.style.color = '#111';
     }
   }
+
+
 
   // ▼ クリックで拡大（装備カード＝出自デッキ色、正体カード＝3色のまま）
 c.addEventListener('click', ()=>{
