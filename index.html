@@ -1297,7 +1297,10 @@ dicebar{
 
 <div id="turnPop" class="hidden" aria-live="polite">YOUR TURN</div>
 <audio id="turnSound" src="goblin.mp3" preload="auto"></audio>
-  
+
+<audio id="sfxDeck" src="cardopen.mp3" preload="auto"></audio>
+<audio id="sfxDice" src="dice.mp3" preload="auto"></audio>
+<audio id="sfxIcon" src="icontap.mp3" preload="auto"></audio>
 
 <!-- ☆ 修正：正体カード公開ポップ（黒背景、公開するのみ） -->
 <div id="revealPopover" class="hidden"
@@ -1529,7 +1532,12 @@ const state = {
     const c = t[0]; return NAME_RE.test(c) ? c : randomLetter();
   }
   function show(el, yes){ el.classList.toggle('hidden', !yes); }
-
+function playSfx(id){
+  try{
+    const a = document.getElementById(id);
+    a && a.play && a.play().catch(()=>{});
+  }catch(e){}
+}
 // カード配色ユーティリティ（表・拡大・装備で共通使用）
 
 
@@ -2893,6 +2901,7 @@ onValue(greenDoneRef, (snap)=>{
     const v = snap.val();
     if (!v || !v.nonce || v.nonce === lastDiceNonce) return;
     lastDiceNonce = v.nonce;
+  playSfx('sfxDice');
 
     // 山札クリック残数は0に
     if (typeof setDeckQuota === 'function') setDeckQuota(0);
