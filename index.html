@@ -996,7 +996,40 @@ font-size:12px;
 
 
 
+/* === トップ順アイコン === */
+.top-icons{
+  display:flex; justify-content:center; gap:10px;
+  margin:8px 0 6px;
+}
+.top-icon{
+  width:36px; height:36px; border-radius:8px; border:1px solid #111;
+  display:flex; align-items:center; justify-content:center;
+  font-weight:900; user-select:none;
+  transform:scale(1); transition:transform 160ms ease;
+  position:relative;
+}
 
+
+.top-icon.active{ transform:scale(1.5); z-index:1; }
+
+dicebar{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  margin-top:6px;
+  justify-content:flex-start;  /* ← 左寄せに変更 */
+  margin-right:24px;
+  flex-wrap:wrap;
+}
+
+#topIconBar{
+  margin-left:0;        /* 左寄せしたのでマイナスmarginは不要 */
+  margin-right:60px;     /* サイコロとの間に少し余白を入れる */
+}
+
+@media (max-width:600px){
+  .top-icon{ width:28px; height:28px; }
+}
 
 
 
@@ -1184,7 +1217,9 @@ font-size:12px;
 
   <!-- ルーム -->
   <section id="roomPanel" class="hidden">
+
     <div style="margin-top:10px;">
+
       <!-- 図形②：左に狭い長方形＋右に星形（中央六角形＋外周五角形6） -->
       <svg id="art" viewBox="-220 -230 440 460" aria-label="左に長方形・右に星形"></svg>
     </div>
@@ -1195,11 +1230,13 @@ font-size:12px;
 
     <!-- ダイス（左長方形の下／ローカル表示） -->
 <div class="dicebar" id="diceBar">
+  <div id="topIconBar" class="top-icons hidden" aria-label="ターン順アイコン"></div>
+
    <!-- d6 ダイス（初期 6d1.png） -->
   <img id="roll6dImg" class="diceimg" src="6d1.png" alt="d6" role="button" />
  <!-- d4 ダイス（初期 4d1.png） -->
   <img id="roll4dImg" class="diceimg" src="4d1.png" alt="d4" role="button" />
-
+</div>
   </section>
 </main>
 
@@ -3498,6 +3535,61 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
     return { bg, text: needWhite ? '#fff' : '#111' };
   }
 
+// === トップ順アイコン生成（色背景＋頭文字＋番号バッジ） ===
+function makeTopIcon(name, colorName, index){
+  const { bg, text } = colorToStyle(colorName || '');
+  const div = document.createElement('div');
+  div.className = 'top-icon';
+  div.style.background = bg;
+  div.style.color = text;
+  div.textContent = name || '?';
+  return div;
+}
+
+// === トップ順アイコンの再描画 ===
+// claims: rooms/{code}/colors のスナップ（colorId -> {uid,name,at}）
+function renderTopIcons(claims){
+  const bar = document.getElementById('topIconBar');
+  if (!bar) return;
+
+  const present = state.present || {};
+  // 在室者のみ抽出し、色を取った時刻（at）で昇順ソート
+  const list = Object.values(claims || {})
+    .filter(v => v && v.uid && present[v.uid])
+    .sort((a,b) => (a.at || 0) - (b.at || 0));
+
+  bar.innerHTML = '';
+  if (!list.length){
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.classList.remove('hidden');
+
+  // アクティブ番号（1.5倍）を維持・初期化
+  if (typeof state.topActiveIndex !== 'number' || state.topActiveIndex >= list.length){
+    state.topActiveIndex = 0;
+  }
+
+  list.forEach((v, i) => {
+    const colorLabel = present[v.uid]?.color || '';  // participants に保存された色ラベルを使用
+    const icon = makeTopIcon(v.name, colorLabel, i);
+    if (i === state.topActiveIndex) icon.classList.add('active');
+
+    // 仕様：「拡大されているアイコン」を押した時だけ、次へバトンタッチ
+    icon.addEventListener('click', async () => {
+      if (i !== state.topActiveIndex) return; // 今拡大中のアイコン以外は無視
+      const kids = [...bar.children];
+      const next = kids.length ? (state.topActiveIndex + 1) % kids.length : 0;
+      // クリック結果を全員に共有
+      await set(ref(db, `rooms/${state.code}/ui/topActiveIndex`), next);
+    });
+
+    bar.appendChild(icon);
+  });
+}
+
+
+
 /* === 4a: 装備所持用の小アイコンを作る === */
 function makeEquipIcon(name, colorName){
   const div = document.createElement('div');
@@ -3589,6 +3681,8 @@ function observeColors(){
     const claims = snap.val() || {};
     state.colorClaims = claims;           // ★ 追加：常に最新をキャッシュ
     renderColorGrid(claims);
+renderTopIcons(claims);
+
   });
   state.unsub.push(off);
 }
@@ -4890,6 +4984,8 @@ async function becomeHostIfVacant(){
     show(joinPanel, false);
     show(roomPanel, true);
 
+
+
     // 図形構築
     drawFigure2();
 ensureRoomTips();
@@ -4926,6 +5022,9 @@ ensureRoomTips();
 const participantsRef = ref(db, `rooms/${code}/participants`);
 const offParticipants = onValue(participantsRef, (snap)=>{
   state.present = snap.val() || {};  // uid -> {name, color, ...}
+if (state && state.colorClaims) {
+  renderTopIcons(state.colorClaims);
+}
     if (state && state.colorClaims) {
     renderColorGrid(state.colorClaims);
   }
@@ -4970,6 +5069,21 @@ state.unsub.push(offParticipants);
   btnStart.textContent = state.started ? 'リセット' : 'スタート'; // ★ 文言も全員で同期  
     });
     state.unsub.push(offStarted);
+
+const topIdxRef = ref(db, `rooms/${code}/ui/topActiveIndex`);
+const offTopIdx = onValue(topIdxRef, async (snap)=>{
+  let n = snap.val();
+  if (typeof n !== 'number') {
+    // 初期化（ホストだけがやる。全員でやると競合するため）
+    if (state.isHost) await set(topIdxRef, 0);        // 初期値 0
+    n = 0;
+  }
+  state.topActiveIndex = n;
+  // 最新の色クレームが既にあれば再描画
+  if (state && state.colorClaims) renderTopIcons(state.colorClaims);
+});
+state.unsub.push(offTopIdx);
+
 
     // 自分の配布カード購読
     observeMyDeal();
