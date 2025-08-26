@@ -641,9 +641,9 @@ margin-right:7px;
 }
 
 /* 陣営ごとの丸の塗りつぶし色（丸＝イニシャルの背景） */
-.role-initial.citizen{ background:#fdd835; }  /* シチズン＝黄色 */
-.role-initial.raider { background:#e53935; }  /* レイダー＝赤   */
-.role-initial.shadow { background:#1e88e5; }  /* シャドウ＝青   */
+.role-initial.citizen{ background:#0a0766; }  /* シチズン＝黄色 */
+.role-initial.raider { background:#9e0d0d; }  /* レイダー＝赤   */
+.role-initial.shadow { background:#3d3b80; }  /* シャドウ＝青   */
 
 
 
@@ -758,8 +758,8 @@ margin-bottom: 0;
 /* ▼ 装備一覧：正体カードのミニ版（拡大レイアウトの縮小） */
 .equip-card.role-mini{
   position: relative;
-  width: 60px;
-  height: 86px;
+  width: 63px;
+  height: 90.3px;
   border-radius: 6px;
   overflow: hidden;
   padding: 2px;
@@ -770,9 +770,9 @@ margin-bottom: 0;
 }
 
 /* 枠色：役職ごと */
-.equip-card.role-mini.raider  { border: 2px solid #e53935; } /* 赤 */
-.equip-card.role-mini.shadow  { border: 2px solid #1e88e5; } /* 青 */
-.equip-card.role-mini.citizen { border: 2px solid #fdd835; } /* 黄 */
+.equip-card.role-mini.raider  { border: 2px solid #9e0d0d; } /* 赤 */
+.equip-card.role-mini.shadow  { border: 2px solid #3d3b80; } /* 青 */
+.equip-card.role-mini.citizen { border: 2px solid #0a0766; } /* 黄 */
 
 /* 上段：イニシャル丸＋右に英名バー（縮小） */
 .role-mini .mini-row-top{
@@ -787,9 +787,9 @@ margin-bottom: 0;
 margin-top: 0; 
   z-index: 1;  
 }
-.role-mini.raider  .mini-initial{ background:#e53935; color:#fff; }
-.role-mini.shadow  .mini-initial{ background:#1e88e5; color:#fff; }
-.role-mini.citizen .mini-initial{ background:#fdd835; color:#111; }
+.role-mini.raider  .mini-initial{ background:#9e0d0d; color:#fff; }
+.role-mini.shadow  .mini-initial{ background:#3d3b80; color:#fff; }
+.role-mini.citizen .mini-initial{ background:#0a0766; color:#111; }
 
 .role-mini .mini-rest{
  width: auto;  
@@ -809,7 +809,7 @@ margin-top: 0;
   display:flex; align-items:center;
 }
 .role-mini .mini-center{
-  top: 20px;          /* ← ここを大きくすると “さらに下へ” 下がる（例: 56〜70px） */
+  top: 28px;          /* ← ここを大きくすると “さらに下へ” 下がる（例: 56〜70px） */
   height: 28px;       /* お好みで */
   z-index: 3;         /* テーブルより前面に */
 }
@@ -1531,17 +1531,17 @@ function colorizeDealFaceByCardName(cardName){
 
   // 2) 正体カード：役職ごとの3色
   if (ROLE_CARDS.shadow.includes(cardName)) {
-    dealCardFace.style.background = '#1e88e5'; // シャドウ＝青
+    dealCardFace.style.background = '#3d3b80'; // シャドウ＝青
     dealCardFace.style.color = '#fff';
     return;
   }
   if (ROLE_CARDS.raider.includes(cardName)) {
-    dealCardFace.style.background = '#e53935'; // レイダー＝赤
+    dealCardFace.style.background = '#9e0d0d'; // レイダー＝赤
     dealCardFace.style.color = '#fff';
     return;
   }
   if (ROLE_CARDS.citizen.includes(cardName)) {
-    dealCardFace.style.background = '#fdd835'; // シチズン＝黄
+    dealCardFace.style.background = '#0a0766'; // シチズン＝黄
     dealCardFace.style.color = '#111';
     return;
   }
@@ -3514,8 +3514,8 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
 
   // ====== 色選択 ======
   const COLOR_LIST = [
-    { id:'red',     name:'赤',    bg:'#e53935' },
-    { id:'blue',    name:'青',    bg:'#1e88e5' },
+    { id:'red',     name:'赤',    bg:'#9e0d0d' },
+    { id:'blue',    name:'青',    bg:'#3d3b80' },
     { id:'black',   name:'黒',    bg:'#000000' },
     { id:'green1',  name:'緑',    bg:'#43a047' },
     { id:'white',   name:'白',    bg:'#ffffff', border:'#111' },
@@ -3523,7 +3523,7 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
     { id:'purple',  name:'紫',    bg:'#8e24aa' },
     { id:'cyan',    name:'水色',  bg:'#26c6da' },
     { id:'orange',  name:'オレンジ', bg:'#fb8c00' },
-    { id:'yellow',  name:'黄',  bg:'#fdd835' },
+    { id:'yellow',  name:'黄',  bg:'#0a0766' },
   ];
   function colorToStyle(colorName){
     // 背景と文字色の組合せ規定
@@ -3942,7 +3942,7 @@ function showRoleExpanded(roleKey){
   dealCardFace.innerHTML = '';
 
   // ▼ ：陣営ごとの枠線色
-  const BORDER_BY_FACTION = { CITIZEN:'#fdd835', RAIDER:'#e53935', SHADOW:'#1e88e5' };
+  const BORDER_BY_FACTION = { CITIZEN:'#0a0766', RAIDER:'#9e0d0d', SHADOW:'#3d3b80' };
   if (meta && meta.faction) {
     dealCardFace.style.border = `4px solid ${BORDER_BY_FACTION[meta.faction.toUpperCase()] || '#111'}`;
     dealCardFace.style.borderRadius = '14px'; // 既存の角丸に合わせる
@@ -4133,13 +4133,13 @@ myDealMini.onclick = ()=>{
         
 // ★ 正体カードの色分け（拡大ビュー用）
 if (ROLE_CARDS.shadow.includes(val)) {
-  dealCardFace.style.background = '#1e88e5'; // 青
+  dealCardFace.style.background = '#3d3b80'; // 青
   dealCardFace.style.color = '#fff';
 } else if (ROLE_CARDS.raider.includes(val)) {
-  dealCardFace.style.background = '#e53935'; // 赤
+  dealCardFace.style.background = '#9e0d0d'; // 赤
   dealCardFace.style.color = '#fff';
 } else if (ROLE_CARDS.citizen.includes(val)) {
-  dealCardFace.style.background = '#fdd835'; // 黄
+  dealCardFace.style.background = '#0a0766'; // 黄
   dealCardFace.style.color = '#111';
 } else {
   // その他カードは白背景に戻す
@@ -4249,13 +4249,13 @@ if (DECKS_DEF.white.cards.includes(any.card)) {
 } else if (DECKS_DEF.green.cards.includes(any.card)) {
   applyDeckTheme(dealCardFace,'green');
 } else if (ROLE_CARDS.shadow.includes(any.card)) {
-  dealCardFace.style.background = '#1e88e5'; // 青
+  dealCardFace.style.background = '#3d3b80'; // 青
   dealCardFace.style.color = '#fff';
 } else if (ROLE_CARDS.raider.includes(any.card)) {
-  dealCardFace.style.background = '#e53935'; // 赤
+  dealCardFace.style.background = '#9e0d0d'; // 赤
   dealCardFace.style.color = '#fff';
 } else if (ROLE_CARDS.citizen.includes(any.card)) {
-  dealCardFace.style.background = '#fdd835'; // 黄
+  dealCardFace.style.background = '#0a0766'; // 黄
   dealCardFace.style.color = '#111';
 } else {
   dealCardFace.style.background = '#fff';
@@ -4574,13 +4574,13 @@ if (isRoleCard(otherCard)) {
 
       // ★ 正体カードの色分け（拡大ビュー用）
       if (ROLE_CARDS.shadow.includes(otherCard)) {
-        dealCardFace.style.background = '#1e88e5'; // 青
+        dealCardFace.style.background = '#3d3b80'; // 青
         dealCardFace.style.color = '#fff';
       } else if (ROLE_CARDS.raider.includes(otherCard)) {
-        dealCardFace.style.background = '#e53935'; // 赤
+        dealCardFace.style.background = '#9e0d0d'; // 赤
         dealCardFace.style.color = '#fff';
       } else if (ROLE_CARDS.citizen.includes(otherCard)) {
-        dealCardFace.style.background = '#fdd835'; // 黄
+        dealCardFace.style.background = '#0a0766'; // 黄
         dealCardFace.style.color = '#111';
       } else {
         dealCardFace.style.background = '#fff';
@@ -4665,11 +4665,11 @@ if (isRevealOrder){
 
   // 役職ごとの色分け
   if (ROLE_CARDS.shadow.includes(cardName)) {
-    mini.style.background = '#1e88e5'; mini.style.color = '#fff';  // シャドウ＝青
+    mini.style.background = '#3d3b80'; mini.style.color = '#fff';  // シャドウ＝青
   } else if (ROLE_CARDS.raider.includes(cardName)) {
-    mini.style.background = '#e53935'; mini.style.color = '#fff';  // レイダー＝赤
+    mini.style.background = '#9e0d0d'; mini.style.color = '#fff';  // レイダー＝赤
   } else if (ROLE_CARDS.citizen.includes(cardName)) {
-    mini.style.background = '#fdd835'; mini.style.color = '#111';  // シチズン＝黄
+    mini.style.background = '#0a0766'; mini.style.color = '#111';  // シチズン＝黄
   } else {
     mini.style.background = '#fff'; mini.style.color = '#111';     // 不明時
   }
