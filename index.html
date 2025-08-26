@@ -819,13 +819,21 @@ margin-top: 0;
   flex:1 1 auto;
   background:#000; color:gold;
   border:1px solid gold; border-radius:4px;
-  font-size:8px; font-weight:900; line-height:1.1;
+  font-size:7px; font-weight:900; line-height:1.1;
   padding:1px 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   text-align:left;
  width: 90%;       /* ← デフォルトflexで70%前後 → 長く */
   padding: 1px 2px; 
  z-index: 3;  
 }
+
+@media (max-width:600px){ /
+.role-mini .mini-name{
+  font-size:6px; 
+}
+}
+
+
 .role-mini .mini-hp{
  position: absolute;
   right: 0px;
@@ -2454,7 +2462,14 @@ function setupDecks(){
 
         // 白・黒の表は faceEl のテキストを拡大
 if (faceEl.textContent){
-  dealCardFace.classList.remove('green-layout'); 
+
+  // ✨まず完全リセット：前の正体カード枠線などの inline style を除去
+  dealCardFace.removeAttribute('style');           // ← 追加
+  dealCardFace.className = 'deal-card';            // ← 追加（クラスも初期化）
+  dealCardFace.classList.remove('green-layout');   // 既存
+
+
+
  const cardName =
    (faceEl.dataset.cardName && faceEl.dataset.cardName.trim()) ||
    (faceEl.querySelector('.mini-title')?.textContent?.trim()) ||
