@@ -755,6 +755,102 @@ margin-bottom: 0;
 }
 
 
+/* ▼ 装備一覧：正体カードのミニ版（拡大レイアウトの縮小） */
+.equip-card.role-mini{
+  position: relative;
+  width: 60px;
+  height: 86px;
+  border-radius: 6px;
+  overflow: hidden;
+  padding: 2px;
+  box-sizing: border-box;
+  display: block;              /* 子を自由配置 */
+  background-size: cover;      /* 背景＝カード名.jpg を全面に */
+  background-position: center;
+}
+
+/* 枠色：役職ごと */
+.equip-card.role-mini.raider  { border: 2px solid #e53935; } /* 赤 */
+.equip-card.role-mini.shadow  { border: 2px solid #1e88e5; } /* 青 */
+.equip-card.role-mini.citizen { border: 2px solid #fdd835; } /* 黄 */
+
+/* 上段：イニシャル丸＋右に英名バー（縮小） */
+.role-mini .mini-row-top{
+  position: absolute; left: 2px; right: 2px; top: 0px; height: 14px;
+  display:flex; align-items:center; gap: 2px;
+}
+.role-mini .mini-initial{
+  width: 9px; height: 9px; border-radius: 50%;
+  display:flex; align-items:center; justify-content:center;
+  font-size: 6px; font-weight: 900; line-height:1;
+  border: 1px solid gold; color:#000; background:#fff;
+margin-top: 0; 
+  z-index: 1;  
+}
+.role-mini.raider  .mini-initial{ background:#e53935; color:#fff; }
+.role-mini.shadow  .mini-initial{ background:#1e88e5; color:#fff; }
+.role-mini.citizen .mini-initial{ background:#fdd835; color:#111; }
+
+.role-mini .mini-rest{
+ width: auto;  
+margin-top: 0; 
+  background:#000; color:gold;
+  border:1px solid gold; border-radius:3px;
+  font-size:6px; font-weight:900; line-height:1.1;
+  padding:1px 2px; text-align:center;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  margin-left: -5px; 
+  z-index: 0;  
+}
+
+/* 中段：名前バー＋HP丸（右寄せ） */
+.role-mini .mini-center{
+  position:absolute; left:2px; right:2px; top: 22px; height: 18px;
+  display:flex; align-items:center;
+}
+.role-mini .mini-center{
+  top: 20px;          /* ← ここを大きくすると “さらに下へ” 下がる（例: 56〜70px） */
+  height: 28px;       /* お好みで */
+  z-index: 3;         /* テーブルより前面に */
+}
+
+
+.role-mini .mini-name{
+  flex:1 1 auto;
+  background:#000; color:gold;
+  border:1px solid gold; border-radius:4px;
+  font-size:8px; font-weight:900; line-height:1.1;
+  padding:1px 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  text-align:left;
+ width: 90%;       /* ← デフォルトflexで70%前後 → 長く */
+  padding: 1px 2px; 
+ z-index: 3;  
+}
+.role-mini .mini-hp{
+ position: absolute;
+  right: 0px;
+  width:16px; height:16px; border-radius:50%;
+  background:#5a4032; border:1px solid #3b2a20;
+  display:flex; align-items:center; justify-content:center;
+  z-index: 4;  
+}
+.role-mini .mini-hp span{
+  color:gold; font-weight:900; font-size:10px; line-height:1;
+}
+
+/* 下段：効果テーブル（色は役職ごと・4行クランプ） */
+.role-mini .mini-table{
+  position:absolute; left:2px; right:2px; bottom:2px; top: 42px;
+  border-radius:4px; padding:2px 3px; font-size:5px; line-height:1.25;
+  overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4;
+  text-overflow:ellipsis; color:#000; box-sizing:border-box;
+z-index: 1;  
+}
+.role-mini.raider  .mini-table{ background:pink; }
+.role-mini.shadow  .mini-table{ background:lightblue; }
+.role-mini.citizen .mini-table{ background:#fff9c4; }
+
+
 
 @media (max-width:600px){ /*スマホサイズ*/
   .deck-face[data-deck="black"][data-role="face"]{ gap:1px; padding:2px; }
@@ -3482,6 +3578,61 @@ function observeColors(){
   state.unsub.push(off);
 }
 
+function buildRoleMiniCard(containerDiv, cardName){
+  // 役職メタ（init/rest/kana/faction/hp）は既存の ROLE_META から取得
+  const meta = ROLE_META[cardName];
+  if (!meta) return;
+
+  // 外枠クラス（役職ごとの枠色）＋背景
+  containerDiv.classList.add('role-mini', meta.faction);
+  containerDiv.style.backgroundImage = `url("${cardName}.jpg")`;
+
+  // 上段
+  const top = document.createElement('div');
+  top.className = 'mini-row-top';
+
+  const ini = document.createElement('div');
+  ini.className = 'mini-initial';
+  ini.textContent = meta.init;
+
+  const rest = document.createElement('div');
+  rest.className = 'mini-rest';
+  rest.textContent = meta.rest;
+
+  top.appendChild(ini);
+  top.appendChild(rest);
+  containerDiv.appendChild(top);
+
+  // 中段
+  const mid = document.createElement('div');
+  mid.className = 'mini-center';
+
+  const nameBar = document.createElement('div');
+  nameBar.className = 'mini-name';
+  nameBar.textContent = meta.kana;
+
+  const hp = document.createElement('div');
+  hp.className = 'mini-hp';
+  const hpSpan = document.createElement('span');
+  hpSpan.textContent = String(meta.hp);
+  hp.appendChild(hpSpan);
+
+  mid.appendChild(nameBar);
+  mid.appendChild(hp);
+  containerDiv.appendChild(mid);
+
+  // 下段：効果テーブル（役職の説明テキスト；必要なら ROLE_INFO を流用）
+  const eff = document.createElement('div');
+  eff.className = 'mini-table ' + meta.faction;
+eff.innerHTML = (typeof ROLE_INFO !== 'undefined' && ROLE_INFO[cardName])
+  ? ROLE_INFO[cardName]
+  : '';
+
+  containerDiv.appendChild(eff);
+}
+
+
+
   // ▼ 装備一覧の描画（自分の行が先頭に来る）
   function renderEquipments(equipData, participants){
     const equipBar = document.getElementById('equipBar');
@@ -4478,70 +4629,119 @@ const ordered = [...roleCardsInHand, ...others];
 
 // ▼ 先に役職カードを append → 常に一番左（= 所持者アイコンの直後）
 ordered.forEach(cardName=>{
-const c = document.createElement('div');
-c.className = 'equip-card';
+  const c = document.createElement('div');
+  c.className = 'equip-card';
 
-const title = document.createElement('div');
-title.className = 'equip-title';
-title.textContent = cardName;
-c.appendChild(title);
+  // ▼ 正体カードは「拡大版の縮小版」UI、装備カードは従来UI
+  if (isRoleCard(cardName)) {
+    // 役職メタ（init/rest/kana/faction/hp）
+    const meta = (typeof ROLE_META !== 'undefined') ? ROLE_META[cardName] : null;
+    const faction =
+      (ROLE_CARDS.shadow && ROLE_CARDS.shadow.includes(cardName))  ? 'shadow'  :
+      (ROLE_CARDS.raider && ROLE_CARDS.raider.includes(cardName))  ? 'raider'  :
+      (ROLE_CARDS.citizen && ROLE_CARDS.citizen.includes(cardName))? 'citizen' : '';
 
+    // 見た目ベース
+    c.classList.add('role-mini');
+    if (faction) c.classList.add(faction);                 // 枠色用クラス
+    c.style.backgroundImage   = `url("${cardName}.jpg")`;  // 背景＝カード名.jpg
+    c.style.backgroundSize    = 'cover';
+    c.style.backgroundPosition= 'center';
+    c.style.position          = 'relative';
+    c.style.overflow          = 'hidden';
 
-const imgEl = document.createElement('img');
-imgEl.className = 'equip-image';
-imgEl.alt = cardName;
- imgEl.src = makeWhiteImageSrc(cardName);
-// imgEl.src = `equip_imgs/${cardName}.jpg`; // サブフォルダならこちら
-imgEl.addEventListener('error', () => imgEl.remove()); // 画像がなければ非表示
-c.appendChild(imgEl); // ← ここを cardEl ではなく c にする！
+    // 上段：イニシャル丸＋イニシャルバー
+    const top = document.createElement('div');
+    top.className = 'mini-row-top';
 
-// ▼ 効果テーブル（白/黒のみ）
-const isWhite = DECKS_DEF.white.cards.includes(cardName);
-const isBlack = DECKS_DEF.black.cards.includes(cardName);
-const effectText = isWhite ? getWhiteEffectText(cardName)
-               : isBlack ? getBlackEffectText(cardName)
-               : '';
-if (effectText) {
-  const table = document.createElement('table');
-  table.className = `equip-table ${isWhite ? 'white' : 'black'}`;
-  const tr = document.createElement('tr');
-  const td = document.createElement('td');
-  td.textContent = effectText;
-  tr.appendChild(td);
-  table.appendChild(tr);
-  c.appendChild(table);
+    const ini = document.createElement('div');
+    ini.className = 'mini-initial';
+    ini.textContent = meta?.init ?? '';
+
+    const rest = document.createElement('div');
+    rest.className = 'mini-rest';
+    rest.textContent = meta?.rest ?? '';
+
+    top.appendChild(ini);
+    top.appendChild(rest);
+    c.appendChild(top);
+
+    // 中段：名前バー＋HP丸
+    const mid = document.createElement('div');
+    mid.className = 'mini-center';
+
+    const nameBar = document.createElement('div');
+    nameBar.className = 'mini-name';
+    nameBar.textContent = meta?.kana ?? cardName;
+
+    const hp = document.createElement('div');
+    hp.className = 'mini-hp';
+    const hpSpan = document.createElement('span');
+    hpSpan.textContent = (meta?.hp != null) ? String(meta.hp) : '';
+    hp.appendChild(hpSpan);
+
+    mid.appendChild(nameBar);
+    mid.appendChild(hp);
+    c.appendChild(mid);
+
+    // 下段：効果テーブル（役職色の下地）
+    const eff = document.createElement('div');
+    eff.className = 'mini-table';
+if (typeof ROLE_INFO !== 'undefined' && ROLE_INFO[cardName]) {
+  // <br> を改行維持、<span>等のインラインHTMLを反映
+  const html = ROLE_INFO[cardName]
+    .replace(/<br\s*\/?>/gi, '<br>'); // 改行はそのまま
+  eff.innerHTML = html;               // ← ここを textContent → innerHTML に
 }
+    c.appendChild(eff);
 
+  } else {
+    // —— 装備カード：従来UI ——
+    const title = document.createElement('div');
+    title.className = 'equip-title';
+    title.textContent = cardName;
+    c.appendChild(title);
 
-  // ★ 正体カードの色分け
-  if (ROLE_CARDS.shadow.includes(cardName)) {
-    c.style.background = '#1e88e5'; // シャドウ＝青
-    c.style.color = '#fff';
-  } else if (ROLE_CARDS.raider.includes(cardName)) {
-    c.style.background = '#e53935'; // レイダー＝赤
-    c.style.color = '#fff';
-  } else if (ROLE_CARDS.citizen.includes(cardName)) {
-    c.style.background = '#fdd835'; // シチズン＝黄
-    c.style.color = '#111';
-  }
+    const imgEl = document.createElement('img');
+    imgEl.className = 'equip-image';
+    imgEl.alt = cardName;
+    imgEl.src = makeWhiteImageSrc(cardName);
+    // imgEl.src = `equip_imgs/${cardName}.jpg`; // サブフォルダならこちら
+    imgEl.addEventListener('error', () => imgEl.remove()); // 画像がなければ非表示
+    c.appendChild(imgEl);
 
+    // ▼ 効果テーブル（白/黒のみ）
+    const isWhite = DECKS_DEF.white.cards.includes(cardName);
+    const isBlack = DECKS_DEF.black.cards.includes(cardName);
+    const effectText =
+      isWhite ? getWhiteEffectText(cardName)
+      : isBlack ? getBlackEffectText(cardName)
+      : '';
+    if (effectText) {
+      const table = document.createElement('table');
+      table.className = `equip-table ${isWhite ? 'white' : 'black'}`;
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.textContent = effectText;
+      tr.appendChild(td);
+      table.appendChild(tr);
+      c.appendChild(table);
+    }
 
-
-
-  // 役職で未着色のカードは、デッキ色で配色（白／黒／緑）
-  if (!c.style.background){
-    if (DECKS_DEF.white.cards.includes(cardName)){
-      c.style.background = '#ffffff'; c.style.color = '#111';
-    } else if (DECKS_DEF.black.cards.includes(cardName)){
-      c.style.background = '#000000'; c.style.color = '#fff';
-    } else if (DECKS_DEF.green.cards.includes(cardName)){
-      c.style.background = '#005731'; c.style.color = '#111';
+    // デッキ色の背景（役職カードには適用しない）
+    if (!c.style.background){
+      if (DECKS_DEF.white.cards.includes(cardName)){
+        c.style.background = '#ffffff'; c.style.color = '#111';
+      } else if (DECKS_DEF.black.cards.includes(cardName)){
+        c.style.background = '#000000'; c.style.color = '#fff';
+      } else if (DECKS_DEF.green.cards.includes(cardName)){
+        c.style.background = '#005731'; c.style.color = '#111';
+      }
     }
   }
 
+  // ▼ クリックで拡大（この下に既存のクリック処理本体を続ける）
 
-
-  // ▼ クリックで拡大（装備カード＝出自デッキ色、正体カード＝3色のまま）
 c.addEventListener('click', ()=>{
   const name = (cardName || '').trim();
   if (!name) return;
