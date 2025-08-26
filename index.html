@@ -854,8 +854,8 @@ margin-top: 0;
 
 /* 下段：効果テーブル（色は役職ごと・4行クランプ） */
 .role-mini .mini-table{
-  position:absolute; left:2px; right:2px; bottom:2px; top: 42px;
-  border-radius:4px; padding:2px 3px; font-size:5px; line-height:1.25;
+  position:absolute; left:2px; right:2px; bottom:2px; top: 50px;
+  border-radius:4px; padding:2px 3px; font-size:6px; line-height:1.25;
   overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4;
   text-overflow:ellipsis; color:#000; box-sizing:border-box;
 z-index: 1;  
@@ -1237,7 +1237,7 @@ dicebar{
 </head>
 <body>
 <header>
-  <h1>オンラインルーム</h1>
+  <h1>シャドウ・レイダーズ</h1>
   <div class="small" id="headerInfo"></div>
   <div class="small" id="myRoomBadge">部屋：未選択</div>
 </header>
@@ -3959,9 +3959,12 @@ const ROLE_INFO = {
   "Cクレイグ": '<span class="condition">勝利条件</span> 2人脱落している状態で、他PLを「攻撃」して脱落させる。<br><span class="condition">&lt;死の饗宴&gt;</span> 攻撃後、自分に2ダメージ与えた後、もう一度同じPLを攻撃できる。',
   "Cキャロル": '<span class="condition">勝利条件</span> 最初に脱落する。またはあなたともう1人だけが脱落していない。<br><span class="condition">&lt;聖痕&gt;</span> 手番の初めに2ダメージ回復する。',
   "Cクレア": '<span class="condition">勝利条件</span> ゲーム終了時にあなたのダメージが「6～8」のいずれかである。<br><span class="condition">&lt;キャスリング&gt;</span> 手番の初めに使用する。あなたと他PLのHPを入れ替える。',
-  "Dダニエル": "ここあさ",
-  "Dデーヴィッド": "ここあさ",
-  "Dデボラ": "ここあさ",
+  "Dダニエル": '<span class="condition">勝利条件</span> 最初に脱落する。またはシャドウが全滅して生存している。<br><span class="condition">&lt;絶叫&gt;</span> 一番最初にあなた以外のPLが脱落した時、正体カードを公開しなければならない。',
+
+  "Dデーヴィッド": '<span class="condition">勝利条件</span>「いにしえの聖杯「神秘のコンパス」「幸運のブローチ」「銀のロザリオ」のうち3種を所持している。<br><span class="condition">&lt;グレイブディガー&gt;</span> 手番の初めに捨て札(脱落者のカード)にある任意の装備を1枚か獲得する。',
+
+  "Dデボラ": '<span class="condition">勝利条件</span> 5人：ゲーム終了時に最もダメージが多い。<br>6人：あなた以外のシチズンが勝利する。<br><span class="condition">&lt;献身的な愛&gt;</span> 手番の初めに勝利条件を「あなたが脱落する。」に変更する。',
+
 
   // RAIDER
   "Eエミ":  '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;テレポート&gt;</span> 移動のダイスを振った後、出目のエリアに移動するか、その両隣のエリアに移動できる。',
@@ -3972,7 +3975,7 @@ const ROLE_INFO = {
   "Fフレディ": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;ドラゴンアタック&gt;</span> 正体を公開しているPLへの攻撃が成功した時、+2ダメージする。',
   "Gゴードン": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;絶対無敵バリア&gt;</span> 手番の終了時に使う。あなたの次の手番の初めまであらゆるダーメージを受けない。(1回)',
   "Gガラハド": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;魔剣の伝承者&gt;</span> エクスカリバーを所持している時に攻撃が失敗したらダイスを振り直す。',
-  "Gゴドウィン": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;蘇生装置TYPE-G&gt;</span> あなたが脱落した時、既に脱落しているPLを一人7ダメージの状態で復活させる。',
+  "Gゴドウィン": '<span class="condition">勝利条件</span> シャドウ全員の脱落<br><span class="condition">&lt;蘇生装置TYPE-G&gt;</span> あなたが脱落した時、既に脱落しているPLを1人7ダメージの状態で復活させる。',
 
   // SHADOW
   "Uウルリッヒ": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br>あなたが推理カードを受け取った時、ウソをついてもよい。',
@@ -3985,6 +3988,51 @@ const ROLE_INFO = {
   "Wワルプルギス": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br><span class="condition">&lt;重力の虹&gt;</span> 攻撃を行う時に任意のPL1人とあなたの位置を交換できる。',
   "Wワーウルフ": '<span class="condition">勝利条件</span> レイダー全員、またはシチズン3人の脱落<br><span class="condition">&lt;反撃&gt;</span> 攻撃を受けた時、そのPLをただちに攻撃できる。',
 };
+
+
+
+
+const ROLE_MINI_INFO = {
+
+"Aアリス": '<span class="condition">勝利条件</span> 生存している。',
+"Aアンジェラ": '<span class="condition">勝利条件</span> 右隣りのプレイヤーが勝利する。',
+"Aアガサ": '<span class="condition">勝利条件</span> あなたの手番でゲームが終了する。',
+"Bバイロン": '<span class="condition">勝利条件</span> 装備カードを5枚以上所持する。',
+"Bベンジャミン": '<span class="condition">勝利条件</span> あなた以外のPLが装備を5つ以上所持している。',
+"Bブルース": '<span class="condition">勝利条件</span> 「攻撃」してHP12以上のPLを脱落させる。またはゲーム終了時にエリア9にいる。',
+"Cクレイグ": '<span class="condition">勝利条件</span> 2人脱落している状態で、他PLを「攻撃」して脱落させる。',
+"Cキャロル": '<span class="condition">勝利条件</span> 最初に脱落する。またはあなたともう1人だけが脱落していない。',
+"Cクレア": '<span class="condition">勝利条件</span> ゲーム終了時にあなたのダメージが「6～8」のいずれかである。',
+"Dダニエル": '<span class="condition">勝利条件</span> 最初に脱落する。またはシャドウが全滅して生存している。',
+"Dデーヴィッド": '<span class="condition">勝利条件</span> 「いにしえの聖杯」「神秘のコンパス」「幸運のブローチ」「銀のロザリオ」のうち3種を所持している。',
+"Dデボラ": '<span class="condition">勝利条件</span> 5人：ゲーム終了時に最もダメージが多い。<BR>6人：あなた以外のシチズンが勝利する。',
+
+
+
+"Eエミ":'<span class="condition">テレポート</span>移動のダイスを振った後、出目のエリアかその両隣に移動できる',
+"Eエリカ":'<span class="condition">癒しの光</span>手番終了時に4面ダイスを振り、出目の数だけ他PLを回復できる',
+"Eエマ":'<span class="condition">封印の鎖</span>手番の初めに他PLを1人選んで特殊能力を封印する。(1回)',
+"Fフェリックス":'<span class="condition">アストラル・メイス</span>手番の初めに他PLを1人選び6面ダイスを振ってダメージを与える。(1回)',
+"Fフェリシア":'<span class="condition">スラム街の天使</span>手番の初めに任意のPLを選びダメージを「7」にする。(1回)',
+"Fフレディ":'<span class="condition">ドラゴンアタック</span>正体を公開しているPLへの攻撃が成功した時、+2ダメージする',
+"Gゴードン":'<span class="condition">絶対無敵バリア</span>手番の終了時に使う。次の手番の初めまであらゆるダメージを受けない。(1回)',
+"Gガラハド":'<span class="condition">魔剣の伝承者</span>エクスカリバーを所持している時に攻撃が失敗したらダイスを振り直す',
+"Gゴドウィン":'<span class="condition">蘇生装置TYPE-G</span>脱落時、既に脱落しているPLを1人7ダメージの状態で復活させる',
+"Uウルリッヒ":'（特殊能力なし・推理カードを受け取った時にウソをつける）',
+"Uウラヌス":'<span class="condition">メテオストライク</span>手番の初めに4-5,10にいるPL1人に3ダメージを与える',
+"Uアルスター":'<span class="condition">デル・フリす</span>2回攻撃ができる',
+"Vヴェノム":'<span class="condition">反駁の猛毒</span>あなたを攻撃したPLは、1ダメージ受けるか装備を渡すか選ぶ',
+"Vヴァンパイア":'<span class="condition">吸血</span>攻撃に成功した時ダメージを2回復する',
+"Vヴェンデッタ":'<span class="condition">冥府の大鎌</span>あなたの攻撃は4面ダイスのみを使用する',
+"Wワイト":'<span class="condition">亡者の王</span>手番の終了後「脱落しているPLの数だけ」手番を行う。(1回)',
+"Wワルプルギス":'<span class="condition">重力の虹</span>攻撃を行う時に任意のPL1人とあなたの位置を交換できる',
+"Wワーウルフ":'<span class="condition">反撃</span>攻撃を受けた時、そのPLをただちに攻撃できる',
+
+  // 必要なカードだけ入れればOK（無いカードは従来にフォールバック）
+};
+
+
+
 
 
 /** 正体カードの拡大レイアウトを描画 */
@@ -4379,7 +4427,7 @@ function showParticipantSelectPopup(cardText){
   `;
   const panel = document.createElement('div');
   panel.className = 'modal-panel';
-  panel.innerHTML = `<div style="font-weight:700;margin-bottom:8px">共有先を選んでください</div>`;
+  panel.innerHTML = `<div style="font-weight:700;margin-bottom:8px">誰に渡す？</div>`;
   const list = document.createElement('div');
   list.style.display = 'grid';
   list.style.gridTemplateColumns = 'repeat(3, 140px)';
@@ -4857,11 +4905,14 @@ ordered.forEach(cardName=>{
     // 下段：効果テーブル（役職色の下地）
     const eff = document.createElement('div');
     eff.className = 'mini-table';
-if (typeof ROLE_INFO !== 'undefined' && ROLE_INFO[cardName]) {
-  // <br> を改行維持、<span>等のインラインHTMLを反映
-  const html = ROLE_INFO[cardName]
-    .replace(/<br\s*\/?>/gi, '<br>'); // 改行はそのまま
-  eff.innerHTML = html;               // ← ここを textContent → innerHTML に
+let html = '';
+if (typeof ROLE_MINI_INFO !== 'undefined' && ROLE_MINI_INFO[cardName]) {
+  html = ROLE_MINI_INFO[cardName];
+} else if (typeof ROLE_INFO !== 'undefined' && ROLE_INFO[cardName]) {
+  html = ROLE_INFO[cardName];
+}
+if (html) {
+  eff.innerHTML = html.replace(/<br\s*\/?>/gi, '<br>');
 }
     c.appendChild(eff);
 
