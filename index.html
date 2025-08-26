@@ -543,6 +543,208 @@ display: block;
   border-radius: 0;    /* ← 角丸を消す */
 }
 
+/* === 役職カード拡大：レイアウト === */
+#dealViewer .deal-card.role-layout{
+  display:flex; flex-direction:column;
+  justify-content:flex-start; gap:10px; padding:12px 14px;
+  background:#fff; color:#111;
+  display:flex;
+  align-items:flex-start;      /* ← 上に詰める（中央→上） */
+  justify-content:flex-start;  /* ← 左に詰める（中央→左） */
+  padding:0 !important;        /* ← カード内の20pxパディングも消す */
+}
+
+/* 上段：左に丸（イニシャル＋下に陣営）、右に英名の残り（黒バー金字） */
+.role-row{
+  display:flex;
+  align-items:flex-start;   /* 上に */
+  justify-content:flex-start; /* 左に */
+  gap:4px;
+}
+
+.role-initial{
+  top:4px;    /* 上から4px下げる */
+  left:4px;   /* 左から4px右へずらす */
+  width:40px;
+  height:40px;
+  border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-weight:900; font-size:20px; color:#000;
+  border:2px solid #111;
+  position:relative;
+  margin:0;
+  font-size:30px;   /* ← 20px → 26px にアップ（文字だけ大きく） */
+  align-self:flex-start;  /* 左上端に固定 */
+  border:2px solid gold;  
+}
+.role-faction{
+  position:absolute;
+  left:50%; transform:translateX(-50%);
+  bottom:-14px;
+  font-size:10px; font-weight:700; color:#111;
+  white-space:nowrap; 
+  color:gold; 
+}
+
+
+.role-center{
+  position:relative;   /* ← ここを基準にする */
+  display:flex;
+  justify-content:flex-start; /* 名前は左寄せ */
+  margin-top:150px;
+  width:100%;
+}
+
+
+.role-rest{
+  background:#000; color:gold; border:2px solid gold; border-radius:6px;
+  padding:5px 12px; font-weight:900; font-size:20px; line-height:1;
+  white-space:nowrap; max-width:120px; overflow:hidden; text-overflow:ellipsis;
+  margin-top:10px;   /* ← 円より下げる量（お好みで 8px～16px） */
+  margin-left:-12px;  /* ← 左に寄せたいならマイナス値で円に近づける */
+}
+/* 中段：カタカナ名（黒バー金字）と右のHP丸（こげ茶＋金字太字） */
+.role-center{display:flex; align-items:center; justify-content:center; gap:10px
+  margin-top:60px;   /* ← ここで全体を下げる */
+}
+
+.role-name{
+  background:#000; color:gold; border:2px solid gold; border-radius:8px;
+  padding:5px 12px; font-weight:900; font-size:22px; line-height:1;
+  display:inline-block; max-width:70%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+width:90%; 
+ text-align:left;
+}
+
+.role-hp{
+  position:absolute;
+  width:56px; height:56px; border-radius:50%;
+  background:#5a4032; /* こげ茶 */
+  display:flex; align-items:center; justify-content:center;
+  border:2px solid #3b2a20;
+  width:40px;   /* ← 小さくする (元56px) */
+  height:40px;
+margin-right:7px;
+ right:3px; 
+
+}
+.role-hp span{
+  color:gold; font-weight:900; font-size:28px; line-height:1;
+}
+
+/* 陣営ごとの丸の塗りつぶし色（丸＝イニシャルの背景） */
+.role-initial.citizen{ background:#fdd835; }  /* シチズン＝黄色 */
+.role-initial.raider { background:#e53935; }  /* レイダー＝赤   */
+.role-initial.shadow { background:#1e88e5; }  /* シャドウ＝青   */
+
+
+
+
+
+
+
+/* 正体カード用テーブル */
+.role-table {
+  width: 80%;
+height: 90px;   
+  border-collapse: collapse;
+  border-radius: 8px;
+  margin: 0px auto 0;
+  font-size: 14px;
+  text-align: left;
+  overflow: hidden;
+ color: #000; 
+}
+.role-table td {
+  padding: 6px 8px;
+  font-weight: 700;
+ color: #000; 
+}
+.role-table.raider { background: pink; }
+.role-table.shadow { background: lightblue; }
+.role-table.citizen { background: #fff9c4; } /* 薄い黄色 */
+
+
+
+
+@media (max-width:600px){
+.role-center{
+  position:relative;   /* ← ここを基準にする */
+  display:flex;
+  justify-content:flex-start; /* 名前は左寄せ */
+  margin-top:100px;
+  width:100%;}
+
+.role-table {
+  margin: 0px auto 0;
+  width: 85%;
+height: 70px;   
+}
+
+
+ .role-initial{
+    width: 28px;
+    height: 28px;
+    font-size: 18px;     /* 文字サイズ */
+    top: 2px;            /* さらに上へ */
+    left: 2px;
+    border-width: 2px;
+ z-index: 2; 
+  }
+  .role-faction{
+    bottom: -12px;       /* 円の下の陣営ラベルも調整 */
+    font-size: 9px;
+  }
+
+  /* ② イニシャル後（右側バー＝英名）のフォント小さく＆バーを細く */
+  .role-rest{
+    font-size: 14px;     /* フォント小さく */
+    padding: 4px 8px;    /* バーを“細く”見せる（高さを抑える） */
+    line-height: 1;
+    margin-top: 6px;     /* 円より少し下げる量を控えめに */
+    max-width: 100px;    /* 端末幅でつぶれない程度に */
+   margin-left: -11px;      /* ← 円に“食い込むように”左寄せ */
+    position: relative;
+ z-index: 1;   }
+
+  /* ③ 「名前」バーのフォント小さく＆全体を上へ */
+  .role-center{
+    margin-top: 40px;    /* 既存の100px→さらに上へ（上寄せ） */
+  }
+  .role-name{
+    font-size: 16px;     /* 名前の文字を小さく */
+    padding: 4px 8px;    /* バーの高さを控えめに */
+    width: 70%;
+   margin-left: 7px; 
+   margin-top: 60px;
+margin-bottom: 0;  
+  }
+
+  /* ④ HPの円を上に＆小さく＆フォントも小さく */
+  .role-hp{
+    width: 32px;
+    height: 32px;
+    top: 56px;           /* 上方向へ寄せる（.role-center が position:relative） */
+    right: 3px;          /* 既存位置を維持しつつ微調整 */
+    border-width: 2px;
+
+  }
+  .role-hp span{
+    font-size: 20px;
+  }
+
+  /* （必要なら）正体テーブルも少しだけ詰める */
+  .role-table{
+    width: 92%;
+    margin: 4px auto 0;
+    font-size: 12px;
+ margin-top: 0; 
+  }
+
+
+}
+
+
 
 @media (max-width:600px){ /*スマホサイズ*/
   .deck-face[data-deck="black"][data-role="face"]{ gap:1px; padding:2px; }
@@ -677,6 +879,10 @@ font-size:12px;
 
 
 }/*スマホここまで*/
+
+
+
+
 
 /* ▼ 装備一覧：効果テーブル（白/黒） */
 .equip-card .equip-table{
@@ -836,6 +1042,12 @@ font-size:12px;
     row-gap: 6px;         /* 段間を少し詰める（好みで） */
   }
 }
+
+
+
+
+
+
 
 </style>
 </head>
@@ -1325,11 +1537,10 @@ function makeWhiteImageSrc(name){
 // 拡大カード共通クリック（文脈で分岐）
 dealCardFace.addEventListener('click', ()=>{
   const ctx = state.expandedContext || null;
-  const card = (dealCardFace.textContent || '').trim();
-
-  if (!ctx || ctx.source !== 'equip') return; // 装備欄からじゃなければ無視
-  if (ctx.ownerUid === state.uid) return;     // 自分の装備は無視
-  if (isRoleCard(card)) return;              // 正体カードは禁止
+  const card = ctx?.cardName || '';                        // ← ここを変更
+  if (!ctx || ctx.source !== 'equip') return;
+  if (ctx.ownerUid === state.uid) return;
+  if (!card || isRoleCard(card)) return;                   // ← cardName で判定
 
   const pop = document.getElementById('stealPopover');
   if (!pop) return;
@@ -1353,12 +1564,12 @@ dealCardFace.addEventListener('click', ()=>{
 
   const btnSteal = document.getElementById('btnSteal');
 if (btnSteal){
-  btnSteal.onclick = async ()=>{
-    const ctx = state.expandedContext || null;
-    const card = (dealCardFace.textContent || '').trim();
-    if (!ctx || ctx.source !== 'equip') return;
-    if (!card || isRoleCard(card)) return;  // 正体カードは禁止
-    if (ctx.ownerUid === state.uid) return; // 自分の装備は対象外
+ btnSteal.onclick = async ()=>{
+  const ctx = state.expandedContext;
+  if (!ctx || ctx.source !== 'equip') return;
+  const card = ctx.cardName;                                // ← ここを変更
+  if (!card || isRoleCard(card)) return;
+  if (ctx.ownerUid === state.uid) return;
 
     try{
       const updates = {};
@@ -2284,6 +2495,10 @@ if (cardName.includes('サーベル')){
   table.appendChild(tr);
   wrapper.appendChild(table);
 }
+dealCardFace.className = 'deal-card';
+dealCardFace.innerHTML = '';
+dealCardFace.style.background = '';
+dealCardFace.style.color = '';
 
 
   dealCardFace.appendChild(wrapper);
@@ -3287,20 +3502,18 @@ Object.keys(cards).forEach(cardName=>{
 
   // ② クリックで拡大ビューを開く（配色も適用）
 cardDiv.onclick = ()=>{
-  const name = String(cardName || '').trim();
-  if (!name) return;
+const raw = String(cardName ?? '');           // ← 生のキー（スペース保持）
+const display = raw.trim();       
 
   // 装備欄からの拡大であることを記録（奪う等の判定で使用）
-  state.expandedContext = { source:'equip', ownerUid: uid, cardName: name };
-
+ state.expandedContext = { source:'equip', ownerUid: uid, cardName: cardName }; // raw
   // 右下カード（正体公開ボタン）の誤作動を防止
   dealCardFace.onclick = null;
   const rp = document.getElementById('revealPopover');
   if (rp) rp.classList.add('hidden');
 
   // ★ここがポイント：白/黒の“表”と同じUIで拡大を描画
-  showEquipExpanded(name);
-
+showEquipExpanded(display); 
   // 装備一覧からの拡大はピン留めしない
   state.pinDealViewer = false;
   show(dealViewer, true);
@@ -3333,7 +3546,7 @@ const ROLE_CARDS = {
   raider: [
     'Eエミ','Eエマ','Eエリカ',
     'Fフェリックス','Fフレディ','Fフェリシア',
-    'Gゴードン','Gゴドウィン','Gグラハド'
+    'Gゴードン','Gゴドウィン','Gガラハド'
   ],
   shadow: [
     'Uウルリッヒ','Uウラヌス','Uアルスター',
@@ -3352,6 +3565,164 @@ function isRoleCard(cardName){
       || ROLE_CARDS.raider.includes(cardName)
       || ROLE_CARDS.citizen.includes(cardName);
 }
+
+
+// === 役職メタ情報（英名の残り／カタカナ／陣営／HP） ===
+// キーは既存の役職カード名（例：'Aアリス'）
+const ROLE_META = {
+  // CITIZEN
+  'Aアリス':      { init:'A', rest:'LICE',      kana:'アリス',      faction:'citizen', hp:8  },
+  'Aアンジェラ':  { init:'A', rest:'NGELA',     kana:'アンジェラ',  faction:'citizen', hp:8  },
+  'Aアガサ':      { init:'A', rest:'GATHA',     kana:'アガサ',      faction:'citizen', hp:8  },
+  'Bバイロン':    { init:'B', rest:'YLON',      kana:'バイロン',    faction:'citizen', hp:10 },
+  'Bベンジャミン':{ init:'B', rest:'ENJAMIN',   kana:'ベンジャミン',faction:'citizen', hp:10 },
+  'Bブルース':    { init:'B', rest:'RUCE',      kana:'ブルース',    faction:'citizen', hp:10 },
+  'Cクレイグ':    { init:'C', rest:'RAIG',      kana:'クレイグ',    faction:'citizen', hp:11 },
+  'Cキャロル':    { init:'C', rest:'AROL',      kana:'キャロル',    faction:'citizen', hp:11 },
+  'Cクレア':      { init:'C', rest:'LAIRE',     kana:'クレア',      faction:'citizen', hp:11 },
+  'Dダニエル':    { init:'D', rest:'ANIEL',     kana:'ダニエル',    faction:'citizen', hp:13 },
+  'Dデーヴィッド':{ init:'D', rest:'AVID',      kana:'デーヴィッド',faction:'citizen', hp:13 },
+  'Dデボラ':      { init:'D', rest:'EBORAH',    kana:'デボラ',      faction:'citizen', hp:13 },
+
+  // RAIDER
+  'Eエミ':        { init:'E', rest:'MI',        kana:'映魅',        faction:'raider',  hp:10 }, // 「映魅」指定
+  'Eエリカ':      { init:'E', rest:'RICA',      kana:'エリカ',      faction:'raider',  hp:10 },
+  'Eエマ':        { init:'E', rest:'MA',        kana:'エマ',        faction:'raider',  hp:10 },
+  'Fフェリックス':{ init:'F', rest:'ELIX',      kana:'フェリックス',faction:'raider',  hp:12 },
+  'Fフェリシア':  { init:'F', rest:'ELICIA',    kana:'フェリシア',  faction:'raider',  hp:12 },
+  'Fフレディ':    { init:'F', rest:'REDDIE',    kana:'フレディ',    faction:'raider',  hp:12 },
+  'Gゴードン':    { init:'G', rest:'ORDON',     kana:'ゴードン',    faction:'raider',  hp:14 },
+  'Gガラハド':    { init:'G', rest:'ARAHAD',    kana:'ガラハド',    faction:'raider',  hp:14 },
+  'Gゴドウィン':  { init:'G', rest:'ODWIN',     kana:'ゴドウィン',  faction:'raider',  hp:14 },
+
+  // SHADOW
+  'Uウルリッヒ':  { init:'U', rest:'LRICH',     kana:'ウルリッヒ',  faction:'shadow',  hp:11 },
+  'Uウラヌス':    { init:'U', rest:'RANUS',     kana:'ウラヌス',    faction:'shadow',  hp:11 },
+  'Uアルスター':  { init:'U', rest:'LSTER',     kana:'アルスター',  faction:'shadow',  hp:11 },
+  'Vヴェノム':    { init:'V', rest:'ENOM',      kana:'ヴェノム',    faction:'shadow',  hp:13 },
+  'Vヴァンパイア':{ init:'V', rest:'AMPIRE',    kana:'ヴァンパイア',faction:'shadow',  hp:13 },
+  'Vヴェンデッタ':{ init:'V', rest:'ENDETTA',   kana:'ヴェンデッタ',faction:'shadow',  hp:13 },
+  'Wワイト':      { init:'W', rest:'IGHT',      kana:'ワイト',      faction:'shadow',  hp:14 },
+  'Wワルプルギス':{ init:'W', rest:'ALPURGA',   kana:'ワルプルギス',faction:'shadow',  hp:14 },
+  'Wワーウルフ':  { init:'W', rest:'EREWOLF',   kana:'ワーウルフ',  faction:'shadow',  hp:14 },
+};
+
+// 陣営→クラス（丸バッジの色に使う）
+const FACTION_CLASS = { citizen:'citizen', raider:'raider', shadow:'shadow' };
+
+
+const ROLE_INFO = {
+  "Aアリス": "ここあさ",
+  "Aアンジェラ": "ここあさ",
+  "Aアガサ": "ここあさ",
+  "Bバイロン": "ここあさ",
+  "Bベンジャミン": "ここあさ",
+  "Bブルース": "ここあさ",
+  "Cクレイグ": "ここあさ",
+  "Cキャロル": "ここあさ",
+  "Cクレア": "ここあさ",
+  "Dダニエル": "ここあさ",
+  "Dデーヴィッド": "ここあさ",
+  "Dデボラ": "ここあさ",
+
+  // RAIDER
+  "Eエミ": "あいう",
+  "Eエリカ": "あいう",
+  "Eエマ": "あいう",
+  "Fフェリックス": "あいう",
+  "Fフェリシア": "あいう",
+  "Fフレディ": "あい<br>う",
+  "Gゴードン": "あいう",
+  "Gガラハド": "あいう",
+  "Gゴドウィン": "あいう",
+
+  // SHADOW
+  "Uウルリッヒ": "あかか",
+  "Uウラヌス": "あかか",
+  "Uアルスター": "あかか",
+  "Vヴェノム": "あかか",
+  "Vヴァンパイア": "あかか",
+  "Vヴェンデッタ": "あかか",
+  "Wワイト": "あかか",
+  "Wワルプルギス": "あかか",
+  "Wワーウルフ": "あかか",
+};
+
+
+/** 正体カードの拡大レイアウトを描画 */
+function showRoleExpanded(roleKey){
+  const meta = ROLE_META[roleKey];
+  // 念のため：不明ならテキストだけ
+  if (!meta){
+    dealCardFace.className = 'deal-card role-layout';
+    dealCardFace.textContent = roleKey || '？';
+    return;
+  }
+
+  // ルート
+  dealCardFace.className = 'deal-card role-layout';
+  dealCardFace.innerHTML = '';
+
+  // 上段：イニシャル丸（黒字／塗りつぶし＝陣営色）＋下に陣営、小さく
+  const row = document.createElement('div');
+  row.className = 'role-row';
+
+  const init = document.createElement('div');
+  init.className = `role-initial ${FACTION_CLASS[meta.faction]}`;
+  init.textContent = meta.init;
+  const fac = document.createElement('div');
+  fac.className = 'role-faction';
+  fac.textContent = meta.faction.toUpperCase(); // CITIZEN / RAIDER / SHADOW
+  init.appendChild(fac);
+
+  // 「イニシャルの後（英名の残り）」黒バー金字
+  const rest = document.createElement('div');
+  rest.className = 'role-rest';
+  rest.textContent = meta.rest;
+
+  row.appendChild(init);
+  row.appendChild(rest);
+
+  // 中段：カタカナ名（黒バー金字）と右のHP丸（こげ茶＋金字太字）
+  const mid = document.createElement('div');
+  mid.className = 'role-center';
+
+  const name = document.createElement('div');
+  name.className = 'role-name';
+  name.textContent = meta.kana;       // カードの真ん中にカタカナ名（黒バー金字）
+
+  const hp = document.createElement('div');
+  hp.className = 'role-hp';
+  const hpSpan = document.createElement('span');
+  hpSpan.textContent = meta.hp;
+  hp.appendChild(hpSpan);
+
+  mid.appendChild(name);
+  mid.appendChild(hp);
+
+  // 追加
+  dealCardFace.appendChild(row);
+  dealCardFace.appendChild(mid);
+
+const infoTable = document.createElement('table');
+infoTable.className = 'role-table ' + (meta.faction === 'raider' ? 'raider'
+                     : meta.faction === 'shadow' ? 'shadow' : 'citizen');
+const tr = document.createElement('tr');
+const td = document.createElement('td');
+td.innerHTML = ROLE_INFO[roleKey] || "";
+
+
+tr.appendChild(td);
+infoTable.appendChild(tr);
+
+// 「mid」の下＝名前の下に来るよう、dealCardFace直下に追加
+dealCardFace.appendChild(infoTable);
+
+
+}
+
+
+
 
 // 人数ごとの役職割り当て
 const ROLE_DISTRIBUTION = {
@@ -3449,9 +3820,15 @@ function observeMyDeal(){
     const has = !!val;
     show(myDealMini, has);
     if (has){
-      myDealMini.onclick = ()=>{
-// 自分のカード表示
-dealCardFace.textContent = String(val);
+myDealMini.onclick = ()=>{
+  // 自分のカード表示（役職カードなら専用レイアウト）
+  if (isRoleCard(val)) {
+    showRoleExpanded(val);
+  } else {
+    dealCardFace.className = 'deal-card';
+    dealCardFace.textContent = String(val);
+  }
+
 
   state.expandedContext = { source: 'mydeal', ownerUid: state.uid, cardName: String(val) };
 
@@ -3554,8 +3931,17 @@ function observeReveals(){
     const any = Object.values(all)[0];
     if (!any) return;
 
-    // 表示内容
-    dealCardFace.textContent = any.card || '？';
+ // 表示内容（役職カードは専用レイアウト）
+ if (isRoleCard(any.card)) {
+   showRoleExpanded(any.card);
+ } else {
+   dealCardFace.className = 'deal-card'; // 既定
+  dealCardFace.innerHTML = '';
+  dealCardFace.style.background = '';
+  dealCardFace.style.color = '';
+
+   dealCardFace.textContent = any.card || '？';
+ }
 
 // 配色（デッキ色優先 → 役職カード → それ以外は白）
 if (DECKS_DEF.white.cards.includes(any.card)) {
@@ -4116,8 +4502,7 @@ c.addEventListener('click', ()=>{
   const name = (cardName || '').trim();
   if (!name) return;
 
-  state.expandedContext = { source:'equip', ownerUid: uid, cardName: name };
-
+ state.expandedContext = { source:'equip', ownerUid: uid, cardName: cardName }; // raw
   // 右下カードの公開UIは閉じる
   dealCardFace.onclick = null;
   const rp = document.getElementById('revealPopover');
