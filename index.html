@@ -647,7 +647,7 @@ margin-right:7px;
 }
 
 /* 陣営ごとの丸の塗りつぶし色（丸＝イニシャルの背景） */
-.role-initial.citizen{ background:#0a0766; }  /* シチズン＝黄色 */
+.role-initial.citizen{ background:#e3ed1c; }  /* シチズン＝黄色 */
 .role-initial.raider { background:#9e0d0d; }  /* レイダー＝赤   */
 .role-initial.shadow { background:#3d3b80; }  /* シャドウ＝青   */
 
@@ -778,7 +778,7 @@ margin-bottom: 0;
 /* 枠色：役職ごと */
 .equip-card.role-mini.raider  { border: 2px solid #9e0d0d; } /* 赤 */
 .equip-card.role-mini.shadow  { border: 2px solid #3d3b80; } /* 青 */
-.equip-card.role-mini.citizen { border: 2px solid #0a0766; } /* 黄 */
+.equip-card.role-mini.citizen { border: 2px solid #e3ed1c; } /* 黄 */
 
 /* 上段：イニシャル丸＋右に英名バー（縮小） */
 .role-mini .mini-row-top{
@@ -795,7 +795,7 @@ margin-top: 0;
 }
 .role-mini.raider  .mini-initial{ background:#9e0d0d; color:#fff; }
 .role-mini.shadow  .mini-initial{ background:#3d3b80; color:#fff; }
-.role-mini.citizen .mini-initial{ background:#0a0766; color:#111; }
+.role-mini.citizen .mini-initial{ background:#e3ed1c; color:#111; }
 
 .role-mini .mini-rest{
  width: auto;  
@@ -1611,7 +1611,7 @@ function colorizeDealFaceByCardName(cardName){
     return;
   }
   if (ROLE_CARDS.citizen.includes(cardName)) {
-    dealCardFace.style.background = '#0a0766'; // シチズン＝黄
+    dealCardFace.style.background = '#e3ed1c'; // シチズン＝黄
     dealCardFace.style.color = '#111';
     return;
   }
@@ -2760,6 +2760,7 @@ back.addEventListener('click', (ev)=>{
     return;
   }
   // 通常時は既存の山札めくり
+ playSfx('sfxDeck');   
   advanceDeckGuarded(deckId, state.uid);
 });
   // ★ 追加：残り枚数表示用
@@ -3594,7 +3595,7 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
     { id:'purple',  name:'紫',    bg:'#8e24aa' },
     { id:'cyan',    name:'水色',  bg:'#26c6da' },
     { id:'orange',  name:'オレンジ', bg:'#fb8c00' },
-    { id:'yellow',  name:'黄',  bg:'#0a0766' },
+    { id:'yellow',  name:'黄',  bg:'#e3ed1c' },
   ];
   function colorToStyle(colorName){
     // 背景と文字色の組合せ規定
@@ -4061,7 +4062,7 @@ function showRoleExpanded(roleKey){
   dealCardFace.innerHTML = '';
 
   // ▼ ：陣営ごとの枠線色
-  const BORDER_BY_FACTION = { CITIZEN:'#0a0766', RAIDER:'#9e0d0d', SHADOW:'#3d3b80' };
+  const BORDER_BY_FACTION = { CITIZEN:'#e3ed1c', RAIDER:'#9e0d0d', SHADOW:'#3d3b80' };
   if (meta && meta.faction) {
     dealCardFace.style.border = `4px solid ${BORDER_BY_FACTION[meta.faction.toUpperCase()] || '#111'}`;
     dealCardFace.style.borderRadius = '14px'; // 既存の角丸に合わせる
@@ -4258,7 +4259,7 @@ if (ROLE_CARDS.shadow.includes(val)) {
   dealCardFace.style.background = '#9e0d0d'; // 赤
   dealCardFace.style.color = '#fff';
 } else if (ROLE_CARDS.citizen.includes(val)) {
-  dealCardFace.style.background = '#0a0766'; // 黄
+  dealCardFace.style.background = '#e3ed1c'; // 黄
   dealCardFace.style.color = '#111';
 } else {
   // その他カードは白背景に戻す
@@ -4374,7 +4375,7 @@ if (DECKS_DEF.white.cards.includes(any.card)) {
   dealCardFace.style.background = '#9e0d0d'; // 赤
   dealCardFace.style.color = '#fff';
 } else if (ROLE_CARDS.citizen.includes(any.card)) {
-  dealCardFace.style.background = '#0a0766'; // 黄
+  dealCardFace.style.background = '#e3ed1c'; // 黄
   dealCardFace.style.color = '#111';
 } else {
   dealCardFace.style.background = '#fff';
@@ -4699,7 +4700,7 @@ if (isRoleCard(otherCard)) {
         dealCardFace.style.background = '#9e0d0d'; // 赤
         dealCardFace.style.color = '#fff';
       } else if (ROLE_CARDS.citizen.includes(otherCard)) {
-        dealCardFace.style.background = '#0a0766'; // 黄
+        dealCardFace.style.background = '#e3ed1c'; // 黄
         dealCardFace.style.color = '#111';
       } else {
         dealCardFace.style.background = '#fff';
@@ -4788,7 +4789,7 @@ if (isRevealOrder){
   } else if (ROLE_CARDS.raider.includes(cardName)) {
     mini.style.background = '#9e0d0d'; mini.style.color = '#fff';  // レイダー＝赤
   } else if (ROLE_CARDS.citizen.includes(cardName)) {
-    mini.style.background = '#0a0766'; mini.style.color = '#111';  // シチズン＝黄
+    mini.style.background = '#e3ed1c'; mini.style.color = '#111';  // シチズン＝黄
   } else {
     mini.style.background = '#fff'; mini.style.color = '#111';     // 不明時
   }
