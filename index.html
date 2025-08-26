@@ -616,9 +616,11 @@ display: block;
 
 .role-name{
   background:#000; color:gold; border:2px solid gold; border-radius:8px;
-  padding:5px 12px; font-weight:900; font-size:22px; line-height:1;
+  padding:5px 12px;
+ font-weight:900; font-size:22px; line-height:1;
   display:inline-block; max-width:70%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-width:90%; 
+width:77%; 
+  max-width: none; 
  text-align:left;
 }
 
@@ -631,7 +633,7 @@ width:90%;
   width:40px;   /* ← 小さくする (元56px) */
   height:40px;
 margin-right:7px;
- right:3px; 
+ right:0px; 
 
 }
 .role-hp span{
@@ -651,12 +653,12 @@ margin-right:7px;
 
 /* 正体カード用テーブル */
 .role-table {
-  width: 80%;
+  width: 90%;
 height: 90px;   
   border-collapse: collapse;
   border-radius: 8px;
   margin: 0px auto 0;
-  font-size: 14px;
+  font-size: 12px;
   text-align: left;
   overflow: hidden;
  color: #000; 
@@ -665,6 +667,8 @@ height: 90px;
   padding: 6px 8px;
   font-weight: 700;
  color: #000; 
+  line-height: 1.5;   /* ← 行間を追加 */
+
 }
 .role-table.raider { background: pink; }
 .role-table.shadow { background: lightblue; }
@@ -722,7 +726,7 @@ height: 70px;
     padding: 4px 8px;    /* バーの高さを控えめに */
     width: 70%;
    margin-left: 7px; 
-   margin-top: 60px;
+   margin-top: 45px;
 margin-bottom: 0;  
   }
 
@@ -730,8 +734,8 @@ margin-bottom: 0;
   .role-hp{
     width: 32px;
     height: 32px;
-    top: 56px;           /* 上方向へ寄せる（.role-center が position:relative） */
-    right: 3px;          /* 既存位置を維持しつつ微調整 */
+    top: 40px;           /* 上方向へ寄せる（.role-center が position:relative） */
+    right: 0px;          /* 既存位置を維持しつつ微調整 */
     border-width: 2px;
 
   }
@@ -743,7 +747,7 @@ margin-bottom: 0;
   .role-table{
     width: 92%;
     margin: 4px auto 0;
-    font-size: 12px;
+    font-size: 10px;
  margin-top: 0; 
   }
 
@@ -885,6 +889,8 @@ font-size:12px;
 
 
 }/*スマホここまで*/
+
+
 
 
 
@@ -3618,6 +3624,7 @@ const FACTION_CLASS = { citizen:'citizen', raider:'raider', shadow:'shadow' };
 
 
 const ROLE_INFO = {
+  "Aアリス": '<span class="condition">勝利条件</span> 生存している。<br><span class="condition">特殊能力&lt;うさぎさんヒール&gt;</span> 手番の初めに使用する。ダメージを全回復する（1回のみ）',
   "Aアンジェラ": '<span class="condition">勝利条件</span> 右隣りのプレイヤーが勝利する。<br><span class="condition">特殊能力&lt;移り気&gt;</span> 「勝利条件を左となりのプレイヤーが勝利する」に変更する。（1回のみ）',
   "Aアガサ": '<span class="condition">勝利条件</span> あなたの手番でゲームが終了する。<br><span class="condition">特殊能力&lt;完全犯罪&gt;</span> 手番の最後に使用する。ダイスを2個振り、出目のエリアにいるPL全員に 3 ダメージ与える。（1回のみ）',
   "Bバイロン": '<span class="condition">勝利条件</span> 装備カードを5枚以上所持する。<br><span class="condition">特殊能力&lt;念力の懐中時計&gt;</span> 2以上の攻撃ダメージを与えた場合、代わりに装備を1つ奪うことができる。',
@@ -3655,23 +3662,50 @@ const ROLE_INFO = {
 
 
 /** 正体カードの拡大レイアウトを描画 */
+/** 正体カード拡大：カード名.jpgを“タイトル/HP/テーブルの後ろ”に重ねて表示する */
 function showRoleExpanded(roleKey){
   const meta = ROLE_META[roleKey];
-  // 念のため：不明ならテキストだけ
+  // メタが無ければ従来通りテキストだけ
   if (!meta){
     dealCardFace.className = 'deal-card role-layout';
     dealCardFace.textContent = roleKey || '？';
     return;
   }
 
-  // ルート
+  // ルート初期化（既存レイアウト維持）
   dealCardFace.className = 'deal-card role-layout';
   dealCardFace.innerHTML = '';
 
-  // 上段：イニシャル丸（黒字／塗りつぶし＝陣営色）＋下に陣営、小さく
+  // ▼ ：陣営ごとの枠線色
+  const BORDER_BY_FACTION = { CITIZEN:'#fdd835', RAIDER:'#e53935', SHADOW:'#1e88e5' };
+  if (meta && meta.faction) {
+    dealCardFace.style.border = `4px solid ${BORDER_BY_FACTION[meta.faction.toUpperCase()] || '#111'}`;
+    dealCardFace.style.borderRadius = '14px'; // 既存の角丸に合わせる
+  }
+
+  // ▼ 背景画像（<カード名>.jpg）を“最初に”追加して最背面に固定
+  dealCardFace.style.position = 'relative';  // スタッキング文脈
+  const bg = document.createElement('img');
+  bg.src = `${roleKey}.jpg`;
+  bg.alt = roleKey;
+  Object.assign(bg.style, {
+    position: 'absolute',
+    inset: '0',          // 上下左右0で全面フィット
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    zIndex: '0',         // 最背面
+    pointerEvents: 'none',
+    borderRadius: '14px' // 角丸に合わせてにじみ防止
+  });
+  bg.addEventListener('error', () => bg.remove()); // 画像が無ければ除去
+  dealCardFace.appendChild(bg);
+
+  // ▼ 上段：イニシャル丸＋陣営ラベル＋英名（既存どおり）
   const row = document.createElement('div');
   row.className = 'role-row';
-
+  row.style.position = 'relative';
+  row.style.zIndex = '1'; // 背景より前面に
   const init = document.createElement('div');
   init.className = `role-initial ${FACTION_CLASS[meta.faction]}`;
   init.textContent = meta.init;
@@ -3679,53 +3713,47 @@ function showRoleExpanded(roleKey){
   fac.className = 'role-faction';
   fac.textContent = meta.faction.toUpperCase(); // CITIZEN / RAIDER / SHADOW
   init.appendChild(fac);
-
-  // 「イニシャルの後（英名の残り）」黒バー金字
   const rest = document.createElement('div');
   rest.className = 'role-rest';
   rest.textContent = meta.rest;
-
   row.appendChild(init);
   row.appendChild(rest);
 
-  // 中段：カタカナ名（黒バー金字）と右のHP丸（こげ茶＋金字太字）
+  // ▼ 中段：カタカナ名＋HP丸（既存どおり）
   const mid = document.createElement('div');
   mid.className = 'role-center';
-
+  mid.style.position = 'relative';
+  mid.style.zIndex = '1';
   const name = document.createElement('div');
   name.className = 'role-name';
-  name.textContent = meta.kana;       // カードの真ん中にカタカナ名（黒バー金字）
-
+  name.textContent = meta.kana;
   const hp = document.createElement('div');
   hp.className = 'role-hp';
   const hpSpan = document.createElement('span');
   hpSpan.textContent = meta.hp;
   hp.appendChild(hpSpan);
-
   mid.appendChild(name);
   mid.appendChild(hp);
 
-  // 追加
+  // ▼ 下段：各役職のテキストテーブル（既存どおり）
+  const infoTable = document.createElement('table');
+  infoTable.className =
+    'role-table ' +
+    (meta.faction === 'raider' ? 'raider' :
+     meta.faction === 'shadow' ? 'shadow' : 'citizen');
+  infoTable.style.position = 'relative';
+  infoTable.style.zIndex = '1';
+  const tr = document.createElement('tr');
+  const td = document.createElement('td');
+  td.innerHTML = ROLE_INFO[roleKey] || "";
+  tr.appendChild(td);
+  infoTable.appendChild(tr);
+
+  // 追加順（背景→上段→中段→テーブル）
   dealCardFace.appendChild(row);
   dealCardFace.appendChild(mid);
-
-const infoTable = document.createElement('table');
-infoTable.className = 'role-table ' + (meta.faction === 'raider' ? 'raider'
-                     : meta.faction === 'shadow' ? 'shadow' : 'citizen');
-const tr = document.createElement('tr');
-const td = document.createElement('td');
-td.innerHTML = ROLE_INFO[roleKey] || "";
-
-
-tr.appendChild(td);
-infoTable.appendChild(tr);
-
-// 「mid」の下＝名前の下に来るよう、dealCardFace直下に追加
-dealCardFace.appendChild(infoTable);
-
-
+  dealCardFace.appendChild(infoTable);
 }
-
 
 
 
