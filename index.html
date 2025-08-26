@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
@@ -828,7 +827,7 @@ margin-top: 0;
  z-index: 3;  
 }
 
-@media (max-width:600px){ /
+@media (max-width:600px){ 
 .role-mini .mini-name{
   font-size:6px; 
 }
@@ -1195,25 +1194,35 @@ dicebar{
 
 
 
-/* ==== ターン通知（ベージュ・点線枠） ==== */
-#turnPop {
-  position: fixed;
-  z-index: 2147483611;  /* header(2147483610)より前面 */
-  left: 50%;
-  top: 64px;            /* ヘッダーの少し下に */
-  transform: translateX(-50%);
-  background: #f5e6c8;  /* ベージュ */
-  color: #111;
-  border: 2px dashed #b1976b;
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-weight: 900;
-  font-size: 14px;
-  line-height: 1.2;
-  white-space: pre-line; /* "YOUR\nTURN" を2行で */
-  box-shadow: 0 6px 20px rgba(0,0,0,.15);
+/* 各部屋の上に出す点線枠のポップ（薄い灰・黒字、6文字ごと改行） */
+.room-pop{
+  position:fixed; z-index:2147483603;
+  background:rgba(238,238,238,0.8);
+  color:#111;
+  border:1px dashed #999; border-radius:10px;
+  padding:6px 8px; font-size:12px; line-height:1.3; font-weight:700;
+  white-space:pre-line;
+  pointer-events:none;
+  transform:translate(-50%, -50%);
 }
-#turnPop.hidden { display: none !important; }
+.room-pop.hidden{ display:none !important; }
+
+/* ▼ ここから追加：ターン用ポップ（ベージュ + 太め点線） */
+#turnPop{
+  position:fixed;
+  left:50%; top:72px;            /* ヘッダー下あたりに中央表示 */
+  transform:translateX(-50%);
+  z-index:2147483611;            /* ほぼ最前面（ヘッダーより上でもOKなら+） */
+  background:#f5e6c8;            /* ベージュ */
+  color:#111;
+  border:2px dashed #9b8b6e;     /* 太め点線 */
+  border-radius:12px;
+  padding:10px 14px;
+  font-weight:900;
+  font-size:14px;
+  box-shadow:0 6px 18px rgba(0,0,0,.12);
+}
+#turnPop.hidden{ display:none !important; }
 
 
 
@@ -1260,8 +1269,6 @@ dicebar{
   </section>
 </main>
 
-<div id="turnPop" class="hidden">YOUR\nTURN</div>
-<audio id="turnSound" src="goblin.mp3" preload="auto"></audio>
 
   <!-- 装備所持バー（※ 上に移動） -->
 <div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
@@ -1282,7 +1289,8 @@ dicebar{
 <!-- 自分用 ミニカード（配布後） -->
 <div id="myDealMini" class="hidden" title="カードを開く"></div>
 
-
+<div id="turnPop" class="hidden" aria-live="polite">YOUR TURN</div>
+<audio id="turnSound" src="goblin.mp3" preload="auto"></audio>
   
 
 <!-- ☆ 修正：正体カード公開ポップ（黒背景、公開するのみ） -->
@@ -1517,6 +1525,31 @@ const state = {
   function show(el, yes){ el.classList.toggle('hidden', !yes); }
 
 // カード配色ユーティリティ（表・拡大・装備で共通使用）
+
+
+
+// --- YOUR TURN ポップ＆サウンド（ローカル専用） ---
+function showYourTurnOnce(){
+  const pop = document.getElementById('turnPop');
+  if (!pop) return;
+  pop.classList.remove('hidden');
+  setTimeout(()=> pop.classList.add('hidden'), 1000);  // 1秒だけ表示
+
+  const audio = document.getElementById('turnSound');
+  // 自分のみ再生（サイレント失敗は無視）
+  try { audio && audio.play && audio.play().catch(()=>{}); } catch(e){}
+}
+
+// 現在の参加者・色クレームから「ターン順リスト（uid昇順ではなく色取得時刻順）」を作る
+function getTurnOrderList(){
+  const present = state.present || {};
+  const claims  = state.colorClaims || {};
+  return Object.values(claims)
+    .filter(v => v && v.uid && present[v.uid])
+    .sort((a,b) => (a.at || 0) - (b.at || 0));
+}
+
+
 function applyDeckTheme(el, deckId){
   if (!el) return;
   // いったんリセット
@@ -3610,15 +3643,6 @@ function renderTopIcons(claims){
   });
 }
 
-// トップ順（在室者のみ、色取得時刻 at 昇順）で uid の並びを返す
-function getTopOrderUids(){
-  const present = state.present || {};
-  const claims  = state.colorClaims || {};
-  return Object.values(claims)
-    .filter(v => v && v.uid && present[v.uid])
-    .sort((a,b) => (a.at || 0) - (b.at || 0))
-    .map(v => v.uid);
-}
 
 
 /* === 4a: 装備所持用の小アイコンを作る === */
@@ -3934,26 +3958,18 @@ const ROLE_INFO = {
   "Dデボラ": "ここあさ",
 
   // RAIDER
-  "Eエミ": "あいう",
-  "Eエリカ": "あいう",
-  "Eエマ": "あいう",
-  "Fフェリックス": "あいう",
-  "Fフェリシア": "あいう",
-  "Fフレディ": "あい<br>う",
-  "Gゴードン": "あいう",
-  "Gガラハド": "あいう",
-  "Gゴドウィン": "あいう",
+  "Eエミ":  '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;テレポート&gt;</span> 移動のダイスを振った後、出目のエリアに移動するか、その両隣のエリアに移動できる。',
+  "Eエリカ": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;癒しの光&gt;</span> 手番終了時に4面ダイスを振って、出目の数だけ他PLを回復できる。',
+  "Eエマ": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;封印の鎖&gt;</span> 手番の初めに他PLを1人選んで、ゲーム終了まで特殊能力を封印する。(1回)',
+  "Fフェリックス": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;アストラル・メイス&gt;</span> 手番の初めに他PLを1人選び6面ダイスを振ってダメージを与える。(1回)',
+  "Fフェリシア": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;スラム街の天使&gt;</span> 手番の初めに任意のPLを選びダメージを「7」にする。(1回)',
+  "Fフレディ": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;ドラゴンアタック&gt;</span> 正体を公開しているPLへの攻撃が成功した時、+2ダメージする。',
+  "Gゴードン": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;絶対無敵バリア&gt;</span> 手番の終了時に使う。あなたの次の手番の初めまであらゆるダーメージを受けない。(1回)',
+  "Gガラハド": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;魔剣の伝承者&gt;</span> エクスカリバーを所持している時に攻撃が失敗したらダイスを振り直す。',
+  "Gゴドウィン": '<span class="condition">勝利条件</span> シャドウが全員脱落する。<br><span class="condition">特殊能力&lt;蘇生装置TYPE-G&gt;</span> あなたが脱落した時、既に脱落しているPLを一人7ダメージの状態で復活させる。',
 
   // SHADOW
-  "Uウルリッヒ": "あかか",
-  "Uウラヌス": "あかか",
-  "Uアルスター": "あかか",
-  "Vヴェノム": "あかか",
-  "Vヴァンパイア": "あかか",
-  "Vヴェンデッタ": "あかか",
-  "Wワイト": "あかか",
-  "Wワルプルギス": "あかか",
-  "Wワーウルフ": "あかか",
+
 };
 
 
@@ -4938,28 +4954,6 @@ function observeEquipment(){
   state.unsub.push(off);
 }
   
-function showYourTurnPopAndSound(){
-  const pop = document.getElementById('turnPop');
-  if (!pop) return;
-  pop.textContent = 'YOUR\nTURN';
-  pop.classList.remove('hidden');
-
-  // 1秒後に消す
-  setTimeout(()=> pop.classList.add('hidden'), 1000);
-
-  // サウンド（自分だけ再生）
-  const audio = document.getElementById('turnSound');
-  if (audio){
-    try{
-      audio.currentTime = 0;
-      const p = audio.play();
-      if (p && typeof p.catch === 'function') p.catch(()=>{});
-    }catch(e){}
-  }
-}
-
-
-
   // ===== ホスト管理 & 削除ポップ =====
 async function becomeHostIfVacant(){
   const hostRef = ref(db, `rooms/${state.code}/host`);
@@ -5131,11 +5125,31 @@ const offTopIdx = onValue(topIdxRef, async (snap)=>{
     if (state.isHost) await set(topIdxRef, 0);        // 初期値 0
     n = 0;
   }
+
+  const prev = typeof state.topActiveIndex === 'number' ? state.topActiveIndex : null;
+
+
   state.topActiveIndex = n;
   // 最新の色クレームが既にあれば再描画
   if (state && state.colorClaims) renderTopIcons(state.colorClaims);
+  // ★ 追加：アクティブが「自分のインデックス」になった“瞬間”だけローカル動作
+  // 1) 今のターン順の並び（在籍者かつ色取得時刻順）
+  const order = getTurnOrderList();       // [{uid,name,at}, ...]
+  const myIdx = order.findIndex(v => v && v.uid === state.uid);
+
+  // 2) 直前と異なり、かつ自分の順番になったら 1秒ポップ＋音
+  if (myIdx >= 0 && prev !== null && n === myIdx && prev !== n){
+    showYourTurnOnce();
+  }
+
 });
+
+
+
+
 state.unsub.push(offTopIdx);
+
+
 
 
     // 自分の配布カード購読
