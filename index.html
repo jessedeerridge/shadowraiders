@@ -318,7 +318,13 @@ padding-top: 12px;
 }
 
 
-
+.condition {
+  background:#000;
+  color:#fff;
+  padding:2px 4px;
+  border-radius:4px;
+  font-weight:bold;
+}
 
 
 
@@ -3612,15 +3618,14 @@ const FACTION_CLASS = { citizen:'citizen', raider:'raider', shadow:'shadow' };
 
 
 const ROLE_INFO = {
-  "Aアリス": "ここあさ",
-  "Aアンジェラ": "ここあさ",
-  "Aアガサ": "ここあさ",
-  "Bバイロン": "ここあさ",
-  "Bベンジャミン": "ここあさ",
-  "Bブルース": "ここあさ",
-  "Cクレイグ": "ここあさ",
-  "Cキャロル": "ここあさ",
-  "Cクレア": "ここあさ",
+  "Aアンジェラ": '<span class="condition">勝利条件</span> 右隣りのプレイヤーが勝利する。<br><span class="condition">特殊能力&lt;移り気&gt;</span> 「勝利条件を左となりのプレイヤーが勝利する」に変更する。（1回のみ）',
+  "Aアガサ": '<span class="condition">勝利条件</span> あなたの手番でゲームが終了する。<br><span class="condition">特殊能力&lt;完全犯罪&gt;</span> 手番の最後に使用する。ダイスを2個振り、出目のエリアにいるPL全員に 3 ダメージ与える。（1回のみ）',
+  "Bバイロン": '<span class="condition">勝利条件</span> 装備カードを5枚以上所持する。<br><span class="condition">特殊能力&lt;念力の懐中時計&gt;</span> 2以上の攻撃ダメージを与えた場合、代わりに装備を1つ奪うことができる。',
+  "Bベンジャミン": '<span class="condition">勝利条件</span> あなた以外のPLが装備を5つ以上所持している。<br><span class="condition">特殊能力&lt;太鼓持ち&gt;</span> 手番の最後に使用する。同じエリアのPLに装備を1つ渡すことができる。',
+  "Bブルース": '<span class="condition">勝利条件</span> 「攻撃」してHP12以上のPLを脱落させる。またはゲーム終了時にエリア9にいる。<br><span class="condition">特殊能力&lt;国士無双&gt;</span> 「攻撃」してHP11以上のPLを脱落させた時、正体を公開しなければならない。',
+  "Cクレイグ": '<span class="condition">勝利条件</span> 2人脱落している状態で、他PLを「攻撃」して脱落させる。<br><span class="condition">特殊能力&lt;死の饗宴&gt;</span> 攻撃後、自分に2ダメージ与えた後、もう一度同じPLを攻撃できる。',
+  "Cキャロル": '<span class="condition">勝利条件</span> 最初に脱落する。またはあなたともう1人だけが脱落していない。<br><span class="condition">特殊能力&lt;聖痕&gt;</span> 手番の初めに2ダメージ回復する。',
+  "Cクレア": '<span class="condition">勝利条件</span> ゲーム終了時にあなたのダメージが「6～8」のいずれかである。<br><span class="condition">特殊能力&lt;キャスリング&gt;</span> 手番の初めに使用する。あなたと他PLのHPを入れ替える。',
   "Dダニエル": "ここあさ",
   "Dデーヴィッド": "ここあさ",
   "Dデボラ": "ここあさ",
@@ -3856,7 +3861,7 @@ show(dealViewer, true);
 dealCardFace.onclick = ()=>{
     const ctx = state.expandedContext || null;
   if (!ctx || ctx.source !== 'mydeal') return;
-  const val = (dealCardFace.textContent || '').trim();
+  const val = ctx.cardName || (dealCardFace.textContent || '').trim();
   if (DECKS_DEF.green.cards.includes(val)){
     // ★ 緑カード用：参加者選択ポップを開く
     showParticipantSelectPopup(val);
@@ -3901,7 +3906,7 @@ dealCardFace.onclick = ()=>{
 const btnReveal = document.getElementById('btnReveal');
 if (btnReveal){
   btnReveal.onclick = async ()=>{
-    const val = (dealCardFace.textContent || '').trim();
+    const val = state.expandedContext?.cardName || (dealCardFace.textContent || '').trim();
     if (!val) return;
 
     // 1) 全員に1秒だけ拡大画像を共有
@@ -4266,7 +4271,13 @@ function observeGreenResult(){
       const otherCard = otherSnap.val() || '';
 
       // 表示内容
-      dealCardFace.textContent = String(otherCard);
+// 表示内容（正体カードなら拡大レイアウト、その他は既定表示）
+if (isRoleCard(otherCard)) {
+  showRoleExpanded(otherCard);
+} else {
+  dealCardFace.className = 'deal-card';
+  dealCardFace.textContent = String(otherCard);
+}
 
       // ★ 正体カードの色分け（拡大ビュー用）
       if (ROLE_CARDS.shadow.includes(otherCard)) {
