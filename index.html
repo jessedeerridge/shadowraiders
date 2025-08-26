@@ -1194,6 +1194,25 @@ dicebar{
 
 
 
+/* ==== ターン通知（ベージュ・点線枠） ==== */
+#turnPop {
+  position: fixed;
+  z-index: 2147483611;  /* header(2147483610)より前面 */
+  left: 50%;
+  top: 64px;            /* ヘッダーの少し下に */
+  transform: translateX(-50%);
+  background: #f5e6c8;  /* ベージュ */
+  color: #111;
+  border: 2px dashed #b1976b;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 900;
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: pre-line; /* "YOUR\nTURN" を2行で */
+  box-shadow: 0 6px 20px rgba(0,0,0,.15);
+}
+#turnPop.hidden { display: none !important; }
 
 
 
@@ -1240,6 +1259,8 @@ dicebar{
   </section>
 </main>
 
+<div id="turnPop" class="hidden">YOUR\nTURN</div>
+<audio id="turnSound" src="goblin.mp3" preload="auto"></audio>
 
   <!-- 装備所持バー（※ 上に移動） -->
 <div id="equipBar" class="equipbar hidden" aria-label="装備所持者一覧"></div>
@@ -3588,6 +3609,15 @@ function renderTopIcons(claims){
   });
 }
 
+// トップ順（在室者のみ、色取得時刻 at 昇順）で uid の並びを返す
+function getTopOrderUids(){
+  const present = state.present || {};
+  const claims  = state.colorClaims || {};
+  return Object.values(claims)
+    .filter(v => v && v.uid && present[v.uid])
+    .sort((a,b) => (a.at || 0) - (b.at || 0))
+    .map(v => v.uid);
+}
 
 
 /* === 4a: 装備所持用の小アイコンを作る === */
@@ -4907,6 +4937,28 @@ function observeEquipment(){
   state.unsub.push(off);
 }
   
+function showYourTurnPopAndSound(){
+  const pop = document.getElementById('turnPop');
+  if (!pop) return;
+  pop.textContent = 'YOUR\nTURN';
+  pop.classList.remove('hidden');
+
+  // 1秒後に消す
+  setTimeout(()=> pop.classList.add('hidden'), 1000);
+
+  // サウンド（自分だけ再生）
+  const audio = document.getElementById('turnSound');
+  if (audio){
+    try{
+      audio.currentTime = 0;
+      const p = audio.play();
+      if (p && typeof p.catch === 'function') p.catch(()=>{});
+    }catch(e){}
+  }
+}
+
+
+
   // ===== ホスト管理 & 削除ポップ =====
 async function becomeHostIfVacant(){
   const hostRef = ref(db, `rooms/${state.code}/host`);
