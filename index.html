@@ -1551,6 +1551,36 @@ function playSfx(id){
     a && a.play && a.play().catch(()=>{});
   }catch(e){}
 }
+
+
+// ===== [SFX-UTIL] 全員同期再生ユーティリティ =====
+let lastSfxNonce = null;
+
+/** at(UTC ms) に id の <audio> を再生（微ズレは setTimeout で吸収） */
+function scheduleSfxAt(id, at, nonce){
+  if (!id || !at) return;
+
+  // 同じイベントの二重再生防止
+  if (nonce && lastSfxNonce === nonce) return;
+  lastSfxNonce = nonce || null;
+
+  const a = document.getElementById(id);
+  if (!a) return;
+
+  try { a.pause && a.pause(); a.currentTime = 0; } catch(e){}
+  const delay = Math.max(0, at - Date.now());
+  setTimeout(()=>{ a.play && a.play().catch(()=>{}); }, delay);
+}
+
+/** 役職カード名 → 再生ID */
+function roleCardToSfxId(cardName){
+  if (!cardName) return null;
+  if (ROLE_CARDS?.raider?.includes(cardName))  return 'sfxRaider';
+  if (ROLE_CARDS?.shadow?.includes(cardName))  return 'sfxShadow';
+  if (ROLE_CARDS?.citizen?.includes(cardName)) return 'sfxCitizen';
+  return null;
+}
+
 // カード配色ユーティリティ（表・拡大・装備で共通使用）
 
 // ★ 追加：緑カード用タイマー音
@@ -4363,7 +4393,17 @@ dealCardFace.onclick = ()=>{
 }
 
 
-
+function attachSfxListener(){
+  if (!state.code) return;
+  const sfxRef = ref(db, `rooms/${state.code}/sfx/current`);
+  const off = onValue(sfxRef, snap=>{
+    const v = snap.val();
+    if (!v) return;
+    const { id, at, nonce } = v;  // { id:'sfxRaider'|'sfxShadow'|'sfxCitizen', at:ms, nonce:string }
+    scheduleSfxAt(id, at, nonce);
+  });
+  state.unsub.push(off); // 既存の解除配列に追加
+}
   
 
 // ☆ 追加：公開ボタンの挙動（1秒間の公開→装備欄の左へ固定）
@@ -4377,6 +4417,22 @@ if (btnReveal){
     await set(ref(db, `rooms/${state.code}/reveal/${state.uid}`), { card: val, at: Date.now() });
     setTimeout(()=> remove(ref(db, `rooms/${state.code}/reveal/${state.uid}`)), 1000);
 
+ try{
+    const id = roleCardToSfxId(val);   // raider / shadow / citizen を判定
+    if (id){
+      const payload = {
+        id,
+        at: Date.now() + 250,          // 250ms 先に再生予約
+        nonce: crypto.randomUUID()
+      };
+      await set(ref(db, `rooms/${state.code}/sfx/current`), payload);
+      setTimeout(()=> remove(ref(db, `rooms/${state.code}/sfx/current`)).catch(()=>{}), 5000);
+    }
+  }catch(e){
+    console.error('sfx write failed', e);
+  }
+
+
     // 2) 装備所持データに追加（左端に来るよう render 側も修正する）
     const updates = {};
     // 既存のカードを壊さずマージしたいので、軽く read→write でもOKだが
@@ -4385,13 +4441,7 @@ if (btnReveal){
     updates[`rooms/${state.code}/equipment_at`] = Date.now();
     await update(ref(db), updates);
 
-  if (ROLE_CARDS.raider.includes(val)) {
-    playSfx('sfxRaider');
-  } else if (ROLE_CARDS.shadow.includes(val)) {
-    playSfx('sfxShadow');
-  } else if (ROLE_CARDS.citizen.includes(val)) {
-    playSfx('sfxCitizen');
-  }
+
 
     // 閉じる
     const pop = document.getElementById('revealPopover');
@@ -5311,6 +5361,7 @@ state.unsub.push(offTopIdx);
 
     // ☆ 追加：公開の購読（全員に1秒共有を反映）
     observeReveals();
+attachSfxListener();
 　　observeGreenHistory();
     // ★ 追加：緑カードの個別共有（自分宛）を受信
     observeGreenShare();
