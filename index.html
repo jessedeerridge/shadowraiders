@@ -1306,6 +1306,9 @@ dicebar{
 <audio id="sfxDice" src="dice.mp3" preload="auto"></audio>
 <audio id="sfxIcon" src="icontap.mp3" preload="auto"></audio>
 <audio id="sfxTimer" src="timer.mp3" preload="auto" loop></audio>
+<audio id="sfxRaider" src="raider.mp3" preload="auto"></audio>
+<audio id="sfxShadow" src="shadow.mp3" preload="auto"></audio>
+<audio id="sfxCitizen" src="citizen.mp3" preload="auto"></audio>
 
 <!-- ☆ 修正：正体カード公開ポップ（黒背景、公開するのみ） -->
 <div id="revealPopover" class="hidden"
@@ -4381,6 +4384,14 @@ if (btnReveal){
     updates[`rooms/${state.code}/equipment/${state.uid}/${val}`] = true;
     updates[`rooms/${state.code}/equipment_at`] = Date.now();
     await update(ref(db), updates);
+
+  if (ROLE_CARDS.raider.includes(val)) {
+    playSfx('sfxRaider');
+  } else if (ROLE_CARDS.shadow.includes(val)) {
+    playSfx('sfxShadow');
+  } else if (ROLE_CARDS.citizen.includes(val)) {
+    playSfx('sfxCitizen');
+  }
 
     // 閉じる
     const pop = document.getElementById('revealPopover');
