@@ -1762,6 +1762,7 @@ const TABLE = [
 
 // === 装備カードの拡大ビューを、白/黒の“表”と同じUIで描画する ===
 function showEquipExpanded(cardName){
+
   // 右下の拡大用フェイスを初期化
   dealCardFace.className = 'deal-card';
   dealCardFace.innerHTML = '';
@@ -2626,19 +2627,26 @@ function setupDecks(){
         const v = snap.val() || {};
         const idx   = (v.idx ?? -1);
         const order = Array.isArray(v.order) ? v.order : null;
-        if (idx >= 0){
-          const actual = order
-            ? order[idx % order.length]
-            : (idx % DECKS_DEF[deckId].cards.length);
-          const card = DECKS_DEF[deckId].cards[actual];
+if (idx >= 0){
+  const actual = order ? order[idx % order.length] : (idx % DECKS_DEF[deckId].cards.length);
+  const card = DECKS_DEF[deckId].cards[actual];
+
+  // ★ 追加
+  state.expandedContext = { source: 'deck', deckId, cardName: card };
+  dealCardFace.onclick = null;
+  {
+    const rp = document.getElementById('revealPopover');
+    if (rp) rp.classList.add('hidden');
+  }
+
+  dealCardFace.textContent = card;
+  applyDeckTheme(dealCardFace, 'green');
+  show(dealViewer, true);
+}
 
 
 
 
-          dealCardFace.textContent = card;
-          applyDeckTheme(dealCardFace, 'green');
-          show(dealViewer, true);
-        }
       }else{
 
         // 白・黒の表は faceEl のテキストを拡大
@@ -2655,6 +2663,15 @@ if (faceEl.textContent){
    (faceEl.dataset.cardName && faceEl.dataset.cardName.trim()) ||
    (faceEl.querySelector('.mini-title')?.textContent?.trim()) ||
    faceEl.textContent.trim();dealCardFace.classList.add('white-layout');
+
+
+// ★ 追加：正体の公開ポップを引き継がないように状態/ハンドラ/ポップをリセット
+state.expandedContext = { source: 'deck', deckId, cardName };
+dealCardFace.onclick = null;
+{
+  const rp = document.getElementById('revealPopover');
+  if (rp) rp.classList.add('hidden');
+}
 
   // デフォルトはカード名だけ
   dealCardFace.textContent = '';
@@ -2828,13 +2845,21 @@ if (type === 'back'){
   back.textContent = '';
   back.title = `${def.label}デッキをめくる`;
 back.addEventListener('click', (ev)=>{
+  // ★ 追加：正体の公開ポップは常に閉じる＋正体用ハンドラも解除
+  {
+    const rp = document.getElementById('revealPopover');
+    if (rp) rp.classList.add('hidden');
+    dealCardFace.onclick = null;
+    state.expandedContext = { source: 'deck', deckId };
+  }
+
   // ブランクなら「山札を作る（シャッフル）」ポップ
   if (back.classList.contains('blank')) {
     showShufflePopover(back, deckId, ev);
     return;
   }
   // 通常時は既存の山札めくり
- playSfx('sfxDeck');   
+  playSfx('sfxDeck');
   advanceDeckGuarded(deckId, state.uid);
 });
   // ★ 追加：残り枚数表示用
