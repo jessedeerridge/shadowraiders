@@ -3993,7 +3993,7 @@ const FACTION_CLASS = { citizen:'citizen', raider:'raider', shadow:'shadow' };
 
 
 const ROLE_INFO = {
-  "Aアリス": '<span class="condition">勝利条件</span> 生存している。<br><span class="condition">&lt;うさぎさんヒール</span> 手番の初めに使用する。ダメージを全回復する（1回のみ）',
+  "Aアリス": '<span class="condition">勝利条件</span> 生存している。<br><span class="condition">うさぎさんヒール</span> 手番の初めに使用する。ダメージを全回復する（1回のみ）',
   "Aアンジェラ": '<span class="condition">勝利条件</span> 右隣りのプレイヤーが勝利する。<br><span class="condition">移り気</span> 「勝利条件を左となりのプレイヤーが勝利する」に変更する。（1回のみ）',
   "Aアガサ": '<span class="condition">勝利条件</span> あなたの手番でゲームが終了する。<br><span class="condition">完全犯罪</span> 手番の最後に使用する。ダイスを2個振り、出目のエリアにいるPL全員に 3 ダメージ与える。（1回のみ）',
   "Bバイロン": '<span class="condition">勝利条件</span> 装備カードを5枚以上所持する。<br><span class="condition">念力の懐中時計</span> 2以上の攻撃ダメージを与えた場合、代わりに装備を1つ奪うことができる。',
@@ -4832,7 +4832,7 @@ if (isRevealOrder){
 
     // ▼ 従来表示
     const qSpan = document.createElement('span');
-    qSpan.textContent = r.card;
+qSpan.textContent = String(r.card).replace(/<br\s*\/?>/gi, '');
 
     const arrow = document.createTextNode(' → ');
 
