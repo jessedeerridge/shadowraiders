@@ -4904,23 +4904,40 @@ const color = r.toColor || p.color || '';
 const isRevealOrder = (r.card && r.card.trim() === '正体カードを見せよ');
 if (isRevealOrder){
   // ▼ 特例表示：アイコン ＋ 回答者の正体カード（色付き）
-  row.appendChild(iconWrap);
+// ▼ 特例表示：アイコン ＋ 回答者の正体カード（正体mini → クリックで拡大）
+row.appendChild(iconWrap);
 
-  const mini = document.createElement('div');      // equip-card を流用
-  mini.className = 'equip-card';
-  const cardName = String(roleMap[to] || '？');    // 回答者(to)の実カード
+const cardName = String(roleMap[to] || '？');       // 回答者(to)の実カード
+const mini = document.createElement('div');
+mini.className = 'equip-card role-mini';
+
+if (isRoleCard(cardName)) {
+  // 名称から正体miniを組み立て（背景 <カード名>.jpg、枠色、イニシャル、HP、効果テーブル等）
+  buildRoleMiniCard(mini, cardName);                // ← ここがポイント
+  mini.title = cardName;
+  mini.style.cursor = 'pointer';
+
+  // クリックで「正体拡大」を参照
+  mini.addEventListener('click', ()=>{
+    // 履歴由来であることを記録（必要に応じて利用）
+    state.expandedContext = { source:'history', ownerUid: to, cardName };
+
+    // 公開UI等は閉じておく
+    dealCardFace.onclick = null;
+    const rp = document.getElementById('revealPopover');
+    if (rp) rp.classList.add('hidden');
+
+    showRoleExpanded(cardName);                     // 正体拡大レイアウト
+    state.pinDealViewer = false;
+    show(dealViewer, true);
+  });
+} else {
+  // 念のためフォールバック（正体でない/不明なら従来のテキスト表示）
   mini.textContent = cardName;
+}
 
-  // 役職ごとの色分け
-  if (ROLE_CARDS.shadow.includes(cardName)) {
-    mini.style.background = '#3d3b80'; mini.style.color = '#fff';  // シャドウ＝青
-  } else if (ROLE_CARDS.raider.includes(cardName)) {
-    mini.style.background = '#9e0d0d'; mini.style.color = '#fff';  // レイダー＝赤
-  } else if (ROLE_CARDS.citizen.includes(cardName)) {
-    mini.style.background = '#e3ed1c'; mini.style.color = '#111';  // シチズン＝黄
-  } else {
-    mini.style.background = '#fff'; mini.style.color = '#111';     // 不明時
-  }
+
+
 
   row.appendChild(mini);
 }else{
