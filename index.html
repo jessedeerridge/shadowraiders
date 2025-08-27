@@ -2578,6 +2578,13 @@ function setupDecks(){
   function attachFaceClick(faceEl, deckId){
     faceEl.addEventListener('click', async ()=>{
       if (deckId === 'green'){
+  dealCardFace.removeAttribute('style');         // 追加
+  dealCardFace.className = 'deal-card';          // 追加
+  dealCardFace.textContent = '';                 // 追加
+
+
+
+
         const deckRef = ref(db, `rooms/${state.code}/decks/${deckId}`);
         const snap = await get(deckRef);
         const v = snap.val() || {};
@@ -2588,6 +2595,10 @@ function setupDecks(){
             ? order[idx % order.length]
             : (idx % DECKS_DEF[deckId].cards.length);
           const card = DECKS_DEF[deckId].cards[actual];
+
+
+
+
           dealCardFace.textContent = card;
           applyDeckTheme(dealCardFace, 'green');
           show(dealViewer, true);
@@ -3052,6 +3063,9 @@ async function advanceDeckGuarded(deckId, flipperUid){
       state.pinDealViewer = true;
 
       // ▼▼▼ ここから追加：緑カードは下部に薄緑テーブルで内容を表示 ▼▼▼
+  dealCardFace.removeAttribute('style');     // 背景/文字色などのインラインを除去
+  dealCardFace.className = 'deal-card';      // 付いている white-layout / black-layout も含めてリセット
+  dealCardFace.textContent = '';  
       dealCardFace.classList.add('green-layout');  // CSSの専用レイアウトをON
       dealCardFace.innerHTML = '';                 // いったん空に
 
