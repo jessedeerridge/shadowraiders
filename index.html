@@ -1697,7 +1697,7 @@ const TABLE = [
   { key:'拳銃R',           text:'攻撃ダメージが 1 増加する。' },
   { key:'拳銃L',           text:'攻撃ダメージが 1 増加する。' },
   { key:'クロスボウガン',  text:'攻撃ダメージが 1 増加する。' },
-  { key:'妖刀マサムネ',    text:'攻撃の時、4面ダイスだけ使う。必ず攻撃レンジの1人を選んで攻撃しなければならない。' },
+  { key:'妖刀マサムネ',    text:'攻撃レンジにPLがいれば必ず攻撃を行う。4面ダイスだけを使う。' },
   { key:'ガトリング',      text:'攻撃レンジのPL全員に攻撃する。' },
   { key:'死神スコープ',    text:'攻撃レンジが 1 増加する。' },
   { key:'死神スコープ　',  text:'攻撃レンジが 1 増加する。' }, // 全角スペース対策
@@ -2515,17 +2515,17 @@ img.setAttribute('height', String(newH));
       'あなたは  A / B / C / E / U ?（HP11以下）<br>だったら1ダメージ受けよ。',
       'あなたは レイダー か シャドウ？<br>だったら装備を渡すか、1ダメージ受けよ。',
       'あなたは レイダー か シャドウ？<br>だったら装備を渡すか、1ダメージ受けよ。',
-      'あなたは レイダー？<br>だったら1ダメージ回復せよ。<br>ダメージが0なら、1ダメージ受けよ。',
+      'あなたは レイダー？<br>だったら1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ。',
       'あなたは レイダー？<br>だったら1ダメージ受けよ。',
       'あなたは レイダー？<br>だったら1ダメージ受けよ。',
       'あなたは レイダー？<br>だったら❿に移動せよ。<br>既に➓にいる場合、1ダメージ受けよ。',
       'あなたは シャドウ？<br>だったら2ダメージ受けよ。',
       'あなたは シャドウ？<br>だったら❿に移動せよ。<br>既に➓にいる場合、1ダメージ受けよ。',
-      'あなたは シャドウ？<br>だったら1ダメージ回復せよ。<br>ダメージが0なら、1ダメージ受けよ。',
+      'あなたは シャドウ？<br>だったら1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ。',
       'あなたは シャドウ？<br>だったら1ダメージ受けよ。',
       'あなたは シチズン か シャドウ？<br>だったら装備を渡すか、1ダメージ受けよ。',
       'あなたは シチズン？<br>だったら❿に移動せよ。<br>既に➓にいる場合、1ダメージ受けよ。',
-      'あなたは シチズン？<br>だったら1ダメージ回復せよ。<br>ダメージが0なら、1ダメージ受けよ。',
+      'あなたは シチズン？<br>だったら1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ。',
       'あなたは シャドウ？<br>だったら1ダメージ受けよ。',
       'あなたは シチズン か レイダー？<br>だったら装備を渡すか、1ダメージ受けよ。',
       'あなたは シチズン か レイダー？<br>だったら装備を渡すか、1ダメージ受けよ。'
@@ -2726,7 +2726,7 @@ if (cardName.includes('サーベル')){
 }else if (cardName.includes('クロスボウガン')){
   td.textContent = '攻撃ダメージが 1 増加する。';
 }else if (cardName.includes('妖刀マサムネ')){
-  td.textContent = '攻撃の時、4面ダイスだけ使う。必ず攻撃レンジの1人を選んで攻撃しなければならない。';
+  td.textContent = '攻撃レンジにPLがいれば必ず攻撃を行う。4面ダイスだけを使う。';
 }else if (cardName.includes('ガトリング')){
   td.textContent = '攻撃レンジのPL全員に攻撃する。';
 }else if (cardName.includes('死神スコープ')){
@@ -4628,15 +4628,30 @@ async function finish(answer){
     from: state.uid, answer, card: cardText, at: Date.now()
   });
 
-  const h2Ref = ref(db, `rooms/${state.code}/greenHistory`);
-  await set(ref(db, `rooms/${state.code}/greenHistory/${push(h2Ref).key}`), {
-    type: 'answered',
-    from: fromUid,
-    to: state.uid,
-    card: cardText,
-    answer,
-    at: Date.now()
-  });
+const h2Ref = ref(db, `rooms/${state.code}/greenHistory`);
+
+// 受信者（= 自分）の現在の表示名と色を取得（state からでも OK）
+const myPartSnap = await get(ref(db, `rooms/${state.code}/participants/${state.uid}`));
+const myPart = myPartSnap.val() || {};
+
+await set(ref(db, `rooms/${state.code}/greenHistory/${push(h2Ref).key}`), {
+  type: 'answered',
+  from: fromUid,
+  // “誰に”の uid は従来通り保持
+  to: state.uid,
+
+  // ▼ デノーマライズ（表示用スナップショット）
+  toName: myPart.name || state.name || '?',
+  toColor: myPart.color || '',
+
+  // （任意）送信者名も欲しければ追加：
+  // fromName: (await get(ref(db, `rooms/${state.code}/participants/${fromUid}/name`))).val() || '',
+
+  card: cardText,
+  answer,
+  at: Date.now()
+});
+
 
   // ★ 追加：誰かが回答したら全員終了（全員の表示を消すトリガ）
   await update(ref(db), {
@@ -4807,9 +4822,10 @@ const roleMap = roleMapSnap.val() || {};
 box.innerHTML = '';
 mine.forEach(r=>{
   const to = r.to || '';
-  const p  = ps[to] || {};
-  const name  = p.name  || '?';
-  const color = p.color || '';
+const p  = ps[to] || {};
+// まず履歴に入っているスナップショットを優先し、無ければ従来どおり participants を参照
+const name  = r.toName  || p.name  || '?';
+const color = r.toColor || p.color || '';
 
   const row = document.createElement('div');
   row.className = 'row';
