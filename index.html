@@ -2928,7 +2928,8 @@ const greenDoneRef = ref(db, `rooms/${state.code}/greenActive`);
 onValue(greenDoneRef, (snap)=>{
   const v = snap.val();
   if (v && v.active === false){
- dealCardFace.classList.remove('green-layout'); 
+dealCardFace.removeAttribute('style');
+dealCardFace.className = 'deal-card';
     show(dealViewer, false);  // 強制的に非表示
   stopTimerSfx(); 
   }
@@ -4689,7 +4690,9 @@ function observeGreenShare(){
       state.pinDealViewer = true;
 
       // ▼▼▼ ここから変更：送信側と同じ構成（タイトル＋下部テーブル）に統一 ▼▼▼
-      dealCardFace.classList.add('green-layout');   // レイアウトON
+dealCardFace.removeAttribute('style');
+dealCardFace.className = 'deal-card';    
+  dealCardFace.classList.add('green-layout');   // レイアウトON
       dealCardFace.innerHTML = '';                  // いったん空に
 
       // ① 最上部タイトル（テーブルの外）
