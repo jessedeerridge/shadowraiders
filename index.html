@@ -613,7 +613,7 @@ display: block;
   padding:5px 12px; font-weight:900; font-size:20px; line-height:1;
   white-space:nowrap; max-width:120px; overflow:hidden; text-overflow:ellipsis;
   margin-top:10px;   /* ← 円より下げる量（お好みで 8px～16px） */
-  margin-left:-12px;  /* ← 左に寄せたいならマイナス値で円に近づける */
+  margin-left:-29.2px;  /* ← 左に寄せたいならマイナス値で円に近づける */
 }
 /* 中段：カタカナ名（黒バー金字）と右のHP丸（こげ茶＋金字太字） */
 .role-center{display:flex; align-items:center; justify-content:center; gap:10px
@@ -720,7 +720,7 @@ height: 70px;
     line-height: 1;
     margin-top: 6px;     /* 円より少し下げる量を控えめに */
     max-width: 100px;    /* 端末幅でつぶれない程度に */
-   margin-left: -11px;      /* ← 円に“食い込むように”左寄せ */
+   margin-left: -22.6px;      /* ← 円に“食い込むように”左寄せ */
     position: relative;
  z-index: 1;   }
 
@@ -806,7 +806,7 @@ margin-top: 0;
   font-size:6px; font-weight:900; line-height:1.1;
   padding:1px 2px; text-align:center;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  margin-left: -5px; 
+  margin-left: -9.6px; 
   z-index: 0;  
 }
 
@@ -837,6 +837,11 @@ margin-top: 0;
 @media (max-width:600px){ 
 .role-mini .mini-name{
   font-size:6px; 
+  border-top-left-radius: 0 
+  border-bottom-left-radius: 0 
+  border-top-right-radius: 4px 
+  border-bottom-right-radius: 4px 
+
 }
 }
 
@@ -881,8 +886,9 @@ z-index: 1;
   h1{font-size:14px; margin-right:4px;}   /* タイトル小さめ */
   header{gap:4px; padding:8px;}          /* スペース縮小 */
   .small{font-size:8px; gap:4px;}       /* 補助テキストをさらに小さく */
-  #myRoomBadge{white-space:nowrap;}      /* 強制的に改行しない */
-  #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
+  #myRoomBadge{white-space:nowrap;}  
+
+ #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
   #dealViewer .deal-card{ width:180px; height:260px; font-size:15px; }
   #dealViewer .deal-card .green-table td { font-size: 11px;   /* モバイル時は小さめ */}
 
@@ -933,7 +939,7 @@ font-size:12px;
 
   /* 効果欄 */
   .deck-face[data-deck="white"] .mini-effect {
-    font-size: 7px;      /* ← 文字をさらに小さく */
+    font-size: 6px;      /* ← 文字をさらに小さく */
     -webkit-line-clamp: 5; /* ← 行数制限を短く */
     padding: 1px 2px;
   }
@@ -1074,7 +1080,7 @@ dicebar{
 }
 .equip-card .equip-table td{
   padding: 2px 3px;
-  font-size: 7px;     /* ← 指定どおり 8px */
+  font-size: 6px;     /* ← 指定どおり 8px */
   line-height: 1.25;
   color: #000;
   text-align: left;
@@ -1235,7 +1241,9 @@ dicebar{
 #turnPop.hidden{ display:none !important; }
 
 
-#art { transform: translateY(-30px); }
+#art { transform: translateY(-1px); }
+
+
 
 
 
@@ -1245,7 +1253,7 @@ dicebar{
 <header>
   <h1>シャドウ・レイダーズ</h1>
   <div class="small" id="headerInfo"></div>
-  <div class="small" id="myRoomBadge">部屋：未選択</div>
+<div class="small hidden" id="myRoomBadge">部屋：未選択</div>
 </header>
 
 <main>
@@ -1733,7 +1741,7 @@ const TABLE = [
   { key:'拳銃R',           text:'攻撃ダメージが 1 増加する。' },
   { key:'拳銃L',           text:'攻撃ダメージが 1 増加する。' },
   { key:'クロスボウガン',  text:'攻撃ダメージが 1 増加する。' },
-  { key:'妖刀マサムネ',    text:'攻撃レンジにPLがいれば必ず攻撃を行う。4面ダイスだけを使う。' },
+  { key:'妖刀マサムネ',    text:'攻撃レンジのPLに必ず攻撃を行う。4面ダイスだけを使う。' },
   { key:'ガトリング',      text:'攻撃レンジのPL全員に攻撃する。' },
   { key:'死神スコープ',    text:'攻撃レンジが 1 増加する。' },
   { key:'死神スコープ　',  text:'攻撃レンジが 1 増加する。' }, // 全角スペース対策
@@ -2066,7 +2074,7 @@ const rectScale = 0.3;  // 幅を小さめに
     // 左の長方形
     const starBox = g.getBBox();
 const rectH = starBox.height + 85
-  const rectW = rectH * rectScale;
+  const rectW = 160
     const rectX = starBox.x - gap - rectW;
     const rectY = starBox.y;
 
@@ -2779,7 +2787,7 @@ if (cardName.includes('サーベル')){
 }else if (cardName.includes('クロスボウガン')){
   td.textContent = '攻撃ダメージが 1 増加する。';
 }else if (cardName.includes('妖刀マサムネ')){
-  td.textContent = '攻撃レンジにPLがいれば必ず攻撃を行う。4面ダイスだけを使う。';
+  td.textContent = '攻撃レンジのPLに必ず攻撃を行う。4面ダイスだけを使う。';
 }else if (cardName.includes('ガトリング')){
   td.textContent = '攻撃レンジのPL全員に攻撃する。';
 }else if (cardName.includes('死神スコープ')){
@@ -3586,7 +3594,7 @@ g.addEventListener('click', async (e)=>{
   }
 const curX = parseFloat(g.getAttribute('data-x') || data.x || 0);
 const curY = parseFloat(g.getAttribute('data-y') || data.y || 0);
-const step = 24;
+const step = 22;
 const pos  = clampToRect(curX, curY - step);
 
 // ① DOMを即時に反映（ここが追加）
@@ -4028,40 +4036,40 @@ function isRoleCard(cardName){
 // キーは既存の役職カード名（例：'Aアリス'）
 const ROLE_META = {
   // CITIZEN
-  'Aアリス':      { init:'A', rest:'LICE',      kana:'アリス',      faction:'citizen', hp:8  },
-  'Aアンジェラ':  { init:'A', rest:'NGELA',     kana:'アンジェラ',  faction:'citizen', hp:8  },
-  'Aアガサ':      { init:'A', rest:'GATHA',     kana:'アガサ',      faction:'citizen', hp:8  },
-  'Bバイロン':    { init:'B', rest:'YLON',      kana:'バイロン',    faction:'citizen', hp:10 },
-  'Bベンジャミン':{ init:'B', rest:'ENJAMIN',   kana:'ベンジャミン',faction:'citizen', hp:10 },
-  'Bブルース':    { init:'B', rest:'RUCE',      kana:'ブルース',    faction:'citizen', hp:10 },
-  'Cクレイグ':    { init:'C', rest:'RAIG',      kana:'クレイグ',    faction:'citizen', hp:11 },
-  'Cキャロル':    { init:'C', rest:'AROL',      kana:'キャロル',    faction:'citizen', hp:11 },
-  'Cクレア':      { init:'C', rest:'LAIRE',     kana:'クレア',      faction:'citizen', hp:11 },
-  'Dダニエル':    { init:'D', rest:'ANIEL',     kana:'ダニエル',    faction:'citizen', hp:13 },
-  'Dデーヴィッド':{ init:'D', rest:'AVID',      kana:'デーヴィッド',faction:'citizen', hp:13 },
-  'Dデボラ':      { init:'D', rest:'EBORAH',    kana:'デボラ',      faction:'citizen', hp:13 },
+  'Aアリス':      { init:'A', rest:'--LICE',      kana:'アリス',      faction:'citizen', hp:8  },
+  'Aアンジェラ':  { init:'A', rest:'--NGELA',     kana:'アンジェラ',  faction:'citizen', hp:8  },
+  'Aアガサ':      { init:'A', rest:'--GATHA',     kana:'アガサ',      faction:'citizen', hp:8  },
+  'Bバイロン':    { init:'B', rest:'--YLON',      kana:'バイロン',    faction:'citizen', hp:10 },
+  'Bベンジャミン':{ init:'B', rest:'--ENJAMIN',   kana:'ベンジャミン',faction:'citizen', hp:10 },
+  'Bブルース':    { init:'B', rest:'--RUCE',      kana:'ブルース',    faction:'citizen', hp:10 },
+  'Cクレイグ':    { init:'C', rest:'--RAIG',      kana:'クレイグ',    faction:'citizen', hp:11 },
+  'Cキャロル':    { init:'C', rest:'--AROL',      kana:'キャロル',    faction:'citizen', hp:11 },
+  'Cクレア':      { init:'C', rest:'--LAIRE',     kana:'クレア',      faction:'citizen', hp:11 },
+  'Dダニエル':    { init:'D', rest:'--ANIEL',     kana:'ダニエル',    faction:'citizen', hp:13 },
+  'Dデーヴィッド':{ init:'D', rest:'--AVID',      kana:'デーヴィッド',faction:'citizen', hp:13 },
+  'Dデボラ':      { init:'D', rest:'--EBORAH',    kana:'デボラ',      faction:'citizen', hp:13 },
 
   // RAIDER
-  'Eエミ':        { init:'E', rest:'MI',        kana:'映魅',        faction:'raider',  hp:10 }, // 「映魅」指定
-  'Eエリカ':      { init:'E', rest:'RICA',      kana:'エリカ',      faction:'raider',  hp:10 },
-  'Eエマ':        { init:'E', rest:'MA',        kana:'エマ',        faction:'raider',  hp:10 },
-  'Fフェリックス':{ init:'F', rest:'ELIX',      kana:'フェリックス',faction:'raider',  hp:12 },
-  'Fフェリシア':  { init:'F', rest:'ELICIA',    kana:'フェリシア',  faction:'raider',  hp:12 },
-  'Fフレディ':    { init:'F', rest:'REDDIE',    kana:'フレディ',    faction:'raider',  hp:12 },
-  'Gゴードン':    { init:'G', rest:'ORDON',     kana:'ゴードン',    faction:'raider',  hp:14 },
-  'Gガラハド':    { init:'G', rest:'ARAHAD',    kana:'ガラハド',    faction:'raider',  hp:14 },
-  'Gゴドウィン':  { init:'G', rest:'ODWIN',     kana:'ゴドウィン',  faction:'raider',  hp:14 },
+  'Eエミ':        { init:'E', rest:'--MI',        kana:'映魅',        faction:'raider',  hp:10 }, // 「映魅」指定
+  'Eエリカ':      { init:'E', rest:'--RICA',      kana:'エリカ',      faction:'raider',  hp:10 },
+  'Eエマ':        { init:'E', rest:'--MA',        kana:'エマ',        faction:'raider',  hp:10 },
+  'Fフェリックス':{ init:'F', rest:'--ELIX',      kana:'フェリックス',faction:'raider',  hp:12 },
+  'Fフェリシア':  { init:'F', rest:'--ELICIA',    kana:'フェリシア',  faction:'raider',  hp:12 },
+  'Fフレディ':    { init:'F', rest:'--REDDIE',    kana:'フレディ',    faction:'raider',  hp:12 },
+  'Gゴードン':    { init:'G', rest:'--ORDON',     kana:'ゴードン',    faction:'raider',  hp:14 },
+  'Gガラハド':    { init:'G', rest:'--ARAHAD',    kana:'ガラハド',    faction:'raider',  hp:14 },
+  'Gゴドウィン':  { init:'G', rest:'--ODWIN',     kana:'ゴドウィン',  faction:'raider',  hp:14 },
 
   // SHADOW
-  'Uウルリッヒ':  { init:'U', rest:'LRICH',     kana:'ウルリッヒ',  faction:'shadow',  hp:11 },
-  'Uウラヌス':    { init:'U', rest:'RANUS',     kana:'ウラヌス',    faction:'shadow',  hp:11 },
-  'Uアルスター':  { init:'U', rest:'LSTER',     kana:'アルスター',  faction:'shadow',  hp:11 },
-  'Vヴェノム':    { init:'V', rest:'ENOM',      kana:'ヴェノム',    faction:'shadow',  hp:13 },
-  'Vヴァンパイア':{ init:'V', rest:'AMPIRE',    kana:'ヴァンパイア',faction:'shadow',  hp:13 },
-  'Vヴェンデッタ':{ init:'V', rest:'ENDETTA',   kana:'ヴェンデッタ',faction:'shadow',  hp:13 },
-  'Wワイト':      { init:'W', rest:'IGHT',      kana:'ワイト',      faction:'shadow',  hp:14 },
-  'Wワルプルギス':{ init:'W', rest:'ALPURGA',   kana:'ワルプルギス',faction:'shadow',  hp:14 },
-  'Wワーウルフ':  { init:'W', rest:'EREWOLF',   kana:'ワーウルフ',  faction:'shadow',  hp:14 },
+  'Uウルリッヒ':  { init:'U', rest:'--LRICH',     kana:'ウルリッヒ',  faction:'shadow',  hp:11 },
+  'Uウラヌス':    { init:'U', rest:'--RANUS',     kana:'ウラヌス',    faction:'shadow',  hp:11 },
+  'Uアルスター':  { init:'U', rest:'--LSTER',     kana:'アルスター',  faction:'shadow',  hp:11 },
+  'Vヴェノム':    { init:'V', rest:'--ENOM',      kana:'ヴェノム',    faction:'shadow',  hp:13 },
+  'Vヴァンパイア':{ init:'V', rest:'--AMPIRE',    kana:'ヴァンパイア',faction:'shadow',  hp:13 },
+  'Vヴェンデッタ':{ init:'V', rest:'--ENDETTA',   kana:'ヴェンデッタ',faction:'shadow',  hp:13 },
+  'Wワイト':      { init:'W', rest:'--IGHT',      kana:'ワイト',      faction:'shadow',  hp:14 },
+  'Wワルプルギス':{ init:'W', rest:'--ALPURGA',   kana:'ワルプルギス',faction:'shadow',  hp:14 },
+  'Wワーウルフ':  { init:'W', rest:'--EREWOLF',   kana:'ワーウルフ',  faction:'shadow',  hp:14 },
 };
 
 // 陣営→クラス（丸バッジの色に使う）
@@ -4157,6 +4165,8 @@ const ROLE_MINI_INFO = {
 /** 正体カードの拡大レイアウトを描画 */
 /** 正体カード拡大：カード名.jpgを“タイトル/HP/テーブルの後ろ”に重ねて表示する */
 function showRoleExpanded(roleKey){
+
+
   const meta = ROLE_META[roleKey];
   // メタが無ければ従来通りテキストだけ
   if (!meta){
