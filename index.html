@@ -115,6 +115,16 @@ body {
   flex-wrap:wrap;
 }
 
+.dicebar.large-players {
+  display:flex;
+  gap:8px;
+  align-items:center;
+  margin-top:50px;
+  justify-content:flex-end; /* 黒デッキの表と同じ右寄せ */
+  margin-right:24px;        /* 黒デッキと同じ右余白 */
+  flex-wrap:wrap;
+}
+
   .dicebtn{padding:8px 10px;border:1px solid #ddd;border-radius:10px;background:#fafafa;cursor:pointer}
   .diceres{font-weight:700}
 
@@ -1014,7 +1024,7 @@ font-size:12px;
   margin:8px 0 6px;
 }
 .top-icon{
-  width:26px; height:26px; border-radius:8px; border:1px solid #111;
+  width:20px; height:20px; border-radius:8px; border:1px solid #111;
   display:flex; align-items:center; justify-content:center;
   font-weight:900; user-select:none;
   transform:scale(1); transition:transform 160ms ease;
