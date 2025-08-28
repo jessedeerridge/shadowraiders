@@ -327,8 +327,8 @@ padding-top: 12px;
 .condition {
   background:#000;
   color:#fff;
-  padding:0px 4px;
-  border-radius:4px;
+  padding:0px 2px;
+  border-radius:2px;
   font-weight:bold;
 }
 
@@ -613,7 +613,7 @@ display: block;
   padding:5px 12px; font-weight:900; font-size:20px; line-height:1;
   white-space:nowrap; max-width:120px; overflow:hidden; text-overflow:ellipsis;
   margin-top:10px;   /* ← 円より下げる量（お好みで 8px～16px） */
-  margin-left:-29.2px;  /* ← 左に寄せたいならマイナス値で円に近づける */
+  margin-left:-28px;  /* ← 左に寄せたいならマイナス値で円に近づける */
 }
 /* 中段：カタカナ名（黒バー金字）と右のHP丸（こげ茶＋金字太字） */
 .role-center{display:flex; align-items:center; justify-content:center; gap:10px
@@ -720,7 +720,7 @@ height: 70px;
     line-height: 1;
     margin-top: 6px;     /* 円より少し下げる量を控えめに */
     max-width: 100px;    /* 端末幅でつぶれない程度に */
-   margin-left: -22.6px;      /* ← 円に“食い込むように”左寄せ */
+   margin-left: -20px;      /* ← 円に“食い込むように”左寄せ */
     position: relative;
  z-index: 1;   }
 
@@ -806,7 +806,7 @@ margin-top: 0;
   font-size:6px; font-weight:900; line-height:1.1;
   padding:1px 2px; text-align:center;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  margin-left: -9.6px; 
+  margin-left: -8.6px; 
   z-index: 0;  
 }
 
@@ -875,7 +875,7 @@ z-index: 1;
 @media (max-width:600px){ /*スマホサイズ*/
   .deck-face[data-deck="black"][data-role="face"]{ gap:1px; padding:2px; }
   .deck-face[data-deck="black"] .mini-title{ font-size:7px; padding:1px 2px; border-width:1px; }
-  .deck-face[data-deck="black"] .mini-effect{ font-size:7px; -webkit-line-clamp:5; padding:1px 2px; }
+  .deck-face[data-deck="black"] .mini-effect{ font-size:6px; -webkit-line-clamp:5; padding:1px 2px; }
   .deck-face[data-deck="black"] .mini-image{ max-width:70%; max-height:28px; margin:1px auto; }
 
 
@@ -4086,7 +4086,7 @@ const ROLE_INFO = {
   "Cクレイグ": '<span class="condition">勝利条件</span> 2人脱落している状態で、他PLを「攻撃」して脱落させる。<br><span class="condition">死の饗宴</span> 攻撃後、自分に2ダメージ与えた後、もう一度同じPLを攻撃できる。',
   "Cキャロル": '<span class="condition">勝利条件</span> 最初に脱落する。または、あなたともう1人だけが脱落していない。<br><span class="condition">聖痕</span> 手番の初めに2ダメージ回復する。',
   "Cクレア": '<span class="condition">勝利条件</span> ゲーム終了時にあなたのダメージが「6～8」である。<br><span class="condition">キャスリング</span> 手番の初めに、あなたと他PLのHPを入れ替える。(1回)',
-  "Dダニエル": '<span class="condition">勝利条件</span> 最初に脱落する。またはシャドウが全滅して生存している。<br><span class="condition">絶叫</span> 一番最初にあなた以外のPLが脱落した時、正体カードを公開しなければならない。',
+  "Dダニエル": '<span class="condition">勝利条件</span> 最初に脱落する。またはシャドウ全員の脱落と生存。<br><span class="condition">絶叫</span> 一番最初にあなた以外のPLが脱落した時、正体カードを公開しなければならない。',
 
   "Dデーヴィッド": '<span class="condition">勝利条件</span>「聖杯」「コンパス」「ブローチ」「ロザリオ」のうち3種を所持する。<br><span class="condition">グレイブディガー</span> 手番の初めに脱落者のカードにある任意の装備を1枚獲得する。',
 
@@ -4130,7 +4130,7 @@ const ROLE_MINI_INFO = {
 "Cクレイグ": '<span class="condition">勝利条件</span> 2人脱落している状態で、他PLを「攻撃」して脱落させる。',
 "Cキャロル": '<span class="condition">勝利条件</span> 最初に脱落するか、あなたともう1人だけが脱落していない。',
 "Cクレア": '<span class="condition">勝利条件</span> ゲーム終了時にあなたのダメージが「6～8」である。',
-"Dダニエル": '<span class="condition">勝利条件</span> 最初に脱落する。またはシャドウが全滅して生存している。',
+"Dダニエル": '<span class="condition">勝利条件</span> 最初に脱落する。またはシャドウ全員の脱落と生存。',
 "Dデーヴィッド": '<span class="condition">勝利条件</span> 「聖杯」「コンパス」「ブローチ」「ロザリオ」のうち3種を所持する。',
 "Dデボラ": '<span class="condition">勝利条件</span> 自分が脱落する。',
 
