@@ -1244,6 +1244,13 @@ dicebar{
 
 
 
+/* 1列目=tag：幅を制限して中で折り返す（例：8em） */
+#greenHistory .row > :nth-child(1){
+  flex: 0 0 20em;               /* 固定ベース幅（調整可：7em～10emなど） */
+  max-width: 20em;             /* 伸びすぎ防止（任意） */
+  overflow-wrap: anywhere;     /* 長い語も折り返す */
+  word-break: break-word;      /* 旧ブラウザ向け保険 */
+}
 
 
 </style>
