@@ -1414,6 +1414,15 @@ import {
   const myRoomBadge   = document.getElementById('myRoomBadge');
   const joinPanel     = document.getElementById('joinPanel');
   const nameInput     = document.getElementById('nameInput');
+const savedName = localStorage.getItem("playerName");
+if (savedName) {
+  nameInput.value = savedName;
+}
+
+// --- 入力時に保存 ---
+nameInput.addEventListener("input", () => {
+  localStorage.setItem("playerName", nameInput.value);
+});
   const codeInput     = document.getElementById('codeInput');
   const btnJoin       = document.getElementById('btnJoin');
   const roomPanel     = document.getElementById('roomPanel');
@@ -4095,7 +4104,7 @@ const FACTION_CLASS = { citizen:'citizen', raider:'raider', shadow:'shadow' };
 const ROLE_INFO = {
   "Aアリス": '<span class="condition">勝利条件</span> 生存している。<br><span class="condition">うさぎさんヒール</span> 手番の初めに使用する。ダメージを全回復する（1回のみ）',
   "Aアンジェラ": '<span class="condition">勝利条件</span> 右隣りのプレイヤーが勝利する。<br><span class="condition">移り気</span> 「勝利条件を左となりのプレイヤーが勝利する」に変更する。（1回のみ）',
-  "Aアガサ": '<span class="condition">勝利条件</span> あなたの手番でゲームが終了する。<br><span class="condition">完全犯罪</span> 手番の最後に使用する。ダイスを2個振り、出目のエリアにいるPL全員に 3 ダメージ与える。（1回のみ）',
+  "Aアガサ": '<span class="condition">勝利条件</span> あなたの手番でゲームが終了する。<br><span class="condition">完全犯罪</span> 手番の最後にダイスを2個振り、出目エリアにいるPL全員に3ダメージ。（1回のみ）',
   "Bバイロン": '<span class="condition">勝利条件</span> 装備カードを5枚以上所持する。<br><span class="condition">念力の懐中時計</span> 2以上の攻撃ダメージを与えた場合、代わりに装備を1つ奪うことができる。',
   "Bベンジャミン": '<span class="condition">勝利条件</span> あなた以外のPLが装備を5つ以上所持している。<br><span class="condition">太鼓持ち</span> 手番の最後に使用する。同じエリアのPLに装備を1つ渡すことができる。',
   "Bブルース": '<span class="condition">勝利条件</span> 攻撃でHP12以上のPLを脱落させる。または終了時に9にいる。<br><span class="condition">国士無双</span> 攻撃でHP11以下のPLを脱落させた時、必ず自分の正体を公開する。',
@@ -4138,7 +4147,7 @@ const ROLE_INFO = {
 const ROLE_MINI_INFO = {
 
 "Aアリス": '<span class="condition">勝利条件</span> 生存している。',
-"Aアンジェラ": '<span class="condition">勝利条件</span> 右隣りのプレイヤーが勝利する。',
+"Aアンジェラ": '<span class="condition">勝利条件</span> （能力使用後は）左隣りのプレイヤーが勝利する。',
 "Aアガサ": '<span class="condition">勝利条件</span> あなたの手番でゲームが終了する。',
 "Bバイロン": '<span class="condition">勝利条件</span> 装備カードを5枚以上所持する。',
 "Bベンジャミン": '<span class="condition">勝利条件</span> あなた以外のPLが装備を5つ以上所持している。',
