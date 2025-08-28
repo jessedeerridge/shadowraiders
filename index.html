@@ -4178,6 +4178,11 @@ function showRoleExpanded(roleKey){
   dealCardFace.className = 'deal-card role-layout';
   dealCardFace.innerHTML = '';
 
+  dealCardFace.removeAttribute('style');   // border等も一旦クリア
+  dealCardFace.style.background = '';
+  dealCardFace.style.color = '';
+  colorizeDealFaceByCardName(roleKey);     // citizen/raider/shadow の地色を先に決める
+
   // ▼ ：陣営ごとの枠線色
   const BORDER_BY_FACTION = { CITIZEN:'#e3ed1c', RAIDER:'#9e0d0d', SHADOW:'#3d3b80' };
   if (meta && meta.faction) {
