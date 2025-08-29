@@ -1437,6 +1437,8 @@ import {
 const savedName = localStorage.getItem("playerName");
 if (savedName) {
   nameInput.value = savedName;
+  state.name = savedName; 
+
 }
 
 // --- 入力時に保存 ---
@@ -1800,7 +1802,7 @@ const TABLE = [
   { key:'三つ目の黒犬 ',   text:'自分と選んだPLに2ダメージ与える。' },
   { key:'暴動',            text:'ダイスを2つ振り、目のエリアにいるPL全員に3ダメージ与える。' },
   { key:'バナナの皮',      text:'装備を1つ誰かに渡す。なければ 1 ダメージ受ける。' },
-  { key:'呪いの人形',      text:'PLを1人選び6面ダイスを振る。 1-4なら選んだPL、5-6なら自分に3ダメージ。' },
+  { key:'呪いの人形',      text:'PLを1人選び6面ダイスを振る。1-4なら選んだPLに、5-6なら自分に3ダメージ与える。' },
   { key:'戦慄の闇儀式',    text:'あなたがシャドウなら、全回復する。' }
 ];
 
@@ -2860,7 +2862,7 @@ if (cardName.includes('サーベル')){
 }else if (cardName.includes('バナナの皮')){
   td.textContent = '装備を1つ誰かに渡す。なければ 1 ダメージ受ける。';
 }else if (cardName.includes('呪いの人形')){
-  td.textContent = 'PLを1人選び6面ダイスを振る。 1-4なら選んだPL、5-6なら自分に3ダメージ。';
+  td.textContent = 'PLを1人選び6面ダイスを振る。1-4なら選んだPLに、5-6なら自分に3ダメージ与える。';
 }else if (cardName.includes('戦慄の闇儀式')){
   td.textContent = 'あなたがシャドウなら、全回復する。';
   }else{
