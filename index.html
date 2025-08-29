@@ -1560,6 +1560,7 @@ if (helpBtn) helpBtn.classList.add('hidden'); // 最初はクラスで隠す
 
 const mo = new MutationObserver(() => {
   const joined = !roomPanel.classList.contains('hidden');
+  const isHost = state.isHost; // ★ ホストかどうかを参照
   helpBtn.classList.toggle('hidden', !joined);
 });
 mo.observe(roomPanel, { attributes: true, attributeFilter: ['class'] });
