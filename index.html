@@ -1262,6 +1262,19 @@ dicebar{
   word-break: break-word;      /* 旧ブラウザ向け保険 */
 }
 
+.dice-pair{
+  display:flex;
+  gap:8px;           /* ダイス間の隙間。既存の .dicebar の gap と揃えてOK */
+  flex:0 0 auto;     /* 伸縮させず、幅が無ければ行ごと折り返す */
+  align-items:center;
+}
+
+/* topicons はスペースを優先的に使わせると、狭くなった時にダイス塊が下段へ落ちやすい */
+#topIconBar{
+  flex:1 1 auto;     /* 既存のマージン指定は残してOK。折り返し優先度だけ付与 */
+  min-width:0;       /* 折り返し計算の保険 */
+}
+
 
 </style>
 </head>
@@ -1296,6 +1309,12 @@ dicebar{
     <!-- ダイス（左長方形の下／ローカル表示） -->
 <div class="dicebar" id="diceBar">
   <div id="topIconBar" class="top-icons hidden" aria-label="ターン順アイコン"></div>
+
+  <div class="dice-pair">
+    <img id="roll6dImg" class="diceimg" src="6d1.png" alt="d6" role="button" />
+    <img id="roll4dImg" class="diceimg" src="4d1.png" alt="d4" role="button" />
+  </div>
+</div>
 
    <!-- d6 ダイス（初期 6d1.png） -->
   <img id="roll6dImg" class="diceimg" src="6d1.png" alt="d6" role="button" />
