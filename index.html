@@ -191,14 +191,15 @@ body {
   .color-tile.mine{outline:3px solid #111}
 
   /* 自分用：配られたカード（右下に小さな黒裏） */
-  #myDealMini{position:fixed;right:16px;bottom:16px;width:60px;height:90px;border-radius:10px;border:1px solid #000;background:#000;color:#fff;
+  #myDealMini{position:fixed;right:16px;bottom:16px;width:60px;height:90px;border-radius:10px;border:1px solid #000;
+  background: url('browncard.jpg') center/cover no-repeat;
+  color: transparent;  /* テキストは非表示にするなら */
     display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2147483600}
 #dealViewer .deal-card{
   width:240px;     /* ←固定幅 */
   height:360px;    /* ←固定高さ */
   border:1px solid #111;
   border-radius:14px;
-  background:#fff;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -2025,7 +2026,7 @@ await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
   function updateHeader(){
     headerInfo.innerHTML = '';
     const spanRoom = document.createElement('span');
-    spanRoom.textContent = `コード：${state.code || '-'}`;
+    spanRoom.textContent = `ROOM：${state.code || '-'}`;
     const spanMe = document.createElement('span');
     spanMe.textContent = `あなた：${state.name || '-'}`;
     const btn = document.createElement('button');
