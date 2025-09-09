@@ -1958,6 +1958,12 @@ if (btnSteal){
     for (const uid of Object.keys(deal)){
       if (uid !== state.uid) candidates.add(uid);
     }
+    // ★追加：equipment から旧UID候補（①）
+    const eSnap = await get(ref(db, `rooms/${state.code}/equipment`));
+    const equip = eSnap.val() || {};
+    for (const uid of Object.keys(equip)){
+      if (uid !== state.uid) candidates.add(uid);
+    }
 
     // participants に居ないUIDのみ（＝孤児）
     const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
@@ -1994,6 +2000,13 @@ if (btnSteal){
     }
 
 // 装備（equipment）
+const oldIconSnap = await get(ref(db, `rooms/${state.code}/icons/${oldUid}`));
+const newIconSnap = await get(ref(db, `rooms/${state.code}/icons/${state.uid}`));
+const oldIcon = oldIconSnap.val();
+if (oldIcon && !newIconSnap.exists()){
+  updates[`rooms/${state.code}/icons/${state.uid}`] = { ...oldIcon, name: state.name };
+  updates[`rooms/${state.code}/icons/${oldUid}`] = null;
+}
 const oldEquipSnap = await get(ref(db, `rooms/${state.code}/equipment/${oldUid}`));
 const myEquipSnap  = await get(ref(db, `rooms/${state.code}/equipment/${state.uid}`));
 const oldEquip = oldEquipSnap.val();
@@ -5384,6 +5397,18 @@ if (state && state.colorClaims) {
     if (state && state.colorClaims) {
     renderColorGrid(state.colorClaims);
   }
+  try {
+    const layer = document.getElementById('icons');
+    if (layer && state && state.present) {
+      const colorMap = Object.fromEntries(Object.entries(state.present).map(([uid, v])=> [uid, v?.color || null]));
+      [...layer.querySelectorAll('g.usericon')].forEach(el=>{
+        const uid = el.getAttribute('data-uid');
+        const colorName = colorMap[uid] || null;
+        if (colorName) applyFillAndText(el, colorName);
+      });
+    }
+  } catch(_e){}
+
 });
 state.unsub.push(offParticipants);
     
