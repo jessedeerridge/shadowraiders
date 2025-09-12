@@ -1787,18 +1787,18 @@ const TABLE = [
   { key:'拳銃R',           text:'攻撃ダメージが 1 増加する。' },
   { key:'拳銃L',           text:'攻撃ダメージが 1 増加する。' },
   { key:'クロスボウガン',  text:'攻撃ダメージが 1 増加する。' },
-  { key:'妖刀マサムネ',    text:'攻撃レンジのPLに必ず攻撃を行う。4面ダイスだけを使う。' },
+  { key:'妖刀マサムネ',    text:'攻撃レンジにPLがいれば必ず攻撃を行う。4面ダイスだけを使う。' },
   { key:'ガトリング',      text:'攻撃レンジのPL全員に攻撃する。' },
   { key:'死神スコープ',    text:'攻撃レンジが 1 増加する。' },
   { key:'死神スコープ　',  text:'攻撃レンジが 1 増加する。' }, // 全角スペース対策
   { key:'オリバーの子分',  text:'任意のPLを選んで、装備を1つ奪う。' },
   { key:'オリバーの子分 ', text:'任意のPLを選んで、装備を1つ奪う。' }, // 半角スペース対策
   { key:'オリバーの子分　',text:'任意のPLを選んで、装備を1つ奪う。' }, // 全角スペース対策
-  { key:'吸血コウモリ',    text:'自分以外のPLに2ダメージ与える。' },
-  { key:'吸血コウモリ ',   text:'自分以外のPLに2ダメージ与える。' },
-  { key:'吸血コウモリ　',  text:'自分以外のPLに2ダメージ与える。' },
-  { key:'三つ目の黒犬',    text:'自分と選んだPLに2ダメージ与える。' },
-  { key:'三つ目の黒犬 ',   text:'自分と選んだPLに2ダメージ与える。' },
+  { key:'吸血コウモリ',    text:'自分以外のPL1人に2ダメージ与え,自分は1回復する。' },
+  { key:'吸血コウモリ ',   text:'自分以外のPL1人に2ダメージ与え,自分は1回復する。'  },
+  { key:'吸血コウモリ　',  text:'自分以外のPL1人に2ダメージ与え,自分は1回復する。'  },
+  { key:'三つ目の黒犬',    text:'自分と選んだPL1人に2ダメージ与える。' },
+  { key:'三つ目の黒犬 ',   text:'自分と選んだPL1人に2ダメージ与える。' },
   { key:'暴動',            text:'ダイスを2つ振り、目のエリアにいるPL全員に3ダメージ与える。' },
   { key:'バナナの皮',      text:'装備を1つ誰かに渡す。なければ 1 ダメージ受ける。' },
   { key:'呪いの人形',      text:'PLを1人選び6面ダイスを振る。1-4なら選んだPLに、5-6なら自分に3ダメージ与える。' },
@@ -2877,7 +2877,7 @@ if (cardName.includes('サーベル')){
 }else if (cardName.includes('クロスボウガン')){
   td.textContent = '攻撃ダメージが 1 増加する。';
 }else if (cardName.includes('妖刀マサムネ')){
-  td.textContent = '攻撃レンジのPLに必ず攻撃を行う。4面ダイスだけを使う。';
+  td.textContent = '攻撃レンジにPLがいれば必ず攻撃を行う。4面ダイスだけを使う。';
 }else if (cardName.includes('ガトリング')){
   td.textContent = '攻撃レンジのPL全員に攻撃する。';
 }else if (cardName.includes('死神スコープ')){
@@ -2891,15 +2891,15 @@ if (cardName.includes('サーベル')){
 }else if (cardName.includes('オリバーの子分  ')){
   td.textContent = '任意のPLを選んで、装備を1つ奪う。';
 }else if (cardName.includes('吸血コウモリ')){
-  td.textContent = '自分以外のPLに2ダメージ与える。';
+  td.textContent = '自分以外のPL1人に2ダメージ与え,自分は1回復する。' ;
 }else if (cardName.includes('吸血コウモリ ')){
-  td.textContent = '自分以外のPLに2ダメージ与える。';
+  td.textContent = '自分以外のPL1人に2ダメージ与え,自分は1回復する。' ;
 }else if (cardName.includes('吸血コウモリ  ')){
-  td.textContent = '自分以外のPLに2ダメージ与える。';
+  td.textContent = '自分以外のPL1人に2ダメージ与え,自分は1回復する。' ;
 }else if (cardName.includes('三つ目の黒犬')){
-  td.textContent = '自分と選んだPLに2ダメージ与える。';
+  td.textContent = '自分と選んだPL1人に2ダメージ与える。';
 }else if (cardName.includes('三つ目の黒犬 ')){
-  td.textContent = '自分と選んだPLに2ダメージ与える。';
+  td.textContent = '自分と選んだPL1人に2ダメージ与える。';
 }else if (cardName.includes('暴動')){
   td.textContent = 'ダイスを2つ振り、目のエリアにいるPL全員に3ダメージ与える。';
 }else if (cardName.includes('バナナの皮')){
