@@ -2000,6 +2000,7 @@ if (btnSteal){
     }
 
 // 装備（equipment）
+// 左長方形アイコン（テーブル上）
 const oldIconSnap = await get(ref(db, `rooms/${state.code}/icons/${oldUid}`));
 const newIconSnap = await get(ref(db, `rooms/${state.code}/icons/${state.uid}`));
 const oldIcon = oldIconSnap.val();
@@ -2007,6 +2008,20 @@ if (oldIcon && !newIconSnap.exists()){
   updates[`rooms/${state.code}/icons/${state.uid}`] = { ...oldIcon, name: state.name };
   updates[`rooms/${state.code}/icons/${oldUid}`] = null;
 }
+
+// 右側・左側の席アイコン（存在すれば移管）
+const oldRight = (await get(ref(db, `rooms/${state.code}/icons/right/${oldUid}`))).val();
+const oldLeft  = (await get(ref(db, `rooms/${state.code}/icons/left/${oldUid}`))).val();
+if (oldRight){
+  updates[`rooms/${state.code}/icons/right/${state.uid}`] = { ...oldRight, name: state.name };
+  updates[`rooms/${state.code}/icons/right/${oldUid}`] = null;
+}
+if (oldLeft){
+  updates[`rooms/${state.code}/icons/left/${state.uid}`] = { ...oldLeft, name: state.name };
+  updates[`rooms/${state.code}/icons/left/${oldUid}`] = null;
+}
+
+// 装備一覧（equipment：一覧描画が参照するツリー）
 const oldEquipSnap = await get(ref(db, `rooms/${state.code}/equipment/${oldUid}`));
 const myEquipSnap  = await get(ref(db, `rooms/${state.code}/equipment/${state.uid}`));
 const oldEquip = oldEquipSnap.val();
@@ -2014,6 +2029,22 @@ const myEquip  = myEquipSnap.val();
 if (oldEquip && !myEquip){
   updates[`rooms/${state.code}/equipment/${state.uid}`] = oldEquip;
   updates[`rooms/${state.code}/equipment/${oldUid}`] = null;
+}
+
+// 自分の装備ミニ欄（equip：別ツリー）
+const oldEquipIcons = (await get(ref(db, `rooms/${state.code}/equip/${oldUid}`))).val();
+const myEquipIcons  = (await get(ref(db, `rooms/${state.code}/equip/${state.uid}`))).val();
+if (oldEquipIcons && !myEquipIcons){
+  updates[`rooms/${state.code}/equip/${state.uid}`] = oldEquipIcons;
+  updates[`rooms/${state.code}/equip/${oldUid}`] = null;
+}
+
+// 正体カード（roles：確定保存も移管）
+const oldRole = (await get(ref(db, `rooms/${state.code}/roles/${oldUid}`))).val();
+const myRole  = (await get(ref(db, `rooms/${state.code}/roles/${state.uid}`))).val();
+if (oldRole && !myRole){
+  updates[`rooms/${state.code}/roles/${state.uid}`] = oldRole;
+  updates[`rooms/${state.code}/roles/${oldUid}`] = null;
 }
 
 // 右下の最初の配布カード（myDeal）— 原子的に移管
@@ -4388,6 +4419,25 @@ if (!dist) return;
   updates[`rooms/${state.code}/decks/green`] = decksInit('green');
   updates[`rooms/${state.code}/decks/white`] = decksInit('white');
   updates[`rooms/${state.code}/decks/black`] = decksInit('black');
+// ▼ ここから追加：配布時に roles と equipment も確定保存
+const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
+const ps = psSnap.val() || {};
+
+// 1) 役職の確定保存（UID基準）
+updates[`rooms/${state.code}/roles`] = assign;
+
+// 2) 装備一覧にも「正体カード」を初期所持として反映（表示用）
+//    ※ role は奪取不可だが、一覧上は最上段表示される実装
+for (const [uid, card] of Object.entries(assign)){
+
+  // 3) 名前基準の参照性を高めるオプション（役に立つ）：
+  //    nameIndex と rolesByName も同時更新（normalizeName は既存関数）
+  const n = normalizeName(ps[uid]?.name || '');
+  if (n){
+    updates[`rooms/${state.code}/nameIndex/${n}`]   = uid;
+    updates[`rooms/${state.code}/rolesByName/${n}`] = card;
+  }
+}
 
   await update(ref(db), updates);
 }
@@ -4419,7 +4469,15 @@ function observeMyDeal(){
     const val = snap.val();
     const has = !!val;
     show(myDealMini, has);
-    if (has){
+if (has){
+  set(ref(db, `rooms/${state.code}/participants/${state.uid}/role`), String(val)).catch(()=>{});
+
+  // 初期状態は公開しない：roles にだけ保存（revealed:false）
+  set(ref(db, `rooms/${state.code}/roles/${state.uid}`), {
+    card: String(val), revealed: false, updatedAt: Date.now()
+  }).catch(()=>{});
+
+
 myDealMini.onclick = ()=>{
   // 自分のカード表示（役職カードなら専用レイアウト）
   if (isRoleCard(val)) {
@@ -5345,7 +5403,9 @@ async function becomeHostIfVacant(){
     const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
     await set(meRef, { name, at: Date.now() });
     onDisconnect(meRef).remove();
-
+try{
+  await set(ref(db, `rooms/${code}/nameIndex/${normalizeName(name)}`), state.uid);
+}catch(_e){}
     // ホスト就任（空いていれば）
     await becomeHostIfVacant();
 
