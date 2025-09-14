@@ -1672,14 +1672,15 @@ function showYourTurnOnce(){
   try { audio && audio.play && audio.play().catch(()=>{}); } catch(e){}
 }
 
-// 現在の参加者・色クレームから「ターン順リスト（uid昇順ではなく色取得時刻順）」を作る
+// 現在の「色クレーム」だけからターン順を作る（在室判定をしない＝退出しても順番を維持）
 function getTurnOrderList(){
-  const present = state.present || {};
   const claims  = state.colorClaims || {};
-  return Object.values(claims)
-    .filter(v => v && v.uid && present[v.uid])
+  return Object.entries(claims)
+    .map(([colorId, v]) => (v && v.uid) ? { ...v, colorId } : null)
+    .filter(Boolean)
     .sort((a,b) => (a.at || 0) - (b.at || 0));
 }
+
 
 
 function applyDeckTheme(el, deckId){
@@ -1991,7 +1992,7 @@ if (btnSteal){
       if (claim?.uid === oldUid && (claim?.name||'') === state.name){
         // colors の所有者を自分に
         updates[`rooms/${state.code}/colors/${colorId}`] =
-          { uid: state.uid, name: state.name, at: Date.now() };
+  { uid: state.uid, name: state.name, at: (claim?.at ?? Date.now()) };
         // 参加者にも色を保存（既存実装に合わせ label で保存）
         // ＊labelは曖昧になるので、厳密化したければ colorId を保存する実装に変えてOK
         const label = (COLOR_LIST.find(c => c.id === colorId)?.name) || colorId;
@@ -3790,20 +3791,20 @@ update(ref(db, `rooms/${state.code}/icons/${uid}`), {
 
   // ====== 色選択 ======
   const COLOR_LIST = [
-    { id:'red',     name:'赤',    bg:'#9e0d0d' },
-    { id:'blue',    name:'青',    bg:'#3d3b80' },
+    { id:'red',     name:'赤',    bg:'#FF0000' },
+    { id:'blue',    name:'青',    bg:'#0000FF' },
     { id:'black',   name:'黒',    bg:'#000000' },
-    { id:'green1',  name:'緑',    bg:'#43a047' },
+    { id:'green1',  name:'緑',    bg:'#008000' },
     { id:'white',   name:'白',    bg:'#ffffff', border:'#111' },
-    { id:'green2',  name:'緑',    bg:'#43a047' }, // 指示通り2つ目の緑
-    { id:'purple',  name:'紫',    bg:'#8e24aa' },
-    { id:'cyan',    name:'水色',  bg:'#26c6da' },
-    { id:'orange',  name:'オレンジ', bg:'#fb8c00' },
-    { id:'yellow',  name:'黄',  bg:'#e3ed1c' },
+    { id:'green2',  name:'緑',    bg:'#FF69B4' }, // 指示通り2つ目の緑
+    { id:'purple',  name:'紫',    bg:'#800080' },
+    { id:'cyan',    name:'水色',  bg:'#6498fa' },
+    { id:'orange',  name:'オレンジ', bg:'#FFA500' },
+    { id:'yellow',  name:'黄',  bg:'#FFFF00' },
   ];
   function colorToStyle(colorName){
     // 背景と文字色の組合せ規定
-    const darkText = ['赤','青','黒','緑','紫']; // これらは白文字
+    const darkText = ['赤','青','黒','緑','紫','水色']; // これらは白文字
     const item = COLOR_LIST.find(c => c.name===colorName || c.id===colorName) || null;
     const bg = item?.bg || '#fff';
     const label = item?.name || '';
@@ -3828,12 +3829,11 @@ function renderTopIcons(claims){
   const bar = document.getElementById('topIconBar');
   if (!bar) return;
 
-
-
   const present = state.present || {};
-  // 在室者のみ抽出し、色を取った時刻（at）で昇順ソート
-  const list = Object.values(claims || {})
-    .filter(v => v && v.uid && present[v.uid])
+  // 在室判定をやめる：colors の at（取得時刻）で固定順。退出しても並び・アイコンを保持
+  const list = Object.entries(claims || {})
+    .map(([colorId, v]) => (v && v.uid) ? { ...v, colorId } : null)
+    .filter(Boolean)
     .sort((a,b) => (a.at || 0) - (b.at || 0));
 
   bar.innerHTML = '';
@@ -3843,13 +3843,18 @@ function renderTopIcons(claims){
   }
   bar.classList.remove('hidden');
 
-  // アクティブ番号（1.5倍）を維持・初期化
   if (typeof state.topActiveIndex !== 'number' || state.topActiveIndex >= list.length){
     state.topActiveIndex = 0;
   }
 
   list.forEach((v, i) => {
-    const colorLabel = present[v.uid]?.color || '';  // participants に保存された色ラベルを使用
+    // 色決定：participants（在室時）→ colorId 由来（不在時でも復元）
+    let colorLabel = present[v.uid]?.color || '';
+    if (!colorLabel && v.colorId){
+      const item = COLOR_LIST.find(c => c.id === v.colorId);
+      colorLabel = item?.name || v.colorId;   // name が欲しければ name、無ければ id
+    }
+
     const icon = makeTopIcon(v.name, colorLabel, i);
     if (i === state.topActiveIndex) icon.classList.add('active');
 
