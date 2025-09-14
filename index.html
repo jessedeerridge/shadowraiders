@@ -1362,6 +1362,18 @@ dicebar{
   border: none !important;
   box-shadow: none !important;
 }
+/* ？の右：参加人数アイコン */
+#helpRoleIcons{
+  position: fixed;
+  z-index: 504;                /* ミニ裏カード(503)より前面 */
+  display: flex;
+  gap: 6px;
+  font-size: 20px;
+  font-weight: 900;
+  pointer-events: none;        /* クリックを邪魔しない */
+}
+
+
 
 </style>
 </head>
@@ -1666,6 +1678,13 @@ function setHelpMiniVisible(show){
     if (!el) return;
     el.classList.toggle('hidden', !show);
   });
+  // ★追加：ミニを閉じるときは、アイコンとroom-popも同時に閉じる
+  if (!show) {
+    // 参加人数アイコンを確実に隠す
+    try { updateHelpRoleIcons(false); } catch(_) {}
+    // 部屋ポップを確実に閉じる
+    try { closeRoomHelp(); } catch(_) {}
+  }
 }
 
 // ？クリック：同時トグル（自動クローズはしない）
@@ -1673,7 +1692,78 @@ helpBtn?.addEventListener('click', (e) => {
   e.stopPropagation();
   const show = helpRoleBack?.classList.contains('hidden') || helpBlackBack?.classList.contains('hidden');
   setHelpMiniVisible(show);
+updateHelpRoleIcons(show);
 });
+
+
+
+// ===== 参加人数アイコン（？の右） =====
+function ensureHelpRoleIconsEl(){
+  let el = document.getElementById('helpRoleIcons');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'helpRoleIcons';
+    el.className = 'hidden';
+    el.setAttribute('aria-label','参加人数アイコン');
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+// 指定の人数に対する配分 → 🔴🔵🌕 を文字列で返す
+function buildIconStringByCount(n){
+  // ご指定通り:
+  // 4: 🔴🔴🔵🔵
+  // 5: 🔴🔴🔵🔵🌕
+  // 6: 🔴🔴🔵🔵🌕🌕
+  // 7: 🔴🔴🔵🔵🌕🌕🌕
+  // 8: 🔴🔴🔴🔵🔵🔵🌕🌕
+  // 9: 🔴🔴🔴🔵🔵🔵🌕🌕🌕
+  // 10: 🔴🔴🔴🔵🔵🔵🌕🌕🌕🌕
+  let r=0,b=0,c=0;
+  if (n >= 8) { r = 3; b = 3; c = n - 6; }       // 8以上は 3,3,残り
+  else if (n === 7) { r = 2; b = 2; c = 3; }
+  else if (n === 6) { r = 2; b = 2; c = 2; }
+  else if (n === 5) { r = 2; b = 2; c = 1; }
+  else if (n === 4) { r = 2; b = 2; c = 0; }
+  else if (n === 3) { r = 1; b = 1; c = 1; }
+  else if (n === 2) { r = 1; b = 1; c = 0; }
+  else if (n === 1) { r = 9; b = 2; c = 0; }
+  else { return ''; } // 3人以下は非表示にする（必要なら調整可）
+  return '🔴'.repeat(r) + '🔵'.repeat(b) + '🌕'.repeat(c);
+}
+
+function positionHelpRoleIcons(){
+  const el = document.getElementById('helpRoleIcons');
+  const src = document.getElementById('helpRoleBack');
+  if (!el || !src) return;
+  const r = src.getBoundingClientRect();
+  el.style.left = (r.right + 8) + 'px'; // 右に8px離して出す
+  el.style.top  = r.top + 'px';
+  el.style.position = 'fixed';
+}
+
+function updateHelpRoleIcons(show){
+  const el = ensureHelpRoleIconsEl();
+  if (!show) {
+    el.classList.add('hidden');
+    return;
+  }
+  const n = Object.keys(state.present || {}).length; // 参加人数
+  const s = buildIconStringByCount(n);
+  if (!s) { el.classList.add('hidden'); return; }
+  el.textContent = s;
+  positionHelpRoleIcons();
+  el.classList.remove('hidden');
+}
+
+// 画面サイズが変わったら位置だけ追随
+window.addEventListener('resize', ()=>{
+  const shown = !document.getElementById('helpRoleBack')?.classList.contains('hidden');
+  if (shown) positionHelpRoleIcons();
+});
+
+
 // === 役職表モーダル ===
 const roleTableModal = document.getElementById('roleTableModal');
 const roleTableFrame = document.getElementById('roleTableFrame');
@@ -1801,6 +1891,7 @@ table :is(th:nth-child(2), td:nth-child(2)){
 
 
 
+
 </style>
 </head>
 <body>
@@ -1879,6 +1970,9 @@ table :is(th:nth-child(2), td:nth-child(2)){
 </body>
 </html>`;
 
+
+
+
 // === アイテム一覧モーダル ===
 const itemTableModal = document.getElementById('itemTableModal');
 const itemTableFrame = document.getElementById('itemTableFrame');
@@ -1945,7 +2039,7 @@ thead th{
   border-top-color:var(--grid-outer);
 }
 table :is(th:first-child, td:first-child){
-  width:16em; min-width:16em;
+  width:10em; min-width:10em;
   white-space:normal; word-break:break-all;
 }
 td:nth-child(2){font-size:.93rem; line-height:1.42}
@@ -3978,6 +4072,14 @@ function positionRoomPops(){
   });
 }
 
+// ★追加：room-pop を確実に閉じるユーティリティ
+function closeRoomHelp(){
+  if (!roomHelpOn) return;
+  roomHelpOn = false;
+  removeRoomPops();
+  window.removeEventListener('resize', positionRoomPops);
+  window.removeEventListener('scroll', positionRoomPops);
+}
 
 
 
