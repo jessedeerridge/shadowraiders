@@ -5401,7 +5401,7 @@ async function becomeHostIfVacant(){
 
     // 在室登録
     const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
-    await set(meRef, { name, at: Date.now() });
+    await update(meRef, { name, at: Date.now() });
     onDisconnect(meRef).remove();
 try{
   await set(ref(db, `rooms/${code}/nameIndex/${normalizeName(name)}`), state.uid);
@@ -5467,6 +5467,28 @@ if (state && state.colorClaims) {
         if (colorName) applyFillAndText(el, colorName);
       });
     }
+
+const seatsLayer = document.getElementById('seats');
+if (seatsLayer && state && state.present) {
+  const colorMap = Object.fromEntries(
+    Object.entries(state.present).map(([uid, v]) => [uid, v?.color || null])
+  );
+  [...seatsLayer.querySelectorAll('g.seaticon')].forEach(el => {
+    const uid = el.getAttribute('data-uid');
+    let colorName = colorMap[uid] || null;
+
+    // 予備：uid が一致しないケースに備え、name から一致を拾う
+    if (!colorName) {
+      const name = el.querySelector('text')?.textContent || '';
+      const hit = Object.values(state.present).find(v => v && v.name === name && v.color);
+      if (hit) colorName = hit.color;
+    }
+
+    if (colorName) applyFillAndText(el, colorName);
+  });
+}
+
+
   } catch(_e){}
 
 });
