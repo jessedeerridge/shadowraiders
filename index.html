@@ -257,7 +257,7 @@ z-index:11
   #myDealMini{position:fixed;right:16px;bottom:16px;width:60px;height:90px;border-radius:10px;border:1px solid #000;
   background: url('browncard.jpg') center/cover no-repeat;
   color: transparent;  /* テキストは非表示にするなら */
-    display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2147483600}
+    display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:300}
 #dealViewer .deal-card{
   width:240px;     /* ←固定幅 */
   height:360px;    /* ←固定高さ */
@@ -1749,8 +1749,8 @@ table{
   }
 
 table :is(th:nth-child(3), td:nth-child(3)){
-  width:22%;         /* ← 追加 */
-  min-width:22%;
+  width:27%;         /* ← 追加 */
+  min-width:27%;
   text-align:left;
 }
 
@@ -1761,8 +1761,13 @@ table :is(th:nth-child(4), td:nth-child(4)){
   font-size:.93rem;
   line-height:1.42;
 }
-
-
+/* HP列を丸ごと非表示 */
+table :is(th:nth-child(2), td:nth-child(2)){
+  display: none !important;
+}
+.role-name {
+    white-space: normal;   /* 改行を許可 */
+}
 </style>
 </head>
 <body>
@@ -1778,18 +1783,18 @@ table :is(th:nth-child(4), td:nth-child(4)){
             <tr><th>名前</th><th>HP</th><th>勝利条件</th><th>能力</th></tr>
           </thead>
           <tbody>
-            <tr><td>アリス</td><td>8</td><td>生存している</td><td><span class="cond">うさぎさんヒール</span>手番初めに使用。ダメージを全回復（1回）</td></tr>
-            <tr><td>アンジェラ</td><td>8</td><td>右隣のプレイヤーが勝利する</td><td><span class="cond">移り気</span>勝利条件を「左隣のプレイヤーが勝利する」に変更（1回）</td></tr>
-            <tr><td>アガサ</td><td>8</td><td>自分の手番でゲーム終了</td><td><span class="cond">完全犯罪</span>手番最後にダイス2個を振り、出目エリアのPL全員に3ダメージ（1回）</td></tr>
-            <tr><td>バイロン</td><td>10</td><td>装備カードを5枚以上所持</td><td><span class="cond">念力の懐中時計</span>2以上の攻撃ダメージ時、代わりに装備を1つ奪う</td></tr>
-            <tr><td>ベンジャミン</td><td>10</td><td>他PLが装備を5つ以上所持</td><td><span class="cond">太鼓持ち</span>手番最後に同じエリアのPLへ装備を1つ渡せる</td></tr>
-            <tr><td>ブルース</td><td>10</td><td>攻撃でHP12以上のPLを脱落させる、または終了時にマス9にいる</td><td><span class="cond">国士無双</span>攻撃でHP11以下のPLを脱落させた時、自分の正体を公開</td></tr>
-            <tr><td>クレイグ</td><td>11</td><td>2人脱落後に他PLを攻撃して脱落させる</td><td><span class="cond">死の饗宴</span>攻撃後、自分に2ダメージ与え再攻撃可</td></tr>
-            <tr><td>キャロル</td><td>11</td><td>最初に脱落する、または自分ともう1人だけ生存</td><td><span class="cond">聖痕</span>手番初めに2ダメージ回復</td></tr>
-            <tr><td>クレア</td><td>11</td><td>ゲーム終了時、自分のダメージが6～8</td><td><span class="cond">キャスリング</span>手番初めに自分と他PLのHPを入れ替える（1回）</td></tr>
-            <tr><td>ダニエル</td><td>13</td><td>最初に脱落する、またはシャドウ全員脱落かつ生存</td><td><span class="cond">絶叫</span>最初に他PLが脱落した時、正体カードを公開</td></tr>
-            <tr><td>デーヴィッド</td><td>13</td><td>「聖杯」「コンパス」「ブローチ」「ロザリオ」のうち3種を所持</td><td><span class="cond">グレイブディガー</span>手番初めに脱落者の装備カードから任意1枚獲得</td></tr>
-            <tr><td>デボラ</td><td>13</td><td>5人戦：終了時に最もダメージが多い／6人戦：自分以外のシチズンが勝利</td><td><span class="cond">献身的な愛</span>手番初めに勝利条件を「脱落する」に変更</td></tr>
+            <tr><td>アリス<br>(8)</td><td>8</td><td>生存している</td><td><span class="cond">うさぎさんヒール</span>手番初めに使用。ダメージを全回復（1回）</td></tr>
+            <tr><td>アンジェラ<br>(8)</td><td>8</td><td>右隣のプレイヤーが勝利する</td><td><span class="cond">移り気</span>勝利条件を「左隣のプレイヤーが勝利する」に変更（1回）</td></tr>
+            <tr><td>アガサ<br>(8)</td><td>8</td><td>自分の手番でゲーム終了</td><td><span class="cond">完全犯罪</span>手番最後にダイス2個を振り、出目エリアのPL全員に3ダメージ（1回）</td></tr>
+            <tr><td>バイロン<br>(10)</td><td>10</td><td>装備カードを5枚以上所持</td><td><span class="cond">念力の懐中時計</span>2以上の攻撃ダメージ時、代わりに装備を1つ奪う</td></tr>
+            <tr><td>ベンジャミン<br>(10)</td><td>10</td><td>他PLが装備を5つ以上所持</td><td><span class="cond">太鼓持ち</span>手番最後に同じエリアのPLへ装備を1つ渡せる</td></tr>
+            <tr><td>ブルース<br>(10)</td><td>10</td><td>攻撃でHP12以上のPLを脱落させる、または終了時にマス9にいる</td><td><span class="cond">国士無双</span>攻撃でHP11以下のPLを脱落させた時、自分の正体を公開</td></tr>
+            <tr><td>クレイグ<br>(11)</td><td>11</td><td>2人脱落後に他PLを攻撃して脱落させる</td><td><span class="cond">死の饗宴</span>攻撃後、自分に2ダメージ与え再攻撃可</td></tr>
+            <tr><td>キャロル<br>(11)</td><td>11</td><td>最初に脱落する、または自分ともう1人だけ生存</td><td><span class="cond">聖痕</span>手番初めに2ダメージ回復</td></tr>
+            <tr><td>クレア<br>(11)</td><td>11</td><td>ゲーム終了時、自分のダメージが6～8</td><td><span class="cond">キャスリング</span>手番初めに自分と他PLのHPを入れ替える（1回）</td></tr>
+            <tr><td>ダニエル<br>(13)</td><td>13</td><td>最初に脱落する、またはシャドウ全員脱落かつ生存</td><td><span class="cond">絶叫</span>最初に他PLが脱落した時、正体カードを公開</td></tr>
+            <tr><td>デーヴィッド<br>(13)</td><td>13</td><td>「いにしえの聖杯」「神秘のコンパス」「幸運のブローチ」「銀のロザリオ」のうち3種を所持</td><td><span class="cond">グレイブディガー</span>手番初めに脱落者の装備カードから任意1枚獲得</td></tr>
+            <tr><td>デボラ<br>(13)</td><td>13</td><td>5人戦：終了時に最もダメージが多い／6人戦：自分以外のシチズンが勝利</td><td><span class="cond">献身的な愛</span>手番初めに勝利条件を「脱落する」に変更</td></tr>
           </tbody>
         </table>
       </article>
@@ -1802,15 +1807,15 @@ table :is(th:nth-child(4), td:nth-child(4)){
             <tr><th>名前</th><th>HP</th><th>勝利条件</th><th>能力</th></tr>
           </thead>
           <tbody>
-            <tr><td>エミ</td><td>10</td><td>シャドウ全員の脱落</td><td><span class="cond">テレポート</span>移動時、出目エリアまたは両隣エリアに移動可</td></tr>
-            <tr><td>エリカ</td><td>10</td><td>シャドウ全員の脱落</td><td><span class="cond">癒しの光</span>手番終了時に4面ダイスを振り、出目分他PLを回復</td></tr>
-            <tr><td>エマ</td><td>10</td><td>シャドウ全員の脱落</td><td><span class="cond">封印の鎖</span>手番初めに他PL1人の特殊能力をゲーム終了まで封印（1回）</td></tr>
-            <tr><td>フェリックス</td><td>12</td><td>シャドウ全員の脱落</td><td><span class="cond">アストラル・メイス</span>手番初めに他PL1人へ6面ダイス攻撃（1回）</td></tr>
-            <tr><td>フェリシア</td><td>12</td><td>シャドウ全員の脱落</td><td><span class="cond">スラム街の天使</span>手番初めに任意のPLのダメージを7にする（1回）</td></tr>
-            <tr><td>フレディ</td><td>12</td><td>シャドウ全員の脱落</td><td><span class="cond">ドラゴンアタック</span>正体公開中のPLへの攻撃成功時 +2ダメージ</td></tr>
-            <tr><td>ゴードン</td><td>14</td><td>シャドウ全員の脱落</td><td><span class="cond">絶対無敵バリア</span>手番終了時に使用。次の自分の手番初めまで全ダメージ無効（1回）</td></tr>
-            <tr><td>ガラハド</td><td>14</td><td>シャドウ全員の脱落</td><td><span class="cond">魔剣の伝承者</span>エクスカリバー所持時に攻撃失敗ならダイス振り直し</td></tr>
-            <tr><td>ゴドウィン</td><td>14</td><td>シャドウ全員の脱落</td><td><span class="cond">蘇生装置TYPE-G</span>自分脱落時、既に脱落しているPL1人をダメージ7で復活</td></tr>
+            <tr><td>エミ<br>(10)</td><td>10</td><td>シャドウ全員の脱落</td><td><span class="cond">テレポート</span>移動時、出目エリアまたは両隣エリアに移動可</td></tr>
+            <tr><td>エリカ<br>(10)</td><td>10</td><td>シャドウ全員の脱落</td><td><span class="cond">癒しの光</span>手番終了時に4面ダイスを振り、出目分他PLを回復</td></tr>
+            <tr><td>エマ<br>(10)</td><td>10</td><td>シャドウ全員の脱落</td><td><span class="cond">封印の鎖</span>手番初めに他PL1人の特殊能力をゲーム終了まで封印（1回）</td></tr>
+            <tr><td>フェリックス<br>(12)</td><td>12</td><td>シャドウ全員の脱落</td><td><span class="cond">アストラル・メイス</span>手番初めに他PL1人へ6面ダイス攻撃（1回）</td></tr>
+            <tr><td>フェリシア<br>(12)</td><td>12</td><td>シャドウ全員の脱落</td><td><span class="cond">スラム街の天使</span>手番初めに任意のPLのダメージを7にする（1回）</td></tr>
+            <tr><td>フレディ<br>(12)</td><td>12</td><td>シャドウ全員の脱落</td><td><span class="cond">ドラゴンアタック</span>正体公開中のPLへの攻撃成功時 +2ダメージ</td></tr>
+            <tr><td>ゴードン<br>(14)</td><td>14</td><td>シャドウ全員の脱落</td><td><span class="cond">絶対無敵バリア</span>手番終了時に使用。次の自分の手番初めまで全ダメージ無効（1回）</td></tr>
+            <tr><td>ガラハド<br>(14)</td><td>14</td><td>シャドウ全員の脱落</td><td><span class="cond">魔剣の伝承者</span>エクスカリバー所持時に攻撃失敗ならダイス振り直し</td></tr>
+            <tr><td>ゴドウィン<br>(14)</td><td>14</td><td>シャドウ全員の脱落</td><td><span class="cond">蘇生装置TYPE-G</span>自分脱落時、既に脱落しているPL1人をダメージ7で復活</td></tr>
           </tbody>
         </table>
       </article>
@@ -1823,15 +1828,15 @@ table :is(th:nth-child(4), td:nth-child(4)){
             <tr><th>名前</th><th>HP</th><th>勝利条件</th><th>能力</th></tr>
           </thead>
           <tbody>
-            <tr><td>ウルリッヒ</td><td>11</td><td>レイダー全員またはシチズン3人の脱落</td><td>推理カードを受け取った時、ウソをついてよい</td></tr>
-            <tr><td>ウラヌス</td><td>11</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">メテオストライク</span>手番初めにエリア4-5,10にいるPL1人へ3ダメージ</td></tr>
-            <tr><td>アルスター</td><td>11</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">デル・フリス</span>2回攻撃できる</td></tr>
-            <tr><td>ヴェノム</td><td>13</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">反駁の猛毒</span>攻撃者は1ダメージ受けるか装備を渡すか選択</td></tr>
-            <tr><td>ヴァンパイア</td><td>13</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">吸血</span>攻撃成功時、ダメージを2回復</td></tr>
-            <tr><td>ヴェンデッタ</td><td>13</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">冥府の大鎌</span>攻撃は4面ダイスのみ使用</td></tr>
-            <tr><td>ワイト</td><td>14</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">亡者の王</span>手番終了後、脱落者の数だけ追加手番（1回）</td></tr>
-            <tr><td>ワルプルギス</td><td>14</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">重力の虹</span>攻撃時、任意のPL1人と位置を交換可</td></tr>
-            <tr><td>ワーウルフ</td><td>14</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">反撃</span>攻撃を受けた時、そのPLをただちに攻撃</td></tr>
+            <tr><td>ウルリッヒ<br>(11)</td><td>11</td><td>レイダー全員またはシチズン3人の脱落</td><td>推理カードを受け取った時、ウソをついてよい</td></tr>
+            <tr><td>ウラヌス<br>(11)</td><td>11</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">メテオストライク</span>手番初めにエリア4-5,10にいるPL1人へ3ダメージ</td></tr>
+            <tr><td>アルスター<br>(11)</td><td>11</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">デル・フリス</span>2回攻撃できる</td></tr>
+            <tr><td>ヴェノム<br>(13)</td><td>13</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">反駁の猛毒</span>攻撃者は1ダメージ受けるか装備を渡すか選択</td></tr>
+            <tr><td>ヴァンパイア<br>(13)</td><td>13</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">吸血</span>攻撃成功時、ダメージを2回復</td></tr>
+            <tr><td>ヴェンデッタ<br>(13)</td><td>13</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">冥府の大鎌</span>攻撃は4面ダイスのみ使用</td></tr>
+            <tr><td>ワイト<br>(14)</td><td>14</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">亡者の王</span>手番終了後、脱落者の数だけ追加手番（1回）</td></tr>
+            <tr><td>ワルプルギス<br>(14)</td><td>14</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">重力の虹</span>攻撃時、任意のPL1人と位置を交換可</td></tr>
+            <tr><td>ワーウルフ<br>(14)</td><td>14</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">反撃</span>攻撃を受けた時、そのPLをただちに攻撃</td></tr>
           </tbody>
         </table>
       </article>
