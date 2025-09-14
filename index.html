@@ -18,7 +18,7 @@ header{
   /* 追加：ヘッダーを最前面にしてモーダルより上に */
   position: sticky;     /* または relative でも可 */
   top: 0;               /* sticky の場合 */
-  z-index: 2147483610;  /* .modal(2147483602)より上 */
+  z-index: 800;  /* .modal(2147483602)より上 */
   background: #fff;     /* モーダルの半透明黒の上でも可読に */
 }
   h1{margin:0;font-size:18px}
@@ -129,28 +129,87 @@ body {
   .diceres{font-weight:700}
 
   /* ホスト用 設定マーク（左下固定） */
-#hostGear{position:fixed;left:14px;bottom:14px;z-index:2147483605;
+#hostGear{position:fixed;left:14px;bottom:14px;z-index:500;
   width:44px;height:44px;border-radius:50%;border:1px solid #ddd;background:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12);
   display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px}
 
-#hostPanel{position:fixed;left:66px;bottom:14px;z-index:2147483606;
+#hostPanel{position:fixed;left:66px;bottom:14px;z-index:501;
   border:1px solid #111;border-radius:12px;background:#fff;box-shadow:0 6px 20px rgba(0,0,0,.16);
   padding:10px;display:flex;gap:10px;align-items:center}
   #hostPanel button{padding:8px 12px;border:1px solid #ddd;border-radius:10px;background:#111;color:#fff;cursor:pointer}
 
 /* 非ホスト向けヘルプ（左下の黒丸「？」） */
 #helpBtn{
-  position:fixed; left:14px; bottom:14px; z-index:2147483604;
+  position:fixed; left:14px; bottom:14px; z-index:499;
   width:44px; height:44px; border-radius:50%;
   border:1px solid #111; background:#000; color:#fff;
   box-shadow:0 4px 14px rgba(0,0,0,.12);
   display:flex; align-items:center; justify-content:center;
   cursor:pointer; font-size:20px; font-weight:900; line-height:1;
 }
+/* 「？」の近くに出すミニ裏カード共通 */
+.help-mini-card{
+  position: fixed;
+  width: 60px; height: 90px;           /* 小さめ（myDealMiniと合わせた比率） */
+  border: 1px solid #111;
+  border-radius: 8px;
+  background: #fff center/cover no-repeat;
+  box-shadow: 0 4px 14px rgba(0,0,0,.12);
+  z-index: 503;                  /* helpBtn(3604)より前面 */
+  pointer-events: auto;                 /* クリック除外判定で使うため */
+}
+
+/* ？の上：黒デッキ裏面 */
+#helpBlackBack {
+  position: fixed;
+  left: 66px;
+  bottom: 14px;
+  width: 60px;
+  height: 90px;
+  border: 1px solid #111;
+  border-radius: 8px;
+  overflow: hidden;
+  background: url('blackdeck.jpg') center center no-repeat;
+  background-size: cover;
+  box-shadow: 0 4px 14px rgba(0,0,0,.12);
+z-index:10
+}
+
+/* 白カード：中央基準で右端を上げて −20° */
+#helpBlackBack::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url('whitedeck.jpg') center center no-repeat;
+  background-size: cover;
+  pointer-events: none;
+
+  /* 左中央 → 右中央より11px上へ（約−20°） */
+  clip-path: polygon(
+    0 0,
+    0 50%,
+    100% calc(50% - 8px),
+    100% 0
+  );
+}
+
+
+/* ？の右：正体カード裏面 */
+#helpRoleBack{
+  left: 14px;
+  bottom: 66px;
+  background-image: url('browncard.jpg');
+z-index:11
+}
+
+
+
+
+
 
 /* 各部屋の上に出す点線枠のポップ（薄い灰・黒字、6文字ごと改行） */
 .room-pop{
-  position:fixed; z-index:2147483603;
+  position:fixed; z-index:300;
   background:rgba(238,238,238,0.8); /* ← 半透明に変更 */
   color:#111;
   border:1px dashed #999; border-radius:10px;
@@ -162,9 +221,13 @@ body {
 .room-pop.hidden{ display:none !important; }
   
   /* 汎用モーダル */
-  .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:2147483602}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:450}
   .modal-panel{background:#fff;border:1px solid #111;border-radius:14px;box-shadow:0 10px 26px rgba(0,0,0,.2);padding:16px}
-
+#roleTableModal .modal-panel {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
 
 #dealViewer .modal-panel{
   background: transparent !important;
@@ -1226,7 +1289,7 @@ dicebar{
 
 /* 各部屋の上に出す点線枠のポップ（薄い灰・黒字、6文字ごと改行） */
 .room-pop{
-  position:fixed; z-index:2147483603;
+  position:fixed; z-index:200;
   background:rgba(238,238,238,0.8);
   color:#111;
   border:1px dashed #999; border-radius:10px;
@@ -1344,6 +1407,10 @@ dicebar{
   
 <!-- 自分用 ミニカード（配布後） -->
 <div id="myDealMini" class="hidden" title="カードを開く"></div>
+<!-- 「？」の右側：正体カード裏面ミニ -->
+<div id="helpRoleBack" class="help-mini-card hidden" aria-label="正体カード裏面（？の右）"></div>
+<!-- 「？」の上側：黒デッキ裏面ミニ -->
+<div id="helpBlackBack" class="help-mini-card hidden" aria-label="黒デッキ裏面（？の上）"></div>
 
 <div id="turnPop" class="hidden" aria-live="polite">YOUR TURN</div>
 <audio id="turnSound" src="goblin.mp3" preload="auto"></audio>
@@ -1393,6 +1460,12 @@ dicebar{
   </div>
 </div>
 
+<!-- 役職表モーダル（helpRoleBackクリックで開く） -->
+<div id="roleTableModal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:1100px;width:96vw;max-height:90vh;overflow:auto;padding:0">
+    <iframe id="roleTableFrame" style="border:0;width:100%;height:80vh"></iframe>
+  </div>
+</div>
 
 <!-- 色選択モーダル -->
 <div id="colorModal" class="modal hidden" role="dialog" aria-modal="true">
@@ -1555,6 +1628,245 @@ function rollBothDice(){
 const helpBtn   = document.getElementById('helpBtn');
 
 if (helpBtn) helpBtn.classList.add('hidden'); // 最初はクラスで隠す
+// ミニ裏カードの参照
+const helpRoleBack = document.getElementById('helpRoleBack');
+const helpBlackBack = document.getElementById('helpBlackBack');
+
+// 表示/非表示を一括制御
+function setHelpMiniVisible(show){
+  [helpRoleBack, helpBlackBack].forEach(el => {
+    if (!el) return;
+    el.classList.toggle('hidden', !show);
+  });
+}
+
+// ？クリック：同時トグル（自動クローズはしない）
+helpBtn?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const show = helpRoleBack?.classList.contains('hidden') || helpBlackBack?.classList.contains('hidden');
+  setHelpMiniVisible(show);
+});
+// === 役職表モーダル ===
+const roleTableModal = document.getElementById('roleTableModal');
+const roleTableFrame = document.getElementById('roleTableFrame');
+
+// あなたが提示したHTML全文をそのまま埋め込む（CSS衝突を避けるためiframeに流し込む）
+const ROLE_TABLE_HTML = `<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>キャラクター一覧（CITIZEN / RAIDER / SHADOW）</title>
+<style>
+  :root{
+    --bg:#0b0f14; --text:#e8eef6; --muted:#b9c4d1;
+    /* グリッド（罫線） */
+    --grid:#dbe4f4;          /* セル境界 */
+    --grid-outer:#c9d6ea;    /* テーブル外枠 */
+    /* 左が濃く → 右が薄いグラデーション */
+    --citizen-grad:linear-gradient(90deg,#ffc400 0%, #ffe067 55%, #fff4a8 100%);
+    --raider-grad:linear-gradient(90deg,#d9123a 0%, #ff4d4f 55%, #ff9da6 100%);
+    --shadow-grad:linear-gradient(90deg,#5f31d7 0%, #8f63ff 55%, #d8ccff 100%);
+  }
+
+  /* ★ 全体フォントを一段小さく（フォント-1） */
+  html,body{
+    background:var(--bg); color:var(--text);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans JP","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+    font-size:15px;                /* 既定より少し小さめ */
+    margin:0;
+  }
+html, body{
+  background: transparent !important;
+}
+  .wrap{max-width:1100px; margin:32px auto; padding:0 16px}
+  h1{font-size:1.55rem; margin:0 0 10px}
+  .note{margin:2px 0 16px; color:var(--muted); font-size:.9rem}
+
+  /* レイアウト */
+  .grid{display:grid; gap:10px}
+  @media(min-width:920px){ .grid{grid-template-columns:repeat(3,1fr)} }
+
+  /* カード（上カーブ） */
+  .card{border:none; border-radius:22px 22px 0 0; overflow:hidden; background:transparent}
+
+  /* 役職名：左詰め、左濃グラデ、やや小さめ */
+  .card header{
+    padding:9px 12px; font-weight:800; font-size:1rem;
+    text-align:left; color:#1a1a1a; border-radius:22px 22px 0 0;
+  }
+  .citizen header{background:var(--citizen-grad)}
+  .raider  header{background:var(--raider-grad)}
+  .shadow  header{background:var(--shadow-grad)}
+
+  /* テーブル：白背景、縦横グリッド */
+table{
+  width:100%;
+  table-layout:fixed;
+  border-collapse:separate;   /* ← 角丸を効かせるため separate */
+  border-spacing:0;           /* ← 余白が出ないように 0 */
+  border:1px solid var(--grid-outer);
+  background:#f8f1e1;
+  border-radius:0 0 22px 22px; /* ← ★下端を22px角丸（上は0） */
+  overflow:hidden;            /* ← 内容がはみ出さないように */
+}
+  th,td{
+    border-top:1px solid var(--grid);     /* 横グリッド */
+    border-left:1px solid var(--grid);    /* 縦グリッド */
+    padding:7px 9px;                      /* さらに少しだけ詰める */
+    vertical-align:top; color:#0e1320;
+  }
+  th:first-child, td:first-child{ border-left:1px solid var(--grid-outer); }
+  thead th{
+    background:#e9dcc4;
+    font-weight:700; font-size:.9rem;
+    border-top-color:var(--grid-outer);
+  }
+
+  /* 名前列＝全角5文字相当幅で改行・中央寄せ */
+  table :is(th:first-child, td:first-child){
+    width:5em; min-width:5em; max-width:5em;
+    white-space:normal; word-break:break-all; overflow-wrap:anywhere; text-align:center;
+  }
+  /* HP列＝2文字想定でタイト、中央寄せ */
+  table :is(th:nth-child(2), td:nth-child(2)){
+    width:3ch; min-width:3ch; max-width:3ch;
+    text-align:center; font-weight:800; color:#334; padding-left:2px; padding-right:2px;
+  }
+  /* 残り列の字間 */
+  td:nth-child(3), td:nth-child(4){font-size:.93rem; line-height:1.42}
+
+  /* ★ 特殊能力名：黒背景・白字・角丸のバッジ化 */
+  .cond{
+    display:inline-block;
+    background:#000; color:#fff;
+    border-radius:6px;
+    padding:2px 8px;
+    line-height:1;
+    font-weight:800;
+    margin-right:6px;   /* 後ろの本文と間隔 */
+    white-space:nowrap; /* バッジは中で折り返さない */
+  }
+
+table :is(th:nth-child(3), td:nth-child(3)){
+  width:22%;         /* ← 追加 */
+  min-width:22%;
+  text-align:left;
+}
+
+/* ★ 能力列＝やや広め */
+table :is(th:nth-child(4), td:nth-child(4)){
+  width:auto;        /* ← 追加：残りを優先的に使用 */
+  min-width:35%;     /* ← 追加：必要に応じ調整 */
+  font-size:.93rem;
+  line-height:1.42;
+}
+
+
+</style>
+</head>
+<body>
+  <div class="wrap">
+
+
+    <section class="grid">
+      <!-- CITIZEN -->
+      <article class="card citizen">
+        <header>シチズン（CITIZEN）</header>
+        <table>
+          <thead>
+            <tr><th>名前</th><th>HP</th><th>勝利条件</th><th>能力</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>アリス</td><td>8</td><td>生存している</td><td><span class="cond">うさぎさんヒール</span>手番初めに使用。ダメージを全回復（1回）</td></tr>
+            <tr><td>アンジェラ</td><td>8</td><td>右隣のプレイヤーが勝利する</td><td><span class="cond">移り気</span>勝利条件を「左隣のプレイヤーが勝利する」に変更（1回）</td></tr>
+            <tr><td>アガサ</td><td>8</td><td>自分の手番でゲーム終了</td><td><span class="cond">完全犯罪</span>手番最後にダイス2個を振り、出目エリアのPL全員に3ダメージ（1回）</td></tr>
+            <tr><td>バイロン</td><td>10</td><td>装備カードを5枚以上所持</td><td><span class="cond">念力の懐中時計</span>2以上の攻撃ダメージ時、代わりに装備を1つ奪う</td></tr>
+            <tr><td>ベンジャミン</td><td>10</td><td>他PLが装備を5つ以上所持</td><td><span class="cond">太鼓持ち</span>手番最後に同じエリアのPLへ装備を1つ渡せる</td></tr>
+            <tr><td>ブルース</td><td>10</td><td>攻撃でHP12以上のPLを脱落させる、または終了時にマス9にいる</td><td><span class="cond">国士無双</span>攻撃でHP11以下のPLを脱落させた時、自分の正体を公開</td></tr>
+            <tr><td>クレイグ</td><td>11</td><td>2人脱落後に他PLを攻撃して脱落させる</td><td><span class="cond">死の饗宴</span>攻撃後、自分に2ダメージ与え再攻撃可</td></tr>
+            <tr><td>キャロル</td><td>11</td><td>最初に脱落する、または自分ともう1人だけ生存</td><td><span class="cond">聖痕</span>手番初めに2ダメージ回復</td></tr>
+            <tr><td>クレア</td><td>11</td><td>ゲーム終了時、自分のダメージが6～8</td><td><span class="cond">キャスリング</span>手番初めに自分と他PLのHPを入れ替える（1回）</td></tr>
+            <tr><td>ダニエル</td><td>13</td><td>最初に脱落する、またはシャドウ全員脱落かつ生存</td><td><span class="cond">絶叫</span>最初に他PLが脱落した時、正体カードを公開</td></tr>
+            <tr><td>デーヴィッド</td><td>13</td><td>「聖杯」「コンパス」「ブローチ」「ロザリオ」のうち3種を所持</td><td><span class="cond">グレイブディガー</span>手番初めに脱落者の装備カードから任意1枚獲得</td></tr>
+            <tr><td>デボラ</td><td>13</td><td>5人戦：終了時に最もダメージが多い／6人戦：自分以外のシチズンが勝利</td><td><span class="cond">献身的な愛</span>手番初めに勝利条件を「脱落する」に変更</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <!-- RAIDER -->
+      <article class="card raider">
+        <header>レイダー（RAIDER）</header>
+        <table>
+          <thead>
+            <tr><th>名前</th><th>HP</th><th>勝利条件</th><th>能力</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>エミ</td><td>10</td><td>シャドウ全員の脱落</td><td><span class="cond">テレポート</span>移動時、出目エリアまたは両隣エリアに移動可</td></tr>
+            <tr><td>エリカ</td><td>10</td><td>シャドウ全員の脱落</td><td><span class="cond">癒しの光</span>手番終了時に4面ダイスを振り、出目分他PLを回復</td></tr>
+            <tr><td>エマ</td><td>10</td><td>シャドウ全員の脱落</td><td><span class="cond">封印の鎖</span>手番初めに他PL1人の特殊能力をゲーム終了まで封印（1回）</td></tr>
+            <tr><td>フェリックス</td><td>12</td><td>シャドウ全員の脱落</td><td><span class="cond">アストラル・メイス</span>手番初めに他PL1人へ6面ダイス攻撃（1回）</td></tr>
+            <tr><td>フェリシア</td><td>12</td><td>シャドウ全員の脱落</td><td><span class="cond">スラム街の天使</span>手番初めに任意のPLのダメージを7にする（1回）</td></tr>
+            <tr><td>フレディ</td><td>12</td><td>シャドウ全員の脱落</td><td><span class="cond">ドラゴンアタック</span>正体公開中のPLへの攻撃成功時 +2ダメージ</td></tr>
+            <tr><td>ゴードン</td><td>14</td><td>シャドウ全員の脱落</td><td><span class="cond">絶対無敵バリア</span>手番終了時に使用。次の自分の手番初めまで全ダメージ無効（1回）</td></tr>
+            <tr><td>ガラハド</td><td>14</td><td>シャドウ全員の脱落</td><td><span class="cond">魔剣の伝承者</span>エクスカリバー所持時に攻撃失敗ならダイス振り直し</td></tr>
+            <tr><td>ゴドウィン</td><td>14</td><td>シャドウ全員の脱落</td><td><span class="cond">蘇生装置TYPE-G</span>自分脱落時、既に脱落しているPL1人をダメージ7で復活</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <!-- SHADOW -->
+      <article class="card shadow">
+        <header>シャドウ（SHADOW）</header>
+        <table>
+          <thead>
+            <tr><th>名前</th><th>HP</th><th>勝利条件</th><th>能力</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>ウルリッヒ</td><td>11</td><td>レイダー全員またはシチズン3人の脱落</td><td>推理カードを受け取った時、ウソをついてよい</td></tr>
+            <tr><td>ウラヌス</td><td>11</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">メテオストライク</span>手番初めにエリア4-5,10にいるPL1人へ3ダメージ</td></tr>
+            <tr><td>アルスター</td><td>11</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">デル・フリス</span>2回攻撃できる</td></tr>
+            <tr><td>ヴェノム</td><td>13</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">反駁の猛毒</span>攻撃者は1ダメージ受けるか装備を渡すか選択</td></tr>
+            <tr><td>ヴァンパイア</td><td>13</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">吸血</span>攻撃成功時、ダメージを2回復</td></tr>
+            <tr><td>ヴェンデッタ</td><td>13</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">冥府の大鎌</span>攻撃は4面ダイスのみ使用</td></tr>
+            <tr><td>ワイト</td><td>14</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">亡者の王</span>手番終了後、脱落者の数だけ追加手番（1回）</td></tr>
+            <tr><td>ワルプルギス</td><td>14</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">重力の虹</span>攻撃時、任意のPL1人と位置を交換可</td></tr>
+            <tr><td>ワーウルフ</td><td>14</td><td>レイダー全員またはシチズン3人の脱落</td><td><span class="cond">反撃</span>攻撃を受けた時、そのPLをただちに攻撃</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+    </section>
+  </div>
+</body>
+</html>`;
+
+// ミニ裏カード（正体）クリックでモーダルを開く
+helpRoleBack?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (roleTableFrame && ROLE_TABLE_HTML) {
+    roleTableFrame.srcdoc = ROLE_TABLE_HTML;
+  }
+  roleTableModal?.classList.remove('hidden');
+});
+
+// モーダルの外側クリックで閉じる
+roleTableModal?.addEventListener('click', (e) => {
+  if (e.target === roleTableModal) {
+    roleTableModal.classList.add('hidden');
+  }
+});
+
+// 画面のどこかをクリックしたら閉じる（？／ミニ自身は除外）
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  const withinBtn   = helpBtn?.contains(t);
+  const withinRole  = helpRoleBack?.contains(t);
+  const withinBlack = helpBlackBack?.contains(t);
+  if (withinBtn || withinRole || withinBlack) return;
+  setHelpMiniVisible(false);
+});
+
 
 const mo = new MutationObserver(() => {
   const joined = !roomPanel.classList.contains('hidden');
