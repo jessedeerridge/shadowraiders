@@ -236,6 +236,12 @@ z-index:11
   border: none !important;
   box-shadow: none !important;
 }
+/* アイテム一覧モーダルの外枠を完全透明に */
+#itemTableModal .modal-panel {
+  background: transparent !important;   /* 背景を透明に */
+  border: none !important;              /* 枠線を消す */
+  box-shadow: none !important;          /* 影も消す */
+}
 
 #dealViewer .modal-panel{
   background: transparent !important;
@@ -1351,6 +1357,11 @@ dicebar{
   min-width:0;       /* 折り返し計算の保険 */
 }
 
+#itemTableModal .modal-panel{
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
 
 </style>
 </head>
@@ -1474,6 +1485,15 @@ dicebar{
     <iframe id="roleTableFrame" style="border:0;width:100%;height:80vh"></iframe>
   </div>
 </div>
+
+<!-- アイテム一覧モーダル（白/黒/緑） -->
+<div id="itemTableModal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:1100px;width:96vw;max-height:90vh;overflow:auto;padding:0">
+    <iframe id="itemTableFrame" style="border:0;width:100%;height:80vh"></iframe>
+  </div>
+</div>
+
+
 
 <!-- 色選択モーダル -->
 <div id="colorModal" class="modal hidden" role="dialog" aria-modal="true">
@@ -1776,6 +1796,11 @@ table :is(th:nth-child(2), td:nth-child(2)){
 .role-name {
     white-space: normal;   /* 改行を許可 */
 }
+
+
+
+
+
 </style>
 </head>
 <body>
@@ -1853,6 +1878,197 @@ table :is(th:nth-child(2), td:nth-child(2)){
   </div>
 </body>
 </html>`;
+
+// === アイテム一覧モーダル ===
+const itemTableModal = document.getElementById('itemTableModal');
+const itemTableFrame = document.getElementById('itemTableFrame');
+
+// あなたが提示した「白黒緑アイテム一覧」HTML全文を iframe に流し込む
+const ITEM_TABLE_HTML = `<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>白黒緑アイテム一覧</title>
+<style>
+:root{
+  --bg:#0b0f14; --text:#e8eef6;
+  --grid:#dbe4f4;
+  --grid-outer:#c9d6ea;
+  --white-grad:linear-gradient(90deg,#ffffff 0%, #f5f5f5 55%, #e0e0e0 100%);
+  --black-grad:linear-gradient(90deg,#222 0%, #444 55%, #666 100%);
+  --green-grad:linear-gradient(90deg,#1e7f3a 0%, #32a852 55%, #61d989 100%);
+}
+html,body{
+  background:var(--bg); color:var(--text);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans JP",sans-serif;
+  font-size:15px; margin:0;
+}
+/* ▼ モーダル外装の白面板を消して iframe だけ見せるため */
+html, body{ background: transparent !important; }
+
+.wrap{max-width:1100px; margin:32px auto; padding:0 16px}
+.grid{display:grid; gap:20px}
+@media(min-width:1200px){ .grid{grid-template-columns:repeat(3,1fr)} }
+
+.card{border:none; border-radius:22px 22px 0 0; overflow:hidden; background:transparent}
+.card header{
+  padding:10px 14px; font-weight:800; font-size:1rem;
+  color:#1a1a1a; border-radius:22px 22px 0 0;
+}
+.white header{background:var(--white-grad)}
+.black header{background:var(--black-grad); color:#fff}
+.green header{background:var(--green-grad)}
+
+/* テーブル共通 */
+table{
+  width:100%;
+  table-layout:fixed;
+  border-collapse:separate;
+  border-spacing:0;
+  border:1px solid var(--grid-outer);
+  background:#f8f1e1;
+  border-radius:0 0 22px 22px;
+  overflow:hidden;
+}
+th,td{
+  border-top:1px solid var(--grid);
+  border-left:1px solid var(--grid);
+  padding:7px 9px;
+  vertical-align:top;
+  color:#0e1320;
+}
+th:first-child, td:first-child{border-left:1px solid var(--grid-outer);}
+thead th{
+  background:#e9dcc4;
+  font-weight:700; font-size:.9rem;
+  border-top-color:var(--grid-outer);
+}
+table :is(th:first-child, td:first-child){
+  width:16em; min-width:16em;
+  white-space:normal; word-break:break-all;
+}
+td:nth-child(2){font-size:.93rem; line-height:1.42}
+
+/* ☩マークを黒丸白字に */
+.mark{
+  display:inline-block;
+  background:#000;
+  color:#fff;
+  font-weight:900;
+  font-size:0.9rem;
+  border-radius:50%;
+  width:1.4em;
+  height:1.4em;
+  line-height:1.4em;
+  text-align:center;
+  margin-left:4px;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="grid">
+
+    <!-- White Deck -->
+    <article class="card white">
+      <header>白カード</header>
+      <table>
+        <thead><tr><th>カード名</th><th>効果</th></tr></thead>
+        <tbody>
+          <tr><td>銀のロザリオ<span class="mark">☩</span></td><td>ダイスの攻撃によって倒したPLの全ての装備を奪う。</td></tr>
+          <tr><td>虹色のパラソル<span class="mark">☩</span></td><td>攻撃する代わりに攻撃レンジのPLに推理カードを渡す。</td></tr>
+          <tr><td>エクスカリバー<span class="mark">☩</span></td><td>あなたがレイダーなら、攻撃ダメージが 2 上がる。</td></tr>
+          <tr><td>神秘のコンパス<span class="mark">☩</span></td><td>移動の時にダイスを二回振って、選ぶことができる。</td></tr>
+          <tr><td>幸運のブローチ<span class="mark">☩</span></td><td>市庁舎(8)の効果ダメージを受けない。</td></tr>
+          <tr><td>賢者のローブ<span class="mark">☩</span></td><td>与える攻撃ダメージ、受ける攻撃ダメージが 1 減少する。</td></tr>
+          <tr><td>いにしえの聖杯<span class="mark">☩</span></td><td>三つ目の黒犬,吸血コウモリ,呪いの人形の効果を受けない。</td></tr>
+          <tr><td>光臨</td><td>あなたがレイダーなら、全ダメージを回復する。</td></tr>
+          <tr><td>守護天使</td><td>次の自分の手番の始めまで、攻撃ダメージを受けない。</td></tr>
+          <tr><td>封印の知恵</td><td>この手番の終了後、もう1手番を行う。</td></tr>
+          <tr><td>応急手当</td><td>任意のPL（自分も可）を選び、そのPLのダメージを7にする。</td></tr>
+          <tr><td>人魚の涙</td><td>最もダメージが多い人を 3 回復する。</td></tr>
+          <tr><td>幸せのクッキー</td><td>あなたが A または U なら、HPを全回復する。</td></tr>
+          <tr><td>闇を祓う鏡</td><td>あなたがシャドウ陣営でウルリッヒでないなら、必ず正体カードを公開する。</td></tr>
+          <tr><td>いやしの聖水</td><td>自分のダメージを 2 回復する。</td></tr>
+          <tr><td>裁きの閃光</td><td>自分以外のPL全員に 2 ダメージ与える。</td></tr>
+          <tr><td>恩恵</td><td>自分以外のPLを選び、6面ダイスを振る。目の数回復する。</td></tr>
+        </tbody>
+      </table>
+    </article>
+
+    <!-- Black Deck -->
+    <article class="card black">
+      <header>黒カード</header>
+      <table>
+        <thead><tr><th>カード名</th><th>効果</th></tr></thead>
+        <tbody>
+          <tr><td>サーベル<span class="mark">☩</span></td><td>攻撃ダメージが 1 増加する。</td></tr>
+          <tr><td>拳銃R<span class="mark">☩</span></td><td>攻撃ダメージが 1 増加する。</td></tr>
+          <tr><td>拳銃L<span class="mark">☩</span></td><td>攻撃ダメージが 1 増加する。</td></tr>
+          <tr><td>クロスボウガン<span class="mark">☩</span></td><td>攻撃ダメージが 1 増加する。</td></tr>
+          <tr><td>妖刀マサムネ<span class="mark">☩</span></td><td>攻撃レンジにPLがいれば必ず攻撃を行う。4面ダイスだけを使う。</td></tr>
+          <tr><td>ガトリング<span class="mark">☩</span></td><td>攻撃レンジのPL全員に攻撃する。</td></tr>
+          <tr><td>死神スコープ<span class="mark">☩</span></td><td>攻撃レンジが 1 増加する。</td></tr>
+          <tr><td>オリバーの子分</td><td>任意のPLを選んで、装備を1つ奪う。</td></tr>
+          <tr><td>吸血コウモリ</td><td>自分以外のPL1人に2ダメージ与え,自分は1回復する。</td></tr>
+          <tr><td>三つ目の黒犬</td><td>自分と選んだPL1人に2ダメージ与える。</td></tr>
+          <tr><td>暴動</td><td>ダイスを2つ振り、目のエリアにいるPL全員に3ダメージ与える。</td></tr>
+          <tr><td>バナナの皮</td><td>装備を1つ誰かに渡す。なければ 1 ダメージ受ける。</td></tr>
+          <tr><td>呪いの人形</td><td>PLを1人選び6面ダイスを振る。1-4なら選んだPLに、5-6なら自分に3ダメージ与える。</td></tr>
+          <tr><td>戦慄の闇儀式</td><td>あなたがシャドウなら、全回復する。</td></tr>
+        </tbody>
+      </table>
+    </article>
+
+    <!-- Green Deck -->
+    <article class="card green">
+      <header>緑カード</header>
+      <table>
+        <thead><tr><th>指示</th></tr></thead>
+        <tbody>
+          <tr><td>正体カードを見せよ。</td></tr>
+          <tr><td>あなたは  D / F / G / V / W ?（HP12以上）<br>だったら2ダメージ受けよ。</td></tr>
+          <tr><td>あなたは  A / B / C / E / U ?（HP11以下）<br>だったら1ダメージ受けよ。</td></tr>
+          <tr><td>あなたは シャドウ？<br>だったら2ダメージ受けよ。</td></tr>
+          <tr><td>あなたは シャドウ？<br>だったら❿に移動せよ。<br>既に➓にいる場合、1ダメージ受けよ。</td></tr>
+          <tr><td>あなたは シャドウ？<br>だったら1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ。</td></tr>
+          <tr><td>あなたは シャドウ？<br>だったら1ダメージ受けよ。</td></tr>
+          <tr><td>あなたは レイダー か シャドウ？<br>だったら装備を渡すか、1ダメージ受けよ。</td></tr>
+          <tr><td>あなたは レイダー？<br>だったら1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ。</td></tr>
+          <tr><td>あなたは レイダー？<br>だったら1ダメージ受けよ。</td></tr>
+          <tr><td>あなたは レイダー？<br>だったら❿に移動せよ。<br>既に➓にいる場合、1ダメージ受けよ。</td></tr>
+          <tr><td>あなたは シチズン か シャドウ？<br>だったら装備を渡すか、1ダメージ受けよ。</td></tr>
+          <tr><td>あなたは シチズン か レイダー？<br>だったら装備を渡すか、1ダメージ受けよ。</td></tr>
+          <tr><td>あなたは シチズン？<br>だったら❿に移動せよ。<br>既に➓にいる場合、1ダメージ受けよ。</td></tr>
+          <tr><td>あなたは シチズン？<br>だったら1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ。</td></tr>
+        </tbody>
+      </table>
+    </article>
+
+  </section>
+</div>
+</body>
+</html>`;
+
+
+
+// ミニ裏カード（黒デッキ）クリックでアイテム一覧モーダルを開く
+helpBlackBack?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (itemTableFrame && ITEM_TABLE_HTML) {
+    itemTableFrame.srcdoc = ITEM_TABLE_HTML;
+  }
+  itemTableModal?.classList.remove('hidden');
+});
+
+// アイテム一覧モーダルの外側クリックで閉じる
+itemTableModal?.addEventListener('click', (e) => {
+  if (e.target === itemTableModal) {
+    itemTableModal.classList.add('hidden');
+  }
+});
+
 
 // ミニ裏カード（正体）クリックでモーダルを開く
 helpRoleBack?.addEventListener('click', (e) => {
