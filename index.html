@@ -1513,7 +1513,7 @@ dicebar{
   <div class="modal-panel">
     <h2 style="margin:0 0 12px;font-size:16px">色を選んでください。</h2>
     <div class="color-grid" id="colorGrid"></div>
-    <div style="margin-top:10px;font-size:12px;opacity:.8">※スタートまで待ってください。</div>
+    <div style="margin-top:10px;font-size:12px;opacity:.8">※着席するとテーブルのデータを引き継ぎます。</div>
     <!-- ▼ 追加：右下の合計表示 -->
     <div class="color-foot"><span id="colorCount">プレイヤー数：0</span></div>
   </div>
@@ -2225,6 +2225,9 @@ const state = {
   dragSettleGuardUid: null,  // ★ 追加：ドロップ直後のエコー抑止
   dragSettleGuardUntil: 0,   // ★ 追加：抑止の期限(ms)
   deckClicksLeft: 0,         // ★ 追加：ダイス後に山札（裏）をめくれる残回数（ローカル）
+  myColorId: null,
+  autoSeatAttempted: false,
+  presentReady: false,
 };
 
 
@@ -2570,140 +2573,211 @@ if (btnSteal){
 }
 
   
-  // ===== 同名引継ぎ：旧UIDから「色」と「右下カード」を移す =====
-  async function onlySelfHasThisName(){
-    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-    const ps = psSnap.val() || {};
-    const same = Object.entries(ps).filter(([,v]) => (v?.name||'') === state.name);
-    return same.length === 1 && same[0][0] === state.uid;
+  // ===== 色テーブル単位の引継ぎ（UID→UID移管） =====
+  const seatStorageKey = (code)=> `shadowraiders.seat.${code}`;
+  const uidStorageKey = (code)=> `shadowraiders.uid.${code}`;
+  function getStoredSeatId(code){ return localStorage.getItem(seatStorageKey(code)); }
+  function getStoredUid(code){ return localStorage.getItem(uidStorageKey(code)); }
+  function rememberSeatId(colorId){
+    if (!state.code || !colorId) return;
+    localStorage.setItem(seatStorageKey(state.code), colorId);
+  }
+  function rememberLocalUid(){
+    if (!state.code || !state.uid) return;
+    localStorage.setItem(uidStorageKey(state.code), state.uid);
   }
 
-  async function findOrphanUidBySameName(){
-    const candidates = new Set();
-
-    // colors から同名の旧UID候補
-    const cSnap = await get(ref(db, `rooms/${state.code}/colors`));
-    const colors = cSnap.val() || {};
-    for (const [, claim] of Object.entries(colors)){
-      if ((claim?.name||'') === state.name && claim?.uid && claim.uid !== state.uid){
-        candidates.add(claim.uid);
-      }
-    }
-
-    // deal/v1/cards から旧UID候補
-    const dSnap = await get(ref(db, `rooms/${state.code}/deal/v1/cards`));
-    const deal = dSnap.val() || {};
-    for (const uid of Object.keys(deal)){
-      if (uid !== state.uid) candidates.add(uid);
-    }
-    // ★追加：equipment から旧UID候補（①）
-    const eSnap = await get(ref(db, `rooms/${state.code}/equipment`));
-    const equip = eSnap.val() || {};
-    for (const uid of Object.keys(equip)){
-      if (uid !== state.uid) candidates.add(uid);
-    }
-
-    // participants に居ないUIDのみ（＝孤児）
-    const psSnap = await get(ref(db, `rooms/${state.code}/participants`));
-    const ps = psSnap.val() || {};
-    for (const oldUid of candidates){
-      if (!ps[oldUid]) return oldUid;
-    }
-    return null;
+  function getColorLabelById(colorId){
+    return (COLOR_LIST.find(c => c.id === colorId)?.name) || colorId || '';
   }
 
-  async function inheritBySameName(){
-    // 仕様：同名在室者が自分だけのときのみ発動
-    if (!(await onlySelfHasThisName())) return;
-
-    const oldUid = await findOrphanUidBySameName();
-    if (!oldUid) return;
-
+  async function transferGreenHistory(oldUid, newUid, newName, colorId){
+    if (!oldUid || oldUid === newUid) return;
+    const snap = await get(ref(db, `rooms/${state.code}/greenHistory`));
+    const data = snap.val() || {};
     const updates = {};
+    const colorLabel = getColorLabelById(colorId);
 
-    // 色（colors）を自分に移す＋participants の color 反映
-    const colorsRef = ref(db, `rooms/${state.code}/colors`);
-    const cSnap = await get(colorsRef);
-    const colors = cSnap.val() || {};
-    for (const [colorId, claim] of Object.entries(colors)){
-      if (claim?.uid === oldUid && (claim?.name||'') === state.name){
-        // colors の所有者を自分に
-        updates[`rooms/${state.code}/colors/${colorId}`] =
-  { uid: state.uid, name: state.name, at: (claim?.at ?? Date.now()) };
-        // 参加者にも色を保存（既存実装に合わせ label で保存）
-        // ＊labelは曖昧になるので、厳密化したければ colorId を保存する実装に変えてOK
-        const label = (COLOR_LIST.find(c => c.id === colorId)?.name) || colorId;
-        updates[`rooms/${state.code}/participants/${state.uid}/color`] = label;
+    Object.entries(data).forEach(([key, rec])=>{
+      if (!rec) return;
+      let changed = false;
+      const next = { ...rec };
+      if (rec.from === oldUid){
+        next.from = newUid;
+        changed = true;
       }
-    }
-
-// 装備（equipment）
-// 左長方形アイコン（テーブル上）
-const oldIconSnap = await get(ref(db, `rooms/${state.code}/icons/${oldUid}`));
-const newIconSnap = await get(ref(db, `rooms/${state.code}/icons/${state.uid}`));
-const oldIcon = oldIconSnap.val();
-if (oldIcon && !newIconSnap.exists()){
-  updates[`rooms/${state.code}/icons/${state.uid}`] = { ...oldIcon, name: state.name };
-  updates[`rooms/${state.code}/icons/${oldUid}`] = null;
-}
-
-// 右側・左側の席アイコン（存在すれば移管）
-const oldRight = (await get(ref(db, `rooms/${state.code}/icons/right/${oldUid}`))).val();
-const oldLeft  = (await get(ref(db, `rooms/${state.code}/icons/left/${oldUid}`))).val();
-if (oldRight){
-  updates[`rooms/${state.code}/icons/right/${state.uid}`] = { ...oldRight, name: state.name };
-  updates[`rooms/${state.code}/icons/right/${oldUid}`] = null;
-}
-if (oldLeft){
-  updates[`rooms/${state.code}/icons/left/${state.uid}`] = { ...oldLeft, name: state.name };
-  updates[`rooms/${state.code}/icons/left/${oldUid}`] = null;
-}
-
-// 装備一覧（equipment：一覧描画が参照するツリー）
-const oldEquipSnap = await get(ref(db, `rooms/${state.code}/equipment/${oldUid}`));
-const myEquipSnap  = await get(ref(db, `rooms/${state.code}/equipment/${state.uid}`));
-const oldEquip = oldEquipSnap.val();
-const myEquip  = myEquipSnap.val();
-if (oldEquip && !myEquip){
-  updates[`rooms/${state.code}/equipment/${state.uid}`] = oldEquip;
-  updates[`rooms/${state.code}/equipment/${oldUid}`] = null;
-}
-
-// 自分の装備ミニ欄（equip：別ツリー）
-const oldEquipIcons = (await get(ref(db, `rooms/${state.code}/equip/${oldUid}`))).val();
-const myEquipIcons  = (await get(ref(db, `rooms/${state.code}/equip/${state.uid}`))).val();
-if (oldEquipIcons && !myEquipIcons){
-  updates[`rooms/${state.code}/equip/${state.uid}`] = oldEquipIcons;
-  updates[`rooms/${state.code}/equip/${oldUid}`] = null;
-}
-
-// 正体カード（roles：確定保存も移管）
-const oldRole = (await get(ref(db, `rooms/${state.code}/roles/${oldUid}`))).val();
-const myRole  = (await get(ref(db, `rooms/${state.code}/roles/${state.uid}`))).val();
-if (oldRole && !myRole){
-  updates[`rooms/${state.code}/roles/${state.uid}`] = oldRole;
-  updates[`rooms/${state.code}/roles/${oldUid}`] = null;
-}
-
-// 右下の最初の配布カード（myDeal）— 原子的に移管
-await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
-  cards = cards || {};
-
-  // すでに新UIDがカードを持っていたら何もしない
-  if (cards[state.uid]) return cards;
-
-  // 旧UID（孤児）のカードがあれば、新UIDへ移し替え（旧UID分は削除）
-  if (cards[oldUid]) {
-    cards[state.uid] = cards[oldUid];
-    delete cards[oldUid];
-  }
-  return cards;
-});
-
-
+      if (rec.to === oldUid){
+        next.to = newUid;
+        next.toName = newName;
+        next.toColor = colorLabel;
+        changed = true;
+      }
+      if (changed){
+        updates[`rooms/${state.code}/greenHistory/${key}`] = next;
+      }
+    });
 
     if (Object.keys(updates).length){
       await update(ref(db), updates);
+    }
+  }
+
+  async function transferSeatData(oldUid, newUid, newName, colorId){
+    if (!oldUid || oldUid === newUid) return;
+    const updates = {};
+
+    const oldIconSnap = await get(ref(db, `rooms/${state.code}/icons/${oldUid}`));
+    if (oldIconSnap.exists()){
+      updates[`rooms/${state.code}/icons/${newUid}`] = { ...oldIconSnap.val(), name: newName };
+      updates[`rooms/${state.code}/icons/${oldUid}`] = null;
+    }
+
+    const oldRight = (await get(ref(db, `rooms/${state.code}/icons/right/${oldUid}`))).val();
+    const oldLeft  = (await get(ref(db, `rooms/${state.code}/icons/left/${oldUid}`))).val();
+    if (oldRight){
+      updates[`rooms/${state.code}/icons/right/${newUid}`] = { ...oldRight, name: newName };
+      updates[`rooms/${state.code}/icons/right/${oldUid}`] = null;
+    }
+    if (oldLeft){
+      updates[`rooms/${state.code}/icons/left/${newUid}`] = { ...oldLeft, name: newName };
+      updates[`rooms/${state.code}/icons/left/${oldUid}`] = null;
+    }
+
+    const oldSeatSnap = await get(ref(db, `rooms/${state.code}/seats/${oldUid}`));
+    if (oldSeatSnap.exists()){
+      updates[`rooms/${state.code}/seats/${newUid}`] = { ...oldSeatSnap.val(), name: newName, at: Date.now() };
+      updates[`rooms/${state.code}/seats/${oldUid}`] = null;
+    }
+
+    const oldEquipSnap = await get(ref(db, `rooms/${state.code}/equipment/${oldUid}`));
+    if (oldEquipSnap.exists()){
+      updates[`rooms/${state.code}/equipment/${newUid}`] = oldEquipSnap.val();
+      updates[`rooms/${state.code}/equipment/${oldUid}`] = null;
+    }
+
+    const oldEquipIcons = (await get(ref(db, `rooms/${state.code}/equip/${oldUid}`))).val();
+    if (oldEquipIcons){
+      updates[`rooms/${state.code}/equip/${newUid}`] = oldEquipIcons;
+      updates[`rooms/${state.code}/equip/${oldUid}`] = null;
+    }
+
+    const oldRole = (await get(ref(db, `rooms/${state.code}/roles/${oldUid}`))).val();
+    if (oldRole){
+      updates[`rooms/${state.code}/roles/${newUid}`] = oldRole;
+      updates[`rooms/${state.code}/roles/${oldUid}`] = null;
+    }
+
+    const oldReveal = (await get(ref(db, `rooms/${state.code}/reveal/${oldUid}`))).val();
+    if (oldReveal){
+      updates[`rooms/${state.code}/reveal/${newUid}`] = oldReveal;
+      updates[`rooms/${state.code}/reveal/${oldUid}`] = null;
+    }
+
+    const oldShare = (await get(ref(db, `rooms/${state.code}/greenShare/${oldUid}`))).val();
+    if (oldShare){
+      updates[`rooms/${state.code}/greenShare/${newUid}`] = oldShare;
+      updates[`rooms/${state.code}/greenShare/${oldUid}`] = null;
+    }
+
+    const oldShareResult = (await get(ref(db, `rooms/${state.code}/greenShareResult/${oldUid}`))).val();
+    if (oldShareResult){
+      updates[`rooms/${state.code}/greenShareResult/${newUid}`] = oldShareResult;
+      updates[`rooms/${state.code}/greenShareResult/${oldUid}`] = null;
+    }
+
+    if (Object.keys(updates).length){
+      await update(ref(db), updates);
+    }
+
+    await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
+      cards = cards || {};
+      if (cards[newUid]) return cards;
+      if (cards[oldUid]) {
+        cards[newUid] = cards[oldUid];
+        delete cards[oldUid];
+      }
+      return cards;
+    });
+
+    await transferGreenHistory(oldUid, newUid, newName, colorId);
+  }
+
+  async function releaseMyOtherClaims(targetColorId){
+    const colorsSnap = await get(ref(db, `rooms/${state.code}/colors`));
+    const all = colorsSnap.val() || {};
+    for (const [id, claim] of Object.entries(all)){
+      if (id !== targetColorId && claim?.uid === state.uid){
+        await remove(ref(db, `rooms/${state.code}/colors/${id}`));
+      }
+    }
+  }
+
+  async function claimColorSeat(colorId, { force = false } = {}){
+    if (!colorId) return false;
+    const claimSnap = await get(ref(db, `rooms/${state.code}/colors/${colorId}`));
+    const claim = claimSnap.val();
+    await releaseMyOtherClaims(colorId);
+
+    if (claim?.uid && claim.uid !== state.uid){
+      if (!force){
+        const ok = confirm('既存のプレイヤーを追い出して、着席しますか？');
+        if (!ok) return false;
+      }
+      await transferSeatData(claim.uid, state.uid, state.name, colorId);
+      const updates = {};
+      updates[`rooms/${state.code}/colors/${colorId}`] = {
+        uid: state.uid,
+        name: state.name,
+        at: claim?.at ?? Date.now()
+      };
+      updates[`rooms/${state.code}/participants/${state.uid}/color`] = getColorLabelById(colorId);
+      updates[`rooms/${state.code}/participants/${state.uid}/name`] = state.name;
+      updates[`rooms/${state.code}/participants/${claim.uid}`] = null;
+      await update(ref(db), updates);
+    }else{
+      await set(ref(db, `rooms/${state.code}/colors/${colorId}`), {
+        uid: state.uid,
+        name: state.name,
+        at: claim?.at ?? Date.now()
+      });
+      await update(ref(db, `rooms/${state.code}/participants/${state.uid}`), {
+        color: getColorLabelById(colorId),
+        name: state.name
+      });
+    }
+
+    rememberSeatId(colorId);
+    return true;
+  }
+
+  function updateColorModalVisibility(){
+    if (!colorModal) return;
+    const hasColor = !!state.myColorId;
+    const shouldShow = !state.started || !hasColor;
+    show(colorModal, shouldShow);
+  }
+
+  async function maybeAutoRejoinSeat(){
+    if (state.autoSeatAttempted || !state.presentReady || !state.code) return;
+    const stored = getStoredSeatId(state.code);
+    const storedUid = getStoredUid(state.code);
+    state.autoSeatAttempted = true;
+    if (!stored) return;
+
+    const claims = state.colorClaims || {};
+    const claim = claims[stored] || null;
+    const isSameSeat = claim?.uid === state.uid;
+    const isSameBrowserUid = claim?.uid && storedUid && claim.uid === storedUid;
+    const isPresent = claim?.uid && state.present?.[claim.uid];
+    if (isSameSeat) {
+      await update(ref(db, `rooms/${state.code}/colors/${stored}`), {
+        name: state.name
+      });
+      rememberSeatId(stored);
+      return;
+    }
+    if (!claim || !isPresent || isSameBrowserUid){
+      await claimColorSeat(stored, { force: true });
     }
   }
 
@@ -2729,6 +2803,27 @@ await runTransaction(ref(db, `rooms/${state.code}/deal/v1/cards`), (cards) => {
     headerInfo.appendChild(spanRoom);
     headerInfo.appendChild(spanMe);
     headerInfo.appendChild(btn);
+  }
+
+  function getClaimByUid(uid, claims){
+    return Object.entries(claims || {}).find(([, v]) => v?.uid === uid) || null;
+  }
+
+  function buildColorMap(participants, claims){
+    const map = {};
+    Object.entries(participants || {}).forEach(([uid, info])=>{
+      if (info?.color) map[uid] = info.color;
+    });
+    Object.entries(claims || {}).forEach(([colorId, claim])=>{
+      if (claim?.uid && !map[claim.uid]){
+        map[claim.uid] = getColorLabelById(colorId);
+      }
+    });
+    return map;
+  }
+
+  function getNameForUid(uid, participants, claims){
+    return participants?.[uid]?.name || getClaimByUid(uid, claims)?.[1]?.name || '?';
   }
 
   // === 図形②：左長方形＋右星形（7部屋ヒット領域付き） ===
@@ -4114,22 +4209,6 @@ function ensureRoomTips(){
     el.classList.add('flash');
     setTimeout(()=> el.classList.remove('flash'), 140);
 
-    // 既存の同名席があれば“引き継ぎ”（新規生成しない）
-    const seatsSnap = await get(ref(db, `rooms/${state.code}/seats`));
-    const seats = seatsSnap.val() || {};
-    let sameNameUid = null, sameData = null;
-    for (const [uid, data] of Object.entries(seats)){
-      if ((data?.name||'') === state.name){
-        sameNameUid = uid; sameData = data; break;
-      }
-    }
-    if (sameNameUid && sameNameUid !== state.uid){
-      // 所有を自分に移す（位置はそのまま）
-      await set(ref(db, `rooms/${state.code}/seats/${state.uid}`), { ...sameData, name: state.name, at: Date.now() });
-      await remove(ref(db, `rooms/${state.code}/seats/${sameNameUid}`));
-      return; // 位置変更は行わない
-    }
-
     // 新規または自分の既存を更新
     const p = toSvgCoords(svg, ev.clientX, ev.clientY);
     await set(ref(db, `rooms/${state.code}/seats/${state.uid}`), {
@@ -4233,12 +4312,6 @@ g.appendChild(box);
   async function onRectClickWithDupCheck(ev){
     const svg = document.getElementById('art');
     const myIconRef = ref(db, `rooms/${state.code}/icons/${state.uid}`);
-
-    // 左長方形内で同名が既にあるかチェック
-    const allIconsSnap = await get(ref(db, `rooms/${state.code}/icons`));
-    const allIcons = allIconsSnap.val() || {};
-    const dup = Object.values(allIcons).some(ic => (ic?.name||'') === state.name);
-    if (dup) return; // 同名があれば新規出現しない
 
     // 自分は未配置なら作成、配置済なら無視
     const snap = await get(myIconRef);
@@ -4532,7 +4605,6 @@ function makeEquipIcon(name, colorName){
   
   function renderColorGrid(claims){
     colorGrid.innerHTML = '';
-    const present = state.present || {};                 // ★ 在籍者表（uidキー）
     COLOR_LIST.forEach(c=>{
       const tile = document.createElement('div');
       tile.className = 'color-tile';
@@ -4549,8 +4621,7 @@ function makeEquipIcon(name, colorName){
       tile.appendChild(label);
 
       const claim = claims?.[c.id] || null;
-         const isPresent = !!(claim && claim.uid && present[claim.uid]);   // ★ 在籍チェック
-    if (claim && isPresent){                                          // ★ 在籍者のみ表示
+      if (claim && claim.uid){
         const o = document.createElement('div');
         o.className = 'owner';
         o.textContent = claim.name || '?';
@@ -4563,42 +4634,17 @@ function makeEquipIcon(name, colorName){
       }
 
       tile.addEventListener('click', async ()=>{
-        if (state.started) return;
-        // 既に他者が取っていれば何もしない
-        const snap = await get(ref(db, `rooms/${state.code}/colors/${c.id}`));
-        const cur = snap.val();
-
-
-  // ★ 追加：在籍チェック
-  const present = state.present || {};
-  const takenByPresentOther = !!(cur && cur.uid && present[cur.uid] && cur.uid !== state.uid);
-
-  if (takenByPresentOther) return;
-        
-        // 自分が持っている別色の解放
-        const colorsSnap = await get(ref(db, `rooms/${state.code}/colors`));
-        const all = colorsSnap.val() || {};
-        const mine = Object.entries(all).find(([id, v])=> v?.uid === state.uid);
-        if (mine) await remove(ref(db, `rooms/${state.code}/colors/${mine[0]}`));
-
-        // この色にセット
-        await set(ref(db, `rooms/${state.code}/colors/${c.id}`), { uid: state.uid, name: state.name, at: Date.now() });
-        // 参加者カラーにも保存
-        await update(ref(db, `rooms/${state.code}/participants/${state.uid}`), { color: c.name });
+        await claimColorSeat(c.id);
       });
 
       colorGrid.appendChild(tile);
     });
 
-  // 合計人数表示（在籍者だけ数える）★
+  // 合計人数表示（色テーブルの着席数）★
   const countEl = document.getElementById('colorCount');
   if (countEl){
-    const uidSet = new Set(
-      Object.values(claims || {})
-        .map(v => v && v.uid)
-        .filter(uid => uid && present[uid])             // ★ 在籍者のみ
-    );
-    countEl.textContent = `ゲーム参加者合計：${uidSet.size}`;
+    const count = Object.values(claims || {}).filter(v => v && v.uid).length;
+    countEl.textContent = `ゲーム参加者合計：${count}`;
   }
 }
 
@@ -4608,8 +4654,11 @@ function observeColors(){
   const off = onValue(colorsRef, (snap)=>{
     const claims = snap.val() || {};
     state.colorClaims = claims;           // ★ 追加：常に最新をキャッシュ
+    state.myColorId = Object.entries(claims).find(([, v]) => v?.uid === state.uid)?.[0] || null;
     renderColorGrid(claims);
 renderTopIcons(claims);
+    updateColorModalVisibility();
+    maybeAutoRejoinSeat();
 
   });
   state.unsub.push(off);
@@ -4674,6 +4723,7 @@ eff.innerHTML = (typeof ROLE_INFO !== 'undefined' && ROLE_INFO[cardName])
   function renderEquipments(equipData, participants){
     const equipBar = document.getElementById('equipBar');
     equipBar.innerHTML = '';
+    const colorMap = buildColorMap(participants, state.colorClaims);
 
     // 並べ替え：自分(uid)を先頭に
     const entries = Object.entries(equipData || {});
@@ -4688,8 +4738,9 @@ eff.innerHTML = (typeof ROLE_INFO !== 'undefined' && ROLE_INFO[cardName])
       holder.className = 'equip-holder';
 
       // 名前＋色アイコン
-      const p = participants?.[uid] || {};
-      holder.appendChild(makeEquipIcon(p.name, p.color));
+      const name = getNameForUid(uid, participants, state.colorClaims);
+      const color = colorMap[uid] || '';
+      holder.appendChild(makeEquipIcon(name, color));
 
       // 装備カード群
 // 装備カード群
@@ -5123,9 +5174,15 @@ if (has){
   set(ref(db, `rooms/${state.code}/participants/${state.uid}/role`), String(val)).catch(()=>{});
 
   // 初期状態は公開しない：roles にだけ保存（revealed:false）
-  set(ref(db, `rooms/${state.code}/roles/${state.uid}`), {
-    card: String(val), revealed: false, updatedAt: Date.now()
-  }).catch(()=>{});
+  (async ()=>{
+    try{
+      const roleRef = ref(db, `rooms/${state.code}/roles/${state.uid}`);
+      const roleSnap = await get(roleRef);
+      const current = roleSnap.val();
+      const revealed = (current && typeof current.revealed === 'boolean') ? current.revealed : false;
+      await set(roleRef, { card: String(val), revealed, updatedAt: Date.now() });
+    }catch(_e){}
+  })();
 
 
 myDealMini.onclick = ()=>{
@@ -6048,6 +6105,7 @@ async function becomeHostIfVacant(){
 
     state.name = name;
     state.code = code;
+    rememberLocalUid();
 
     // 在室登録
     const meRef = ref(db, `rooms/${code}/participants/${state.uid}`);
@@ -6085,7 +6143,7 @@ ensureRoomTips();
       // 参加者カラーを取得して反映
       const psSnap = await get(ref(db, `rooms/${code}/participants`));
       const ps = psSnap.val() || {};
-      const colorMap = Object.fromEntries(Object.entries(ps).map(([uid, v])=> [uid, v?.color || null]));
+      const colorMap = buildColorMap(ps, state.colorClaims);
       Object.entries(data).forEach(([uid, icon])=> renderOrUpdateIcon(uid, icon, colorMap));
       const layer = document.getElementById('icons');
       if (layer){
@@ -6101,6 +6159,8 @@ ensureRoomTips();
 const participantsRef = ref(db, `rooms/${code}/participants`);
 const offParticipants = onValue(participantsRef, (snap)=>{
   state.present = snap.val() || {};  // uid -> {name, color, ...}
+  state.presentReady = true;
+  maybeAutoRejoinSeat();
 if (state && state.colorClaims) {
   renderTopIcons(state.colorClaims);
 }
@@ -6110,7 +6170,7 @@ if (state && state.colorClaims) {
   try {
     const layer = document.getElementById('icons');
     if (layer && state && state.present) {
-      const colorMap = Object.fromEntries(Object.entries(state.present).map(([uid, v])=> [uid, v?.color || null]));
+      const colorMap = buildColorMap(state.present, state.colorClaims);
       [...layer.querySelectorAll('g.usericon')].forEach(el=>{
         const uid = el.getAttribute('data-uid');
         const colorName = colorMap[uid] || null;
@@ -6120,9 +6180,7 @@ if (state && state.colorClaims) {
 
 const seatsLayer = document.getElementById('seats');
 if (seatsLayer && state && state.present) {
-  const colorMap = Object.fromEntries(
-    Object.entries(state.present).map(([uid, v]) => [uid, v?.color || null])
-  );
+  const colorMap = buildColorMap(state.present, state.colorClaims);
   [...seatsLayer.querySelectorAll('g.seaticon')].forEach(el => {
     const uid = el.getAttribute('data-uid');
     let colorName = colorMap[uid] || null;
@@ -6152,7 +6210,7 @@ state.unsub.push(offParticipants);
       // 参加者カラー
       const psSnap = await get(ref(db, `rooms/${code}/participants`));
       const ps = psSnap.val() || {};
-      const colorMap = Object.fromEntries(Object.entries(ps).map(([uid, v])=> [uid, v?.color || null]));
+      const colorMap = buildColorMap(ps, state.colorClaims);
 
       Object.entries(data).forEach(([uid, seat])=> renderOrUpdateSeat(uid, seat, colorMap));
       const layer = document.getElementById('seats');
@@ -6178,7 +6236,7 @@ state.unsub.push(offParticipants);
     const startedRef = ref(db, `rooms/${code}/game/started`);
     const offStarted = onValue(startedRef, (snap)=>{
       state.started = !!snap.val();
-  show(colorModal, !state.started);                  // スタートで全員の色ポップを閉じる
+  updateColorModalVisibility();
   btnStart.textContent = state.started ? 'リセット' : 'スタート'; // ★ 文言も全員で同期  
     });
     state.unsub.push(offStarted);
@@ -6251,15 +6309,6 @@ attachSfxListener();
     dealViewer.addEventListener('click', (e)=>{
       if (e.target === dealViewer) show(dealViewer, false);
     });
-
-    // ★ 同名引継ぎ（色／右下カード）
-    try{
-      await inheritBySameName();
-    }catch(err){
-      console.warn('inheritBySameName failed once', err);
-    }
-    // ★ onDisconnect が遅れて旧UIDが participants に残るケースへのフォロー
-    setTimeout(()=>{ inheritBySameName().catch(()=>{}); }, 1200);
 
     state.joined = true;
   }
