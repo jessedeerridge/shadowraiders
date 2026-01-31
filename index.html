@@ -4540,6 +4540,11 @@ function maybeAutoClaimStoredColor(){
   claimColorTable(meta.id, meta.name, { confirmKick: false }).catch(()=>{});
 }
 
+function updateColorModalVisibility(){
+  const shouldShow = !state.colorId;
+  show(colorModal, shouldShow);
+}
+
 
 /* === 4a: 装備所持用の小アイコンを作る === */
 function makeEquipIcon(name, colorName){
@@ -4615,6 +4620,7 @@ function observeColors(){
     }else{
       state.colorId = null;
     }
+    updateColorModalVisibility();
     renderColorGrid(claims);
 renderTopIcons(claims);
     maybeAutoClaimStoredColor();
@@ -6179,7 +6185,7 @@ state.unsub.push(offParticipants);
     const startedRef = ref(db, `rooms/${code}/game/started`);
     const offStarted = onValue(startedRef, (snap)=>{
       state.started = !!snap.val();
-  show(colorModal, !state.started);                  // スタートで全員の色ポップを閉じる
+  updateColorModalVisibility();
   btnStart.textContent = state.started ? 'リセット' : 'スタート'; // ★ 文言も全員で同期  
     });
     state.unsub.push(offStarted);
