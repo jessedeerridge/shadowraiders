@@ -5,7 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>シャドウ・レイダーズ</title>
 <style>
-  :root { --gap:10px; }
+  :root {
+    --gap: 10px;
+    --card-aspect: 2 / 3;
+    --card-sm-width: 80px;
+    --card-lg-width: 240px;
+    --card-mini-width: calc(var(--card-sm-width) * 0.75);
+    --card-sm-radius: 8px;
+    --card-lg-radius: 14px;
+    --card-mini-radius: 6px;
+  }
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
 header{
   display:flex;
@@ -71,7 +80,11 @@ body {
 }
   .deck{display:flex;flex-direction:column;align-items:center;gap:8px}
   .deck-back,.deck-face{
-    width:80px;height:110px;border:1px solid #111;border-radius:6px;
+    width: var(--card-sm-width);
+    aspect-ratio: var(--card-aspect);
+    height: auto;
+    border:1px solid #111;
+    border-radius: var(--card-sm-radius);
     display:flex;align-items:center;justify-content:center;font-weight:700;color:#111;user-select:none;
   }
   .deck-back{cursor:pointer}
@@ -150,9 +163,11 @@ body {
 /* 「？」の近くに出すミニ裏カード共通 */
 .help-mini-card{
   position: fixed;
-  width: 60px; height: 90px;           /* 小さめ（myDealMiniと合わせた比率） */
+  width: var(--card-mini-width);
+  aspect-ratio: var(--card-aspect);
+  height: auto;
   border: 1px solid #111;
-  border-radius: 8px;
+  border-radius: var(--card-mini-radius);
   background: #fff center/cover no-repeat;
   box-shadow: 0 4px 14px rgba(0,0,0,.12);
   z-index: 503;                  /* helpBtn(3604)より前面 */
@@ -164,10 +179,11 @@ body {
   position: fixed;
   left: 66px;
   bottom: 14px;
-  width: 60px;
-  height: 90px;
+  width: var(--card-mini-width);
+  aspect-ratio: var(--card-aspect);
+  height: auto;
   border: 1px solid #111;
-  border-radius: 8px;
+  border-radius: var(--card-mini-radius);
   overflow: hidden;
   background: url('blackdeck.jpg') center center no-repeat;
   background-size: cover;
@@ -203,11 +219,12 @@ z-index:11
 }
 
 @media (max-width:600px){
-  #myDealMini,
-  #helpBlackBack,
-  #helpRoleBack {
-    width:40px;
-    height:60px;
+  :root {
+    --card-sm-width: 60px;
+    --card-lg-width: 180px;
+    --card-sm-radius: 7px;
+    --card-lg-radius: 12px;
+    --card-mini-radius: 5px;
   }
 }
 
@@ -268,15 +285,16 @@ z-index:11
   .color-tile.mine{outline:3px solid #111}
 
   /* 自分用：配られたカード（右下に小さな黒裏） */
-  #myDealMini{position:fixed;right:16px;bottom:16px;width:60px;height:90px;border-radius:10px;border:1px solid #000;
+  #myDealMini{position:fixed;right:16px;bottom:16px;width:var(--card-mini-width);aspect-ratio:var(--card-aspect);height:auto;border-radius:var(--card-mini-radius);border:1px solid #000;
   background: url('browncard.jpg') center/cover no-repeat;
   color: transparent;  /* テキストは非表示にするなら */
     display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:300}
 #dealViewer .deal-card{
-  width:240px;     /* ←固定幅 */
-  height:360px;    /* ←固定高さ */
+  width:var(--card-lg-width);     /* ←固定幅 */
+  aspect-ratio: var(--card-aspect);
+  height:auto;
   border:1px solid #111;
-  border-radius:14px;
+  border-radius:var(--card-lg-radius);
   display:flex;
   align-items:center;
   justify-content:center;
@@ -625,8 +643,10 @@ display: block;
 
 
 .equip-card{
-  width:60px; height:86px;         /* ← デスクトップのカードサイズに合わせる */
-  border:1px solid #111; border-radius:6px;
+  width:var(--card-mini-width);
+  aspect-ratio: var(--card-aspect);
+  height:auto;
+  border:1px solid #111; border-radius:var(--card-mini-radius);
   display:flex; align-items:center; justify-content:center;
   font-size:14px; font-weight:700;
   display: flex;           /* フレックス化（または既存の中央寄せを上書き） */
@@ -856,9 +876,10 @@ height: 70px;
 /* ▼ 装備一覧：正体カードのミニ版（拡大レイアウトの縮小） */
 .equip-card.role-mini{
   position: relative;
-  width: 63px;
-  height: 90.3px;
-  border-radius: 6px;
+  width: var(--card-mini-width);
+  aspect-ratio: var(--card-aspect);
+  height: auto;
+  border-radius: var(--card-mini-radius);
   overflow: hidden;
   padding: 2px;
   box-sizing: border-box;
@@ -970,17 +991,17 @@ z-index: 1;
   .deck-face[data-deck="black"] .mini-image{ max-width:70%; max-height:28px; margin:1px auto; }
 
 
-  .deck-back,.deck-face{width:60px;height:86px}
+  .deck-back,.deck-face{width:var(--card-sm-width)}
   .color-tile{width:44px;height:44px}
   #hostGear{width:36px;height:36px;font-size:16px}
-  #myDealMini{width:40px;height:60px;font-size:12px}
+  #myDealMini{font-size:12px}
   h1{font-size:14px; margin-right:4px;}   /* タイトル小さめ */
   header{gap:4px; padding:8px;}          /* スペース縮小 */
   .small{font-size:8px; gap:4px;}       /* 補助テキストをさらに小さく */
   #myRoomBadge{white-space:nowrap;}  
 
  #headerInfo{flex-wrap:nowrap;}         /* ボタン類も折り返し防止 */  
-  #dealViewer .deal-card{ width:180px; height:260px; font-size:15px; }
+  #dealViewer .deal-card{ width:var(--card-lg-width); font-size:15px; }
   #dealViewer .deal-card .green-table td { font-size: 11px;   /* モバイル時は小さめ */}
 
 #dealViewer .deal-card .green-title {
