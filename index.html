@@ -2618,6 +2618,21 @@
     return [a,b];
   }
 
+  function randomAttackLandingOffsets(){
+    const radius = 46;
+    const minDist = 58;
+    for (let i = 0; i < 80; i++){
+      const t1 = Math.random() * Math.PI * 2;
+      const t2 = Math.random() * Math.PI * 2;
+      const a = { x: Math.cos(t1) * radius, y: Math.sin(t1) * radius };
+      const b = { x: Math.cos(t2) * radius, y: Math.sin(t2) * radius };
+      if (Math.hypot(a.x - b.x, a.y - b.y) >= minDist){
+        return [a,b];
+      }
+    }
+    return [{ x:-36, y:-12 }, { x:36, y:12 }];
+  }
+
   function setFlyerTransform(el, x, y, deg){
     el.style.transform = `translate(${x}px, ${y}px) rotate(${deg}deg)`;
   }
@@ -2821,7 +2836,7 @@
 
     const endX = Math.max(50, Math.min(width - 50, Number(clickClientX) || width / 2));
     const endY = Math.max(50, Math.min(height - 50, Number(clickClientY) || height / 2));
-    const [offsetA, offsetB] = randomCenterOffsets();
+    const [offsetA, offsetB] = randomAttackLandingOffsets();
 
     const startDegA = Math.random() * 90;
     const startDegB = Math.random() * 90;
