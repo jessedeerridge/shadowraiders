@@ -1157,6 +1157,9 @@
   .zoom-stage .equip-steal-pulse{
     animation:none;
   }
+  .zoom-stage .equip-defeat-pulse{
+    animation:none;
+  }
   .zoom-identity-owner{
     position:absolute;
     left:50%;
@@ -2217,7 +2220,7 @@
   function openZoomFromCard(cardEl, options){
     const clone = cardEl.cloneNode(true);
     clone.classList.remove("locked","blocked");
-    clone.classList.remove("equip-steal-pulse");
+    clone.classList.remove("equip-steal-pulse","equip-defeat-pulse","eliminated-dim");
     clone.style.pointerEvents = "auto";
     openZoomContent(clone, options);
   }
