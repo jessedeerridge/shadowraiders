@@ -1775,6 +1775,7 @@
   const btnIdentityPromptYes = document.getElementById("btnIdentityPromptYes");
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
+  let pendingAttackAllInRange = false;
   let pendingIdentityPrompt = null;
 
   function showRevealPopAt(clientX, clientY){
@@ -1801,13 +1802,16 @@
   }
   function hideRevealPop(){ revealPop.classList.add("hidden"); }
 
-  function showAttackPopAt(clientX, clientY, targetName){
+  function showAttackPopAt(clientX, clientY, targetName, options = {}){
     if (!attackPop) return;
     const pad = 10;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    attackMsg.textContent = `${safeText(targetName || "このプレイヤー")}を攻撃しますか。`;
+    pendingAttackAllInRange = !!options.attackAllInRange;
+    attackMsg.textContent = pendingAttackAllInRange
+      ? "レンジ内のプレイヤー全員を攻撃します。はい、いいえ"
+      : `${safeText(targetName || "このプレイヤー")}を攻撃しますか。`;
     attackPop.classList.remove("hidden");
     const r = attackPop.getBoundingClientRect();
 
@@ -1827,6 +1831,7 @@
   }
   function hideAttackPop(){
     pendingAttackTargetUid = "";
+    pendingAttackAllInRange = false;
     attackPop?.classList.add("hidden");
   }
 
@@ -2572,6 +2577,13 @@
       hideAttackPop();
       return;
     }
+    const targetUids = pendingAttackAllInRange
+      ? attackTargetUidsInRange(state.userId)
+      : [uid];
+    if (!targetUids.length){
+      hideAttackPop();
+      return;
+    }
     const x = Number(target.x);
     const y = Number(target.y);
     const point = roomSvg && Number.isFinite(x) && Number.isFinite(y)
@@ -2599,6 +2611,7 @@
     await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
       uid: state.userId,
       targetUid: uid,
+      targetUids,
       x: endX,
       y: endY,
       d6,
@@ -3211,7 +3224,11 @@
       }
       if (!ev || !at || at <= attackDiceEventSeenAt) return;
       attackDiceEventSeenAt = at;
-      runAttackDiceAnimation(safeText(ev.targetUid || ""), Number(ev.x || 0), Number(ev.y || 0), {
+      const targetUid = safeText(ev.targetUid || "");
+      const targetUids = Array.isArray(ev.targetUids)
+        ? ev.targetUids.map(uid => safeText(uid)).filter(Boolean)
+        : (targetUid ? [targetUid] : []);
+      runAttackDiceAnimation(targetUids, Number(ev.x || 0), Number(ev.y || 0), {
         force:true,
         finalD6:Number(ev.d6 || 1),
         finalD4:Number(ev.d4 || 1),
@@ -3835,6 +3852,23 @@
     return null;
   }
 
+  function attackRangeRoomIdsFor(attackerRoomId, scopeCount = 0){
+    const myRoomId = Number(attackerRoomId);
+    if (!Number.isFinite(myRoomId) || myRoomId < 1 || myRoomId > 7) return [];
+    if (myRoomId === 7) return [1,2,3,4,5,6,7];
+
+    const rooms = [myRoomId];
+    let cursor = myRoomId;
+    const backSteps = Math.max(1, Number(scopeCount) || 0);
+    for (let i = 0; i < backSteps; i++){
+      cursor = previousRoomId(cursor);
+      if (!cursor) break;
+      rooms.push(cursor);
+    }
+    rooms.push(7);
+    return [...new Set(rooms)];
+  }
+
   function inferRoomIdFromPoint(x, y){
     for (const [ridText, pts] of Object.entries(roomPolygons)){
       const rid = Number(ridText);
@@ -3869,6 +3903,8 @@
     const myMarker = markerCache?.[state.userId] || null;
     const myRoomId = markerRoomId(myMarker);
     if (!myRoomId) return new Set();
+    const scopeCount = countEquipmentByNames(state.userId, ["死神スコープ"]);
+    const roomSet = new Set(attackRangeRoomIdsFor(myRoomId, scopeCount));
 
     const targets = new Set();
     for (const [uid, marker] of Object.entries(markerCache || {})){
@@ -3876,17 +3912,28 @@
       const rid = markerRoomId(marker);
       if (!rid) continue;
 
-      if (myRoomId === 7){
-        targets.add(uid);
-        continue;
-      }
-
-      const prev = previousRoomId(myRoomId);
-      if (rid === myRoomId || rid === prev || rid === 7){
+      if (roomSet.has(rid)){
         targets.add(uid);
       }
     }
     return targets;
+  }
+
+  function attackTargetUidsInRange(attackerUid){
+    const uid = safeText(attackerUid);
+    if (!uid) return [];
+    const myMarker = markerCache?.[uid] || null;
+    const myRoomId = markerRoomId(myMarker);
+    if (!myRoomId) return [];
+    const scopeCount = countEquipmentByNames(uid, ["死神スコープ"]);
+    const roomSet = new Set(attackRangeRoomIdsFor(myRoomId, scopeCount));
+    return Object.entries(markerCache || {})
+      .filter(([targetUid, marker]) => {
+        if (!targetUid || !marker || targetUid === uid) return false;
+        const rid = markerRoomId(marker);
+        return !!rid && roomSet.has(rid);
+      })
+      .map(([targetUid]) => targetUid);
   }
 
   function randomPointInRoom(roomId, padding = 12){
@@ -4428,8 +4475,10 @@
     }
   }
 
-  async function runAttackDiceAnimation(targetUid, clickClientX, clickClientY, options = {}){
-    if (!diceRollOverlay || !targetUid) return;
+  async function runAttackDiceAnimation(targetUids, clickClientX, clickClientY, options = {}){
+    if (!diceRollOverlay) return;
+    const targets = [...new Set((Array.isArray(targetUids) ? targetUids : [targetUids]).map(uid => safeText(uid)).filter(Boolean))];
+    if (!targets.length) return;
     const applyDamage = options.applyDamage !== false;
     clearDiceRollTimers();
     clearAttackResultDice();
@@ -4515,7 +4564,7 @@
         const revealBoost = await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
         const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { excaliburRevealBoost: revealBoost });
         if (damage > 0){
-          await addDamageToPlayer(targetUid, damage);
+          await addDamageToPlayers(targets, damage);
         }
       }, damageDelayAfterStopMs);
       diceRollTimers.push(damageTimer);
@@ -4715,7 +4764,9 @@
       e.stopPropagation();
       const p = playerById(uid);
       pendingAttackTargetUid = uid;
-      showAttackPopAt(e.clientX, e.clientY, p?.name || 'このプレイヤー');
+      showAttackPopAt(e.clientX, e.clientY, p?.name || 'このプレイヤー', {
+        attackAllInRange: hasMyEquipmentByName("ガトリング")
+      });
     });
   }
 
