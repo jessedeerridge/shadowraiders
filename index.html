@@ -1542,7 +1542,17 @@
           card: msg.card,
           at: Date.now()
         });
-        closeZoom();
+        setGreenDockMeta({ title:"回答を送信しました", subtitle:"右上の×で閉じてください" });
+        greenShareList.innerHTML = "";
+        const done = document.createElement("button");
+        done.type = "button";
+        done.className = "green-share-btn answer";
+        done.textContent = `${opt.label}（送信済み）`;
+        done.disabled = true;
+        greenShareList.appendChild(done);
+        greenZoomLocked = false;
+        zoomCloseOnBackdrop = false;
+        zoomCloseBtn.classList.remove("hidden");
       });
       greenShareList.appendChild(btn);
     }
