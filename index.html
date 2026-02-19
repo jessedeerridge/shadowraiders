@@ -1520,9 +1520,15 @@
     6: ["green","white","black"],
   };
   function allowedTypesByRoom(roomId){ return ROOM_ALLOW[roomId] || []; }
+  function canDrawSharedDeckNow(){
+    if (!isMyTurn()) return false;
+    const t = turnState() || {};
+    return !!t.moveDone && !t.attackDone && !t.deckDrawDone;
+  }
   function canClickType(type){
     const allowed = allowedTypesByRoom(state.currentRoomId);
-    return allowed.includes(type);
+    if (!allowed.includes(type)) return false;
+    return canDrawSharedDeckNow();
   }
   function applyLocked(el, locked, {noDim=false} = {}){
     if (!el) return;
@@ -2623,6 +2629,7 @@
         currentPlayerId: startPlayerId,
         moveDone: false,
         attackDone: false,
+        deckDrawDone: false,
         updatedAt: Date.now()
       };
       return cur;
@@ -2648,6 +2655,7 @@
         currentPlayerId: nextPlayerId,
         moveDone: false,
         attackDone: false,
+        deckDrawDone: false,
         updatedAt: Date.now()
       };
       return cur;
@@ -2700,26 +2708,36 @@
     if (!state.roomCode) return;
     if (!canClickType(type)) return;
 
-    const dsRef = ref(db, `rooms/${state.roomCode}/deckState`);
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
     let drawn = null;
 
-    await runTransaction(dsRef, (cur) => {
-      if (!cur || !cur[type] || !Array.isArray(cur[type].order)) return cur;
+    await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      if (!cur.turn || safeText(cur.turn.currentPlayerId || "") !== state.userId) return cur;
 
-      const d = cur[type];
+      const turn = cur.turn;
+      if (!turn.moveDone || turn.attackDone || turn.deckDrawDone) return cur;
+
+      const ds = cur.deckState;
+      if (!ds || !ds[type] || !Array.isArray(ds[type].order)) return cur;
+
+      const d = ds[type];
       const idx = Number(d.idx || 0);
       if (idx >= d.order.length) return cur;
 
       drawn = d.order[idx];
       d.idx = idx + 1;
 
-      cur.reveal = cur.reveal || { slot3:null, slot5:null };
+      ds.reveal = ds.reveal || { slot3:null, slot5:null };
       if (type === "black"){
-        cur.reveal.slot5 = { theme:"black", card: drawn, at: Date.now() };
+        ds.reveal.slot5 = { theme:"black", card: drawn, at: Date.now() };
       } else if (type === "white"){
-        cur.reveal.slot3 = { theme:"white", card: drawn, at: Date.now() };
+        ds.reveal.slot3 = { theme:"white", card: drawn, at: Date.now() };
       }
-      cur.updatedAt = Date.now();
+
+      turn.deckDrawDone = true;
+      turn.updatedAt = Date.now();
+      ds.updatedAt = Date.now();
       return cur;
     });
 
@@ -3795,6 +3813,7 @@
       renderPositionLine();
       renderTurnEndButton();
       renderMarkers();
+      updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
     });
   }
@@ -4217,9 +4236,18 @@
 
     const positionOrder = shuffle(players.map(p => p.id));
     const startPlayerId = positionOrder[Math.floor(Math.random()*positionOrder.length)] || null;
+    const freshDeckState = {
+      green: { order: shuffle(toGreenOrder()), idx: 0 },
+      white: { order: shuffle(toWhiteOrder()), idx: 0 },
+      black: { order: shuffle(toBlackOrder()), idx: 0 },
+      reveal: { slot3: null, slot5: null },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
 
     await update(roomRef, {
       hands,
+      deckState: freshDeckState,
       gameStarted: true,
       startedAt: Date.now(),
       playerCountAtStart: n,
@@ -4229,6 +4257,7 @@
         currentPlayerId: startPlayerId,
         moveDone: false,
         attackDone: false,
+        deckDrawDone: false,
         updatedAt: Date.now()
       }
     });
