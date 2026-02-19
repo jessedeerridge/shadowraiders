@@ -577,7 +577,7 @@
   }
   .hp-cell::after{ display:none; } /* セル線を消す */
 
-  .chip16{
+.chip16{
     width:16px;height:16px;
     border-radius:6px;
     border:1px solid rgba(0,0,0,.35);
@@ -608,6 +608,10 @@
   vector-effect: non-scaling-stroke;
   cursor:pointer;
   pointer-events:all;
+}
+
+.chip16.turn-pulse{
+  animation:markerPulse 1.2s ease-in-out infinite;
 }
 
 .dice-roll-overlay{
@@ -787,6 +791,13 @@
     color:#111;
   }
   .position-line.hidden{ display:none; }
+  .turn-end-wrap{
+    width:100%;
+    display:flex;
+    justify-content:center;
+    margin-top:4px;
+  }
+  .turn-end-wrap.hidden{display:none;}
   .position-arrow{
     font-size:12px;
     font-weight:900;
@@ -1173,6 +1184,9 @@
             </svg>
           </div>
           <div id="positionLine" class="position-line hidden" aria-label="位置列"></div>
+          <div id="turnEndWrap" class="turn-end-wrap hidden">
+            <button id="btnEndTurn" class="btn primary">手番を終わる</button>
+          </div>
         </div>
       </div>
 
@@ -2072,6 +2086,10 @@
   });
   btnAttackYes.addEventListener("click", async (e) => {
     e.stopPropagation();
+    if (!canUseAttackDice()) {
+      hideAttackPop();
+      return;
+    }
     const uid = pendingAttackTargetUid;
     const target = markerCache?.[uid] || null;
     if (!uid || !target){
@@ -2093,6 +2111,12 @@
 
     hideAttackPop();
     await runAttackDiceAnimation(uid, point?.x || window.innerWidth/2, point?.y || window.innerHeight/2);
+    if (state.roomCode && isMyTurn()){
+      await update(ref(db, `rooms/${state.roomCode}/turn`), {
+        attackDone: true,
+        attackAt: Date.now()
+      });
+    }
   });
 
   equipBody.addEventListener("click", (e) => {
@@ -2103,6 +2127,8 @@
 
   const hpBoard = document.getElementById("hpBoard");
   const positionLine = document.getElementById("positionLine");
+  const turnEndWrap = document.getElementById("turnEndWrap");
+  const btnEndTurn = document.getElementById("btnEndTurn");
   let damageCache = {};
 
   function clampDamage(v){
@@ -2136,6 +2162,40 @@
     d.textContent = initial || "";
     d.title = p ? p.name : "";
     return d;
+  }
+
+  function turnState(){
+    return state.room?.turn || null;
+  }
+
+  function currentTurnPlayerId(){
+    return safeText(turnState()?.currentPlayerId || "");
+  }
+
+  function isMyTurn(){
+    const cur = currentTurnPlayerId();
+    return !!cur && cur === state.userId;
+  }
+
+  function canUseMoveDice(){
+    if (!isMyTurn()) return false;
+    return !turnState()?.moveDone;
+  }
+
+  function canUseAttackDice(){
+    if (!isMyTurn()) return false;
+    return !!turnState()?.moveDone && !turnState()?.attackDone;
+  }
+
+  function canEndTurn(){
+    if (!isMyTurn()) return false;
+    return !!turnState()?.moveDone && !!turnState()?.attackDone;
+  }
+
+  function renderTurnEndButton(){
+    if (!turnEndWrap) return;
+    const visible = isGameStarted() && canEndTurn();
+    turnEndWrap.classList.toggle("hidden", !visible);
   }
 
   function secondCharOrRa(name){
@@ -2215,6 +2275,7 @@
     positionLine.innerHTML = "";
     if (!started || players.length === 0){
       positionLine.classList.add("hidden");
+      renderTurnEndButton();
       return;
     }
 
@@ -2230,7 +2291,14 @@
 
       const chipWrap = document.createElement("div");
       chipWrap.className = "position-chip-wrap";
-      chipWrap.appendChild(buildChipFor(p.id));
+      const chip = buildChipFor(p.id);
+      if (isMyTurn() && !turnState()?.moveDone && p.id === state.userId){
+        chip.classList.add("turn-pulse");
+      }
+      if (canUseAttackDice() && p.id !== state.userId && highlightedMarkerUids().has(p.id)){
+        chip.classList.add("turn-pulse");
+      }
+      chipWrap.appendChild(chip);
 
       const marker = document.createElement("div");
       marker.className = "starter-mark";
@@ -2251,6 +2319,7 @@
     });
 
     positionLine.classList.remove("hidden");
+    renderTurnEndButton();
   }
 
   function subscribeDamage(){
@@ -2286,6 +2355,49 @@
       obj[p.id] = 0;
     }
     await set(baseRef, obj);
+  }
+
+  async function ensureTurnInitialized(){
+    if (!state.roomCode || !isGameStarted()) return;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur || !(cur.gameStarted || cur.startedAt)) return cur;
+      if (cur.turn && cur.turn.currentPlayerId) return cur;
+      const startPlayerId = safeText(cur.startPlayerId || "");
+      if (!startPlayerId) return cur;
+      cur.turn = {
+        currentPlayerId: startPlayerId,
+        moveDone: false,
+        attackDone: false,
+        updatedAt: Date.now()
+      };
+      return cur;
+    });
+  }
+
+  async function advanceTurnToNextPlayer(){
+    if (!state.roomCode) return;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur || !(cur.gameStarted || cur.startedAt)) return cur;
+      const order = Array.isArray(cur.positionOrder) ? cur.positionOrder : [];
+      if (order.length === 0) return cur;
+
+      const curTurn = cur.turn || {};
+      const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || order[0] || "");
+      let nextIdx = order.indexOf(curId);
+      if (nextIdx < 0) nextIdx = 0;
+      const nextPlayerId = safeText(order[(nextIdx + 1) % order.length] || order[0] || "");
+      if (!nextPlayerId) return cur;
+
+      cur.turn = {
+        currentPlayerId: nextPlayerId,
+        moveDone: false,
+        attackDone: false,
+        updatedAt: Date.now()
+      };
+      return cur;
+    });
   }
 
   function toGreenOrder(){
@@ -2672,6 +2784,7 @@
   }
 
   function highlightedMarkerUids(){
+    if (!canUseAttackDice()) return new Set();
     const myMarker = markerCache?.[state.userId] || null;
     const myRoomId = markerRoomId(myMarker);
     if (!myRoomId) return new Set();
@@ -2881,6 +2994,7 @@
   }
 
   function runDiceRollAnimation(){
+    if (!canUseMoveDice()) return;
     if (!diceRollOverlay) return;
     clearDiceRollTimers();
     diceRollOverlay.innerHTML = '';
@@ -2951,6 +3065,12 @@
 
     const placeMarkerTimer = setTimeout(async () => {
       await placeMarkerByDice(finalD6 + finalD4);
+      if (state.roomCode && isMyTurn()){
+        await update(ref(db, `rooms/${state.roomCode}/turn`), {
+          moveDone: true,
+          moveAt: Date.now()
+        });
+      }
     }, 	1900);
     diceRollTimers.push(placeMarkerTimer);
 
@@ -2991,6 +3111,7 @@
   if (uid && uid === state.userId){
     g.style.cursor = 'pointer';
     g.addEventListener('click', (e) => {
+      if (!canUseMoveDice()) return;
       e.stopPropagation();
       hideAttackPop();
       runDiceRollAnimation();
@@ -2998,6 +3119,7 @@
   } else if (uid && pulse){
     g.style.cursor = 'pointer';
     g.addEventListener('click', (e) => {
+      if (!canUseAttackDice()) return;
       e.stopPropagation();
       const p = playerById(uid);
       pendingAttackTargetUid = uid;
@@ -3107,6 +3229,7 @@
       hit.dataset.roomId = String(roomId);
 
       hit.addEventListener('click', async (ev) => {
+        if (isGameStarted()) return;
         setCurrentRoom(roomId);
         const p = clientToSvgPoint(roomSvg, ev.clientX, ev.clientY);
         await writeMyMarker(p.x, p.y);
@@ -3116,6 +3239,7 @@
     const centerHit = poly(centerHex, 'roomhit');
     centerHit.dataset.roomId = "7";
     centerHit.addEventListener('click', async (ev) => {
+      if (isGameStarted()) return;
       setCurrentRoom(7);
       const p = clientToSvgPoint(roomSvg, ev.clientX, ev.clientY);
       await writeMyMarker(p.x, p.y);
@@ -3384,6 +3508,9 @@
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     onValue(roomRef, snap => {
       state.room = snap.val() || {};
+      if (isGameStarted() && !currentTurnPlayerId() && state.isHost){
+        ensureTurnInitialized();
+      }
       renderSeatTiles();
       refreshStartBadge();
       renderHands();
@@ -3391,6 +3518,7 @@
       renderEquipmentDock();
       renderHpBoard();
       renderPositionLine();
+      renderTurnEndButton();
     });
   }
 
@@ -3820,6 +3948,12 @@
       playerCountAtStart: n,
       positionOrder,
       startPlayerId,
+      turn: {
+        currentPlayerId: startPlayerId,
+        moveDone: false,
+        attackDone: false,
+        updatedAt: Date.now()
+      }
     });
 
     await initDamageAllToZero(players);
@@ -3867,6 +4001,7 @@
       remove(ref(db, `${base}/greenInbox`)),
       remove(ref(db, `${base}/greenResponses`)),
       remove(ref(db, `${base}/greenReplyBubbles`)),
+      remove(ref(db, `${base}/turn`)),
     ]);
 
     deckCache = null;
@@ -3888,6 +4023,13 @@
     renderHpBoard();
 
     updateEquipDockTop();
+  });
+
+  btnEndTurn?.addEventListener('click', async () => {
+    if (!canEndTurn()) return;
+    await advanceTurnToNextPlayer();
+    hideAttackPop();
+    renderTurnEndButton();
   });
 
   const urlParams = new URLSearchParams(window.location.search);
