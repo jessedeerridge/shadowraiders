@@ -627,15 +627,25 @@
   transition:transform .9s cubic-bezier(.2,.8,.2,1);
 }
 
+.dice-flyer.rolling .die,
+.dice-flyer.rolling .d4{
+  animation:dice-spin .35s linear infinite;
+}
+
+@keyframes dice-spin{
+  from{ transform:rotate(0deg); }
+  to{ transform:rotate(360deg); }
+}
+
 .dice-flyer,
 .dice-flyer *{
   box-sizing:border-box;
 }
 
 .dice-flyer{
-  --die: 24px;
-  --pip: 4px;
-  --pad: 3px;
+  --die: 48px;
+  --pip: 8px;
+  --pad: 6px;
   --d4-2-gap: 13%;
 }
 
@@ -2547,8 +2557,9 @@
     const height = window.innerHeight;
     const center = { x: width / 2, y: height / 2 };
     const [offsetA, offsetB] = randomCenterOffsets();
-    const startA = randomCornerStart(width, height);
-    const startB = randomCornerStart(width, height);
+    const startBase = randomCornerStart(width, height);
+    const startA = { x:startBase.x - 16, y:startBase.y - 6 };
+    const startB = { x:startBase.x + 16, y:startBase.y + 6 };
 
     d6Wrap.style.transform = `translate(${startA.x}px, ${startA.y}px)`;
     d4Wrap.style.transform = `translate(${startB.x}px, ${startB.y}px)`;
@@ -2569,6 +2580,8 @@
 
     const stopTimer = setTimeout(() => {
       clearInterval(rollTimer);
+      d6Wrap.classList.remove('rolling');
+      d4Wrap.classList.remove('rolling');
       renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
       renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
     }, 980);
