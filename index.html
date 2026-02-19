@@ -2198,6 +2198,29 @@
     turnEndWrap.classList.toggle("hidden", !visible);
   }
 
+  function turnCycleKey(){
+    const t = turnState() || {};
+    const cur = safeText(t.currentPlayerId || "");
+    const updatedAt = Number(t.updatedAt || 0);
+    return `${cur}:${updatedAt}`;
+  }
+
+  function maybeAutoRollMoveDiceOnTurnStart(){
+    if (!isGameStarted()) return;
+    if (!canUseMoveDice()) return;
+    if (!state.userId) return;
+
+    const myMarker = markerCache?.[state.userId] || null;
+    if (myMarker) return;
+
+    const key = turnCycleKey();
+    if (!key || key === autoMoveTriggeredTurnKey) return;
+
+    autoMoveTriggeredTurnKey = key;
+    hideAttackPop();
+    setTimeout(() => runDiceRollAnimation(), 80);
+  }
+
   function secondCharOrRa(name){
     const chars = Array.from(safeText(name || "").trim());
     return chars[1] || "ラ";
@@ -2658,6 +2681,7 @@
 
   let markerLayer = null;
   let markerCache = {};
+  let autoMoveTriggeredTurnKey = "";
   const roomPolygons = {};
   const diceRollOverlay = document.getElementById('diceRollOverlay');
   let diceRollTimers = [];
@@ -3204,6 +3228,7 @@
     onValue(mRef, snap => {
       markerCache = snap.val() || {};
       renderMarkers();
+      maybeAutoRollMoveDiceOnTurnStart();
     });
   }
 
@@ -3519,6 +3544,7 @@
       renderHpBoard();
       renderPositionLine();
       renderTurnEndButton();
+      maybeAutoRollMoveDiceOnTurnStart();
     });
   }
 
