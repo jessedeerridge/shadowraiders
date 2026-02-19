@@ -629,7 +629,7 @@
   position:fixed;
   inset:0;
   pointer-events:none;
-  z-index:3200;
+  z-index:11000;
 }
 .dice-flyer{
   position:absolute;
@@ -1322,10 +1322,6 @@
   </div>
 </div>
 
-<div id="playerSelectPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="プレイヤー選択">
-  <p class="msg" id="playerSelectMsg">対象プレイヤーを選択してください。</p>
-  <div class="actions" id="playerSelectActions"></div>
-</div>
 
 <div id="seatPopBackdrop" class="seat-pop-backdrop hidden" aria-label="座席カラータイル">
   <div class="seat-board" id="seatBoard">
@@ -1692,7 +1688,6 @@
   let identityRevealSeenByUid = {};
   let autoDamageRevealLock = {};
   let temporaryRoleTagByUid = {};
-  let playerSelectState = null;
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -1705,9 +1700,6 @@
   const identityPromptMsg = document.getElementById("identityPromptMsg");
   const btnIdentityPromptYes = document.getElementById("btnIdentityPromptYes");
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
-  const playerSelectPop = document.getElementById("playerSelectPop");
-  const playerSelectMsg = document.getElementById("playerSelectMsg");
-  const playerSelectActions = document.getElementById("playerSelectActions");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
 
@@ -1804,37 +1796,6 @@
     }, Math.max(100, Number(durationMs) || 2000));
   }
 
-  function hidePlayerSelectPop(){
-    playerSelectState = null;
-    playerSelectPop?.classList.add("hidden");
-    if (playerSelectActions) playerSelectActions.innerHTML = "";
-  }
-
-  function showPlayerSelectPop({ message, includeSelf = false, onSelect } = {}){
-    if (!playerSelectPop || !playerSelectActions || !playerSelectMsg) return;
-    const players = latestPlayers
-      .slice()
-      .sort((a,b) => Number(a.seatIndex || 999) - Number(b.seatIndex || 999))
-      .filter(p => includeSelf || p.id !== state.userId);
-    if (players.length === 0) return;
-
-    playerSelectState = { onSelect: (typeof onSelect === "function") ? onSelect : null };
-    playerSelectMsg.textContent = safeText(message || "対象プレイヤーを選択してください。");
-    playerSelectActions.innerHTML = "";
-    for (const p of players){
-      const btn = document.createElement("button");
-      btn.className = "btn pop-dark";
-      btn.type = "button";
-      btn.textContent = safeText(p.name || "プレイヤー");
-      btn.addEventListener("click", async () => {
-        const handler = playerSelectState?.onSelect;
-        hidePlayerSelectPop();
-        if (handler) await handler(p.id);
-      });
-      playerSelectActions.appendChild(btn);
-    }
-    playerSelectPop.classList.remove("hidden");
-  }
 
   function hasAnyEquipment(uid){
     return listEquipForUid(uid).some(v => !isIdentityEquipItem(v));
@@ -1885,6 +1846,36 @@
       greenShareSubtitle.textContent = subtitle || "";
       greenShareSubtitle.classList.toggle("hidden", !subtitle);
     }
+  }
+
+  function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onSelect=null } = {}){
+    if (!greenShareDock || !greenShareList) return;
+    const players = latestPlayers
+      .filter(p => includeSelf || p.id !== state.userId)
+      .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
+    if (players.length === 0) return;
+
+    setGreenDockMeta({ title, subtitle:"" });
+    greenShareActions?.classList.add("hidden");
+    greenShareList.innerHTML = "";
+
+    for (const p of players){
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "green-share-btn";
+      const chip = buildChipFor(p.id);
+      const name = document.createElement("span");
+      name.textContent = secondCharOrRa(p.name);
+      btn.appendChild(chip);
+      btn.appendChild(name);
+      btn.addEventListener("click", async () => {
+        const handler = (typeof onSelect === "function") ? onSelect : null;
+        if (handler) await handler(p.id);
+      });
+      greenShareList.appendChild(btn);
+    }
+
+    greenShareDock.classList.remove("hidden");
   }
 
   function openGreenShareDock(cardObj){
@@ -2065,7 +2056,6 @@
     greenZoomLocked = false;
     hideGreenShareDock();
     hideRevealPop();
-    hidePlayerSelectPop();
   }
   zoomCloseBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -3629,8 +3619,8 @@
 
     if (name === "応急手当"){
       openZoomFromDeckCard(cardObj, "white", { closeOnBackdrop:false, showCloseButton:false });
-      showPlayerSelectPop({
-        message: "応急手当：対象プレイヤーを選択してください。",
+      openTargetSelectDock({
+        title: "応急手当：対象プレイヤーを選択してください。",
         includeSelf: true,
         onSelect: async (uid) => {
           await waitMs(1000);
@@ -3643,8 +3633,8 @@
 
     if (name === "恩恵"){
       openZoomFromDeckCard(cardObj, "white", { closeOnBackdrop:false, showCloseButton:false });
-      showPlayerSelectPop({
-        message: "恩恵：回復させるプレイヤーを選択してください。",
+      openTargetSelectDock({
+        title: "恩恵：回復させるプレイヤーを選択してください。",
         includeSelf: false,
         onSelect: async (uid) => {
           const eye = await runCornerD6Roll();
