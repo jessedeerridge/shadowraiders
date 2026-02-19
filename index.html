@@ -639,6 +639,13 @@
   --d4-2-gap: 13%;
 }
 
+.attack-result-pin{
+  position:absolute;
+  left:0;
+  top:0;
+  pointer-events:none;
+}
+
 .die{
   width:var(--die); height:var(--die);
   background:#e53935;
@@ -1206,6 +1213,15 @@
   </div>
 </div>
 
+<div id="attackPop" class="confirm-pop hidden" role="dialog" aria-label="攻撃確認">
+  <div class="caret" aria-hidden="true"></div>
+  <p class="msg" id="attackMsg">攻撃しますか。</p>
+  <div class="actions">
+    <button class="btn ghost" id="btnAttackNo">いいえ</button>
+    <button class="btn primary" id="btnAttackYes">はい</button>
+  </div>
+</div>
+
 <div id="seatPopBackdrop" class="seat-pop-backdrop hidden" aria-label="座席カラータイル">
   <div class="seat-board" id="seatBoard">
     <div class="seat-board-title">
@@ -1549,6 +1565,11 @@
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
   const btnRevealNo  = document.getElementById("btnRevealNo");
+  const attackPop = document.getElementById("attackPop");
+  const attackMsg = document.getElementById("attackMsg");
+  const btnAttackYes = document.getElementById("btnAttackYes");
+  const btnAttackNo = document.getElementById("btnAttackNo");
+  let pendingAttackTargetUid = "";
 
   function showRevealPopAt(clientX, clientY){
     const pad = 10;
@@ -1573,6 +1594,35 @@
     revealPop.style.top  = top + "px";
   }
   function hideRevealPop(){ revealPop.classList.add("hidden"); }
+
+  function showAttackPopAt(clientX, clientY, targetName){
+    if (!attackPop) return;
+    const pad = 10;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    attackMsg.textContent = `${safeText(targetName || "このプレイヤー")}を攻撃しますか。`;
+    attackPop.classList.remove("hidden");
+    const r = attackPop.getBoundingClientRect();
+
+    let x = clientX;
+    let y = clientY;
+
+    const halfW = r.width / 2;
+    if (x - halfW < pad) x = pad + halfW;
+    if (x + halfW > vw - pad) x = (vw - pad) - halfW;
+
+    let top = y + 18;
+    if (top + r.height > vh - pad) top = y - r.height - 18;
+    top = Math.max(pad, Math.min(top, vh - pad - r.height));
+
+    attackPop.style.left = x + "px";
+    attackPop.style.top  = top + "px";
+  }
+  function hideAttackPop(){
+    pendingAttackTargetUid = "";
+    attackPop?.classList.add("hidden");
+  }
 
 
   function myRoleInfo(){
@@ -1998,9 +2048,12 @@
   });
 
   document.addEventListener("click", (e) => {
-    if (revealPop.classList.contains("hidden")) return;
-    if (e.target.closest("#revealPop")) return;
-    hideRevealPop();
+    if (!revealPop.classList.contains("hidden") && !e.target.closest("#revealPop")){
+      hideRevealPop();
+    }
+    if (!attackPop.classList.contains("hidden") && !e.target.closest("#attackPop")){
+      hideAttackPop();
+    }
   }, true);
 
   btnRevealNo.addEventListener("click", (e) => {
@@ -2011,6 +2064,35 @@
     e.stopPropagation();
     await revealMyIdentityToEquipment();
     hideRevealPop();
+  });
+
+  btnAttackNo.addEventListener("click", (e) => {
+    e.stopPropagation();
+    hideAttackPop();
+  });
+  btnAttackYes.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const uid = pendingAttackTargetUid;
+    const target = markerCache?.[uid] || null;
+    if (!uid || !target){
+      hideAttackPop();
+      return;
+    }
+    const x = Number(target.x);
+    const y = Number(target.y);
+    const point = roomSvg && Number.isFinite(x) && Number.isFinite(y)
+      ? (() => {
+          const ctm = roomSvg.getScreenCTM();
+          if (!ctm) return null;
+          const pt = roomSvg.createSVGPoint();
+          pt.x = x;
+          pt.y = y;
+          return pt.matrixTransform(ctm);
+        })()
+      : null;
+
+    hideAttackPop();
+    await runAttackDiceAnimation(uid, point?.x || window.innerWidth/2, point?.y || window.innerHeight/2);
   });
 
   equipBody.addEventListener("click", (e) => {
@@ -2699,6 +2781,105 @@
     await update(ref(db, `rooms/${state.roomCode}`), updates);
   }
 
+  function clearAttackResultDice(){
+    if (!diceRollOverlay) return;
+    diceRollOverlay.querySelectorAll('.attack-result-pin').forEach(el => el.remove());
+  }
+
+  async function addDamageToPlayer(uid, amount){
+    const add = Math.max(0, Number(amount) || 0);
+    if (!uid || !state.roomCode || add <= 0) return;
+    const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
+    await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) + add));
+  }
+
+  async function runAttackDiceAnimation(targetUid, clickClientX, clickClientY){
+    if (!diceRollOverlay || !targetUid) return;
+    clearDiceRollTimers();
+    clearAttackResultDice();
+
+    const d6Wrap = document.createElement('div');
+    d6Wrap.className = 'dice-flyer';
+    const d6 = document.createElement('div');
+    d6.className = 'die';
+    d6Wrap.appendChild(d6);
+
+    const d4Wrap = document.createElement('div');
+    d4Wrap.className = 'dice-flyer';
+    const d4 = document.createElement('div');
+    d4.className = 'd4';
+    d4Wrap.appendChild(d4);
+
+    diceRollOverlay.appendChild(d6Wrap);
+    diceRollOverlay.appendChild(d4Wrap);
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const startBase = randomCornerStart(width, height);
+    const startA = { x:startBase.x - 16, y:startBase.y - 6 };
+    const startB = { x:startBase.x + 16, y:startBase.y + 6 };
+
+    const endX = Math.max(50, Math.min(width - 50, Number(clickClientX) || width / 2));
+    const endY = Math.max(50, Math.min(height - 50, Number(clickClientY) || height / 2));
+    const [offsetA, offsetB] = randomCenterOffsets();
+
+    const startDegA = Math.random() * 90;
+    const startDegB = Math.random() * 90;
+    setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
+    setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
+
+    const animDuration = 950;
+    const rollStartAt = Date.now();
+    const rollFaceTick = () => {
+      const elapsed = Date.now() - rollStartAt;
+      if (elapsed >= animDuration) return;
+      renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
+      renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
+
+      const t = elapsed / animDuration;
+      const nextInterval = 55 + Math.floor(185 * t);
+      const id = setTimeout(rollFaceTick, nextInterval);
+      diceRollTimers.push(id);
+    };
+    rollFaceTick();
+
+    const launchDelayMs = 30;
+    const moveDurationMs = 950;
+    const settleBufferMs = 80;
+    const damageDelayAfterStopMs = 2000;
+
+    const moveTimer = setTimeout(() => {
+      d6Wrap.classList.add('rolling');
+      d4Wrap.classList.add('rolling');
+      const endDegA = startDegA + 720 + Math.random() * 360;
+      const endDegB = startDegB + 720 + Math.random() * 360;
+      setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
+      setFlyerTransform(d4Wrap, endX + offsetB.x, endY + offsetB.y, endDegB);
+    }, launchDelayMs);
+    diceRollTimers.push(moveTimer);
+
+    const finalD6 = 1 + Math.floor(Math.random() * 6);
+    const finalD4 = 1 + Math.floor(Math.random() * 4);
+    const diff = Math.abs(finalD6 - finalD4);
+
+    const stopDelayMs = launchDelayMs + moveDurationMs + settleBufferMs;
+    const stopTimer = setTimeout(() => {
+      d6Wrap.classList.remove('rolling');
+      d4Wrap.classList.remove('rolling');
+      renderD6Face(d6, finalD6);
+      renderD4Face(d4, finalD4);
+
+      d6Wrap.classList.add('attack-result-pin');
+      d4Wrap.classList.add('attack-result-pin');
+
+      const damageTimer = setTimeout(async () => {
+        await addDamageToPlayer(targetUid, diff);
+      }, damageDelayAfterStopMs);
+      diceRollTimers.push(damageTimer);
+    }, stopDelayMs);
+    diceRollTimers.push(stopTimer);
+  }
+
   function runDiceRollAnimation(){
     if (!diceRollOverlay) return;
     clearDiceRollTimers();
@@ -2811,7 +2992,16 @@
     g.style.cursor = 'pointer';
     g.addEventListener('click', (e) => {
       e.stopPropagation();
+      hideAttackPop();
       runDiceRollAnimation();
+    });
+  } else if (uid && pulse){
+    g.style.cursor = 'pointer';
+    g.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const p = playerById(uid);
+      pendingAttackTargetUid = uid;
+      showAttackPopAt(e.clientX, e.clientY, p?.name || 'このプレイヤー');
     });
   }
 
