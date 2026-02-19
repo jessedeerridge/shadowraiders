@@ -1736,8 +1736,7 @@
   }
 
   function hasAnyEquipment(uid){
-    const obj = equipCache?.[uid] || {};
-    return Object.keys(obj).some(k => k !== "identity");
+    return listEquipForUid(uid).some(v => !isIdentityEquipItem(v));
   }
 
   function greenCardConditionMatched(cardObj){
@@ -2049,9 +2048,26 @@
   function isIdentityEquipItem(v){
     return v && (v.kind === "identity") && !!v.roleId;
   }
-  function listEquipForUid(uid){
+  function equipItemCopies(item){
+    if (!item || isIdentityEquipItem(item)) return 1;
+    const raw = Number(item.count ?? item.qty ?? item.quantity ?? 1);
+    if (!Number.isFinite(raw)) return 1;
+    return Math.max(1, Math.floor(raw));
+  }
+  function expandedEquipItems(uid){
     const obj = equipCache?.[uid] || {};
-    const arr = Object.entries(obj).map(([k,v]) => ({ key:k, ...(v||{}) }));
+    const expanded = [];
+    for (const [key, value] of Object.entries(obj)){
+      const item = { key, ...(value || {}) };
+      const copies = equipItemCopies(item);
+      for (let i = 0; i < copies; i++){
+        expanded.push({ ...item, key: `${key}_${i}` });
+      }
+    }
+    return expanded;
+  }
+  function listEquipForUid(uid){
+    const arr = expandedEquipItems(uid);
     arr.sort((a,b) => {
       const ai = isIdentityEquipItem(a) ? 0 : 1;
       const bi = isIdentityEquipItem(b) ? 0 : 1;
@@ -3009,7 +3025,8 @@
   }
 
   function myEquipmentNames(){
-    return Object.values(equipCache?.[state.userId] || {})
+    return listEquipForUid(state.userId)
+      .filter(v => !isIdentityEquipItem(v))
       .map(v => safeText(v?.name))
       .filter(Boolean);
   }
