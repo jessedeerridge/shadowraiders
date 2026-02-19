@@ -1154,8 +1154,13 @@
   .zoom-stage .id72{
     box-shadow:0 18px 50px rgba(0,0,0,.45);
   }
-  .zoom-stage .equip-steal-pulse{
+  .zoom-stage .equip-steal-pulse,
+  .zoom-stage .equip-defeat-pulse{
     animation:none;
+  }
+  .zoom-stage .eliminated-dim{
+    opacity:1;
+    filter:none;
   }
   .zoom-identity-owner{
     position:absolute;
@@ -2213,7 +2218,7 @@
   function openZoomFromCard(cardEl, options){
     const clone = cardEl.cloneNode(true);
     clone.classList.remove("locked","blocked");
-    clone.classList.remove("equip-steal-pulse");
+    clone.classList.remove("equip-steal-pulse","equip-defeat-pulse","eliminated-dim");
     clone.style.pointerEvents = "auto";
     openZoomContent(clone, options);
   }
