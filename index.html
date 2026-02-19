@@ -2709,11 +2709,15 @@
     }, 980);
     diceRollTimers.push(stopTimer);
 
-    const cleanupTimer = setTimeout(async () => {
+    const placeMarkerTimer = setTimeout(async () => {
+      await placeMarkerByDice(finalD6 + finalD4);
+    }, 	1900);
+    diceRollTimers.push(placeMarkerTimer);
+
+    const cleanupTimer = setTimeout(() => {
       diceRollOverlay.innerHTML = '';
       clearDiceRollTimers();
-      await placeMarkerByDice(finalD6 + finalD4);
-    }, 2800);
+    }, 3200);
     diceRollTimers.push(cleanupTimer);
   }
 
