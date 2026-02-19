@@ -1869,7 +1869,7 @@
       const chip = buildChipFor(p.id);
       const name = document.createElement("span");
       const suffix = (typeof nameSuffixForUid === "function") ? safeText(nameSuffixForUid(p.id, p) || "") : "";
-      name.textContent = `${secondCharOrRa(p.name)}${suffix}`;
+      name.textContent = `${nameFromSecondChar(p.name)}${suffix}`;
       btn.appendChild(chip);
       btn.appendChild(name);
       btn.addEventListener("click", async () => {
@@ -1904,7 +1904,7 @@
 
       const chip = buildChipFor(p.id);
       const name = document.createElement("span");
-      name.textContent = secondCharOrRa(p.name);
+      name.textContent = nameFromSecondChar(p.name);
       btn.appendChild(chip);
       btn.appendChild(name);
 
@@ -2615,14 +2615,9 @@
     });
   }
 
-  function secondCharOrRa(name){
-    const chars = Array.from(safeText(name || "").trim());
-    return chars[1] || "ラ";
-  }
-
   function nameFromSecondChar(name){
     const chars = Array.from(safeText(name || "").trim());
-    return chars.slice(1).join("") || "ラ";
+    return chars.slice(1).join("");
   }
 
   function renderHpBoard(){
@@ -4501,6 +4496,7 @@
   function subscribePlayers(){
     const tablesRef = ref(db, `rooms/${state.roomCode}/tables`);
     onValue(tablesRef, snap => {
+      const wasSeated = state.seatedTable != null;
       const data = snap.val() || {};
       const players = Object.entries(data)
         .map(([seatIndex, t]) => (t && t.playerId ? {
@@ -4520,6 +4516,7 @@
         sessionStorage.setItem(seatKey(state.roomCode), String(mySeat.seatIndex));
       } else {
         state.seatedTable = null;
+        if (wasSeated && !isGameStarted()) state.spectating = false;
         sessionStorage.removeItem(seatKey(state.roomCode));
       }
 
