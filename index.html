@@ -184,7 +184,6 @@
     outline:none;
   }
   .seat-tile:focus{box-shadow:0 0 0 3px rgba(37,99,235,.25), 0 6px 16px rgba(0,0,0,.16);}
-.seat-tile.guardian-shield{ box-shadow:0 0 0 2px #d4af37 inset, 0 6px 16px rgba(0,0,0,.16); }
   .seat-tile.me::after{ display:none; }
   .seat-initial{
     position:absolute;
@@ -902,6 +901,7 @@
   }
 
 .mark-rect{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
+.mark-rect.guardian-shield{stroke:#d4af37;stroke-width:2;}
 .mark-text{font-weight:1000;font-size:10px;dominant-baseline:middle;text-anchor:middle;user-select:none;pointer-events:none;}
 .mark-pulse-target{
   transform-box:fill-box;
@@ -4887,6 +4887,7 @@
   rect.setAttribute("height", String(size));
   rect.setAttribute("rx", String(rx));
   rect.setAttribute("class", "mark-rect");
+  if (uid && hasGuardianAngelShield(uid)) rect.classList.add("guardian-shield");
   rect.setAttribute("fill", String(color || "#ddd"));
 
   const txt = document.createElementNS("http://www.w3.org/2000/svg","text");
@@ -5456,7 +5457,6 @@
       tile.appendChild(num);
 
       if (state.seatedTable === seatIndex) tile.classList.add('me');
-      if (taken && taken.id === state.userId && hasGuardianAngelShield(taken.id)) tile.classList.add('guardian-shield');
 
       tile.addEventListener('click', async () => {
         if (!state.roomCode) return;
