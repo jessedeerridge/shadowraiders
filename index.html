@@ -1083,24 +1083,27 @@
   .zoom-identity-owner{
     position:absolute;
     left:50%;
-    top:-22px;
+    top:-18px;
     transform:translateX(-50%);
     display:flex;
     align-items:center;
-    gap:6px;
+    gap:4px;
     background:rgba(255,255,255,.96);
     border:1px solid rgba(0,0,0,.15);
     border-radius:999px;
-    padding:3px 8px;
-    font-size:11px;
+    padding:1px 5px;
+    font-size:9px;
     font-weight:800;
     color:#111;
     white-space:nowrap;
+    line-height:1;
   }
   .zoom-identity-owner .equip-tag{
-    width:14px;
-    height:14px;
-    font-size:10px;
+    width:10px;
+    height:10px;
+    min-width:10px;
+    min-height:10px;
+    font-size:8px;
     border-width:1px;
   }
   .zoom-close{
@@ -2237,13 +2240,19 @@
     hideAttackPop();
     const d6 = 1 + Math.floor(Math.random() * 6);
     const d4 = 1 + Math.floor(Math.random() * 4);
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const endX = point?.x || width/2;
+    const endY = point?.y || height/2;
+    const motion = createDiceMotion(width, height, endX, endY);
     await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
       uid: state.userId,
       targetUid: uid,
-      x: point?.x || window.innerWidth/2,
-      y: point?.y || window.innerHeight/2,
+      x: endX,
+      y: endY,
       d6,
       d4,
+      motion,
       at: Date.now()
     });
     if (state.roomCode && isMyTurn()){
@@ -2372,10 +2381,14 @@
     if (!state.roomCode || !canUseMoveDice()) return;
     const d6 = 1 + Math.floor(Math.random() * 6);
     const d4 = 1 + Math.floor(Math.random() * 4);
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const motion = createDiceMotion(width, height, width/2, height/2);
     await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), {
       uid: state.userId,
       d6,
       d4,
+      motion,
       at: Date.now()
     });
   }
@@ -2541,7 +2554,8 @@
         force:true,
         finalD6:Number(ev.d6 || 1),
         finalD4:Number(ev.d4 || 1),
-        applyMove: safeText(ev.uid || "") === state.userId
+        applyMove: safeText(ev.uid || "") === state.userId,
+        motion: ev.motion || null
       });
     });
 
@@ -2560,7 +2574,8 @@
         force:true,
         finalD6:Number(ev.d6 || 1),
         finalD4:Number(ev.d4 || 1),
-        applyDamage: safeText(ev.uid || "") === state.userId
+        applyDamage: safeText(ev.uid || "") === state.userId,
+        motion: ev.motion || null
       });
     });
   }
@@ -2965,6 +2980,16 @@
     return [a,b];
   }
 
+  function createDiceMotion(width, height, endX, endY){
+    const startBase = randomCornerStart(width, height);
+    const [offsetA, offsetB] = randomCenterOffsets();
+    const startDegA = Math.random() * 90;
+    const startDegB = Math.random() * 90;
+    const endDegA = startDegA + 720 + Math.random() * 360;
+    const endDegB = startDegB + 720 + Math.random() * 360;
+    return { startBase, offsetA, offsetB, startDegA, startDegB, endDegA, endDegB, endX, endY };
+  }
+
   function setFlyerTransform(el, x, y, deg){
     el.style.transform = `translate(${x}px, ${y}px) rotate(${deg}deg)`;
   }
@@ -3164,16 +3189,19 @@
 
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const startBase = randomCornerStart(width, height);
-    const startA = { x:startBase.x - 16, y:startBase.y - 6 };
-    const startB = { x:startBase.x + 16, y:startBase.y + 6 };
+    const fallbackEndX = Math.max(50, Math.min(width - 50, Number(clickClientX) || width / 2));
+    const fallbackEndY = Math.max(50, Math.min(height - 50, Number(clickClientY) || height / 2));
+    const motion = options.motion || createDiceMotion(width, height, fallbackEndX, fallbackEndY);
 
-    const endX = Math.max(50, Math.min(width - 50, Number(clickClientX) || width / 2));
-    const endY = Math.max(50, Math.min(height - 50, Number(clickClientY) || height / 2));
-    const [offsetA, offsetB] = randomCenterOffsets();
+    const startA = { x:Number(motion.startBase?.x || 0) - 16, y:Number(motion.startBase?.y || 0) - 6 };
+    const startB = { x:Number(motion.startBase?.x || 0) + 16, y:Number(motion.startBase?.y || 0) + 6 };
+    const endX = Number(motion.endX || fallbackEndX);
+    const endY = Number(motion.endY || fallbackEndY);
+    const offsetA = { x:Number(motion.offsetA?.x || 0), y:Number(motion.offsetA?.y || 0) };
+    const offsetB = { x:Number(motion.offsetB?.x || 0), y:Number(motion.offsetB?.y || 0) };
 
-    const startDegA = Math.random() * 90;
-    const startDegB = Math.random() * 90;
+    const startDegA = Number(motion.startDegA || 0);
+    const startDegB = Number(motion.startDegB || 0);
     setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
     setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
 
@@ -3200,8 +3228,8 @@
     const moveTimer = setTimeout(() => {
       d6Wrap.classList.add('rolling');
       d4Wrap.classList.add('rolling');
-      const endDegA = startDegA + 720 + Math.random() * 360;
-      const endDegB = startDegB + 720 + Math.random() * 360;
+      const endDegA = Number(motion.endDegA || (startDegA + 720));
+      const endDegB = Number(motion.endDegB || (startDegB + 720));
       setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
       setFlyerTransform(d4Wrap, endX + offsetB.x, endY + offsetB.y, endDegB);
     }, launchDelayMs);
@@ -3255,13 +3283,14 @@
     const width = window.innerWidth;
     const height = window.innerHeight;
     const center = { x: width / 2, y: height / 2 };
-    const [offsetA, offsetB] = randomCenterOffsets();
-    const startBase = randomCornerStart(width, height);
-    const startA = { x:startBase.x - 16, y:startBase.y - 6 };
-    const startB = { x:startBase.x + 16, y:startBase.y + 6 };
+    const motion = options.motion || createDiceMotion(width, height, center.x, center.y);
+    const startA = { x:Number(motion.startBase?.x || 0) - 16, y:Number(motion.startBase?.y || 0) - 6 };
+    const startB = { x:Number(motion.startBase?.x || 0) + 16, y:Number(motion.startBase?.y || 0) + 6 };
+    const offsetA = { x:Number(motion.offsetA?.x || 0), y:Number(motion.offsetA?.y || 0) };
+    const offsetB = { x:Number(motion.offsetB?.x || 0), y:Number(motion.offsetB?.y || 0) };
 
-    const startDegA = Math.random() * 90;
-    const startDegB = Math.random() * 90;
+    const startDegA = Number(motion.startDegA || 0);
+    const startDegB = Number(motion.startDegB || 0);
     setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
     setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
 
@@ -3283,10 +3312,12 @@
     const moveTimer = setTimeout(() => {
       d6Wrap.classList.add('rolling');
       d4Wrap.classList.add('rolling');
-      const endDegA = startDegA + 720 + Math.random() * 360;
-      const endDegB = startDegB + 720 + Math.random() * 360;
-      setFlyerTransform(d6Wrap, center.x + offsetA.x, center.y + offsetA.y, endDegA);
-      setFlyerTransform(d4Wrap, center.x + offsetB.x, center.y + offsetB.y, endDegB);
+      const endDegA = Number(motion.endDegA || (startDegA + 720));
+      const endDegB = Number(motion.endDegB || (startDegB + 720));
+      const endX = Number(motion.endX || center.x);
+      const endY = Number(motion.endY || center.y);
+      setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
+      setFlyerTransform(d4Wrap, endX + offsetB.x, endY + offsetB.y, endDegB);
     }, 30);
     diceRollTimers.push(moveTimer);
 
