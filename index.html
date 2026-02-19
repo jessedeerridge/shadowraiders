@@ -625,6 +625,10 @@
   animation:markerPulse 1.2s ease-in-out infinite;
 }
 
+.chip16.guardian-shield{
+  box-shadow:0 0 0 2px #d4af37, 0 4px 10px rgba(0,0,0,.12);
+}
+
 .dice-roll-overlay{
   position:fixed;
   inset:0;
@@ -1347,8 +1351,8 @@
   <div class="caret" aria-hidden="true"></div>
   <p class="msg" id="attackMsg">攻撃しますか。</p>
   <div class="actions">
-    <button class="btn ghost" id="btnAttackNo">いいえ</button>
     <button class="btn primary" id="btnAttackYes">はい</button>
+    <button class="btn ghost" id="btnAttackNo">いいえ</button>
   </div>
 </div>
 
@@ -1827,7 +1831,11 @@
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    attackMsg.textContent = `${safeText(targetName || "このプレイヤー")}を攻撃しますか。`;
+    if (hasMyEquipmentByName("ガトリング")){
+      attackMsg.textContent = "レンジ内のプレイヤー全員を攻撃します。はい、いいえ";
+    } else {
+      attackMsg.textContent = `${safeText(targetName || "このプレイヤー")}を攻撃しますか。`;
+    }
     attackPop.classList.remove("hidden");
     const r = attackPop.getBoundingClientRect();
 
@@ -2619,6 +2627,8 @@
     const selectedSum = chooseSumForTestPlayer("攻撃");
     if (isTestPlayer() && selectedSum == null) return;
     const masamuneMode = hasMyEquipmentByName("妖刀マサムネ");
+    const gatlingMode = hasMyEquipmentByName("ガトリング");
+    const gatlingTargetUids = gatlingMode ? [...highlightedMarkerUids()] : [];
     const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
     const d6 = masamuneMode ? 0 : (selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6)));
     const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
@@ -2630,6 +2640,7 @@
     await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
       uid: state.userId,
       targetUid: uid,
+      gatlingTargetUids,
       x: endX,
       y: endY,
       d6,
@@ -2783,6 +2794,16 @@
     return dmg >= hp;
   }
 
+  function hasGuardianAngelShield(uid){
+    const targetUid = safeText(uid);
+    if (!targetUid) return false;
+    return !!state.room?.guardianAngelShield?.[targetUid];
+  }
+
+  function isAttackTargetProtected(uid){
+    return hasGuardianAngelShield(uid);
+  }
+
   function buildChipFor(uid){
     const p = playerById(uid);
     const color = p?.color || "#ddd";
@@ -2793,6 +2814,9 @@
     d.style.color = textColorFor(color);
     d.textContent = initial || "";
     d.title = p ? p.name : "";
+    if (hasGuardianAngelShield(uid)){
+      d.classList.add("guardian-shield");
+    }
     if (isTestPlayer()){
       d.style.cursor = "pointer";
       d.addEventListener("click", async (e) => {
@@ -3257,6 +3281,7 @@
         finalD6:Number(ev.d6 || 1),
         finalD4:Number(ev.d4 || 1),
         masamuneMode: !!ev.masamuneMode,
+        gatlingTargetUids: Array.isArray(ev.gatlingTargetUids) ? ev.gatlingTargetUids : [],
         applyDamage: safeText(ev.uid || "") === state.userId,
         motion: ev.motion || null
       });
@@ -3305,6 +3330,9 @@
         repeatTurnPending: false,
         updatedAt: Date.now()
       };
+      if (cur.guardianAngelShield && cur.guardianAngelShield[startPlayerId]){
+        delete cur.guardianAngelShield[startPlayerId];
+      }
       return cur;
     });
   }
@@ -3351,6 +3379,9 @@
         repeatTurnPending: false,
         updatedAt: Date.now()
       };
+      if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
+        delete cur.guardianAngelShield[nextPlayerId];
+      }
       return cur;
     });
   }
@@ -3748,10 +3779,13 @@
     });
   }
 
-  function applyIncomingDamageModifiers(uid, amount){
+  function applyIncomingDamageModifiers(uid, amount, options = {}){
     const targetUid = safeText(uid);
     let add = Math.max(0, Number(amount) || 0);
     if (!targetUid || add <= 0) return 0;
+    if (options.source === "attack" && hasGuardianAngelShield(targetUid)){
+      return 0;
+    }
     if (hasEquipmentByName(targetUid, "賢者のローブ")){
       add -= 1;
     }
@@ -3967,6 +4001,7 @@
       if (!rid) continue;
 
       if (attackRooms.has(rid)){
+        if (isAttackTargetProtected(uid)) continue;
         targets.add(uid);
       }
     }
@@ -4071,8 +4106,8 @@
     diceRollOverlay.querySelectorAll('.attack-result-pin').forEach(el => el.remove());
   }
 
-  async function addDamageToPlayer(uid, amount){
-    const add = applyIncomingDamageModifiers(uid, amount);
+  async function addDamageToPlayer(uid, amount, options = {}){
+    const add = applyIncomingDamageModifiers(uid, amount, options);
     if (!uid || !state.roomCode || add <= 0) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) + add));
@@ -4089,6 +4124,13 @@
     if (!uid || !state.roomCode) return;
     await set(ref(db, `rooms/${state.roomCode}/damage/${uid}`), 0);
   }
+
+  async function enableGuardianAngelShieldForPlayer(uid){
+    const targetUid = safeText(uid);
+    if (!state.roomCode || !targetUid) return;
+    await set(ref(db, `rooms/${state.roomCode}/guardianAngelShield/${targetUid}`), true);
+  }
+
 
   async function setDamageToPlayer(uid, damage){
     if (!uid || !state.roomCode) return;
@@ -4275,7 +4317,7 @@
     return uids;
   }
 
-  async function addDamageToPlayers(uids, amount){
+  async function addDamageToPlayers(uids, amount, options = {}){
     const baseAdd = Math.max(0, Number(amount) || 0);
     if (!state.roomCode || baseAdd <= 0) return;
     const targets = [...new Set((uids || []).map(uid => safeText(uid)).filter(Boolean))];
@@ -4285,7 +4327,7 @@
       if (!cur) return cur;
       cur.damage = cur.damage || {};
       for (const uid of targets){
-        const add = applyIncomingDamageModifiers(uid, baseAdd);
+        const add = applyIncomingDamageModifiers(uid, baseAdd, options);
         if (add <= 0) continue;
         cur.damage[uid] = clampDamage(Number(cur.damage[uid] || 0) + add);
       }
@@ -4364,6 +4406,11 @@
 
     if (name === "封印の知恵"){
       await enableRepeatTurnOnce();
+      return;
+    }
+
+    if (name === "守護天使"){
+      await enableGuardianAngelShieldForPlayer(state.userId);
       return;
     }
 
@@ -4615,8 +4662,15 @@
         if (!applyDamage) return;
         const revealBoost = masamuneMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
         const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, excaliburRevealBoost: revealBoost });
+        const gatlingTargets = Array.isArray(options.gatlingTargetUids)
+          ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
+          : [];
         if (damage > 0){
-          await addDamageToPlayer(targetUid, damage);
+          if (gatlingTargets.length > 0){
+            await addDamageToPlayers(gatlingTargets, damage, { source:"attack" });
+          } else {
+            await addDamageToPlayer(targetUid, damage, { source:"attack" });
+          }
         }
       }, damageDelayAfterStopMs);
       diceRollTimers.push(damageTimer);
