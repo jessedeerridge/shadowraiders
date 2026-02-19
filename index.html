@@ -1906,7 +1906,7 @@
         const label = document.createElement("div");
         label.className = "zoom-identity-owner";
         const name = document.createElement("span");
-        name.textContent = secondCharOrRa(owner.name || "");
+        name.textContent = nameFromSecondChar(owner.name || "");
         label.appendChild(chip);
         label.appendChild(name);
         wrap.appendChild(label);
@@ -2396,6 +2396,11 @@
   function secondCharOrRa(name){
     const chars = Array.from(safeText(name || "").trim());
     return chars[1] || "ラ";
+  }
+
+  function nameFromSecondChar(name){
+    const chars = Array.from(safeText(name || "").trim());
+    return chars.slice(1).join("") || "ラ";
   }
 
   function renderHpBoard(){
