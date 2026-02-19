@@ -638,6 +638,35 @@
     flex-direction:column;
     align-items:center;
     gap:2px;
+    position:relative;
+  }
+  .position-bubble{
+    position:absolute;
+    bottom:100%;
+    left:50%;
+    transform:translate(-50%, -4px);
+    max-width:120px;
+    padding:3px 8px;
+    border-radius:999px;
+    background:#111;
+    color:#fff;
+    font-size:10px;
+    font-weight:900;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    line-height:1.2;
+    pointer-events:none;
+    z-index:2;
+  }
+  .position-bubble::after{
+    content:"";
+    position:absolute;
+    left:50%;
+    top:100%;
+    transform:translateX(-50%);
+    border:4px solid transparent;
+    border-top-color:#111;
   }
   .starter-mark{
     min-height:10px;
@@ -984,7 +1013,7 @@
     opacity:.45;
     cursor:default;
   }
-  .green-share-btn.waiting-selected:disabled{
+  .green-share-btn.waiting-selected{
     opacity:1;
   }
 </style>
@@ -1395,6 +1424,7 @@
   let greenReplyInitialized = false;
   let greenZoomLocked = false;
   let pendingGreenRequestId = "";
+  let activeGreenReplies = {};
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -1502,7 +1532,7 @@
 
       const chip = buildChipFor(p.id);
       const name = document.createElement("span");
-      name.textContent = safeText(p.name || "名無し");
+      name.textContent = secondCharOrRa(p.name);
       btn.appendChild(chip);
       btn.appendChild(name);
 
@@ -1522,7 +1552,8 @@
         greenShareList.innerHTML = "";
         const selected = btn.cloneNode(true);
         selected.classList.add("waiting-selected");
-        selected.disabled = true;
+        selected.setAttribute("aria-disabled", "true");
+        selected.style.pointerEvents = "none";
         greenShareList.appendChild(selected);
         setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
         greenShareActions?.classList.add("hidden");
@@ -1556,6 +1587,13 @@
           card: msg.card,
           at: Date.now()
         });
+        await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${msg.requestId}`), {
+          from: msg.from,
+          responderId: state.userId,
+          requestId: msg.requestId,
+          answerLabel: opt.label,
+          at: Date.now()
+        });
         closeZoom();
       });
       greenShareList.appendChild(btn);
@@ -1572,7 +1610,20 @@
     greenShareDock?.classList.add("hidden");
   }
 
-  greenShareCloseBtn?.addEventListener("click", () => {
+  async function clearPendingGreenBubble(){
+    if (!state.roomCode || !pendingGreenRequestId) return;
+    const bubbleId = pendingGreenRequestId;
+    const bRef = ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${bubbleId}`);
+    const snap = await get(bRef);
+    const val = snap.val();
+    if (val?.from === state.userId){
+      await remove(bRef);
+    }
+    pendingGreenRequestId = "";
+  }
+
+  greenShareCloseBtn?.addEventListener("click", async () => {
+    await clearPendingGreenBubble();
     closeZoom();
   });
 
@@ -1612,13 +1663,17 @@
     hideGreenShareDock();
     hideRevealPop();
   }
-  zoomCloseBtn.addEventListener("click", (e) => {
+  zoomCloseBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     if (greenZoomLocked) return;
+    await clearPendingGreenBubble();
     closeZoom();
   });
-  zoomBackdrop.addEventListener("click", (e) => {
-    if (e.target === zoomBackdrop && zoomCloseOnBackdrop) closeZoom();
+  zoomBackdrop.addEventListener("click", async (e) => {
+    if (e.target === zoomBackdrop && zoomCloseOnBackdrop){
+      await clearPendingGreenBubble();
+      closeZoom();
+    }
   });
 
   let slot1 = document.getElementById('slot1');
@@ -1879,6 +1934,11 @@
     return d;
   }
 
+  function secondCharOrRa(name){
+    const chars = Array.from(safeText(name || "").trim());
+    return chars[1] || "ラ";
+  }
+
   function renderHpBoard(){
     if (!hpBoard) return;
     if (!state.roomCode) return;
@@ -1968,6 +2028,14 @@
       const marker = document.createElement("div");
       marker.className = "starter-mark";
       marker.textContent = (started && p.id === startPlayerId) ? "△" : "";
+
+      const bubbleText = safeText(activeGreenReplies?.[p.id] || "");
+      if (bubbleText){
+        const bubble = document.createElement("div");
+        bubble.className = "position-bubble";
+        bubble.textContent = bubbleText;
+        item.appendChild(bubble);
+      }
       item.appendChild(marker);
 
       positionLine.appendChild(item);
@@ -1981,6 +2049,23 @@
     onValue(dRef, snap => {
       damageCache = snap.val() || {};
       renderHpBoard();
+    });
+  }
+
+
+  function subscribeGreenReplyBubbles(){
+    const bRef = ref(db, `rooms/${state.roomCode}/greenReplyBubbles`);
+    onValue(bRef, snap => {
+      const raw = snap.val() || {};
+      const next = {};
+      for (const row of Object.values(raw)){
+        const uid = safeText(row?.responderId || "");
+        const label = safeText(row?.answerLabel || "");
+        if (!uid || !label) continue;
+        next[uid] = label;
+      }
+      activeGreenReplies = next;
+      renderPositionLine();
     });
   }
 
@@ -2716,7 +2801,6 @@
       if (at <= greenReplySeenAt) return;
       if (!pendingGreenRequestId || safeText(msg.requestId || "") !== pendingGreenRequestId) return;
       greenReplySeenAt = at;
-      pendingGreenRequestId = "";
       setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
       greenShareActions?.classList.remove("hidden");
     });
@@ -3135,6 +3219,7 @@
       remove(ref(db, `${base}/startPlayerId`)),
       remove(ref(db, `${base}/greenInbox`)),
       remove(ref(db, `${base}/greenResponses`)),
+      remove(ref(db, `${base}/greenReplyBubbles`)),
     ]);
 
     deckCache = null;
@@ -3211,6 +3296,7 @@
     subscribeHands();
     subscribeGreenInbox();
     subscribeGreenResponses();
+    subscribeGreenReplyBubbles();
     subscribeMarkers();
     subscribeEquipment();
     subscribeDamage();
