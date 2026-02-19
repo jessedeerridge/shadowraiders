@@ -1167,6 +1167,9 @@
   .eliminated-dim{
     opacity:.7;
   }
+  .marker-eliminated{
+    opacity:.45;
+  }
   .zoom-close{
     position:fixed;
     right:14px;
@@ -1740,6 +1743,10 @@
   let room3ActionUsed = false;
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
+  let pendingEquipAction = null;
+  let effectResolutionLocks = {};
+  let eliminatedLineHideTimers = {};
+  let positionLineHiddenEliminated = {};
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -1823,6 +1830,8 @@
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
     roomActionPop?.classList.remove("lower-mode");
+    if (btnRoomActionYes) btnRoomActionYes.textContent = "はい";
+    if (btnRoomActionNo) btnRoomActionNo.textContent = "いいえ";
   }
 
   function showRoomActionPopAt(clientX, clientY, message, onYes, options = {}){
@@ -1830,9 +1839,12 @@
     const fixedLower = !!options.fixedLower;
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
+      onNo: (typeof options.onNo === "function") ? options.onNo : null,
       closeZoomOnNo: !!options.closeZoomOnNo
     };
     roomActionMsg.textContent = safeText(message || "");
+    if (btnRoomActionYes) btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
+    if (btnRoomActionNo) btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
     roomActionPop.classList.remove("hidden");
     roomActionPop.classList.toggle("lower-mode", fixedLower);
 
@@ -1903,6 +1915,21 @@
     return listEquipForUid(uid).some(v => !isIdentityEquipItem(v));
   }
 
+  function setEffectResolutionLock(lockKey, enabled){
+    const key = safeText(lockKey || "");
+    if (!key) return;
+    if (enabled){
+      effectResolutionLocks[key] = true;
+    } else {
+      delete effectResolutionLocks[key];
+    }
+  }
+
+  function isEffectResolutionLocked(lockKey){
+    const key = safeText(lockKey || "");
+    return !!(key && effectResolutionLocks[key]);
+  }
+
   function greenCardConditionMatched(cardObj){
     const text = safeText(cardObj?.effect || cardObj?.text || "");
     const role = myRoleInfo();
@@ -1959,6 +1986,7 @@
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
     if (players.length === 0) return;
 
+    let selected = false;
     setGreenDockMeta({ title, subtitle:"" });
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
@@ -1974,6 +2002,8 @@
       btn.appendChild(chip);
       btn.appendChild(name);
       btn.addEventListener("click", async () => {
+        if (selected) return;
+        selected = true;
         const handler = (typeof onSelect === "function") ? onSelect : null;
         if (handler) await handler(p.id);
       });
@@ -2370,7 +2400,10 @@
         cardEl.dataset.cardName = safeText(it.name || "");
         cardEl.dataset.cardTheme = safeText(it.theme || "white");
         cardEl.dataset.cardEffect = safeText(it.effect || "");
-        if (canUseRoom4Steal() && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it)){
+        const isNormalStealPulse = canUseRoom4Steal() && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
+        const isOliverPulse = pendingEquipAction?.type === "oliver_target" && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
+        const isBananaPulse = pendingEquipAction?.type === "banana_give" && p.id === state.userId && !isIdentityEquipItem(it);
+        if (isNormalStealPulse || isOliverPulse || isBananaPulse){
           cardEl.classList.add("equip-steal-pulse");
         }
         cards.appendChild(cardEl);
@@ -2475,10 +2508,12 @@
     e.stopPropagation();
     hideAttackPop();
   });
-  btnRoomActionNo?.addEventListener("click", (e) => {
+  btnRoomActionNo?.addEventListener("click", async (e) => {
     e.stopPropagation();
     const closeZoomOnNo = !!pendingRoomAction?.closeZoomOnNo;
+    const onNo = pendingRoomAction?.onNo;
     hideRoomActionPop();
+    if (typeof onNo === "function") await onNo();
     if (closeZoomOnNo) closeZoom();
   });
   btnRoomActionYes?.addEventListener("click", async (e) => {
@@ -2560,6 +2595,50 @@
   equipBody.addEventListener("click", (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
     if (!card) return;
+
+    if (pendingEquipAction?.type === "banana_give"){
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      if (ownerUid !== state.userId || !sourceKey) return;
+      pendingEquipAction.selectedSourceKey = sourceKey;
+      const cardName = safeText(card.dataset.cardName || "この装備");
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      openTargetSelectDock({
+        title: `「${cardName}」を渡すプレイヤーを選択してください。`,
+        includeSelf: false,
+        onlyAlive: true,
+        onSelect: async (uid) => {
+          const source = safeText(pendingEquipAction?.selectedSourceKey || "");
+          pendingEquipAction = null;
+          greenShareDock?.classList.add("hidden");
+          const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, source);
+          if (ok){
+            closeZoom();
+            renderEquipmentDock();
+          }
+        }
+      });
+      return;
+    }
+
+    if (pendingEquipAction?.type === "oliver_target"){
+      if (!card.classList.contains("equip-steal-pulse")) return;
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
+      pendingEquipAction = { type:"oliver_confirm", ownerUid, sourceKey };
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 70, "これを奪いますか。", async () => {
+        const action = pendingEquipAction;
+        pendingEquipAction = null;
+        const ok = await stealEquipmentFromPlayer(action.ownerUid, action.sourceKey);
+        if (ok){
+          closeZoom();
+          renderEquipmentDock();
+        }
+      }, { fixedLower:true, closeZoomOnNo:true });
+      return;
+    }
 
     if (canUseRoom4Steal() && card.classList.contains("equip-steal-pulse")){
       const ownerUid = safeText(card.dataset.ownerUid || "");
@@ -2756,6 +2835,41 @@
     return !!result.committed;
   }
 
+
+  async function moveEquipmentCardBetweenPlayers(fromUid, toUid, sourceKey){
+    if (!state.roomCode || !fromUid || !toUid || !sourceKey) return false;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    const result = await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const fromRow = cur.equipment?.[fromUid];
+      if (!fromRow) return cur;
+      const item = fromRow[sourceKey];
+      if (!item || item.kind === "identity") return cur;
+
+      const oldCount = Math.max(1, Math.floor(Number(item.count ?? item.qty ?? item.quantity ?? 1) || 1));
+      if (oldCount > 1){
+        const next = { ...item, count: oldCount - 1 };
+        delete next.qty;
+        delete next.quantity;
+        fromRow[sourceKey] = next;
+      } else {
+        delete fromRow[sourceKey];
+      }
+
+      cur.equipment = cur.equipment || {};
+      cur.equipment[toUid] = cur.equipment[toUid] || {};
+      const addKey = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      cur.equipment[toUid][addKey] = {
+        theme: safeText(item.theme || "white"),
+        name: safeText(item.name || ""),
+        effect: safeText(item.effect || ""),
+        at: Date.now()
+      };
+      return cur;
+    });
+    return !!result.committed;
+  }
+
   function canShowEndTurnButton(){
     if (!isMyTurn()) return false;
     return !!turnState()?.moveDone;
@@ -2879,6 +2993,7 @@
       const lvl = Number(cell.dataset.damage);
       const uids = byLvl.get(lvl) || [];
       for (const uid of uids){
+        if (isPlayerEliminated(uid)) continue;
         cell.appendChild(buildChipFor(uid));
       }
     }
@@ -2923,13 +3038,33 @@
       const item = document.createElement("div");
       item.className = "position-item";
 
+      const eliminated = isPlayerEliminated(p.id);
+      if (eliminated){
+        if (!eliminatedLineHideTimers[p.id] && !positionLineHiddenEliminated[p.id]){
+          eliminatedLineHideTimers[p.id] = setTimeout(() => {
+            positionLineHiddenEliminated[p.id] = true;
+            delete eliminatedLineHideTimers[p.id];
+            renderPositionLine();
+          }, 3000);
+        }
+      } else {
+        if (eliminatedLineHideTimers[p.id]){
+          clearTimeout(eliminatedLineHideTimers[p.id]);
+          delete eliminatedLineHideTimers[p.id];
+        }
+        delete positionLineHiddenEliminated[p.id];
+      }
+
       const chipWrap = document.createElement("div");
       chipWrap.className = "position-chip-wrap";
-      const chip = buildChipFor(p.id);
-      if (started && p.id === turnPlayerId){
-        chip.classList.add("turn-pulse");
+      if (!positionLineHiddenEliminated[p.id]){
+        const chip = buildChipFor(p.id);
+        if (started && p.id === turnPlayerId && !eliminated){
+          chip.classList.add("turn-pulse");
+        }
+        if (eliminated) chip.classList.add("eliminated-dim");
+        chipWrap.appendChild(chip);
       }
-      chipWrap.appendChild(chip);
 
       const marker = document.createElement("div");
       marker.className = "starter-mark";
@@ -2958,11 +3093,20 @@
     renderTurnEndButton();
   }
 
+
+  async function ensureCurrentTurnPlayerAlive(){
+    const curId = currentTurnPlayerId();
+    if (!curId) return;
+    if (!isPlayerEliminated(curId)) return;
+    await advanceTurnToNextPlayer();
+  }
+
   function subscribeDamage(){
     const dRef = ref(db, `rooms/${state.roomCode}/damage`);
     onValue(dRef, snap => {
       damageCache = snap.val() || {};
       renderHpBoard();
+      ensureCurrentTurnPlayerAlive();
 
       for (const [uid, dmgRaw] of Object.entries(damageCache)){
         const myHand = state.hands?.[uid];
@@ -3087,14 +3231,29 @@
       const order = Array.isArray(cur.positionOrder) ? cur.positionOrder : [];
       if (order.length === 0) return cur;
 
+      const isEliminatedInRoom = (uid) => {
+        if (!uid) return false;
+        const hand = cur.hands?.[uid];
+        const role = hand?.roleId ? ROLE_BY_ID[hand.roleId] : null;
+        const hp = Number(role?.hp || 0);
+        if (!hp) return false;
+        const dmg = clampDamage(cur.damage?.[uid]);
+        return dmg >= hp;
+      };
+      const aliveOrder = order.filter(uid => !isEliminatedInRoom(uid));
+      if (aliveOrder.length === 0) return cur;
+
       const curTurn = cur.turn || {};
-      const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || order[0] || "");
-      const repeat = !!curTurn.repeatTurnPending;
+      const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || aliveOrder[0] || "");
+      const repeat = !!curTurn.repeatTurnPending && !isEliminatedInRoom(curId);
       let nextPlayerId = curId;
       if (!repeat){
-        let nextIdx = order.indexOf(curId);
+        let nextIdx = aliveOrder.indexOf(curId);
         if (nextIdx < 0) nextIdx = 0;
-        nextPlayerId = safeText(order[(nextIdx + 1) % order.length] || order[0] || "");
+        nextPlayerId = safeText(aliveOrder[(nextIdx + 1) % aliveOrder.length] || aliveOrder[0] || "");
+      }
+      if (!nextPlayerId || isEliminatedInRoom(nextPlayerId)){
+        nextPlayerId = safeText(aliveOrder[0] || "");
       }
       if (!nextPlayerId) return cur;
 
@@ -3938,8 +4097,12 @@
     if (!name || !state.userId) return;
     const role = myRoleInfo();
     if (!role) return;
+    const lockKey = `${name}:${state.userId}`;
+    if (isEffectResolutionLocked(lockKey)) return;
+    setEffectResolutionLock(lockKey, true);
     const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+    try {
     if (name === "いやしの聖水"){
       await waitMs(1500);
       await healDamageToPlayer(state.userId, 2);
@@ -4072,6 +4235,62 @@
       return;
     }
 
+    if (name === "バナナの皮"){
+      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+      const myItems = listEquipForUid(state.userId).filter(it => !isIdentityEquipItem(it));
+      if (myItems.length === 0){
+        await waitMs(1000);
+        await addDamageToPlayer(state.userId, 1);
+        closeZoom();
+        return;
+      }
+      pendingEquipAction = { type:"banana_give", selectedSourceKey:"" };
+      renderEquipmentDock();
+      showRoomActionPopAt(
+        window.innerWidth/2,
+        window.innerHeight/2 + 70,
+        "バナナの皮：装備を与えるか、1ダメージ受けますか。",
+        async () => {},
+        {
+          fixedLower:true,
+          yesLabel:"装備を与える",
+          noLabel:"1ダメージ受ける",
+          closeZoomOnNo:false,
+          onNo: async () => {
+            pendingEquipAction = null;
+            renderEquipmentDock();
+            await waitMs(1000);
+            await addDamageToPlayer(state.userId, 1);
+            closeZoom();
+          }
+        }
+      );
+      return;
+    }
+
+    if (name === "オリバーの子分"){
+      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+      openTargetSelectDock({
+        title: "オリバーの子分：プレイヤーを選択してください。",
+        includeSelf: false,
+        onlyAlive: true,
+        onSelect: async (uid) => {
+          const anyOtherEquip = latestPlayers
+            .filter(p => p.id !== state.userId && !isPlayerEliminated(p.id))
+            .some(p => hasAnyEquipment(p.id));
+          greenShareDock?.classList.add("hidden");
+          if (!anyOtherEquip){
+            pendingEquipAction = null;
+            closeZoom();
+            return;
+          }
+          pendingEquipAction = { type:"oliver_target", ownerUid:uid };
+          renderEquipmentDock();
+        }
+      });
+      return;
+    }
+
     if (name === "人魚の涙"){
       await waitMs(1500);
       const topUids = maxDamageAlivePlayerIds();
@@ -4112,6 +4331,9 @@
       await addDamageToPlayers(playerIdsInRoom(targetRoomId), 3);
       closeZoom();
       return;
+    }
+    } finally {
+      setEffectResolutionLock(lockKey, false);
     }
   }
 
@@ -4349,15 +4571,16 @@
     if (!markerLayer) return;
     while(markerLayer.firstChild) markerLayer.removeChild(markerLayer.firstChild);
   }
- function drawMarker({x,y,color,initial,uid,pulse=false}){
+ function drawMarker({x,y,color,initial,uid,pulse=false,eliminated=false}){
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
   if (pulse) g.classList.add("mark-pulse-target");
+  if (eliminated) g.classList.add("marker-eliminated");
 
   const size = 16;
   const rx = 3;
 
-  if (uid && uid === state.userId){
+  if (!eliminated && uid && uid === state.userId){
     g.style.cursor = 'pointer';
     g.addEventListener('click', (e) => {
       if (canUseRoom3Action()){
@@ -4377,7 +4600,7 @@
       hideAttackPop();
       triggerMoveDiceForAll();
     });
-  } else if (uid && pulse){
+  } else if (!eliminated && uid && pulse){
     g.style.cursor = 'pointer';
     g.addEventListener('click', (e) => {
       if (canUseRoom3Action()){
@@ -4462,12 +4685,14 @@
       const x = Number(m.x);
       const y = Number(m.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const eliminated = isPlayerEliminated(uid);
       drawMarker({
         uid,
         x, y,
         color: String(m.color || "#ddd"),
         initial: String(m.initial || ""),
-        pulse: pulseTargets.has(uid)
+        pulse: !eliminated && pulseTargets.has(uid),
+        eliminated
       });
     }
     updateRoomChoiceUi();
