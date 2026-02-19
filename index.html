@@ -1816,6 +1816,13 @@
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
 
+  function skipRoom3ActionAndStartAttack(){
+    if (!canUseRoom3Action()) return;
+    room3ActionUsed = true;
+    hideRoomActionPop();
+    renderMarkers();
+  }
+
   function showRevealPopAt(clientX, clientY){
     const pad = 10;
     const vw = window.innerWidth;
@@ -1875,6 +1882,30 @@
 
   function showTurnHint(message){
     if (!turnHintPop) return;
+    if (message && typeof message === "object"){
+      const text = safeText(message.text || "");
+      const showSkip = !!message.showRoom3Skip;
+      turnHintPop.innerHTML = "";
+      if (text){
+        const textWrap = document.createElement("div");
+        textWrap.textContent = text;
+        turnHintPop.appendChild(textWrap);
+      }
+      if (showSkip){
+        const br = document.createElement("br");
+        turnHintPop.appendChild(br);
+        const btn = document.createElement("button");
+        btn.className = "btn ghost turn-hint-action";
+        btn.textContent = "スキップして攻撃";
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          skipRoom3ActionAndStartAttack();
+        });
+        turnHintPop.appendChild(btn);
+      }
+      turnHintPop.classList.toggle("hidden", !text && !showSkip);
+      return;
+    }
     turnHintPop.textContent = safeText(message || "");
     turnHintPop.classList.toggle("hidden", !message);
   }
@@ -2981,7 +3012,10 @@
       return;
     }
     if (canUseRoom3Action()){
-      showTurnHint("他プレイヤーに2ダメージあたえるか、自分を1回復できます。");
+      showTurnHint({
+        text: "対象を選び、1回復するか2ダメージを与えるか選択できます。",
+        showRoom3Skip: true
+      });
       return;
     }
     showTurnHint("");
@@ -4125,7 +4159,9 @@
 
   function highlightedMarkerUids(){
     if (canUseRoom3Action()){
-      return new Set(Object.keys(markerCache || {}).filter(uid => !!uid));
+      return new Set(
+        Object.keys(markerCache || {}).filter(uid => !!uid && !isPlayerEliminated(uid) && !hasEquipmentByName(uid, "幸運のブローチ"))
+      );
     }
     if (!canUseAttackDice()) return new Set();
     const myMarker = markerCache?.[state.userId] || null;
@@ -5015,13 +5051,26 @@
     g.style.cursor = 'pointer';
     g.addEventListener('click', (e) => {
       if (canUseRoom3Action()){
+        if (hasEquipmentByName(uid, "幸運のブローチ")) return;
         e.stopPropagation();
-        showRoomActionPopAt(e.clientX, e.clientY, "自分を1回復しますか。", async () => {
+        const p = playerById(uid);
+        const nm = safeText(p?.name || "このプレイヤー");
+        showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
           room3ActionUsed = true;
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
-          await healDamageToPlayer(state.userId, 1);
+          await healDamageToPlayer(uid, 1);
           renderMarkers();
+        }, {
+          yesLabel: "1回復する",
+          noLabel: "2ダメージ与える",
+          onNo: async () => {
+            room3ActionUsed = true;
+            showTurnHint("");
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await addDamageToPlayer(uid, 2);
+            renderMarkers();
+          }
         });
         return;
       }
@@ -5035,15 +5084,26 @@
     g.style.cursor = 'pointer';
     g.addEventListener('click', (e) => {
       if (canUseRoom3Action()){
+        if (hasEquipmentByName(uid, "幸運のブローチ")) return;
         e.stopPropagation();
         const p = playerById(uid);
         const nm = safeText(p?.name || "このプレイヤー");
-        showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に2ダメージ与えますか。`, async () => {
+        showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
           room3ActionUsed = true;
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
-          await addDamageToPlayer(uid, 2);
+          await healDamageToPlayer(uid, 1);
           renderMarkers();
+        }, {
+          yesLabel: "1回復する",
+          noLabel: "2ダメージ与える",
+          onNo: async () => {
+            room3ActionUsed = true;
+            showTurnHint("");
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await addDamageToPlayer(uid, 2);
+            renderMarkers();
+          }
         });
         return;
       }
