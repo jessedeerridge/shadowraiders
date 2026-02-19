@@ -624,17 +624,7 @@
   will-change:transform;
 }
 .dice-flyer.rolling{
-  transition:transform .9s cubic-bezier(.2,.8,.2,1);
-}
-
-.dice-flyer.rolling .die,
-.dice-flyer.rolling .d4{
-  animation:dice-spin .35s linear infinite;
-}
-
-@keyframes dice-spin{
-  from{ transform:rotate(0deg); }
-  to{ transform:rotate(360deg); }
+  transition:transform .95s cubic-bezier(.08,.62,.18,1);
 }
 
 .dice-flyer,
@@ -2523,14 +2513,21 @@
   }
 
   function randomCenterOffsets(){
-    let a = { x:(Math.random()-0.5)*80, y:(Math.random()-0.5)*80 };
-    let b = { x:(Math.random()-0.5)*80, y:(Math.random()-0.5)*80 };
+    let a = { x:(Math.random()-0.5)*100, y:(Math.random()-0.5)*100 };
+    let b = { x:(Math.random()-0.5)*100, y:(Math.random()-0.5)*100 };
     let guard = 0;
-    while (Math.hypot(a.x-b.x, a.y-b.y) < 16 && guard < 20){
-      b = { x:(Math.random()-0.5)*80, y:(Math.random()-0.5)*80 };
+    while (Math.hypot(a.x-b.x, a.y-b.y) < 62 && guard < 40){
+      b = { x:(Math.random()-0.5)*100, y:(Math.random()-0.5)*100 };
       guard++;
     }
+    if (Math.hypot(a.x-b.x, a.y-b.y) < 62){
+      b = { x:a.x + 64, y:a.y + 10 };
+    }
     return [a,b];
+  }
+
+  function setFlyerTransform(el, x, y, deg){
+    el.style.transform = `translate(${x}px, ${y}px) rotate(${deg}deg)`;
   }
 
   function runDiceRollAnimation(){
@@ -2561,25 +2558,37 @@
     const startA = { x:startBase.x - 16, y:startBase.y - 6 };
     const startB = { x:startBase.x + 16, y:startBase.y + 6 };
 
-    d6Wrap.style.transform = `translate(${startA.x}px, ${startA.y}px)`;
-    d4Wrap.style.transform = `translate(${startB.x}px, ${startB.y}px)`;
+    const startDegA = Math.random() * 90;
+    const startDegB = Math.random() * 90;
+    setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
+    setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
 
-    const rollTimer = setInterval(() => {
+    const animDuration = 950;
+    const rollStartAt = Date.now();
+    const rollFaceTick = () => {
+      const elapsed = Date.now() - rollStartAt;
+      if (elapsed >= animDuration) return;
       renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
       renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
-    }, 110);
-    diceRollTimers.push(rollTimer);
+
+      const t = elapsed / animDuration;
+      const nextInterval = 55 + Math.floor(185 * t); // だんだん遅くなる
+      const id = setTimeout(rollFaceTick, nextInterval);
+      diceRollTimers.push(id);
+    };
+    rollFaceTick();
 
     const moveTimer = setTimeout(() => {
       d6Wrap.classList.add('rolling');
       d4Wrap.classList.add('rolling');
-      d6Wrap.style.transform = `translate(${center.x + offsetA.x}px, ${center.y + offsetA.y}px)`;
-      d4Wrap.style.transform = `translate(${center.x + offsetB.x}px, ${center.y + offsetB.y}px)`;
+      const endDegA = startDegA + 720 + Math.random() * 360;
+      const endDegB = startDegB + 720 + Math.random() * 360;
+      setFlyerTransform(d6Wrap, center.x + offsetA.x, center.y + offsetA.y, endDegA);
+      setFlyerTransform(d4Wrap, center.x + offsetB.x, center.y + offsetB.y, endDegB);
     }, 30);
     diceRollTimers.push(moveTimer);
 
     const stopTimer = setTimeout(() => {
-      clearInterval(rollTimer);
       d6Wrap.classList.remove('rolling');
       d4Wrap.classList.remove('rolling');
       renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
