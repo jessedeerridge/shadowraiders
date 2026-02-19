@@ -184,6 +184,7 @@
     outline:none;
   }
   .seat-tile:focus{box-shadow:0 0 0 3px rgba(37,99,235,.25), 0 6px 16px rgba(0,0,0,.16);}
+.seat-tile.guardian-shield{ box-shadow:0 0 0 2px #d4af37 inset, 0 6px 16px rgba(0,0,0,.16); }
   .seat-tile.me::after{ display:none; }
   .seat-initial{
     position:absolute;
@@ -625,9 +626,6 @@
   animation:markerPulse 1.2s ease-in-out infinite;
 }
 
-.chip16.guardian-shield{
-  box-shadow:0 0 0 2px #d4af37, 0 4px 10px rgba(0,0,0,.12);
-}
 
 .dice-roll-overlay{
   position:fixed;
@@ -2814,9 +2812,6 @@
     d.style.color = textColorFor(color);
     d.textContent = initial || "";
     d.title = p ? p.name : "";
-    if (hasGuardianAngelShield(uid)){
-      d.classList.add("guardian-shield");
-    }
     if (isTestPlayer()){
       d.style.cursor = "pointer";
       d.addEventListener("click", async (e) => {
@@ -5461,6 +5456,7 @@
       tile.appendChild(num);
 
       if (state.seatedTable === seatIndex) tile.classList.add('me');
+      if (taken && taken.id === state.userId && hasGuardianAngelShield(taken.id)) tile.classList.add('guardian-shield');
 
       tile.addEventListener('click', async () => {
         if (!state.roomCode) return;
