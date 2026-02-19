@@ -1851,7 +1851,7 @@
     }
   }
 
-  function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onSelect=null } = {}){
+  function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onSelect=null, nameSuffixForUid=null } = {}){
     if (!greenShareDock || !greenShareList) return;
     const players = latestPlayers
       .filter(p => includeSelf || p.id !== state.userId)
@@ -1868,7 +1868,8 @@
       btn.className = "green-share-btn";
       const chip = buildChipFor(p.id);
       const name = document.createElement("span");
-      name.textContent = secondCharOrRa(p.name);
+      const suffix = (typeof nameSuffixForUid === "function") ? safeText(nameSuffixForUid(p.id, p) || "") : "";
+      name.textContent = `${secondCharOrRa(p.name)}${suffix}`;
       btn.appendChild(chip);
       btn.appendChild(name);
       btn.addEventListener("click", async () => {
@@ -3193,6 +3194,16 @@
     return myEquipmentNames().includes(n);
   }
 
+  function hasEquipmentByName(uid, name){
+    const targetUid = safeText(uid);
+    const targetName = safeText(name);
+    if (!targetUid || !targetName) return false;
+    return listEquipForUid(targetUid)
+      .filter(v => !isIdentityEquipItem(v))
+      .map(v => safeText(v?.name))
+      .includes(targetName);
+  }
+
   function clearPendingMoveChoiceUi(){
     for (let roomId = 1; roomId <= 7; roomId++){
       roomShapeEls[roomId]?.classList.remove('room-choice-once');
@@ -3624,6 +3635,21 @@
       return;
     }
 
+    if (name === "幸せのクッキー"){
+      const canReveal = role.initial === "A" || role.initial === "U";
+      showIdentityPromptPop({
+        message: "AまたはUとして正体を公開しますか。",
+        canReveal,
+        cardObj,
+        cardTheme: "white",
+        onYes: async () => {
+          await revealMyIdentityToEquipment();
+          await fullRecoverPlayer(state.userId);
+        }
+      });
+      return;
+    }
+
     if (name === "闇を祓う鏡"){
       const shouldReveal = role.faction === "シャドウ" && role.name !== "ウルリッヒ" && !isMyIdentityRevealed();
       if (!shouldReveal) return;
@@ -3658,10 +3684,51 @@
       openTargetSelectDock({
         title: "恩恵：回復させるプレイヤーを選択してください。",
         includeSelf: false,
+        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
         onSelect: async (uid) => {
           const eye = await runCornerD6Roll();
           await waitMs(1000);
           await healDamageToPlayer(uid, eye);
+          closeZoom();
+        }
+      });
+      return;
+    }
+
+    if (name === "吸血コウモリ"){
+      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+      openTargetSelectDock({
+        title: "吸血コウモリ：対象プレイヤーを選択してください。",
+        includeSelf: false,
+        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
+        onSelect: async (uid) => {
+          await waitMs(1000);
+          if (!hasEquipmentByName(uid, "いにしえの聖杯")){
+            await addDamageToPlayer(uid, 2);
+          }
+          await healDamageToPlayer(state.userId, 1);
+          closeZoom();
+        }
+      });
+      return;
+    }
+
+    if (name === "三つ目の黒犬"){
+      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+      openTargetSelectDock({
+        title: "三つ目の黒犬：対象プレイヤーを選択してください。",
+        includeSelf: false,
+        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
+        onSelect: async (uid) => {
+          await waitMs(1000);
+          const targetHasChalice = hasEquipmentByName(uid, "いにしえの聖杯");
+          const myHasChalice = hasEquipmentByName(state.userId, "いにしえの聖杯");
+          if (!targetHasChalice){
+            await addDamageToPlayer(uid, 2);
+          }
+          if (!myHasChalice){
+            await addDamageToPlayer(state.userId, 2);
+          }
           closeZoom();
         }
       });
