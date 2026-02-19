@@ -1123,6 +1123,12 @@
     padding:18px;
   }
   .zoom-backdrop.hidden{ display:none; }
+  .zoom-backdrop.passthrough{
+    pointer-events:none;
+  }
+  .zoom-backdrop.passthrough .zoom-stage{
+    pointer-events:none;
+  }
   .zoom-stage{
     position:relative;
     width:72px;
@@ -1745,6 +1751,7 @@
   let pendingRoomAction = null;
   let pendingEquipAction = null;
   let effectResolutionLocks = {};
+  let zoomPassthroughMode = false;
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -2132,10 +2139,17 @@
   function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true } = {}){
     zoomStage.innerHTML = "";
     zoomCloseOnBackdrop = !!closeOnBackdrop;
+    zoomPassthroughMode = false;
+    zoomBackdrop.classList.remove("passthrough");
     greenZoomLocked = !showCloseButton;
     zoomCloseBtn.classList.toggle("hidden", !showCloseButton);
     zoomStage.appendChild(contentEl);
     zoomBackdrop.classList.remove("hidden");
+  }
+
+  function setZoomPassthrough(enabled){
+    zoomPassthroughMode = !!enabled;
+    zoomBackdrop?.classList.toggle("passthrough", zoomPassthroughMode);
   }
   function openZoomFromCard(cardEl, options){
     const clone = cardEl.cloneNode(true);
@@ -2185,9 +2199,11 @@
   }
   function closeZoom(){
     zoomBackdrop.classList.add("hidden");
+    zoomBackdrop.classList.remove("passthrough");
     zoomStage.innerHTML = "";
     zoomCloseBtn.classList.add("hidden");
     zoomCloseOnBackdrop = true;
+    zoomPassthroughMode = false;
     greenZoomLocked = false;
     hideGreenShareDock();
     hideRevealPop();
@@ -2600,7 +2616,6 @@
       if (ownerUid !== state.userId || !sourceKey) return;
       pendingEquipAction.selectedSourceKey = sourceKey;
       const cardName = safeText(card.dataset.cardName || "この装備");
-      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       openTargetSelectDock({
         title: `「${cardName}」を渡すプレイヤーを選択してください。`,
         includeSelf: false,
@@ -2625,7 +2640,6 @@
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
       pendingEquipAction = { type:"oliver_confirm", ownerUid, sourceKey };
-      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 70, "これを奪いますか。", async () => {
         const action = pendingEquipAction;
         pendingEquipAction = null;
@@ -2634,7 +2648,13 @@
           closeZoom();
           renderEquipmentDock();
         }
-      }, { fixedLower:true, closeZoomOnNo:true });
+      }, {
+        fixedLower:true,
+        closeZoomOnNo:false,
+        onNo: () => {
+          pendingEquipAction = { type:"oliver_target" };
+        }
+      });
       return;
     }
 
@@ -4223,6 +4243,7 @@
         return;
       }
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+      setZoomPassthrough(true);
       pendingEquipAction = { type:"banana_give", selectedSourceKey:"" };
       renderEquipmentDock();
       showRoomActionPopAt(
@@ -4255,13 +4276,13 @@
         return;
       }
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+      setZoomPassthrough(true);
       openTargetSelectDock({
         title: "オリバーの子分：プレイヤーを選択してください。",
         includeSelf: false,
         onlyAlive: true,
         onSelect: async (uid) => {
           greenShareDock?.classList.add("hidden");
-          closeZoom();
           pendingEquipAction = { type:"oliver_target", ownerUid:uid };
           renderEquipmentDock();
         }
