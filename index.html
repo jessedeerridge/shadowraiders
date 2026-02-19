@@ -3835,6 +3835,23 @@
     return null;
   }
 
+  function attackTargetRoomIdsFromRoom(roomId, extraScope = 0){
+    const current = Number(roomId);
+    if (!Number.isFinite(current) || current < 1 || current > 7) return new Set();
+    if (current === 7) return new Set([1,2,3,4,5,6,7]);
+
+    const bonus = Math.max(0, Number(extraScope) || 0);
+    const rooms = new Set([current, 7]);
+    let cursor = current;
+
+    for (let i = 0; i < 1 + bonus; i++){
+      cursor = previousRoomId(cursor);
+      if (!cursor) break;
+      rooms.add(cursor);
+    }
+    return rooms;
+  }
+
   function inferRoomIdFromPoint(x, y){
     for (const [ridText, pts] of Object.entries(roomPolygons)){
       const rid = Number(ridText);
@@ -3870,19 +3887,16 @@
     const myRoomId = markerRoomId(myMarker);
     if (!myRoomId) return new Set();
 
+    const deadScopeCount = countEquipmentByNames(state.userId, ["死神スコープ"]);
+    const attackRooms = attackTargetRoomIdsFromRoom(myRoomId, deadScopeCount);
+
     const targets = new Set();
     for (const [uid, marker] of Object.entries(markerCache || {})){
       if (!marker || uid === state.userId) continue;
       const rid = markerRoomId(marker);
       if (!rid) continue;
 
-      if (myRoomId === 7){
-        targets.add(uid);
-        continue;
-      }
-
-      const prev = previousRoomId(myRoomId);
-      if (rid === myRoomId || rid === prev || rid === 7){
+      if (attackRooms.has(rid)){
         targets.add(uid);
       }
     }
