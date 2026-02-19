@@ -1523,6 +1523,7 @@
   function canDrawSharedDeckNow(){
     if (!isMyTurn()) return false;
     const t = turnState() || {};
+    if (isTestPlayer()) return !!t.moveDone && !t.attackDone;
     return !!t.moveDone && !t.attackDone && !t.deckDrawDone;
   }
   function canClickType(type){
@@ -2244,8 +2245,11 @@
       : null;
 
     hideAttackPop();
-    const d6 = 1 + Math.floor(Math.random() * 6);
-    const d4 = 1 + Math.floor(Math.random() * 4);
+    const selectedSum = chooseSumForTestPlayer("攻撃");
+    if (isTestPlayer() && selectedSum == null) return;
+    const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
+    const d6 = selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6));
+    const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
     const width = window.innerWidth;
     const height = window.innerHeight;
     const endX = point?.x || width/2;
@@ -2330,6 +2334,29 @@
     return !!cur && cur === state.userId;
   }
 
+  function isTestPlayer(){
+    return safeText(state.userName).trim().toLowerCase() === "test";
+  }
+
+  function chooseSumForTestPlayer(label){
+    if (!isTestPlayer()) return null;
+    const input = window.prompt(`${label}の合計目を選んでください（2〜10）`, "7");
+    if (input == null) return null;
+    const sum = Number(input);
+    if (!Number.isFinite(sum)) return null;
+    return Math.max(2, Math.min(10, Math.floor(sum)));
+  }
+
+  function pickDiceBySum(sum){
+    const pairs = [];
+    for (let d6 = 1; d6 <= 6; d6++){
+      const d4 = sum - d6;
+      if (d4 >= 1 && d4 <= 4) pairs.push({ d6, d4 });
+    }
+    if (!pairs.length) return null;
+    return pairs[Math.floor(Math.random() * pairs.length)];
+  }
+
   function canUseMoveDice(){
     if (!isMyTurn()) return false;
     return !turnState()?.moveDone;
@@ -2385,8 +2412,11 @@
 
   async function triggerMoveDiceForAll(){
     if (!state.roomCode || !canUseMoveDice()) return;
-    const d6 = 1 + Math.floor(Math.random() * 6);
-    const d4 = 1 + Math.floor(Math.random() * 4);
+    const selectedSum = chooseSumForTestPlayer("移動");
+    if (isTestPlayer() && selectedSum == null) return;
+    const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
+    const d6 = selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6));
+    const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
     const width = window.innerWidth;
     const height = window.innerHeight;
     const motion = createDiceMotion(width, height, width/2, height/2);
@@ -2716,7 +2746,8 @@
       if (!cur.turn || safeText(cur.turn.currentPlayerId || "") !== state.userId) return cur;
 
       const turn = cur.turn;
-      if (!turn.moveDone || turn.attackDone || turn.deckDrawDone) return cur;
+      const allowUnlimitedDraw = isTestPlayer();
+      if (!turn.moveDone || turn.attackDone || (!allowUnlimitedDraw && turn.deckDrawDone)) return cur;
 
       const ds = cur.deckState;
       if (!ds || !ds[type] || !Array.isArray(ds[type].order)) return cur;
@@ -2735,7 +2766,7 @@
         ds.reveal.slot3 = { theme:"white", card: drawn, at: Date.now() };
       }
 
-      turn.deckDrawDone = true;
+      if (!allowUnlimitedDraw) turn.deckDrawDone = true;
       turn.updatedAt = Date.now();
       ds.updatedAt = Date.now();
       return cur;
