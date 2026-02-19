@@ -1309,8 +1309,8 @@
 <div id="identityPromptPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="陣営公開確認">
   <p class="msg" id="identityPromptMsg"></p>
   <div class="actions">
-    <button class="btn" id="btnIdentityPromptNo">いいえ</button>
     <button class="btn" id="btnIdentityPromptYes">はい</button>
+    <button class="btn" id="btnIdentityPromptNo">いいえ</button>
   </div>
 </div>
 
@@ -1758,8 +1758,9 @@
     identityPromptPop?.classList.add("hidden");
   }
 
-  function showIdentityPromptPop({ message, canReveal, onYes }){
+  function showIdentityPromptPop({ message, canReveal, onYes, cardObj=null, cardTheme="white" }){
     if (!identityPromptPop || !identityPromptMsg || !btnIdentityPromptYes || !btnIdentityPromptNo) return;
+    openZoomFromDeckCard(cardObj, cardTheme, { closeOnBackdrop:false, showCloseButton:false });
     pendingIdentityPrompt = { onYes: typeof onYes === "function" ? onYes : null };
     identityPromptMsg.textContent = safeText(message || "");
 
@@ -2287,9 +2288,6 @@
     if (!attackPop.classList.contains("hidden") && !e.target.closest("#attackPop")){
       hideAttackPop();
     }
-    if (!identityPromptPop.classList.contains("hidden") && !e.target.closest("#identityPromptPop")){
-      hideIdentityPrompt();
-    }
   }, true);
 
   btnRevealNo.addEventListener("click", (e) => {
@@ -2364,6 +2362,7 @@
   btnIdentityPromptNo?.addEventListener("click", (e) => {
     e.stopPropagation();
     hideIdentityPrompt();
+    closeZoom();
   });
 
   btnIdentityPromptYes?.addEventListener("click", async (e) => {
@@ -2371,6 +2370,7 @@
     if (btnIdentityPromptYes.disabled) return;
     const handler = pendingIdentityPrompt?.onYes;
     hideIdentityPrompt();
+    closeZoom();
     if (handler) await handler();
   });
 
@@ -3432,13 +3432,16 @@
     if (!name || !state.userId) return;
     const role = myRoleInfo();
     if (!role) return;
+    const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     if (name === "いやしの聖水"){
+      await waitMs(1500);
       await healDamageToPlayer(state.userId, 2);
       return;
     }
 
     if (name === "裁きの閃光"){
+      await waitMs(1500);
       await addDamageToAllOtherPlayers(state.userId, 2);
       return;
     }
@@ -3452,6 +3455,8 @@
       showIdentityPromptPop({
         message,
         canReveal,
+        cardObj,
+        cardTheme: name === "戦慄の闇儀式" ? "black" : "white",
         onYes: async () => {
           await revealMyIdentityToEquipment();
           await fullRecoverPlayer(state.userId);
