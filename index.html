@@ -921,10 +921,10 @@
   .green-share-dock{
     position:fixed;
     left:50%;
-    bottom:14px;
+    bottom:88px;
     transform:translateX(-50%);
     z-index:10001;
-    width:min(680px, calc(100vw - 24px));
+    width:min(420px, calc(100vw - 40px));
     background:rgba(255,255,255,.96);
     border:1px solid rgba(0,0,0,.12);
     border-radius:12px;
@@ -938,14 +938,15 @@
     margin:0 0 8px;
   }
   .green-share-list{
-    display:flex;
-    flex-wrap:wrap;
+    display:grid;
+    grid-template-columns:repeat(3, minmax(0, 1fr));
     gap:8px;
   }
   .green-share-btn{
     border:1px solid rgba(0,0,0,.15);
     border-radius:999px;
     background:#fff;
+    width:100%;
     padding:4px 8px;
     cursor:pointer;
     display:inline-flex;
@@ -1393,22 +1394,26 @@
     }
 
     greenShareList.innerHTML = "";
-    const players = latestPlayers.slice().sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
+    const players = latestPlayers
+      .filter(p => p.id !== state.userId)
+      .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
+
     for (const p of players){
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "green-share-btn";
-      btn.disabled = (p.id === state.userId);
-      btn.title = btn.disabled ? "自分には渡せません" : `${safeText(p.name)} に渡す`;
+      btn.title = `${safeText(p.name)} に渡す`;
 
       const chip = buildChipFor(p.id);
       const name = document.createElement("span");
-      name.textContent = safeText(p.name || "名無し");
+      const rawName = safeText(p.name || "名無し");
+      const chars = Array.from(rawName);
+      name.textContent = chars.slice(1).join("") || rawName;
       btn.appendChild(chip);
       btn.appendChild(name);
 
       btn.addEventListener("click", async () => {
-        if (!greenShareCard || !state.roomCode || !p?.id || p.id === state.userId) return;
+        if (!greenShareCard || !state.roomCode || !p?.id) return;
         const shareRef = ref(db, `rooms/${state.roomCode}/greenInbox/${p.id}`);
         await set(shareRef, {
           from: state.userId,
