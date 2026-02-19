@@ -1758,6 +1758,7 @@
   let greenReplyInitialized = false;
   let greenZoomLocked = false;
   let pendingGreenRequestId = "";
+  let cardPlayerSelectActive = false;
   let activeGreenReplies = {};
   let moveDiceEventSeenAt = 0;
   let moveDiceEventInitialized = false;
@@ -2020,7 +2021,11 @@
       .filter(p => !isPlayerEliminated(p.id))
       .filter(p => !onlyAlive || !isPlayerEliminated(p.id))
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
-    if (players.length === 0) return;
+    if (players.length === 0){
+      cardPlayerSelectActive = false;
+      renderTurnEndButton();
+      return;
+    }
 
     let selected = false;
     setGreenDockMeta({ title, subtitle:"" });
@@ -2040,12 +2045,16 @@
       btn.addEventListener("click", async () => {
         if (selected) return;
         selected = true;
+        cardPlayerSelectActive = false;
+        renderTurnEndButton();
         const handler = (typeof onSelect === "function") ? onSelect : null;
         if (handler) await handler(p.id);
       });
       greenShareList.appendChild(btn);
     }
 
+    cardPlayerSelectActive = true;
+    renderTurnEndButton();
     greenShareDock.classList.remove("hidden");
   }
 
@@ -2148,6 +2157,8 @@
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareActions?.classList.add("hidden");
     greenShareDock?.classList.add("hidden");
+    cardPlayerSelectActive = false;
+    renderTurnEndButton();
   }
 
   async function clearPendingGreenBubble(){
@@ -2607,8 +2618,9 @@
     hideAttackPop();
     const selectedSum = chooseSumForTestPlayer("攻撃");
     if (isTestPlayer() && selectedSum == null) return;
+    const masamuneMode = hasMyEquipmentByName("妖刀マサムネ");
     const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
-    const d6 = selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6));
+    const d6 = masamuneMode ? 0 : (selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6)));
     const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -2622,6 +2634,7 @@
       y: endY,
       d6,
       d4,
+      masamuneMode,
       motion,
       at: Date.now()
     });
@@ -2953,7 +2966,16 @@
 
   function canShowEndTurnButton(){
     if (!isMyTurn()) return false;
+    if (cardPlayerSelectActive) return false;
+    if (mustAttackWithMasamune()) return false;
     return !!turnState()?.moveDone;
+  }
+
+  function mustAttackWithMasamune(){
+    if (!isMyTurn()) return false;
+    if (!hasMyEquipmentByName("妖刀マサムネ")) return false;
+    if (!!turnState()?.attackDone) return false;
+    return highlightedMarkerUids().size > 0;
   }
 
   function hideEndTurnConfirm(){
@@ -3234,6 +3256,7 @@
         force:true,
         finalD6:Number(ev.d6 || 1),
         finalD4:Number(ev.d4 || 1),
+        masamuneMode: !!ev.masamuneMode,
         applyDamage: safeText(ev.uid || "") === state.userId,
         motion: ev.motion || null
       });
@@ -3673,7 +3696,13 @@
     const uid = safeText(attackerUid);
     const a = Number(d6) || 0;
     const b = Number(d4) || 0;
-    if (!uid || a === b) return 0;
+    if (!uid) return 0;
+
+    if (options.masamuneMode){
+      return Math.max(0, b);
+    }
+
+    if (a === b) return 0;
 
     let damage = Math.abs(a - b);
     damage += countEquipmentByNames(uid, ["サーベル", "拳銃R", "拳銃L", "クロスボウガン"]);
@@ -4486,6 +4515,7 @@
   async function runAttackDiceAnimation(targetUid, clickClientX, clickClientY, options = {}){
     if (!diceRollOverlay || !targetUid) return;
     const applyDamage = options.applyDamage !== false;
+    const masamuneMode = !!options.masamuneMode;
     clearDiceRollTimers();
     clearAttackResultDice();
 
@@ -4501,7 +4531,9 @@
     d4.className = 'd4';
     d4Wrap.appendChild(d4);
 
-    diceRollOverlay.appendChild(d6Wrap);
+    if (!masamuneMode){
+      diceRollOverlay.appendChild(d6Wrap);
+    }
     diceRollOverlay.appendChild(d4Wrap);
 
     const width = window.innerWidth;
@@ -4519,7 +4551,9 @@
 
     const startDegA = Number(motion.startDegA || 0);
     const startDegB = Number(motion.startDegB || 0);
-    setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
+    if (!masamuneMode){
+      setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
+    }
     setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
 
     const animDuration = 950;
@@ -4527,7 +4561,9 @@
     const rollFaceTick = () => {
       const elapsed = Date.now() - rollStartAt;
       if (elapsed >= animDuration) return;
-      renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
+      if (!masamuneMode){
+        renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
+      }
       renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
 
       const t = elapsed / animDuration;
@@ -4543,11 +4579,15 @@
     const damageDelayAfterStopMs = 2000;
 
     const moveTimer = setTimeout(() => {
-      d6Wrap.classList.add('rolling');
+      if (!masamuneMode){
+        d6Wrap.classList.add('rolling');
+      }
       d4Wrap.classList.add('rolling');
       const endDegA = Number(motion.endDegA || (startDegA + 720));
       const endDegB = Number(motion.endDegB || (startDegB + 720));
-      setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
+      if (!masamuneMode){
+        setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
+      }
       setFlyerTransform(d4Wrap, endX + offsetB.x, endY + offsetB.y, endDegB);
     }, launchDelayMs);
     diceRollTimers.push(moveTimer);
@@ -4557,18 +4597,24 @@
 
     const stopDelayMs = launchDelayMs + moveDurationMs + settleBufferMs;
     const stopTimer = setTimeout(() => {
-      d6Wrap.classList.remove('rolling');
+      if (!masamuneMode){
+        d6Wrap.classList.remove('rolling');
+      }
       d4Wrap.classList.remove('rolling');
-      renderD6Face(d6, finalD6);
+      if (!masamuneMode){
+        renderD6Face(d6, finalD6);
+      }
       renderD4Face(d4, finalD4);
 
-      d6Wrap.classList.add('attack-result-pin');
+      if (!masamuneMode){
+        d6Wrap.classList.add('attack-result-pin');
+      }
       d4Wrap.classList.add('attack-result-pin');
 
       const damageTimer = setTimeout(async () => {
         if (!applyDamage) return;
-        const revealBoost = await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
-        const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { excaliburRevealBoost: revealBoost });
+        const revealBoost = masamuneMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
+        const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, excaliburRevealBoost: revealBoost });
         if (damage > 0){
           await addDamageToPlayer(targetUid, damage);
         }
@@ -4577,6 +4623,7 @@
     }, stopDelayMs);
     diceRollTimers.push(stopTimer);
   }
+
 
   function runDiceRollAnimation(options = {}){
     const force = !!options.force;
