@@ -2002,6 +2002,7 @@
   }
 
   let equipCache = {};
+  let pendingCompassMoveRoomId = null;
   const equipBody = document.getElementById("equipBody");
 
   function subscribeEquipment(){
@@ -2033,6 +2034,15 @@
   }
   function isIdentityEquipItem(v){
     return v && (v.kind === "identity") && !!v.roleId;
+  }
+  function hasEquipmentNamed(uid, name){
+    const target = safeText(name || "").trim();
+    if (!target) return false;
+    const obj = equipCache?.[uid] || {};
+    return Object.values(obj).some(item => safeText(item?.name).trim() === target);
+  }
+  function hasMysticCompass(uid = state.userId){
+    return hasEquipmentNamed(uid, "神秘のコンパス");
   }
   function listEquipForUid(uid){
     const obj = equipCache?.[uid] || {};
@@ -2368,6 +2378,7 @@
 
   function canUseMoveDice(){
     if (!isMyTurn()) return false;
+    if (pendingCompassMoveRoomId != null) return false;
     return !turnState()?.moveDone;
   }
 
@@ -2426,6 +2437,9 @@
     const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
     const d6 = selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6));
     const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
+    const compassRollCount = hasMysticCompass(state.userId)
+      ? Math.min(2, Math.max(1, Number(turnState()?.moveRollCount || 0) + 1))
+      : 1;
     const width = window.innerWidth;
     const height = window.innerHeight;
     const motion = createDiceMotion(width, height, width/2, height/2);
@@ -2433,6 +2447,7 @@
       uid: state.userId,
       d6,
       d4,
+      moveRollCount: compassRollCount,
       motion,
       at: Date.now()
     });
@@ -2606,6 +2621,7 @@
         finalD6:Number(ev.d6 || 1),
         finalD4:Number(ev.d4 || 1),
         applyMove: safeText(ev.uid || "") === state.userId,
+        moveRollCount: Number(ev.moveRollCount || 1),
         motion: ev.motion || null
       });
     });
@@ -2668,6 +2684,7 @@
       cur.turn = {
         currentPlayerId: startPlayerId,
         moveDone: false,
+        moveRollCount: 0,
         attackDone: false,
         deckDrawDone: false,
         updatedAt: Date.now()
@@ -2694,6 +2711,7 @@
       cur.turn = {
         currentPlayerId: nextPlayerId,
         moveDone: false,
+        moveRollCount: 0,
         attackDone: false,
         deckDrawDone: false,
         updatedAt: Date.now()
@@ -3110,6 +3128,7 @@
   }
 
   function canChooseOuterRoomDirectly(){
+    if (pendingCompassMoveRoomId != null) return true;
     if (!canUseMoveDice()) return false;
     const myMarker = markerCache?.[state.userId] || null;
     return markerRoomId(myMarker) === 7;
@@ -3409,10 +3428,29 @@
     diceRollTimers.push(stopTimer);
 
     const placeMarkerTimer = setTimeout(async () => {
-      if (applyMove) await placeMarkerByDice(finalD6 + finalD4);
+      const total = finalD6 + finalD4;
+      const roomId = diceTotalToRoomId(total);
+      const moveRollCount = Math.max(1, Number(options.moveRollCount || 1));
+
+      if (applyMove && hasMysticCompass(state.userId)){
+        if (state.roomCode && isMyTurn()){
+          await update(ref(db, `rooms/${state.roomCode}/turn`), {
+            moveRollCount,
+            moveAt: Date.now()
+          });
+        }
+
+        if (moveRollCount <= 1) return;
+        pendingCompassMoveRoomId = roomId;
+        updateRoomChoiceUi();
+        return;
+      }
+
+      if (applyMove) await placeMarkerByDice(total);
       if (applyMove && state.roomCode && isMyTurn()){
         await update(ref(db, `rooms/${state.roomCode}/turn`), {
           moveDone: true,
+          moveRollCount,
           moveAt: Date.now()
         });
       }
@@ -3505,12 +3543,16 @@
 }
 
   function updateRoomChoiceUi(){
+    if (!isMyTurn() || turnState()?.moveDone) pendingCompassMoveRoomId = null;
+
     const choiceMode = canChooseOuterRoomDirectly();
+    const compassChoiceMode = pendingCompassMoveRoomId != null;
     for (let roomId = 1; roomId <= 6; roomId++){
-      roomShapeEls[roomId]?.classList.toggle('room-choice-pulse', choiceMode);
-      roomHitEls[roomId]?.classList.toggle('room-choice-pulse', choiceMode);
+      const active = compassChoiceMode ? roomId === pendingCompassMoveRoomId : choiceMode;
+      roomShapeEls[roomId]?.classList.toggle('room-choice-pulse', active);
+      roomHitEls[roomId]?.classList.toggle('room-choice-pulse', active);
       if (roomHitEls[roomId]){
-        roomHitEls[roomId].style.cursor = choiceMode ? 'pointer' : (isGameStarted() ? 'default' : 'pointer');
+        roomHitEls[roomId].style.cursor = active ? 'pointer' : (isGameStarted() ? 'default' : 'pointer');
       }
     }
   }
@@ -3597,6 +3639,20 @@
 
       hit.addEventListener('click', async (ev) => {
         if (isGameStarted()){
+          if (pendingCompassMoveRoomId != null){
+            if (roomId !== pendingCompassMoveRoomId) return;
+            pendingCompassMoveRoomId = null;
+            await placeMarkerInRoom(roomId);
+            updateRoomChoiceUi();
+            if (state.roomCode && isMyTurn()){
+              await update(ref(db, `rooms/${state.roomCode}/turn`), {
+                moveDone: true,
+                moveAt: Date.now()
+              });
+            }
+            return;
+          }
+
           if (!canChooseOuterRoomDirectly()) return;
           await placeMarkerInRoom(roomId);
           if (state.roomCode && isMyTurn()){
@@ -4342,6 +4398,7 @@
       turn: {
         currentPlayerId: startPlayerId,
         moveDone: false,
+        moveRollCount: 0,
         attackDone: false,
         deckDrawDone: false,
         updatedAt: Date.now()
