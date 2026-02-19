@@ -301,6 +301,11 @@
 
   .equip-body{
     flex:1 1 auto;
+    display:flex;
+    flex-wrap:wrap;
+    align-content:flex-start;
+    align-items:flex-start;
+    gap:6px;
     min-height:0;
     overflow-y:auto;
     overflow-x:hidden;
@@ -308,13 +313,11 @@
   }
 
   .equip-row{
-    display:flex;
-    align-items:flex-start;
+    display:inline-flex;
+    align-items:center;
     gap:5px;
-    padding:8px 0;
-    border-top:1px solid rgba(0,0,0,.06);
+    padding:2px 0;
   }
-  .equip-row:first-child{ border-top:none; padding-top:0; }
 
   .equip-tag{
     width:18px;height:18px;
@@ -329,15 +332,14 @@
     flex:0 0 auto;
   }
   .equip-cards{
-    display:grid;
-    grid-template-columns:repeat(var(--equip-cols, 6), 72px);
-    grid-auto-rows:108px;
+    display:flex;
+    flex-wrap:wrap;
     gap:5px;
-    align-items:start;
-    justify-content:start;
+    align-items:flex-start;
+    justify-content:flex-start;
     overflow-x:hidden;
     padding-bottom:2px;
-    flex:1 1 auto;
+    flex:0 1 auto;
   }
 
   .id72{
@@ -912,9 +914,17 @@
   animation:equipStealPulse 1.1s ease-in-out infinite;
   cursor:pointer;
 }
+.equip-defeat-pulse{
+  animation:equipDefeatPulse .9s ease-in-out infinite;
+  cursor:pointer;
+}
 @keyframes equipStealPulse{
   0%,100%{ transform:scale(1); }
   50%{ transform:scale(1.06); }
+}
+@keyframes equipDefeatPulse{
+  0%,100%{ transform:scale(1); }
+  50%{ transform:scale(1.14); }
 }
 @keyframes markerPulse{
   0%,100%{ transform:scale(1); }
@@ -2404,13 +2414,37 @@
   }
 
   let latestPlayers = [];
+  let defeatLootQueue = [];
+  let lastAttackWatch = null;
+  let previousEliminatedMap = {};
+
+  function clearDefeatLootState(){
+    defeatLootQueue = [];
+    renderEquipmentDock();
+  }
+
+  function enqueueDefeatLoot(uid){
+    const targetUid = safeText(uid);
+    if (!targetUid || targetUid === state.userId) return;
+    if (defeatLootQueue.includes(targetUid)) return;
+    defeatLootQueue.push(targetUid);
+  }
 
   function orderedPlayersForEquip(){
-    const me = latestPlayers.find(p => p.id === state.userId) || null;
+    const byId = new Map(latestPlayers.map(p => [p.id, p]));
+    const me = byId.get(state.userId) || null;
     const others = latestPlayers.filter(p => p.id !== state.userId).sort((a,b) => a.seatIndex - b.seatIndex);
+
+    const promotedUid = defeatLootQueue.find(uid => byId.has(uid)) || "";
+    const promoted = promotedUid ? byId.get(promotedUid) : null;
+
     const arr = [];
+    if (promoted) arr.push(promoted);
     if (me) arr.push(me);
-    arr.push(...others);
+    for (const p of others){
+      if (p.id === promotedUid) continue;
+      arr.push(p);
+    }
     return arr;
   }
 
@@ -2433,6 +2467,9 @@
   function renderEquipmentDock(){
     syncRoomAbilityTurnState();
     if (!state.roomCode) { equipDock.classList.remove("visible"); return; }
+    if (!isMyTurn() && defeatLootQueue.length > 0){
+      defeatLootQueue = [];
+    }
 
     updateEquipDockTop();
 
@@ -2452,7 +2489,6 @@
     }
 
     equipDock.classList.add("visible");
-    applyEquipCols();
 
     for (const {p, list} of rows){
       const row = document.createElement("div");
@@ -2475,8 +2511,13 @@
         const isNormalStealPulse = canUseRoom4Steal() && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
         const isOliverPulse = pendingEquipAction?.type === "oliver_target" && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
         const isBananaPulse = pendingEquipAction?.type === "banana_give" && p.id === state.userId && !isIdentityEquipItem(it);
+        const promotedUid = defeatLootQueue[0] || "";
+        const isDefeatPulse = promotedUid && p.id === promotedUid && p.id !== state.userId && eliminated && !isIdentityEquipItem(it);
         if (isNormalStealPulse || isOliverPulse || isBananaPulse){
           cardEl.classList.add("equip-steal-pulse");
+        }
+        if (isDefeatPulse){
+          cardEl.classList.add("equip-defeat-pulse");
         }
         cards.appendChild(cardEl);
       }
@@ -2627,6 +2668,13 @@
     const masamuneMode = hasMyEquipmentByName("妖刀マサムネ");
     const gatlingMode = hasMyEquipmentByName("ガトリング");
     const gatlingTargetUids = gatlingMode ? [...highlightedMarkerUids()] : [];
+    const attackTargetUids = gatlingMode ? gatlingTargetUids : [uid];
+    lastAttackWatch = {
+      uid: state.userId,
+      targetUids: attackTargetUids,
+      hasRosary: hasMyEquipmentByName("銀のロザリオ"),
+      at: Date.now()
+    };
     const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
     const d6 = masamuneMode ? 0 : (selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6)));
     const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
@@ -2731,6 +2779,22 @@
           restoreOliverZoomSelection();
         }
       });
+      return;
+    }
+
+    if (card.classList.contains("equip-defeat-pulse")){
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 70, "この装備を奪いますか。", async () => {
+        const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
+        if (ok){
+          clearDefeatLootState();
+          lastAttackWatch = null;
+          closeZoom();
+        }
+      }, { fixedLower:true, closeZoomOnNo:true });
       return;
     }
 
@@ -2939,6 +3003,41 @@
     return !!result.committed;
   }
 
+
+  async function stealAllEquipmentFromPlayer(targetUid){
+    const uid = safeText(targetUid);
+    if (!state.roomCode || !uid || uid === state.userId) return false;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    const result = await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const targetRow = cur.equipment?.[uid];
+      if (!targetRow) return cur;
+      const stealItems = Object.entries(targetRow)
+        .filter(([, item]) => item && item.kind !== "identity")
+        .map(([, item]) => item);
+      if (!stealItems.length) return cur;
+      cur.equipment = cur.equipment || {};
+      cur.equipment[state.userId] = cur.equipment[state.userId] || {};
+      for (const item of stealItems){
+        const copies = Math.max(1, Math.floor(Number(item.count ?? item.qty ?? item.quantity ?? 1) || 1));
+        for (let i = 0; i < copies; i++){
+          const addKey = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+          cur.equipment[state.userId][addKey] = {
+            theme: safeText(item.theme || "white"),
+            name: safeText(item.name || ""),
+            effect: safeText(item.effect || ""),
+            at: Date.now()
+          };
+        }
+      }
+      for (const [key, item] of Object.entries(targetRow)){
+        if (!item || item.kind === "identity") continue;
+        delete targetRow[key];
+      }
+      return cur;
+    });
+    return !!result.committed;
+  }
 
   async function moveEquipmentCardBetweenPlayers(fromUid, toUid, sourceKey){
     if (!state.roomCode || !fromUid || !toUid || !sourceKey) return false;
@@ -3209,6 +3308,33 @@
     const dRef = ref(db, `rooms/${state.roomCode}/damage`);
     onValue(dRef, snap => {
       damageCache = snap.val() || {};
+
+      const eliminatedNow = {};
+      for (const p of latestPlayers){
+        eliminatedNow[p.id] = isPlayerEliminated(p.id);
+      }
+      const watchActive = lastAttackWatch
+        && lastAttackWatch.uid === state.userId
+        && (Date.now() - Number(lastAttackWatch.at || 0) < 12000);
+      if (watchActive){
+        for (const uid of (lastAttackWatch.targetUids || [])){
+          if (!uid) continue;
+          const becameEliminated = !!eliminatedNow[uid] && !previousEliminatedMap[uid];
+          if (!becameEliminated) continue;
+          enqueueDefeatLoot(uid);
+          if (lastAttackWatch.hasRosary){
+            setTimeout(async () => {
+              const ok = await stealAllEquipmentFromPlayer(uid);
+              if (ok){
+                defeatLootQueue = defeatLootQueue.filter(v => v !== uid);
+                renderEquipmentDock();
+              }
+            }, 2000);
+          }
+        }
+      }
+      previousEliminatedMap = eliminatedNow;
+
       renderHpBoard();
       ensureCurrentTurnPlayerAlive();
 
@@ -5858,6 +5984,8 @@
   });
 
   async function doEndTurn(){
+    clearDefeatLootState();
+    lastAttackWatch = null;
     await advanceTurnToNextPlayer();
     hideAttackPop();
     hideEndTurnConfirm();
