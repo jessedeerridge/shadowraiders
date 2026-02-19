@@ -638,6 +638,35 @@
     flex-direction:column;
     align-items:center;
     gap:2px;
+    position:relative;
+  }
+  .position-answer-bubble{
+    position:absolute;
+    bottom:100%;
+    left:50%;
+    transform:translate(-50%, -4px);
+    background:#111;
+    color:#fff;
+    font-size:10px;
+    font-weight:700;
+    line-height:1.2;
+    padding:3px 6px;
+    border-radius:999px;
+    white-space:nowrap;
+    max-width:140px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    pointer-events:none;
+    z-index:3;
+  }
+  .position-answer-bubble::after{
+    content:"";
+    position:absolute;
+    top:100%;
+    left:50%;
+    transform:translateX(-50%);
+    border:4px solid transparent;
+    border-top-color:#111;
   }
   .starter-mark{
     min-height:10px;
@@ -1384,6 +1413,7 @@
   let greenReplyInitialized = false;
   let greenZoomLocked = false;
   let pendingGreenRequestId = "";
+  let greenReplyBubble = null;
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -1470,6 +1500,8 @@
   }
 
   function openGreenShareDock(cardObj){
+    greenReplyBubble = null;
+    renderPositionLine();
     greenShareCard = cardObj || null;
     if (!greenShareCard || !greenShareDock || !greenShareList){
       greenShareDock?.classList.add("hidden");
@@ -1552,9 +1584,11 @@
   function hideGreenShareDock(){
     greenShareCard = null;
     pendingGreenRequestId = "";
+    greenReplyBubble = null;
     if (greenShareList) greenShareList.innerHTML = "";
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareDock?.classList.add("hidden");
+    renderPositionLine();
   }
 
   function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true } = {}){
@@ -1944,6 +1978,14 @@
       }
       const item = document.createElement("div");
       item.className = "position-item";
+
+      if (greenReplyBubble && p.id === greenReplyBubble.uid && greenReplyBubble.text){
+        const bubble = document.createElement("div");
+        bubble.className = "position-answer-bubble";
+        bubble.textContent = greenReplyBubble.text;
+        item.appendChild(bubble);
+      }
+
       item.appendChild(buildChipFor(p.id));
 
       const marker = document.createElement("div");
@@ -2698,10 +2740,14 @@
       if (!pendingGreenRequestId || safeText(msg.requestId || "") !== pendingGreenRequestId) return;
       greenReplySeenAt = at;
       pendingGreenRequestId = "";
+      greenReplyBubble = {
+        uid: safeText(msg.to || ""),
+        text: safeText(msg.answerLabel || "")
+      };
       setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
-      setTimeout(() => {
-        if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
-      }, 900);
+      zoomCloseBtn.classList.remove("hidden");
+      greenZoomLocked = false;
+      renderPositionLine();
     });
   }
 
