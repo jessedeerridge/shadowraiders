@@ -1622,6 +1622,25 @@
     6: ["green","white","black"],
   };
   function allowedTypesByRoom(roomId){ return ROOM_ALLOW[roomId] || []; }
+  function hasRainbowParasolEquip(uid = state.userId){
+    if (!uid) return false;
+    return listEquipForUid(uid).some(item => {
+      if (isIdentityEquipItem(item)) return false;
+      return safeText(item?.name || "").trim() === "虹色のパラソル";
+    });
+  }
+  function canUseParasolGreenDraw(){
+    if (!isMyTurn()) return false;
+    if (!hasRainbowParasolEquip(state.userId)) return false;
+    const turn = turnState() || {};
+    if (!turn.moveDone || turn.attackDone) return false;
+    return remainingCount(deckCache?.green) > 0;
+  }
+  function canDrawTypeNormally(type){
+    const allowed = allowedTypesByRoom(state.currentRoomId);
+    if (!allowed.includes(type)) return false;
+    return canDrawSharedDeckNow();
+  }
   function canDrawSharedDeckNow(){
     if (!isMyTurn()) return false;
     const t = turnState() || {};
@@ -1629,9 +1648,9 @@
     return !!t.moveDone && !t.attackDone && !t.deckDrawDone;
   }
   function canClickType(type){
-    const allowed = allowedTypesByRoom(state.currentRoomId);
-    if (!allowed.includes(type)) return false;
-    return canDrawSharedDeckNow();
+    if (canDrawTypeNormally(type)) return true;
+    if (type === "green" && canUseParasolGreenDraw()) return true;
+    return false;
   }
   function applyLocked(el, locked, {noDim=false} = {}){
     if (!el) return;
@@ -3355,9 +3374,13 @@
     });
   }
 
-  async function drawFromSharedDeck(type){
+  async function drawFromSharedDeck(type, { viaParasol=false } = {}){
     if (!state.roomCode) return;
-    if (!canClickType(type)) return;
+    if (viaParasol){
+      if (type !== "green" || !canUseParasolGreenDraw()) return;
+    } else if (!canDrawTypeNormally(type)){
+      return;
+    }
 
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     let drawn = null;
@@ -3368,7 +3391,8 @@
 
       const turn = cur.turn;
       const allowUnlimitedDraw = isTestPlayer();
-      if (!turn.moveDone || turn.attackDone || (!allowUnlimitedDraw && turn.deckDrawDone)) return cur;
+      if (!turn.moveDone || turn.attackDone) return cur;
+      if (!viaParasol && !allowUnlimitedDraw && turn.deckDrawDone) return cur;
 
       const ds = cur.deckState;
       if (!ds || !ds[type] || !Array.isArray(ds[type].order)) return cur;
@@ -3387,7 +3411,12 @@
         ds.reveal.slot3 = { theme:"white", card: drawn, at: Date.now() };
       }
 
-      if (!allowUnlimitedDraw) turn.deckDrawDone = true;
+      if (viaParasol){
+        turn.attackDone = true;
+        turn.attackAt = Date.now();
+      } else if (!allowUnlimitedDraw) {
+        turn.deckDrawDone = true;
+      }
       turn.updatedAt = Date.now();
       ds.updatedAt = Date.now();
       return cur;
@@ -3463,11 +3492,23 @@
     slot4.style.backgroundImage = `url('blackdeck.jpg')`;
     ensureCountTag(slot4);
 
-    slot1.addEventListener('click', async () => {
+    slot1.addEventListener('click', async (e) => {
       const left = remainingCount(deckCache?.green);
       if (!canClickType("green")) return;
       if (left <= 0) return;
-      await drawFromSharedDeck("green");
+      if (canDrawTypeNormally("green")){
+        await drawFromSharedDeck("green");
+        return;
+      }
+      if (!canUseParasolGreenDraw()) return;
+      showRoomActionPopAt(
+        Number(e?.clientX || (window.innerWidth / 2)),
+        Number(e?.clientY || (window.innerHeight / 2)),
+        "攻撃の代わりにカードを引きますか。（虹色のパラソル）",
+        async () => {
+          await drawFromSharedDeck("green", { viaParasol:true });
+        }
+      );
     });
     slot2.addEventListener('click', async () => {
       const left = remainingCount(deckCache?.white);
