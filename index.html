@@ -606,6 +606,92 @@
   stroke-dasharray: 3.5 3.5;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
+  cursor:pointer;
+}
+
+.dice-roll-overlay{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:3200;
+}
+.dice-flyer{
+  position:absolute;
+  left:0;
+  top:0;
+  transform:translate(-9999px,-9999px);
+  will-change:transform;
+}
+.dice-flyer.rolling{
+  transition:transform .9s cubic-bezier(.2,.8,.2,1);
+}
+
+.dice-flyer,
+.dice-flyer *{
+  box-sizing:border-box;
+}
+
+.dice-flyer{
+  --die: 24px;
+  --pip: 4px;
+  --pad: 3px;
+  --d4-2-gap: 13%;
+}
+
+.die{
+  width:var(--die); height:var(--die);
+  background:#e53935;
+  border:1px solid #b71c1c;
+  border-radius:5px;
+  position:relative;
+}
+.pip{
+  width:var(--pip); height:var(--pip);
+  background:#fff; border-radius:50%;
+  position:absolute;
+}
+.tl{left:var(--pad); top:var(--pad);}
+.tr{right:var(--pad); top:var(--pad);}
+.ml{left:var(--pad); top:50%; transform:translateY(-50%);}
+.mc{left:50%; top:50%; transform:translate(-50%,-50%);}
+.mr{right:var(--pad); top:50%; transform:translateY(-50%);}
+.bl{left:var(--pad); bottom:var(--pad);}
+.br{right:var(--pad); bottom:var(--pad);}
+
+.d4{
+  width:var(--die);
+  height:calc(var(--die) * 0.8660254038);
+  position:relative;
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+  background:#1e88e5;
+  border:none;
+  --vTopX: 50%;  --vTopY: 0%;
+  --vLftX: 0%;   --vLftY: 100%;
+  --vRgtX: 100%; --vRgtY: 100%;
+  --cx: 50%;
+  --cy: calc(100% * 2 / 3);
+  --k: 0.45;
+}
+.tpip{
+  width:var(--pip); height:var(--pip);
+  background:#fff; border-radius:50%;
+  position:absolute;
+  transform:translate(-50%,-50%);
+}
+.t_center{left:var(--cx); top: var(--cy);}
+.t_midL{left: calc(var(--cx) - var(--d4-2-gap)); top:  var(--cy);}
+.t_midR{left: calc(var(--cx) + var(--d4-2-gap)); top:  var(--cy);}
+.t_top{
+  left: calc(var(--cx) + (var(--vTopX) - var(--cx)) * var(--k));
+  top:  calc(var(--cy) + (var(--vTopY) - var(--cy)) * var(--k));
+}
+.t_botL{
+  left: calc(var(--cx) + (var(--vLftX) - var(--cx)) * var(--k));
+  top:  calc(var(--cy) + (var(--vLftY) - var(--cy)) * var(--k));
+}
+.t_botR{
+  left: calc(var(--cx) + (var(--vRgtX) - var(--cx)) * var(--k));
+  top:  calc(var(--cy) + (var(--vRgtY) - var(--cy)) * var(--k));
 }
 
   /* =========================================================
@@ -1135,6 +1221,8 @@
 <div id="myRoleDock" class="my-role-dock" aria-label="自分の正体カード">
   <div id="myRoleCard"></div>
 </div>
+
+<div id="diceRollOverlay" class="dice-roll-overlay" aria-hidden="true"></div>
 
 <div id="kickDialog" class="dialog-backdrop hidden">
   <div class="dialog-box" id="kickDialogBox">
@@ -2366,6 +2454,131 @@
 
   let markerLayer = null;
   let markerCache = {};
+  const diceRollOverlay = document.getElementById('diceRollOverlay');
+  let diceRollTimers = [];
+
+  function clearDiceRollTimers(){
+    for (const id of diceRollTimers) clearTimeout(id);
+    diceRollTimers = [];
+  }
+
+  function dicePipsD6(face){
+    const map = {
+      1:["mc"],
+      2:["tl","br"],
+      3:["tl","mc","br"],
+      4:["tl","tr","bl","br"],
+      5:["tl","tr","mc","bl","br"],
+      6:["tl","ml","bl","tr","mr","br"]
+    };
+    return map[face] || map[1];
+  }
+
+  function dicePipsD4(face){
+    const map = {
+      1:["t_center"],
+      2:["t_midL","t_midR"],
+      3:["t_top","t_botL","t_botR"],
+      4:["t_top","t_botL","t_botR","t_center"]
+    };
+    return map[face] || map[1];
+  }
+
+  function renderD6Face(el, face){
+    el.innerHTML = '';
+    for (const klass of dicePipsD6(face)){
+      const pip = document.createElement('span');
+      pip.className = `pip ${klass}`;
+      el.appendChild(pip);
+    }
+  }
+
+  function renderD4Face(el, face){
+    el.innerHTML = '';
+    for (const klass of dicePipsD4(face)){
+      const pip = document.createElement('span');
+      pip.className = `tpip ${klass}`;
+      el.appendChild(pip);
+    }
+  }
+
+  function randomCornerStart(width, height){
+    const corner = Math.floor(Math.random() * 4);
+    const pad = 40;
+    if (corner === 0) return { x: width - pad, y: pad };      // 右上
+    if (corner === 1) return { x: width - pad, y: height - pad }; // 右下
+    if (corner === 2) return { x: pad, y: height - pad };      // 左下
+    return { x: pad, y: pad };                                  // 左上
+  }
+
+  function randomCenterOffsets(){
+    let a = { x:(Math.random()-0.5)*80, y:(Math.random()-0.5)*80 };
+    let b = { x:(Math.random()-0.5)*80, y:(Math.random()-0.5)*80 };
+    let guard = 0;
+    while (Math.hypot(a.x-b.x, a.y-b.y) < 16 && guard < 20){
+      b = { x:(Math.random()-0.5)*80, y:(Math.random()-0.5)*80 };
+      guard++;
+    }
+    return [a,b];
+  }
+
+  function runDiceRollAnimation(){
+    if (!diceRollOverlay) return;
+    clearDiceRollTimers();
+    diceRollOverlay.innerHTML = '';
+
+    const d6Wrap = document.createElement('div');
+    d6Wrap.className = 'dice-flyer';
+    const d6 = document.createElement('div');
+    d6.className = 'die';
+    d6Wrap.appendChild(d6);
+
+    const d4Wrap = document.createElement('div');
+    d4Wrap.className = 'dice-flyer';
+    const d4 = document.createElement('div');
+    d4.className = 'd4';
+    d4Wrap.appendChild(d4);
+
+    diceRollOverlay.appendChild(d6Wrap);
+    diceRollOverlay.appendChild(d4Wrap);
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const center = { x: width / 2, y: height / 2 };
+    const [offsetA, offsetB] = randomCenterOffsets();
+    const startA = randomCornerStart(width, height);
+    const startB = randomCornerStart(width, height);
+
+    d6Wrap.style.transform = `translate(${startA.x}px, ${startA.y}px)`;
+    d4Wrap.style.transform = `translate(${startB.x}px, ${startB.y}px)`;
+
+    const rollTimer = setInterval(() => {
+      renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
+      renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
+    }, 110);
+    diceRollTimers.push(rollTimer);
+
+    const moveTimer = setTimeout(() => {
+      d6Wrap.classList.add('rolling');
+      d4Wrap.classList.add('rolling');
+      d6Wrap.style.transform = `translate(${center.x + offsetA.x}px, ${center.y + offsetA.y}px)`;
+      d4Wrap.style.transform = `translate(${center.x + offsetB.x}px, ${center.y + offsetB.y}px)`;
+    }, 30);
+    diceRollTimers.push(moveTimer);
+
+    const stopTimer = setTimeout(() => {
+      clearInterval(rollTimer);
+      renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
+      renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
+    }, 980);
+    diceRollTimers.push(stopTimer);
+
+    const cleanupTimer = setTimeout(() => {
+      diceRollOverlay.innerHTML = '';
+      clearDiceRollTimers();
+    }, 3980);
+    diceRollTimers.push(cleanupTimer);
+  }
 
   function getMyColor(){
     if (state.seatedTable != null){
@@ -2400,6 +2613,10 @@
     ring.setAttribute("cy", String(y));
     ring.setAttribute("r", String(size/2 + 5)); // ←リングの大きさ（必要なら調整）
     ring.setAttribute("class", "mark-me-ring");
+    ring.addEventListener('click', (e) => {
+      e.stopPropagation();
+      runDiceRollAnimation();
+    });
     g.appendChild(ring);
   }
 
