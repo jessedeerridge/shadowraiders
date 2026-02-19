@@ -837,8 +837,17 @@
   .roomhit{fill:transparent;cursor:pointer;}
   .roomhit:hover{fill:rgba(0,0,0,.06);}
 
-  .mark-rect{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
-  .mark-text{font-weight:1000;font-size:10px;dominant-baseline:middle;text-anchor:middle;user-select:none;pointer-events:none;}
+.mark-rect{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
+.mark-text{font-weight:1000;font-size:10px;dominant-baseline:middle;text-anchor:middle;user-select:none;pointer-events:none;}
+.mark-pulse-target{
+  transform-box:fill-box;
+  transform-origin:center;
+  animation:markerPulse 1.2s ease-in-out infinite;
+}
+@keyframes markerPulse{
+  0%,100%{ transform:scale(1); }
+  50%{ transform:scale(1.2); }
+}
 
   .card72{
     width:var(--card-w);
@@ -2554,6 +2563,56 @@
     return inside;
   }
 
+  function previousRoomId(roomId){
+    if (roomId === 1) return 6;
+    if (roomId >= 2 && roomId <= 6) return roomId - 1;
+    return null;
+  }
+
+  function inferRoomIdFromPoint(x, y){
+    for (const [ridText, pts] of Object.entries(roomPolygons)){
+      const rid = Number(ridText);
+      if (!Number.isFinite(rid)) continue;
+      if (pointInPolygon(x, y, pts)) return rid;
+    }
+    return null;
+  }
+
+  function markerRoomId(marker){
+    if (!marker) return null;
+    const roomId = Number(marker.roomId);
+    if (Number.isFinite(roomId) && roomId >= 1 && roomId <= 7) return roomId;
+
+    const x = Number(marker.x);
+    const y = Number(marker.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return inferRoomIdFromPoint(x, y);
+  }
+
+  function highlightedMarkerUids(){
+    const myMarker = markerCache?.[state.userId] || null;
+    const myRoomId = markerRoomId(myMarker);
+    if (!myRoomId) return new Set();
+
+    const targets = new Set();
+    for (const [uid, marker] of Object.entries(markerCache || {})){
+      if (!marker || uid === state.userId) continue;
+      const rid = markerRoomId(marker);
+      if (!rid) continue;
+
+      if (myRoomId === 7){
+        targets.add(uid);
+        continue;
+      }
+
+      const prev = previousRoomId(myRoomId);
+      if (rid === myRoomId || rid === prev || rid === 7){
+        targets.add(uid);
+      }
+    }
+    return targets;
+  }
+
   function randomPointInRoom(roomId, padding = 12){
     const pts = roomPolygons[roomId];
     if (!Array.isArray(pts) || !pts.length) return null;
@@ -2740,9 +2799,10 @@
     if (!markerLayer) return;
     while(markerLayer.firstChild) markerLayer.removeChild(markerLayer.firstChild);
   }
- function drawMarker({x,y,color,initial,uid}){
+ function drawMarker({x,y,color,initial,uid,pulse=false}){
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
+  if (pulse) g.classList.add("mark-pulse-target");
 
   const size = 16;
   const rx = 3;
@@ -2790,6 +2850,7 @@
   function renderMarkers(){
     ensureMarkerLayer();
     clearMarkerLayer();
+    const pulseTargets = highlightedMarkerUids();
     const entries = Object.entries(markerCache || {});
     for (const [uid, m] of entries){
       if (!m) continue;
@@ -2800,7 +2861,8 @@
         uid,
         x, y,
         color: String(m.color || "#ddd"),
-        initial: String(m.initial || "")
+        initial: String(m.initial || ""),
+        pulse: pulseTargets.has(uid)
       });
     }
   }
@@ -2821,7 +2883,8 @@
     if (!color || !initial) return;
 
     const mRef = ref(db, `rooms/${state.roomCode}/markers/${state.userId}`);
-    await set(mRef, { x, y, color, initial, updatedAt: Date.now() });
+    const roomId = inferRoomIdFromPoint(x, y) || state.currentRoomId || null;
+    await set(mRef, { x, y, color, initial, roomId, updatedAt: Date.now() });
   }
 
   function subscribeMarkers(){
