@@ -1317,8 +1317,8 @@
 <div id="endTurnConfirm" class="endturn-confirm hidden" role="dialog" aria-label="手番終了確認">
   <p class="msg">本当いいいですか。</p>
   <div class="actions">
-    <button class="btn ghost" id="btnEndTurnNo">いいえ</button>
     <button class="btn primary" id="btnEndTurnYes">はい</button>
+    <button class="btn ghost" id="btnEndTurnNo">いいえ</button>
   </div>
 </div>
 
@@ -1407,6 +1407,7 @@
 
   const app = initializeApp(firebaseConfig);
   const db  = getDatabase(app);
+  const USER_NAME_CACHE_KEY = "bbCachedUserName";
 
   const savedUserId = sessionStorage.getItem('bbUserId') || crypto.randomUUID();
   sessionStorage.setItem('bbUserId', savedUserId);
@@ -2419,6 +2420,14 @@
     d.style.color = textColorFor(color);
     d.textContent = initial || "";
     d.title = p ? p.name : "";
+    if (isTestPlayer()){
+      d.style.cursor = "pointer";
+      d.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!uid) return;
+        await addDamageToPlayer(uid, 1);
+      });
+    }
     return d;
   }
 
@@ -4713,8 +4722,16 @@
   const roomFromUrl = urlParams.get('room');
   if(roomFromUrl) inputCode.value = roomFromUrl;
 
+  const cachedUserName = localStorage.getItem(USER_NAME_CACHE_KEY);
+  if (cachedUserName != null) inputName.value = cachedUserName;
+
+  inputName.addEventListener("input", () => {
+    localStorage.setItem(USER_NAME_CACHE_KEY, inputName.value || "");
+  });
+
   btnJoin.addEventListener('click', async () => {
     state.userName = (inputName.value || '名無し').slice(0,4);
+    localStorage.setItem(USER_NAME_CACHE_KEY, state.userName);
     state.roomCode = inputCode.value.trim() || generateRoomCode();
     state.spectating = false;
     state.currentRoomId = 0;
