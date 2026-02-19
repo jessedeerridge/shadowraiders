@@ -881,7 +881,7 @@
   .room-choice-once{
     transform-box:fill-box;
     transform-origin:center;
-    animation:roomChoicePulse .7s ease-in-out 1;
+    animation:roomChoicePulse 1.2s ease-in-out infinite;
   }
   @keyframes roomChoicePulse{
     0%,100%{ transform:scale(1); }
@@ -3406,6 +3406,9 @@
     const applyMove = options.applyMove !== false;
     const compass = !!options.compass;
     if (!diceRollOverlay) return;
+    pendingMoveChoice = null;
+    clearPendingMoveChoiceUi();
+    updateRoomChoiceUi();
     clearDiceRollTimers();
     diceRollOverlay.innerHTML = '';
 
@@ -3609,6 +3612,11 @@
         roomHitEls[roomId].style.cursor = (choiceMode || pending) ? 'pointer' : (isGameStarted() ? 'default' : 'pointer');
       }
     }
+
+    const centerPending = !!pendingMoveChoice && !pendingMoveChoice.consumed && pendingMoveChoice.roomIds.includes(7);
+    if (roomHitEls[7]){
+      roomHitEls[7].style.cursor = centerPending ? 'pointer' : (isGameStarted() ? 'default' : 'pointer');
+    }
   }
 
 
@@ -3714,7 +3722,10 @@
     centerHit.dataset.roomId = "7";
     roomHitEls[7] = centerHit;
     centerHit.addEventListener('click', async (ev) => {
-      if (isGameStarted()) return;
+      if (isGameStarted()){
+        if (await resolvePendingMoveChoice(7)) return;
+        return;
+      }
       setCurrentRoom(7);
       const p = clientToSvgPoint(roomSvg, ev.clientX, ev.clientY);
       await writeMyMarker(p.x, p.y);
