@@ -933,6 +933,13 @@
   box-shadow:0 8px 18px rgba(0,0,0,.28);
 }
 .turn-hint-pop.hidden{ display:none; }
+#roomActionPop.lower-mode{
+  left:50% !important;
+  top:auto !important;
+  bottom:90px;
+  transform:translateX(-50%);
+}
+#roomActionPop.lower-mode .caret{ display:none; }
 
   .card72{
     width:var(--card-w);
@@ -1344,8 +1351,8 @@
   <div class="caret" aria-hidden="true"></div>
   <p class="msg" id="roomActionMsg"></p>
   <div class="actions">
-    <button class="btn ghost" id="btnRoomActionNo">いいえ</button>
     <button class="btn primary" id="btnRoomActionYes">はい</button>
+    <button class="btn ghost" id="btnRoomActionNo">いいえ</button>
   </div>
 </div>
 
@@ -1812,13 +1819,25 @@
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
+    roomActionPop?.classList.remove("lower-mode");
   }
 
-  function showRoomActionPopAt(clientX, clientY, message, onYes){
+  function showRoomActionPopAt(clientX, clientY, message, onYes, options = {}){
     if (!roomActionPop || !roomActionMsg) return;
-    pendingRoomAction = { onYes: (typeof onYes === "function") ? onYes : null };
+    const fixedLower = !!options.fixedLower;
+    pendingRoomAction = {
+      onYes: (typeof onYes === "function") ? onYes : null,
+      closeZoomOnNo: !!options.closeZoomOnNo
+    };
     roomActionMsg.textContent = safeText(message || "");
     roomActionPop.classList.remove("hidden");
+    roomActionPop.classList.toggle("lower-mode", fixedLower);
+
+    if (fixedLower){
+      roomActionPop.style.left = "";
+      roomActionPop.style.top = "";
+      return;
+    }
 
     const pad = 10;
     const vw = window.innerWidth;
@@ -2454,7 +2473,9 @@
   });
   btnRoomActionNo?.addEventListener("click", (e) => {
     e.stopPropagation();
+    const closeZoomOnNo = !!pendingRoomAction?.closeZoomOnNo;
     hideRoomActionPop();
+    if (closeZoomOnNo) closeZoom();
   });
   btnRoomActionYes?.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -2548,7 +2569,7 @@
           renderEquipmentDock();
           closeZoom();
         }
-      });
+      }, { fixedLower:true, closeZoomOnNo:true });
       return;
     }
 
@@ -4447,6 +4468,7 @@
       });
     }
     updateRoomChoiceUi();
+    refreshRoomAbilityHint();
   }
 
   function clientToSvgPoint(svg, clientX, clientY){
