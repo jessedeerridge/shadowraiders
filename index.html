@@ -1886,10 +1886,16 @@
     identityPromptPop?.classList.add("hidden");
   }
 
-  function showIdentityPromptPop({ message, canReveal, onYes, cardObj=null, cardTheme="white" }){
+  function showIdentityPromptPop({ message, canReveal, onYes, onNo=null, cardObj=null, cardTheme="white", openZoom=false }){
     if (!identityPromptPop || !identityPromptMsg || !btnIdentityPromptYes || !btnIdentityPromptNo) return;
-    openZoomFromDeckCard(cardObj, cardTheme, { closeOnBackdrop:false, showCloseButton:false });
-    pendingIdentityPrompt = { onYes: typeof onYes === "function" ? onYes : null };
+    if (openZoom && cardObj){
+      openZoomFromDeckCard(cardObj, cardTheme, { closeOnBackdrop:false, showCloseButton:false });
+    }
+    pendingIdentityPrompt = {
+      onYes: typeof onYes === "function" ? onYes : null,
+      onNo: typeof onNo === "function" ? onNo : null,
+      closeZoomOnChoice: !!openZoom
+    };
     identityPromptMsg.textContent = safeText(message || "");
 
     btnIdentityPromptYes.classList.toggle("pop-disabled", !canReveal);
@@ -2609,18 +2615,22 @@
   });
 
 
-  btnIdentityPromptNo?.addEventListener("click", (e) => {
+  btnIdentityPromptNo?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    const handler = pendingIdentityPrompt?.onNo;
+    const closeZoomOnChoice = !!pendingIdentityPrompt?.closeZoomOnChoice;
     hideIdentityPrompt();
-    closeZoom();
+    if (closeZoomOnChoice) closeZoom();
+    if (handler) await handler();
   });
 
   btnIdentityPromptYes?.addEventListener("click", async (e) => {
     e.stopPropagation();
     if (btnIdentityPromptYes.disabled) return;
     const handler = pendingIdentityPrompt?.onYes;
+    const closeZoomOnChoice = !!pendingIdentityPrompt?.closeZoomOnChoice;
     hideIdentityPrompt();
-    closeZoom();
+    if (closeZoomOnChoice) closeZoom();
     if (handler) await handler();
   });
 
@@ -3609,6 +3619,75 @@
       .includes(targetName);
   }
 
+  function countEquipmentByNames(uid, names){
+    const targetUid = safeText(uid);
+    const nameSet = new Set((names || []).map(v => safeText(v)).filter(Boolean));
+    if (!targetUid || nameSet.size === 0) return 0;
+    return listEquipForUid(targetUid)
+      .filter(v => !isIdentityEquipItem(v))
+      .reduce((sum, item) => sum + (nameSet.has(safeText(item?.name)) ? 1 : 0), 0);
+  }
+
+  function calcAttackDamageFromRoll(attackerUid, d6, d4, options = {}){
+    const uid = safeText(attackerUid);
+    const a = Number(d6) || 0;
+    const b = Number(d4) || 0;
+    if (!uid || a === b) return 0;
+
+    let damage = Math.abs(a - b);
+    damage += countEquipmentByNames(uid, ["サーベル", "拳銃R", "拳銃L", "クロスボウガン"]);
+
+    const role = myRoleInfo();
+    if (uid === state.userId && role && hasEquipmentByName(uid, "エクスカリバー") && isMyIdentityRevealed() && role.faction === "レイダー"){
+      damage += 2;
+    }
+
+    if (hasEquipmentByName(uid, "賢者のローブ")){
+      damage -= 1;
+    }
+
+    if (options.excaliburRevealBoost){
+      damage += 2;
+    }
+
+    return Math.max(0, damage);
+  }
+
+  async function maybePromptExcaliburReveal(attackerUid, d6, d4){
+    const uid = safeText(attackerUid);
+    if (uid !== state.userId) return false;
+    const role = myRoleInfo();
+    if (!role) return false;
+    if (!hasEquipmentByName(uid, "エクスカリバー")) return false;
+    if (isMyIdentityRevealed()) return false;
+    if ((Number(d6) || 0) === (Number(d4) || 0)) return false;
+
+    return await new Promise((resolve) => {
+      showIdentityPromptPop({
+        message: "正体を公開して、攻撃しますか。",
+        canReveal: role.faction === "レイダー",
+        openZoom: false,
+        onYes: async () => {
+          await revealMyIdentityToEquipment();
+          resolve(true);
+        },
+        onNo: async () => {
+          resolve(false);
+        }
+      });
+    });
+  }
+
+  function applyIncomingDamageModifiers(uid, amount){
+    const targetUid = safeText(uid);
+    let add = Math.max(0, Number(amount) || 0);
+    if (!targetUid || add <= 0) return 0;
+    if (hasEquipmentByName(targetUid, "賢者のローブ")){
+      add -= 1;
+    }
+    return Math.max(0, add);
+  }
+
   function clearPendingMoveChoiceUi(){
     for (let roomId = 1; roomId <= 7; roomId++){
       roomShapeEls[roomId]?.classList.remove('room-choice-once');
@@ -3909,7 +3988,7 @@
   }
 
   async function addDamageToPlayer(uid, amount){
-    const add = Math.max(0, Number(amount) || 0);
+    const add = applyIncomingDamageModifiers(uid, amount);
     if (!uid || !state.roomCode || add <= 0) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) + add));
@@ -4064,8 +4143,8 @@
   }
 
   async function addDamageToAllOtherPlayers(uid, amount){
-    const add = Math.max(0, Number(amount) || 0);
-    if (!state.roomCode || add <= 0) return;
+    const baseAdd = Math.max(0, Number(amount) || 0);
+    if (!state.roomCode || baseAdd <= 0) return;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     await runTransaction(roomRef, (cur) => {
       if (!cur) return cur;
@@ -4074,6 +4153,8 @@
       cur.damage = cur.damage || {};
       for (const pid of order){
         if (!pid || pid === uid) continue;
+        const add = applyIncomingDamageModifiers(pid, baseAdd);
+        if (add <= 0) continue;
         cur.damage[pid] = clampDamage(Number(cur.damage[pid] || 0) + add);
       }
       return cur;
@@ -4111,8 +4192,8 @@
   }
 
   async function addDamageToPlayers(uids, amount){
-    const add = Math.max(0, Number(amount) || 0);
-    if (!state.roomCode || add <= 0) return;
+    const baseAdd = Math.max(0, Number(amount) || 0);
+    if (!state.roomCode || baseAdd <= 0) return;
     const targets = [...new Set((uids || []).map(uid => safeText(uid)).filter(Boolean))];
     if (!targets.length) return;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
@@ -4120,6 +4201,8 @@
       if (!cur) return cur;
       cur.damage = cur.damage || {};
       for (const uid of targets){
+        const add = applyIncomingDamageModifiers(uid, baseAdd);
+        if (add <= 0) continue;
         cur.damage[uid] = clampDamage(Number(cur.damage[uid] || 0) + add);
       }
       return cur;
@@ -4160,6 +4243,7 @@
         canReveal,
         cardObj,
         cardTheme: name === "戦慄の闇儀式" ? "black" : "white",
+        openZoom: true,
         onYes: async () => {
           await revealMyIdentityToEquipment();
           await fullRecoverPlayer(state.userId);
@@ -4175,6 +4259,7 @@
         canReveal,
         cardObj,
         cardTheme: "white",
+        openZoom: true,
         onYes: async () => {
           await revealMyIdentityToEquipment();
           await fullRecoverPlayer(state.userId);
@@ -4414,7 +4499,6 @@
 
     const finalD6 = Number(options.finalD6 || (1 + Math.floor(Math.random() * 6)));
     const finalD4 = Number(options.finalD4 || (1 + Math.floor(Math.random() * 4)));
-    const diff = Math.abs(finalD6 - finalD4);
 
     const stopDelayMs = launchDelayMs + moveDurationMs + settleBufferMs;
     const stopTimer = setTimeout(() => {
@@ -4427,7 +4511,12 @@
       d4Wrap.classList.add('attack-result-pin');
 
       const damageTimer = setTimeout(async () => {
-        if (applyDamage) await addDamageToPlayer(targetUid, diff);
+        if (!applyDamage) return;
+        const revealBoost = await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
+        const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { excaliburRevealBoost: revealBoost });
+        if (damage > 0){
+          await addDamageToPlayer(targetUid, damage);
+        }
       }, damageDelayAfterStopMs);
       diceRollTimers.push(damageTimer);
     }, stopDelayMs);
