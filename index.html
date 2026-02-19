@@ -921,7 +921,7 @@
   .green-share-dock{
     position:fixed;
     left:50%;
-    bottom:140px;
+    top:500px;
     transform:translateX(-50%);
     z-index:10001;
     width:min(380px, calc(100vw - 40px));
@@ -948,6 +948,12 @@
     grid-template-columns:repeat(3, minmax(0, 1fr));
     gap:8px;
   }
+  .green-share-actions{
+    display:flex;
+    justify-content:flex-end;
+    margin-top:-30px;
+  }
+  .green-share-actions.hidden{ display:none; }
   .green-share-btn{
     border:1px solid rgba(0,0,0,.15);
     border-radius:999px;
@@ -1042,6 +1048,9 @@
     <p class="green-share-title">誰に渡しますか。</p>
     <p id="greenShareSubtitle" class="green-share-subtitle hidden"></p>
     <div id="greenShareList" class="green-share-list"></div>
+    <div id="greenShareActions" class="green-share-actions hidden">
+      <button id="greenShareCloseBtn" class="btn ghost" type="button">閉じる</button>
+    </div>
   </div>
 </div>
 
@@ -1376,6 +1385,8 @@
   const greenShareDock = document.getElementById("greenShareDock");
   const greenShareList = document.getElementById("greenShareList");
   const greenShareSubtitle = document.getElementById("greenShareSubtitle");
+  const greenShareActions = document.getElementById("greenShareActions");
+  const greenShareCloseBtn = document.getElementById("greenShareCloseBtn");
   let zoomCloseOnBackdrop = true;
   let greenShareCard = null;
   let greenInboxSeenAt = 0;
@@ -1477,6 +1488,7 @@
     }
 
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
+    greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
     const players = latestPlayers
       .filter(p => p.id !== state.userId)
@@ -1513,6 +1525,7 @@
         selected.disabled = true;
         greenShareList.appendChild(selected);
         setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
+        greenShareActions?.classList.add("hidden");
       });
 
       greenShareList.appendChild(btn);
@@ -1524,6 +1537,7 @@
     if (!greenShareDock || !greenShareList || !msg?.card) return;
     greenShareCard = msg.card;
     setGreenDockMeta({ title:"回答を選んでください", subtitle:safeText(msg.card.effect || "") });
+    greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
     for (const opt of greenAnswerOptions(msg.card)){
       const btn = document.createElement("button");
@@ -1554,8 +1568,13 @@
     pendingGreenRequestId = "";
     if (greenShareList) greenShareList.innerHTML = "";
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
+    greenShareActions?.classList.add("hidden");
     greenShareDock?.classList.add("hidden");
   }
+
+  greenShareCloseBtn?.addEventListener("click", () => {
+    closeZoom();
+  });
 
   function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true } = {}){
     zoomStage.innerHTML = "";
@@ -2699,9 +2718,7 @@
       greenReplySeenAt = at;
       pendingGreenRequestId = "";
       setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
-      setTimeout(() => {
-        if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
-      }, 900);
+      greenShareActions?.classList.remove("hidden");
     });
   }
 
