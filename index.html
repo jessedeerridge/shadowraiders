@@ -600,13 +600,14 @@
   }
 /* 自分のマーカーだけ、丸い点線リング */
 .mark-me-ring{
-  fill: none;
+  fill: transparent;
   stroke: rgba(17,17,17,.95);
   stroke-width: 2;
   stroke-dasharray: 3.5 3.5;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
   cursor:pointer;
+  pointer-events:all;
 }
 
 .dice-roll-overlay{
@@ -2606,6 +2607,14 @@
   const size = 16;
   const rx = 3;
 
+  if (uid && uid === state.userId){
+    g.style.cursor = 'pointer';
+    g.addEventListener('click', (e) => {
+      e.stopPropagation();
+      runDiceRollAnimation();
+    });
+  }
+
   // ★自分だけ丸い点線リング（四角マーカーの外側）
   if (uid && uid === state.userId){
     const ring = document.createElementNS("http://www.w3.org/2000/svg","circle");
@@ -2613,10 +2622,6 @@
     ring.setAttribute("cy", String(y));
     ring.setAttribute("r", String(size/2 + 5)); // ←リングの大きさ（必要なら調整）
     ring.setAttribute("class", "mark-me-ring");
-    ring.addEventListener('click', (e) => {
-      e.stopPropagation();
-      runDiceRollAnimation();
-    });
     g.appendChild(ring);
   }
 
