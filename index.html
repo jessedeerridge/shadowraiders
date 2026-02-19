@@ -1108,17 +1108,17 @@
   .zoom-identity-owner{
     position:absolute;
     left:50%;
-    top:-25px;
+    top:-22px;
     transform:translateX(-50%);
     display:flex;
     align-items:center;
-    gap:4px;
-    background:rgba(255,255,255,.96);
+    gap:6px;
+    background:#fff;
     border:1px solid rgba(0,0,0,.15);
     border-radius:999px;
-    padding:1px 1px;
-    font-size:9px;
-    font-weight:800;
+    padding:4px 8px;
+    font-size:12px;
+    font-weight:700;
     color:#111;
     white-space:nowrap;
     line-height:1;
@@ -1130,6 +1130,9 @@
     min-height:8px;
     font-size:8px;
     border-width:1px;
+  }
+  .eliminated-dim{
+    opacity:.7;
   }
   .zoom-close{
     position:fixed;
@@ -2252,8 +2255,11 @@
 
       const cards = document.createElement("div");
       cards.className = "equip-cards";
+      const eliminated = isPlayerEliminated(p.id);
       for (const it of list){
-        cards.appendChild(buildEquipCard(it));
+        const cardEl = buildEquipCard(it);
+        if (eliminated) cardEl.classList.add("eliminated-dim");
+        cards.appendChild(cardEl);
       }
       row.appendChild(cards);
       equipBody.appendChild(row);
@@ -2454,6 +2460,16 @@
 
   function playerById(uid){
     return latestPlayers.find(p => p.id === uid) || null;
+  }
+
+  function isPlayerEliminated(uid){
+    if (!uid) return false;
+    const hand = state.hands?.[uid];
+    const role = hand?.roleId ? ROLE_BY_ID[hand.roleId] : null;
+    const hp = Number(role?.hp || 0);
+    if (!hp) return false;
+    const dmg = clampDamage(damageCache?.[uid]);
+    return dmg >= hp;
   }
 
   function buildChipFor(uid){
@@ -2748,6 +2764,12 @@
         autoDamageRevealLock[uid] = true;
         openIdentityRevealZoom(role, uid);
         revealIdentityByDamage(uid);
+      }
+
+      renderEquipmentDock();
+      const myRoleBack = myRoleCard?.querySelector('.role-back');
+      if (myRoleBack){
+        myRoleBack.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       }
     });
   }
@@ -4695,6 +4717,7 @@
     back.className = 'role-back';
     back.style.backgroundImage = `url('browncard.jpg')`;
     back.title = "クリックで拡大表示";
+    back.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
 
     back.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -4752,7 +4775,11 @@
 
     const tables = roomData.tables || {};
     const players = Object.entries(tables)
-      .map(([seatIndex, t]) => (t && t.playerId ? { id: t.playerId, seatIndex: Number(seatIndex) } : null))
+      .map(([seatIndex, t]) => (t && t.playerId ? {
+        id: t.playerId,
+        seatIndex: Number(seatIndex),
+        name: String(t.playerName || "")
+      } : null))
       .filter(Boolean)
       .sort((a,b) => a.seatIndex - b.seatIndex);
 
@@ -4777,12 +4804,31 @@
       updatedAt: Date.now(),
     };
 
+    const markers = { ...(roomData.markers || {}) };
+    for (const p of players){
+      if (safeText(p.name).trim().toLowerCase() !== "test") continue;
+      const pt = randomPointInRoom(4, 14);
+      if (!pt) continue;
+      const color = SEAT_COLORS[(Number(p.seatIndex) || 1) - 1] || "#ddd";
+      const initial = firstChar(p.name || "T");
+      markers[p.id] = {
+        x: pt.x,
+        y: pt.y,
+        color,
+        initial,
+        roomId: 4,
+        updatedAt: Date.now(),
+        forcedSpawn: true
+      };
+    }
+
     await update(roomRef, {
       hands,
       deckState: freshDeckState,
       gameStarted: true,
       startedAt: Date.now(),
       playerCountAtStart: n,
+      markers,
       positionOrder,
       startPlayerId,
       turn: {
