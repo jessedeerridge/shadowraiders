@@ -981,11 +981,6 @@
   .green-share-btn.waiting-selected:disabled{
     opacity:1;
   }
-  .green-share-actions{
-    margin-top:10px;
-    display:flex;
-    justify-content:flex-end;
-  }
 </style>
 </head>
 <body>
@@ -1047,9 +1042,6 @@
     <p class="green-share-title">誰に渡しますか。</p>
     <p id="greenShareSubtitle" class="green-share-subtitle hidden"></p>
     <div id="greenShareList" class="green-share-list"></div>
-    <div id="greenShareActions" class="green-share-actions hidden">
-      <button id="greenShareCloseBtn" type="button" class="btn primary">閉じる</button>
-    </div>
   </div>
 </div>
 
@@ -1384,8 +1376,6 @@
   const greenShareDock = document.getElementById("greenShareDock");
   const greenShareList = document.getElementById("greenShareList");
   const greenShareSubtitle = document.getElementById("greenShareSubtitle");
-  const greenShareActions = document.getElementById("greenShareActions");
-  const greenShareCloseBtn = document.getElementById("greenShareCloseBtn");
   let zoomCloseOnBackdrop = true;
   let greenShareCard = null;
   let greenInboxSeenAt = 0;
@@ -1470,15 +1460,12 @@
     ];
   }
 
-  function setGreenDockMeta({ title="", subtitle="", showClose=false } = {}){
+  function setGreenDockMeta({ title="", subtitle="" } = {}){
     const titleEl = greenShareDock?.querySelector(".green-share-title");
     if (titleEl) titleEl.textContent = title;
     if (greenShareSubtitle){
       greenShareSubtitle.textContent = subtitle || "";
       greenShareSubtitle.classList.toggle("hidden", !subtitle);
-    }
-    if (greenShareActions){
-      greenShareActions.classList.toggle("hidden", !showClose);
     }
   }
 
@@ -1489,7 +1476,7 @@
       return;
     }
 
-    setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"", showClose:false });
+    setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareList.innerHTML = "";
     const players = latestPlayers
       .filter(p => p.id !== state.userId)
@@ -1525,7 +1512,7 @@
         selected.classList.add("waiting-selected");
         selected.disabled = true;
         greenShareList.appendChild(selected);
-        setGreenDockMeta({ title:"回答待ち...", subtitle:"", showClose:false });
+        setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
       });
 
       greenShareList.appendChild(btn);
@@ -1536,7 +1523,7 @@
   function openGreenAnswerDock(msg){
     if (!greenShareDock || !greenShareList || !msg?.card) return;
     greenShareCard = msg.card;
-    setGreenDockMeta({ title:"回答を選んでください", subtitle:safeText(msg.card.effect || ""), showClose:false });
+    setGreenDockMeta({ title:"回答を選んでください", subtitle:safeText(msg.card.effect || "") });
     greenShareList.innerHTML = "";
     for (const opt of greenAnswerOptions(msg.card)){
       const btn = document.createElement("button");
@@ -1555,7 +1542,17 @@
           card: msg.card,
           at: Date.now()
         });
-        closeZoom();
+        setGreenDockMeta({ title:"回答を送信しました", subtitle:"右上の×で閉じてください" });
+        greenShareList.innerHTML = "";
+        const done = document.createElement("button");
+        done.type = "button";
+        done.className = "green-share-btn answer";
+        done.textContent = `${opt.label}（送信済み）`;
+        done.disabled = true;
+        greenShareList.appendChild(done);
+        greenZoomLocked = false;
+        zoomCloseOnBackdrop = false;
+        zoomCloseBtn.classList.remove("hidden");
       });
       greenShareList.appendChild(btn);
     }
@@ -1566,7 +1563,7 @@
     greenShareCard = null;
     pendingGreenRequestId = "";
     if (greenShareList) greenShareList.innerHTML = "";
-    setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"", showClose:false });
+    setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareDock?.classList.add("hidden");
   }
 
@@ -1613,10 +1610,6 @@
   });
   zoomBackdrop.addEventListener("click", (e) => {
     if (e.target === zoomBackdrop && zoomCloseOnBackdrop) closeZoom();
-  });
-  greenShareCloseBtn?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    closeZoom();
   });
 
   let slot1 = document.getElementById('slot1');
@@ -2715,7 +2708,10 @@
       if (!pendingGreenRequestId || safeText(msg.requestId || "") !== pendingGreenRequestId) return;
       greenReplySeenAt = at;
       pendingGreenRequestId = "";
-      setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || ""), showClose:true });
+      setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
+      setTimeout(() => {
+        if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
+      }, 900);
     });
   }
 
