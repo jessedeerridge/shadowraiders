@@ -2857,7 +2857,7 @@
     const finalD4 = 1 + Math.floor(Math.random() * 4);
     const diff = Math.abs(finalD6 - finalD4);
 
-    const stopTimer = setTimeout(async () => {
+    const stopTimer = setTimeout(() => {
       d6Wrap.classList.remove('rolling');
       d4Wrap.classList.remove('rolling');
       renderD6Face(d6, finalD6);
@@ -2865,7 +2865,11 @@
 
       d6Wrap.classList.add('attack-result-pin');
       d4Wrap.classList.add('attack-result-pin');
-      await addDamageToPlayer(targetUid, diff);
+
+      const damageTimer = setTimeout(async () => {
+        await addDamageToPlayer(targetUid, diff);
+      }, 2000);
+      diceRollTimers.push(damageTimer);
     }, 980);
     diceRollTimers.push(stopTimer);
   }
