@@ -71,6 +71,17 @@
     border-top:1px solid rgba(0,0,0,.18);
     transform:translateX(-50%) rotate(45deg);
   }
+  .confirm-pop.bottom-fixed{
+    left:50%;
+    top:auto;
+    bottom:16px;
+    transform:translateX(-50%);
+    min-width:280px;
+    max-width:min(92vw, 420px);
+  }
+  .confirm-pop.bottom-fixed .caret{display:none;}
+  .btn.pop-dark{background:#111;color:#fff;border-color:#111;}
+  .btn.pop-disabled{background:#bcbcbc;color:#fff;border-color:#bcbcbc;cursor:not-allowed;}
 
   .help-btn{
     position:fixed;left:16px;bottom:16px;width:44px;height:44px;border-radius:50%;
@@ -1295,6 +1306,14 @@
   </div>
 </div>
 
+<div id="identityPromptPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="陣営公開確認">
+  <p class="msg" id="identityPromptMsg"></p>
+  <div class="actions">
+    <button class="btn" id="btnIdentityPromptYes">はい</button>
+    <button class="btn" id="btnIdentityPromptNo">いいえ</button>
+  </div>
+</div>
+
 <div id="endTurnConfirm" class="endturn-confirm hidden" role="dialog" aria-label="手番終了確認">
   <p class="msg">本当いいいですか。</p>
   <div class="actions">
@@ -1674,7 +1693,12 @@
   const attackMsg = document.getElementById("attackMsg");
   const btnAttackYes = document.getElementById("btnAttackYes");
   const btnAttackNo = document.getElementById("btnAttackNo");
+  const identityPromptPop = document.getElementById("identityPromptPop");
+  const identityPromptMsg = document.getElementById("identityPromptMsg");
+  const btnIdentityPromptYes = document.getElementById("btnIdentityPromptYes");
+  const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
+  let pendingIdentityPrompt = null;
 
   function showRevealPopAt(clientX, clientY){
     const pad = 10;
@@ -1727,6 +1751,27 @@
   function hideAttackPop(){
     pendingAttackTargetUid = "";
     attackPop?.classList.add("hidden");
+  }
+
+  function hideIdentityPrompt(){
+    pendingIdentityPrompt = null;
+    identityPromptPop?.classList.add("hidden");
+  }
+
+  function showIdentityPromptPop({ message, canReveal, onYes, cardObj=null, cardTheme="white" }){
+    if (!identityPromptPop || !identityPromptMsg || !btnIdentityPromptYes || !btnIdentityPromptNo) return;
+    openZoomFromDeckCard(cardObj, cardTheme, { closeOnBackdrop:false, showCloseButton:false });
+    pendingIdentityPrompt = { onYes: typeof onYes === "function" ? onYes : null };
+    identityPromptMsg.textContent = safeText(message || "");
+
+    btnIdentityPromptYes.classList.toggle("pop-disabled", !canReveal);
+    btnIdentityPromptYes.classList.toggle("pop-dark", !!canReveal);
+    btnIdentityPromptNo.classList.remove("pop-disabled");
+    btnIdentityPromptNo.classList.add("pop-dark");
+    btnIdentityPromptYes.disabled = !canReveal;
+    btnIdentityPromptNo.disabled = false;
+
+    identityPromptPop.classList.remove("hidden");
   }
 
 
@@ -2313,6 +2358,22 @@
     }
   });
 
+
+  btnIdentityPromptNo?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    hideIdentityPrompt();
+    closeZoom();
+  });
+
+  btnIdentityPromptYes?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (btnIdentityPromptYes.disabled) return;
+    const handler = pendingIdentityPrompt?.onYes;
+    hideIdentityPrompt();
+    closeZoom();
+    if (handler) await handler();
+  });
+
   equipBody.addEventListener("click", (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
     if (!card) return;
@@ -2824,6 +2885,7 @@
 
     if (drawn && (type === "white" || type === "black")){
       await grantEquipmentToMe(drawn, type);
+      await applyImmediateDeckCardEffect(drawn);
     } else if (drawn && type === "green"){
       openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false, showCloseButton:false });
       openGreenShareDock(drawn);
@@ -3334,6 +3396,73 @@
     if (!uid || !state.roomCode || add <= 0) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) + add));
+  }
+
+  async function healDamageToPlayer(uid, amount){
+    const heal = Math.max(0, Number(amount) || 0);
+    if (!uid || !state.roomCode || heal <= 0) return;
+    const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
+    await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) - heal));
+  }
+
+  async function fullRecoverPlayer(uid){
+    if (!uid || !state.roomCode) return;
+    await set(ref(db, `rooms/${state.roomCode}/damage/${uid}`), 0);
+  }
+
+  async function addDamageToAllOtherPlayers(uid, amount){
+    const add = Math.max(0, Number(amount) || 0);
+    if (!state.roomCode || add <= 0) return;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const order = Array.isArray(cur.positionOrder) ? cur.positionOrder : [];
+      if (order.length === 0) return cur;
+      cur.damage = cur.damage || {};
+      for (const pid of order){
+        if (!pid || pid === uid) continue;
+        cur.damage[pid] = clampDamage(Number(cur.damage[pid] || 0) + add);
+      }
+      return cur;
+    });
+  }
+
+  async function applyImmediateDeckCardEffect(cardObj){
+    const name = safeText(cardObj?.name || "");
+    if (!name || !state.userId) return;
+    const role = myRoleInfo();
+    if (!role) return;
+    const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    if (name === "いやしの聖水"){
+      await waitMs(1500);
+      await healDamageToPlayer(state.userId, 2);
+      return;
+    }
+
+    if (name === "裁きの閃光"){
+      await waitMs(1500);
+      await addDamageToAllOtherPlayers(state.userId, 2);
+      return;
+    }
+
+    if (name === "戦慄の闇儀式" || name === "光臨"){
+      const targetFaction = (name === "戦慄の闇儀式") ? "シャドウ" : "レイダー";
+      const message = (name === "戦慄の闇儀式")
+        ? "シャドウとして正体を公開しますか、はい、いいえ"
+        : "レイダーとして正体を公開しますか、はい、いいえ";
+      const canReveal = role.faction === targetFaction;
+      showIdentityPromptPop({
+        message,
+        canReveal,
+        cardObj,
+        cardTheme: name === "戦慄の闇儀式" ? "black" : "white",
+        onYes: async () => {
+          await revealMyIdentityToEquipment();
+          await fullRecoverPlayer(state.userId);
+        }
+      });
+    }
   }
 
   async function runAttackDiceAnimation(targetUid, clickClientX, clickClientY, options = {}){
