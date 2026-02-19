@@ -1080,6 +1080,32 @@
   .zoom-stage .id72{
     box-shadow:0 18px 50px rgba(0,0,0,.45);
   }
+  .zoom-identity-owner{
+    position:absolute;
+    left:50%;
+    top:-25px;
+    transform:translateX(-50%);
+    display:flex;
+    align-items:center;
+    gap:4px;
+    background:rgba(255,255,255,.96);
+    border:1px solid rgba(0,0,0,.15);
+    border-radius:999px;
+    padding:1px 1px;
+    font-size:9px;
+    font-weight:800;
+    color:#111;
+    white-space:nowrap;
+    line-height:1;
+  }
+  .zoom-identity-owner .equip-tag{
+    width:8px;
+    height:8px;
+    min-width:8px;
+    min-height:8px;
+    font-size:8px;
+    border-width:1px;
+  }
   .zoom-close{
     position:fixed;
     right:14px;
@@ -1602,6 +1628,13 @@
   let greenZoomLocked = false;
   let pendingGreenRequestId = "";
   let activeGreenReplies = {};
+  let moveDiceEventSeenAt = 0;
+  let moveDiceEventInitialized = false;
+  let attackDiceEventSeenAt = 0;
+  let attackDiceEventInitialized = false;
+  let identityRevealInitialized = false;
+  let identityRevealSeenByUid = {};
+  let autoDamageRevealLock = {};
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -1859,6 +1892,32 @@
     const cardEl = createIdentityCard(role);
     openZoomContent(cardEl);
   }
+  function openIdentityRevealZoom(role, revealerUid){
+    if (!role) return;
+    const wrap = document.createElement("div");
+    wrap.style.position = "relative";
+    const cardEl = createIdentityCard(role);
+    wrap.appendChild(cardEl);
+
+    if (revealerUid && revealerUid !== state.userId){
+      const owner = playerById(revealerUid);
+      if (owner){
+        const chip = buildChipFor(revealerUid);
+        const label = document.createElement("div");
+        label.className = "zoom-identity-owner";
+        const name = document.createElement("span");
+        name.textContent = nameFromSecondChar(owner.name || "");
+        label.appendChild(chip);
+        label.appendChild(name);
+        wrap.appendChild(label);
+      }
+    }
+
+    openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
+    setTimeout(() => {
+      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
+    }, 2000);
+  }
   function openZoomFromDeckCard(cardObj, theme, options){
     if (!cardObj) return;
     const cardEl = document.createElement("div");
@@ -1932,7 +1991,27 @@
   function subscribeEquipment(){
     const eRef = ref(db, `rooms/${state.roomCode}/equipment`);
     onValue(eRef, snap => {
-      equipCache = snap.val() || {};
+      const next = snap.val() || {};
+      if (!identityRevealInitialized){
+        identityRevealInitialized = true;
+        const initSeen = {};
+        for (const [uid, row] of Object.entries(next)){
+          initSeen[uid] = Number(row?.identity?.revealedAt || 0);
+        }
+        identityRevealSeenByUid = initSeen;
+      } else {
+        for (const [uid, row] of Object.entries(next)){
+          const at = Number(row?.identity?.revealedAt || 0);
+          if (!at) continue;
+          const seen = Number(identityRevealSeenByUid[uid] || 0);
+          if (at <= seen) continue;
+          identityRevealSeenByUid[uid] = at;
+          const rid = safeText(row?.identity?.roleId || "");
+          const role = ROLE_BY_ID[rid];
+          if (role) openIdentityRevealZoom(role, uid);
+        }
+      }
+      equipCache = next;
       renderEquipmentDock();
     });
   }
@@ -2071,6 +2150,28 @@
     });
   }
 
+  async function revealIdentityByDamage(uid){
+    if (!state.roomCode || !uid) return;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const hand = cur.hands?.[uid];
+      if (!hand?.roleId) return cur;
+      cur.equipment = cur.equipment || {};
+      cur.equipment[uid] = cur.equipment[uid] || {};
+      const old = cur.equipment[uid].identity;
+      if (old && old.kind === "identity" && old.roleId) return cur;
+      cur.equipment[uid].identity = {
+        kind: "identity",
+        roleId: String(hand.roleId),
+        at: 0,
+        revealedAt: Date.now(),
+        revealedBy: "damage"
+      };
+      return cur;
+    });
+  }
+
   function isMyIdentityRevealed(){
     const v = equipCache?.[state.userId]?.identity;
     return !!(v && v.kind === "identity" && v.roleId);
@@ -2137,7 +2238,23 @@
       : null;
 
     hideAttackPop();
-    await runAttackDiceAnimation(uid, point?.x || window.innerWidth/2, point?.y || window.innerHeight/2);
+    const d6 = 1 + Math.floor(Math.random() * 6);
+    const d4 = 1 + Math.floor(Math.random() * 4);
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const endX = point?.x || width/2;
+    const endY = point?.y || height/2;
+    const motion = createDiceMotion(width, height, endX, endY);
+    await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
+      uid: state.userId,
+      targetUid: uid,
+      x: endX,
+      y: endY,
+      d6,
+      d4,
+      motion,
+      at: Date.now()
+    });
     if (state.roomCode && isMyTurn()){
       await update(ref(db, `rooms/${state.roomCode}/turn`), {
         attackDone: true,
@@ -2257,12 +2374,33 @@
 
     autoMoveTriggeredTurnKey = key;
     hideAttackPop();
-    setTimeout(() => runDiceRollAnimation(), 80);
+    setTimeout(() => triggerMoveDiceForAll(), 80);
+  }
+
+  async function triggerMoveDiceForAll(){
+    if (!state.roomCode || !canUseMoveDice()) return;
+    const d6 = 1 + Math.floor(Math.random() * 6);
+    const d4 = 1 + Math.floor(Math.random() * 4);
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const motion = createDiceMotion(width, height, width/2, height/2);
+    await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), {
+      uid: state.userId,
+      d6,
+      d4,
+      motion,
+      at: Date.now()
+    });
   }
 
   function secondCharOrRa(name){
     const chars = Array.from(safeText(name || "").trim());
     return chars[1] || "ラ";
+  }
+
+  function nameFromSecondChar(name){
+    const chars = Array.from(safeText(name || "").trim());
+    return chars.slice(1).join("") || "ラ";
   }
 
   function renderHpBoard(){
@@ -2386,9 +2524,66 @@
     onValue(dRef, snap => {
       damageCache = snap.val() || {};
       renderHpBoard();
+
+      for (const [uid, dmgRaw] of Object.entries(damageCache)){
+        const myHand = state.hands?.[uid];
+        const role = myHand?.roleId ? ROLE_BY_ID[myHand.roleId] : null;
+        const hp = Number(role?.hp || 0);
+        const dmg = clampDamage(dmgRaw);
+        if (!uid || !hp || dmg < hp){
+          autoDamageRevealLock[uid] = false;
+          continue;
+        }
+        if (autoDamageRevealLock[uid]) continue;
+        autoDamageRevealLock[uid] = true;
+        openIdentityRevealZoom(role, uid);
+        revealIdentityByDamage(uid);
+      }
     });
   }
 
+
+  function subscribeDiceEvents(){
+    const moveRef = ref(db, `rooms/${state.roomCode}/diceEvents/move`);
+    onValue(moveRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!moveDiceEventInitialized){
+        moveDiceEventInitialized = true;
+        moveDiceEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= moveDiceEventSeenAt) return;
+      moveDiceEventSeenAt = at;
+      runDiceRollAnimation({
+        force:true,
+        finalD6:Number(ev.d6 || 1),
+        finalD4:Number(ev.d4 || 1),
+        applyMove: safeText(ev.uid || "") === state.userId,
+        motion: ev.motion || null
+      });
+    });
+
+    const attackRef = ref(db, `rooms/${state.roomCode}/diceEvents/attack`);
+    onValue(attackRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!attackDiceEventInitialized){
+        attackDiceEventInitialized = true;
+        attackDiceEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= attackDiceEventSeenAt) return;
+      attackDiceEventSeenAt = at;
+      runAttackDiceAnimation(safeText(ev.targetUid || ""), Number(ev.x || 0), Number(ev.y || 0), {
+        force:true,
+        finalD6:Number(ev.d6 || 1),
+        finalD4:Number(ev.d4 || 1),
+        applyDamage: safeText(ev.uid || "") === state.userId,
+        motion: ev.motion || null
+      });
+    });
+  }
 
   function subscribeGreenReplyBubbles(){
     const bRef = ref(db, `rooms/${state.roomCode}/greenReplyBubbles`);
@@ -2790,6 +2985,16 @@
     return [a,b];
   }
 
+  function createDiceMotion(width, height, endX, endY){
+    const startBase = randomCornerStart(width, height);
+    const [offsetA, offsetB] = randomCenterOffsets();
+    const startDegA = Math.random() * 90;
+    const startDegB = Math.random() * 90;
+    const endDegA = startDegA + 720 + Math.random() * 360;
+    const endDegB = startDegB + 720 + Math.random() * 360;
+    return { startBase, offsetA, offsetB, startDegA, startDegB, endDegA, endDegB, endX, endY };
+  }
+
   function setFlyerTransform(el, x, y, deg){
     el.style.transform = `translate(${x}px, ${y}px) rotate(${deg}deg)`;
   }
@@ -2966,8 +3171,9 @@
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) + add));
   }
 
-  async function runAttackDiceAnimation(targetUid, clickClientX, clickClientY){
+  async function runAttackDiceAnimation(targetUid, clickClientX, clickClientY, options = {}){
     if (!diceRollOverlay || !targetUid) return;
+    const applyDamage = options.applyDamage !== false;
     clearDiceRollTimers();
     clearAttackResultDice();
 
@@ -2988,16 +3194,19 @@
 
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const startBase = randomCornerStart(width, height);
-    const startA = { x:startBase.x - 16, y:startBase.y - 6 };
-    const startB = { x:startBase.x + 16, y:startBase.y + 6 };
+    const fallbackEndX = Math.max(50, Math.min(width - 50, Number(clickClientX) || width / 2));
+    const fallbackEndY = Math.max(50, Math.min(height - 50, Number(clickClientY) || height / 2));
+    const motion = options.motion || createDiceMotion(width, height, fallbackEndX, fallbackEndY);
 
-    const endX = Math.max(50, Math.min(width - 50, Number(clickClientX) || width / 2));
-    const endY = Math.max(50, Math.min(height - 50, Number(clickClientY) || height / 2));
-    const [offsetA, offsetB] = randomCenterOffsets();
+    const startA = { x:Number(motion.startBase?.x || 0) - 16, y:Number(motion.startBase?.y || 0) - 6 };
+    const startB = { x:Number(motion.startBase?.x || 0) + 16, y:Number(motion.startBase?.y || 0) + 6 };
+    const endX = Number(motion.endX || fallbackEndX);
+    const endY = Number(motion.endY || fallbackEndY);
+    const offsetA = { x:Number(motion.offsetA?.x || 0), y:Number(motion.offsetA?.y || 0) };
+    const offsetB = { x:Number(motion.offsetB?.x || 0), y:Number(motion.offsetB?.y || 0) };
 
-    const startDegA = Math.random() * 90;
-    const startDegB = Math.random() * 90;
+    const startDegA = Number(motion.startDegA || 0);
+    const startDegB = Number(motion.startDegB || 0);
     setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
     setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
 
@@ -3024,15 +3233,15 @@
     const moveTimer = setTimeout(() => {
       d6Wrap.classList.add('rolling');
       d4Wrap.classList.add('rolling');
-      const endDegA = startDegA + 720 + Math.random() * 360;
-      const endDegB = startDegB + 720 + Math.random() * 360;
+      const endDegA = Number(motion.endDegA || (startDegA + 720));
+      const endDegB = Number(motion.endDegB || (startDegB + 720));
       setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
       setFlyerTransform(d4Wrap, endX + offsetB.x, endY + offsetB.y, endDegB);
     }, launchDelayMs);
     diceRollTimers.push(moveTimer);
 
-    const finalD6 = 1 + Math.floor(Math.random() * 6);
-    const finalD4 = 1 + Math.floor(Math.random() * 4);
+    const finalD6 = Number(options.finalD6 || (1 + Math.floor(Math.random() * 6)));
+    const finalD4 = Number(options.finalD4 || (1 + Math.floor(Math.random() * 4)));
     const diff = Math.abs(finalD6 - finalD4);
 
     const stopDelayMs = launchDelayMs + moveDurationMs + settleBufferMs;
@@ -3046,15 +3255,17 @@
       d4Wrap.classList.add('attack-result-pin');
 
       const damageTimer = setTimeout(async () => {
-        await addDamageToPlayer(targetUid, diff);
+        if (applyDamage) await addDamageToPlayer(targetUid, diff);
       }, damageDelayAfterStopMs);
       diceRollTimers.push(damageTimer);
     }, stopDelayMs);
     diceRollTimers.push(stopTimer);
   }
 
-  function runDiceRollAnimation(){
-    if (!canUseMoveDice()) return;
+  function runDiceRollAnimation(options = {}){
+    const force = !!options.force;
+    if (!force && !canUseMoveDice()) return;
+    const applyMove = options.applyMove !== false;
     if (!diceRollOverlay) return;
     clearDiceRollTimers();
     diceRollOverlay.innerHTML = '';
@@ -3077,13 +3288,14 @@
     const width = window.innerWidth;
     const height = window.innerHeight;
     const center = { x: width / 2, y: height / 2 };
-    const [offsetA, offsetB] = randomCenterOffsets();
-    const startBase = randomCornerStart(width, height);
-    const startA = { x:startBase.x - 16, y:startBase.y - 6 };
-    const startB = { x:startBase.x + 16, y:startBase.y + 6 };
+    const motion = options.motion || createDiceMotion(width, height, center.x, center.y);
+    const startA = { x:Number(motion.startBase?.x || 0) - 16, y:Number(motion.startBase?.y || 0) - 6 };
+    const startB = { x:Number(motion.startBase?.x || 0) + 16, y:Number(motion.startBase?.y || 0) + 6 };
+    const offsetA = { x:Number(motion.offsetA?.x || 0), y:Number(motion.offsetA?.y || 0) };
+    const offsetB = { x:Number(motion.offsetB?.x || 0), y:Number(motion.offsetB?.y || 0) };
 
-    const startDegA = Math.random() * 90;
-    const startDegB = Math.random() * 90;
+    const startDegA = Number(motion.startDegA || 0);
+    const startDegB = Number(motion.startDegB || 0);
     setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
     setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
 
@@ -3105,15 +3317,17 @@
     const moveTimer = setTimeout(() => {
       d6Wrap.classList.add('rolling');
       d4Wrap.classList.add('rolling');
-      const endDegA = startDegA + 720 + Math.random() * 360;
-      const endDegB = startDegB + 720 + Math.random() * 360;
-      setFlyerTransform(d6Wrap, center.x + offsetA.x, center.y + offsetA.y, endDegA);
-      setFlyerTransform(d4Wrap, center.x + offsetB.x, center.y + offsetB.y, endDegB);
+      const endDegA = Number(motion.endDegA || (startDegA + 720));
+      const endDegB = Number(motion.endDegB || (startDegB + 720));
+      const endX = Number(motion.endX || center.x);
+      const endY = Number(motion.endY || center.y);
+      setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
+      setFlyerTransform(d4Wrap, endX + offsetB.x, endY + offsetB.y, endDegB);
     }, 30);
     diceRollTimers.push(moveTimer);
 
-    const finalD6 = 1 + Math.floor(Math.random() * 6);
-    const finalD4 = 1 + Math.floor(Math.random() * 4);
+    const finalD6 = Number(options.finalD6 || (1 + Math.floor(Math.random() * 6)));
+    const finalD4 = Number(options.finalD4 || (1 + Math.floor(Math.random() * 4)));
 
     const stopTimer = setTimeout(() => {
       d6Wrap.classList.remove('rolling');
@@ -3124,8 +3338,8 @@
     diceRollTimers.push(stopTimer);
 
     const placeMarkerTimer = setTimeout(async () => {
-      await placeMarkerByDice(finalD6 + finalD4);
-      if (state.roomCode && isMyTurn()){
+      if (applyMove) await placeMarkerByDice(finalD6 + finalD4);
+      if (applyMove && state.roomCode && isMyTurn()){
         await update(ref(db, `rooms/${state.roomCode}/turn`), {
           moveDone: true,
           moveAt: Date.now()
@@ -3174,7 +3388,7 @@
       if (!canUseMoveDice()) return;
       e.stopPropagation();
       hideAttackPop();
-      runDiceRollAnimation();
+      triggerMoveDiceForAll();
     });
   } else if (uid && pulse){
     g.style.cursor = 'pointer';
@@ -4173,6 +4387,7 @@
     subscribeMarkers();
     subscribeEquipment();
     subscribeDamage();
+    subscribeDiceEvents();
 
     renderSeatTiles();
     refreshStartBadge();
