@@ -1851,10 +1851,11 @@
     }
   }
 
-  function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onSelect=null, nameSuffixForUid=null } = {}){
+  function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onlyAlive=false, onSelect=null, nameSuffixForUid=null } = {}){
     if (!greenShareDock || !greenShareList) return;
     const players = latestPlayers
       .filter(p => includeSelf || p.id !== state.userId)
+      .filter(p => !onlyAlive || !isPlayerEliminated(p.id))
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
     if (players.length === 0) return;
 
@@ -3575,6 +3576,78 @@
     return finalFace;
   }
 
+
+
+  async function runCornerD6D4Roll(){
+    if (!diceRollOverlay) return { d6: 1 + Math.floor(Math.random() * 6), d4: 1 + Math.floor(Math.random() * 4) };
+    clearDiceRollTimers();
+    diceRollOverlay.innerHTML = '';
+
+    const d6Wrap = document.createElement('div');
+    d6Wrap.className = 'dice-flyer rolling';
+    const d6 = document.createElement('div');
+    d6.className = 'die';
+    d6Wrap.appendChild(d6);
+
+    const d4Wrap = document.createElement('div');
+    d4Wrap.className = 'dice-flyer rolling';
+    const d4 = document.createElement('div');
+    d4.className = 'd4';
+    d4Wrap.appendChild(d4);
+
+    diceRollOverlay.appendChild(d6Wrap);
+    diceRollOverlay.appendChild(d4Wrap);
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const corners = [
+      { x: 60, y: 60 },
+      { x: Math.max(60, width - 60), y: 60 },
+      { x: 60, y: Math.max(60, height - 60) },
+      { x: Math.max(60, width - 60), y: Math.max(60, height - 60) }
+    ];
+    const shuffled = corners.slice().sort(() => Math.random() - 0.5);
+    const startA = shuffled[0] || corners[0];
+    const startB = shuffled[1] || corners[1];
+    const end = { x: width / 2, y: height / 2 };
+
+    setFlyerTransform(d6Wrap, startA.x, startA.y, Math.floor(Math.random() * 360));
+    setFlyerTransform(d4Wrap, startB.x, startB.y, Math.floor(Math.random() * 360));
+
+    const animDuration = 900;
+    const rollStartAt = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - rollStartAt;
+      if (elapsed >= animDuration) return;
+      renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
+      renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
+      const id = setTimeout(tick, 70 + Math.floor(Math.random() * 80));
+      diceRollTimers.push(id);
+    };
+    tick();
+
+    const launch = setTimeout(() => {
+      setFlyerTransform(d6Wrap, end.x - 18, end.y - 6, 720 + Math.floor(Math.random() * 360));
+      setFlyerTransform(d4Wrap, end.x + 18, end.y + 6, 720 + Math.floor(Math.random() * 360));
+    }, 20);
+    diceRollTimers.push(launch);
+
+    const finalD6 = 1 + Math.floor(Math.random() * 6);
+    const finalD4 = 1 + Math.floor(Math.random() * 4);
+    await new Promise(resolve => {
+      const stop = setTimeout(() => {
+        d6Wrap.classList.remove('rolling');
+        d4Wrap.classList.remove('rolling');
+        renderD6Face(d6, finalD6);
+        renderD4Face(d4, finalD4);
+        resolve();
+      }, 980);
+      diceRollTimers.push(stop);
+    });
+
+    return { d6: finalD6, d4: finalD4 };
+  }
+
   async function addDamageToAllOtherPlayers(uid, amount){
     const add = Math.max(0, Number(amount) || 0);
     if (!state.roomCode || add <= 0) return;
@@ -3587,6 +3660,52 @@
       for (const pid of order){
         if (!pid || pid === uid) continue;
         cur.damage[pid] = clampDamage(Number(cur.damage[pid] || 0) + add);
+      }
+      return cur;
+    });
+  }
+
+  function alivePlayerIds(){
+    return latestPlayers
+      .map(p => safeText(p?.id || ""))
+      .filter(Boolean)
+      .filter(uid => !isPlayerEliminated(uid));
+  }
+
+  function maxDamageAlivePlayerIds(){
+    const alive = alivePlayerIds();
+    if (!alive.length) return [];
+    let maxDamage = -1;
+    for (const uid of alive){
+      const dmg = clampDamage(damageCache?.[uid]);
+      if (dmg > maxDamage) maxDamage = dmg;
+    }
+    if (maxDamage < 0) return [];
+    return alive.filter(uid => clampDamage(damageCache?.[uid]) === maxDamage);
+  }
+
+  function playerIdsInRoom(roomId){
+    const rid = Number(roomId);
+    if (!Number.isFinite(rid) || rid < 1 || rid > 7) return [];
+    const uids = [];
+    for (const [uid, marker] of Object.entries(markerCache || {})){
+      if (!uid || !marker) continue;
+      if (markerRoomId(marker) === rid) uids.push(uid);
+    }
+    return uids;
+  }
+
+  async function addDamageToPlayers(uids, amount){
+    const add = Math.max(0, Number(amount) || 0);
+    if (!state.roomCode || add <= 0) return;
+    const targets = [...new Set((uids || []).map(uid => safeText(uid)).filter(Boolean))];
+    if (!targets.length) return;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      cur.damage = cur.damage || {};
+      for (const uid of targets){
+        cur.damage[uid] = clampDamage(Number(cur.damage[uid] || 0) + add);
       }
       return cur;
     });
@@ -3713,6 +3832,7 @@
       openTargetSelectDock({
         title: "三つ目の黒犬：対象プレイヤーを選択してください。",
         includeSelf: false,
+        onlyAlive: true,
         nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
         onSelect: async (uid) => {
           await waitMs(1000);
@@ -3727,6 +3847,48 @@
           closeZoom();
         }
       });
+      return;
+    }
+
+    if (name === "人魚の涙"){
+      await waitMs(1500);
+      const topUids = maxDamageAlivePlayerIds();
+      for (const uid of topUids){
+        await healDamageToPlayer(uid, 3);
+      }
+      return;
+    }
+
+    if (name === "呪いの人形"){
+      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+      openTargetSelectDock({
+        title: "呪いの人形：対象プレイヤーを選択してください。",
+        includeSelf: false,
+        onlyAlive: true,
+        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
+        onSelect: async (uid) => {
+          const eye = await runCornerD6Roll();
+          await waitMs(1000);
+          if (eye <= 4){
+            if (!hasEquipmentByName(uid, "いにしえの聖杯")){
+              await addDamageToPlayer(uid, 3);
+            }
+          } else if (!hasEquipmentByName(state.userId, "いにしえの聖杯")){
+            await addDamageToPlayer(state.userId, 3);
+          }
+          closeZoom();
+        }
+      });
+      return;
+    }
+
+    if (name === "暴動"){
+      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+      const rolled = await runCornerD6D4Roll();
+      const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
+      await waitMs(1500);
+      await addDamageToPlayers(playerIdsInRoom(targetRoomId), 3);
+      closeZoom();
       return;
     }
   }
