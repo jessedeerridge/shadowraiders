@@ -936,7 +936,7 @@
 #roomActionPop.lower-mode{
   left:50% !important;
   top:auto !important;
-  bottom:90px;
+  bottom:108px;
   transform:translateX(-50%);
 }
 #roomActionPop.lower-mode .caret{ display:none; }
@@ -1134,6 +1134,9 @@
   .zoom-stage .card72,
   .zoom-stage .id72{
     box-shadow:0 18px 50px rgba(0,0,0,.45);
+  }
+  .zoom-stage .equip-steal-pulse{
+    animation:none;
   }
   .zoom-identity-owner{
     position:absolute;
@@ -2109,6 +2112,7 @@
   function openZoomFromCard(cardEl, options){
     const clone = cardEl.cloneNode(true);
     clone.classList.remove("locked","blocked");
+    clone.classList.remove("equip-steal-pulse");
     clone.style.pointerEvents = "auto";
     openZoomContent(clone, options);
   }
@@ -2725,8 +2729,7 @@
     const result = await runTransaction(roomRef, (cur) => {
       if (!cur) return cur;
       const targetRow = cur.equipment?.[targetUid];
-      const mine = cur.equipment?.[state.userId];
-      if (!targetRow || !mine) return cur;
+      if (!targetRow) return cur;
       const item = targetRow[sourceKey];
       if (!item || item.kind === "identity") return cur;
 
