@@ -1745,8 +1745,6 @@
   let pendingRoomAction = null;
   let pendingEquipAction = null;
   let effectResolutionLocks = {};
-  let eliminatedLineHideTimers = {};
-  let positionLineHiddenEliminated = {};
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -3039,32 +3037,14 @@
       item.className = "position-item";
 
       const eliminated = isPlayerEliminated(p.id);
-      if (eliminated){
-        if (!eliminatedLineHideTimers[p.id] && !positionLineHiddenEliminated[p.id]){
-          eliminatedLineHideTimers[p.id] = setTimeout(() => {
-            positionLineHiddenEliminated[p.id] = true;
-            delete eliminatedLineHideTimers[p.id];
-            renderPositionLine();
-          }, 3000);
-        }
-      } else {
-        if (eliminatedLineHideTimers[p.id]){
-          clearTimeout(eliminatedLineHideTimers[p.id]);
-          delete eliminatedLineHideTimers[p.id];
-        }
-        delete positionLineHiddenEliminated[p.id];
-      }
-
       const chipWrap = document.createElement("div");
       chipWrap.className = "position-chip-wrap";
-      if (!positionLineHiddenEliminated[p.id]){
-        const chip = buildChipFor(p.id);
-        if (started && p.id === turnPlayerId && !eliminated){
-          chip.classList.add("turn-pulse");
-        }
-        if (eliminated) chip.classList.add("eliminated-dim");
-        chipWrap.appendChild(chip);
+      const chip = buildChipFor(p.id);
+      if (started && p.id === turnPlayerId && !eliminated){
+        chip.classList.add("turn-pulse");
       }
+      if (eliminated) chip.classList.add("eliminated-dim");
+      chipWrap.appendChild(chip);
 
       const marker = document.createElement("div");
       marker.className = "starter-mark";
@@ -4281,6 +4261,7 @@
         onlyAlive: true,
         onSelect: async (uid) => {
           greenShareDock?.classList.add("hidden");
+          closeZoom();
           pendingEquipAction = { type:"oliver_target", ownerUid:uid };
           renderEquipmentDock();
         }
@@ -4683,12 +4664,13 @@
       const y = Number(m.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
       const eliminated = isPlayerEliminated(uid);
+      if (eliminated) continue;
       drawMarker({
         uid,
         x, y,
         color: String(m.color || "#ddd"),
         initial: String(m.initial || ""),
-        pulse: !eliminated && pulseTargets.has(uid),
+        pulse: pulseTargets.has(uid),
         eliminated
       });
     }
