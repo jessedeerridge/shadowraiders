@@ -281,7 +281,7 @@
     border:1px solid rgba(0,0,0,.10);
     border-radius:16px;
     box-shadow:0 18px 40px rgba(0,0,0,.18);
-    padding:10px;
+    padding:12px;
     height:100%;
     box-sizing:border-box;
     display:flex;
@@ -924,12 +924,12 @@
     bottom:160px;
     transform:translateX(-50%);
     z-index:10001;
-    width:min(380px, calc(100vw - 40px));
+    width:min(420px, calc(100vw - 28px));
     background:rgba(255,255,255,.96);
     border:1px solid rgba(0,0,0,.12);
     border-radius:12px;
     box-shadow:0 12px 28px rgba(0,0,0,.26);
-    padding:10px;
+    padding:12px;
   }
   .green-share-dock.hidden{ display:none; }
   .green-share-title{
@@ -1558,9 +1558,10 @@
           at: Date.now()
         });
         if (greenShareList){
-          greenShareList.querySelectorAll("button").forEach((b) => {
-            b.disabled = true;
-          });
+          const lockedBtn = btn.cloneNode(true);
+          lockedBtn.disabled = false;
+          greenShareList.innerHTML = "";
+          greenShareList.appendChild(lockedBtn);
         }
         if (greenShareNote){
           greenShareNote.textContent = "回答待ち...";
