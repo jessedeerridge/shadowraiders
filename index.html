@@ -1505,6 +1505,29 @@
     if(!name) return '';
     return Array.from(name.trim())[0] || '';
   }
+  function isTestPlayer(){
+    return safeText(state.userName || "").trim().toLowerCase() === "test";
+  }
+  function askDiceTotalForTest(label){
+    if (!isTestPlayer()) return null;
+    const raw = window.prompt(`${label}\n2〜10 の合計値を入力してください。`, "7");
+    if (raw == null) return null;
+    const total = Number(raw);
+    if (!Number.isInteger(total) || total < 2 || total > 10){
+      window.alert("2〜10 の整数を入力してください。");
+      return null;
+    }
+    return total;
+  }
+  function randomDiceByTotal(total){
+    const pairs = [];
+    for (let d6 = 1; d6 <= 6; d6++){
+      const d4 = total - d6;
+      if (d4 >= 1 && d4 <= 4) pairs.push({ d6, d4 });
+    }
+    if (pairs.length === 0) return null;
+    return pairs[Math.floor(Math.random() * pairs.length)];
+  }
   function isEquipCard(cardObj){
     const eff = safeText(cardObj?.effect || "").trim();
     if (!eff) return false;
@@ -1523,6 +1546,7 @@
   function canDrawSharedDeckNow(){
     if (!isMyTurn()) return false;
     const t = turnState() || {};
+    if (isTestPlayer()) return !!t.moveDone && !t.attackDone;
     return !!t.moveDone && !t.attackDone && !t.deckDrawDone;
   }
   function canClickType(type){
@@ -2244,8 +2268,16 @@
       : null;
 
     hideAttackPop();
-    const d6 = 1 + Math.floor(Math.random() * 6);
-    const d4 = 1 + Math.floor(Math.random() * 4);
+    let d6 = 1 + Math.floor(Math.random() * 6);
+    let d4 = 1 + Math.floor(Math.random() * 4);
+    if (isTestPlayer()){
+      const total = askDiceTotalForTest("攻撃ダイス");
+      if (total == null) return;
+      const picked = randomDiceByTotal(total);
+      if (!picked) return;
+      d6 = picked.d6;
+      d4 = picked.d4;
+    }
     const width = window.innerWidth;
     const height = window.innerHeight;
     const endX = point?.x || width/2;
@@ -2385,8 +2417,16 @@
 
   async function triggerMoveDiceForAll(){
     if (!state.roomCode || !canUseMoveDice()) return;
-    const d6 = 1 + Math.floor(Math.random() * 6);
-    const d4 = 1 + Math.floor(Math.random() * 4);
+    let d6 = 1 + Math.floor(Math.random() * 6);
+    let d4 = 1 + Math.floor(Math.random() * 4);
+    if (isTestPlayer()){
+      const total = askDiceTotalForTest("移動ダイス");
+      if (total == null) return;
+      const picked = randomDiceByTotal(total);
+      if (!picked) return;
+      d6 = picked.d6;
+      d4 = picked.d4;
+    }
     const width = window.innerWidth;
     const height = window.innerHeight;
     const motion = createDiceMotion(width, height, width/2, height/2);
@@ -2716,7 +2756,7 @@
       if (!cur.turn || safeText(cur.turn.currentPlayerId || "") !== state.userId) return cur;
 
       const turn = cur.turn;
-      if (!turn.moveDone || turn.attackDone || turn.deckDrawDone) return cur;
+      if (!turn.moveDone || turn.attackDone || (turn.deckDrawDone && !isTestPlayer())) return cur;
 
       const ds = cur.deckState;
       if (!ds || !ds[type] || !Array.isArray(ds[type].order)) return cur;
@@ -2735,7 +2775,7 @@
         ds.reveal.slot3 = { theme:"white", card: drawn, at: Date.now() };
       }
 
-      turn.deckDrawDone = true;
+      if (!isTestPlayer()) turn.deckDrawDone = true;
       turn.updatedAt = Date.now();
       ds.updatedAt = Date.now();
       return cur;
