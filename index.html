@@ -640,14 +640,20 @@
     gap:2px;
     position:relative;
   }
+  .position-chip-wrap{
+    position:relative;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+  }
   .position-bubble{
     position:absolute;
-    bottom:100%;
+    bottom:calc(100% + 4px);
     left:50%;
-    transform:translate(-50%, -4px);
+    transform:translateX(-50%);
     max-width:120px;
     padding:3px 8px;
-    border-radius:999px;
+    border-radius:10px;
     background:#111;
     color:#fff;
     font-size:10px;
@@ -1212,11 +1218,16 @@
     { text:"推理カード：あなたは シャドウ？だったら❿に移動せよ。既に➓にいる場合、1ダメージ受けよ。" },
     { text:"推理カード：あなたは シャドウ？だったら1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ。" },
     { text:"推理カード：あなたは シャドウ？だったら1ダメージ受けよ。" },
+    { text:"推理カード：あなたは シャドウ？だったら1ダメージ受けよ。" },
+    { text:"推理カード：あなたは レイダー か シャドウ？だったら装備を渡すか、1ダメージ受けよ。" },
     { text:"推理カード：あなたは レイダー か シャドウ？だったら装備を渡すか、1ダメージ受けよ。" },
     { text:"推理カード：あなたは レイダー？だったら1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ。" },
     { text:"推理カード：あなたは レイダー？だったら1ダメージ受けよ。" },
+    { text:"推理カード：あなたは レイダー？だったら1ダメージ受けよ。" },
     { text:"推理カード：あなたは レイダー？だったら❿に移動せよ。既に➓にいる場合、1ダメージ受けよ。" },
     { text:"推理カード：あなたは シチズン か シャドウ？だったら装備を渡すか、1ダメージ受けよ。" },
+    { text:"推理カード：あなたは シチズン か シャドウ？だったら装備を渡すか、1ダメージ受けよ。" },
+    { text:"推理カード：あなたは シチズン か レイダー？だったら装備を渡すか、1ダメージ受けよ。" },
     { text:"推理カード：あなたは シチズン か レイダー？だったら装備を渡すか、1ダメージ受けよ。" },
     { text:"推理カード：あなたは シチズン？だったら❿に移動せよ。既に➓にいる場合、1ダメージ受けよ。" },
     { text:"推理カード：あなたは シチズン？だったら1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ。" },
@@ -1485,6 +1496,8 @@
     const text = safeText(cardObj?.effect || cardObj?.text || "");
     const matched = greenCardConditionMatched(cardObj);
     const canJudge = matched !== null;
+    const damageMatch = text.match(/(\d+)ダメージ受けよ/);
+    const damageLabel = damageMatch ? `${damageMatch[1]}ダメージうける` : "はい";
 
     if (text.includes("装備を渡すか、1ダメージ受けよ")){
       const canEquip = hasAnyEquipment(state.userId);
@@ -1496,7 +1509,7 @@
     }
 
     return [
-      { id:"yes", label:"はい", enabled: canJudge ? !!matched : true },
+      { id:"yes", label:damageLabel, enabled: canJudge ? !!matched : true },
       { id:"no", label:"いいえ", enabled: canJudge ? !matched : true }
     ];
   }
@@ -2023,7 +2036,10 @@
       }
       const item = document.createElement("div");
       item.className = "position-item";
-      item.appendChild(buildChipFor(p.id));
+
+      const chipWrap = document.createElement("div");
+      chipWrap.className = "position-chip-wrap";
+      chipWrap.appendChild(buildChipFor(p.id));
 
       const marker = document.createElement("div");
       marker.className = "starter-mark";
@@ -2034,8 +2050,10 @@
         const bubble = document.createElement("div");
         bubble.className = "position-bubble";
         bubble.textContent = bubbleText;
-        item.appendChild(bubble);
+        chipWrap.appendChild(bubble);
       }
+
+      item.appendChild(chipWrap);
       item.appendChild(marker);
 
       positionLine.appendChild(item);
