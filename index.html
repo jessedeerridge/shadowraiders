@@ -2494,6 +2494,18 @@
 
     await sitToSeat(seatIndex);
 
+    const updates = {};
+    const markers = roomData.markers || {};
+    const prevMarker = previousPlayerId ? markers[previousPlayerId] : null;
+    if (prevMarker){
+      updates[`markers/${state.userId}`] = { ...prevMarker, updatedAt: Date.now(), inheritedFrom: previousPlayerId };
+      updates[`markers/${previousPlayerId}`] = null;
+    }
+
+    if (Object.keys(updates).length){
+      await update(roomRef, updates);
+    }
+
     if (roomData.hostId && previousPlayerId && roomData.hostId === previousPlayerId) {
       await update(roomRef, { hostId: state.userId });
     }
@@ -2531,6 +2543,13 @@
     if (prevHand){
       updates[`hands/${state.userId}`] = { ...prevHand, inheritedAt: Date.now(), inheritedFrom: previousPlayerId };
       updates[`hands/${previousPlayerId}`] = null;
+    }
+
+    const markers = roomData.markers || {};
+    const prevMarker = markers[previousPlayerId] || null;
+    if (prevMarker){
+      updates[`markers/${state.userId}`] = { ...prevMarker, updatedAt: Date.now(), inheritedFrom: previousPlayerId };
+      updates[`markers/${previousPlayerId}`] = null;
     }
 
     await update(roomRef, updates);
