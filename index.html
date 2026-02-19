@@ -1189,6 +1189,10 @@
   .marker-eliminated{
     opacity:.45;
   }
+  .chip16.eliminated-clickable{
+    opacity:.45;
+    cursor:pointer;
+  }
   .zoom-close{
     position:fixed;
     right:14px;
@@ -2887,6 +2891,16 @@
     return d;
   }
 
+  function bindEliminatedChipRoomUp(chipEl, uid){
+    if (!chipEl || !uid) return;
+    chipEl.classList.add("eliminated-clickable");
+    chipEl.title = `${chipEl.title ? chipEl.title + "\n" : ""}クリックで+1上の部屋へ移動`;
+    chipEl.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await moveEliminatedPlayerToUpperRoom(uid);
+    });
+  }
+
   function turnState(){
     return state.room?.turn || null;
   }
@@ -3214,8 +3228,11 @@
       const lvl = Number(cell.dataset.damage);
       const uids = byLvl.get(lvl) || [];
       for (const uid of uids){
-        if (isPlayerEliminated(uid)) continue;
-        cell.appendChild(buildChipFor(uid));
+        const chip = buildChipFor(uid);
+        if (isPlayerEliminated(uid)){
+          bindEliminatedChipRoomUp(chip, uid);
+        }
+        cell.appendChild(chip);
       }
     }
   }
@@ -3266,7 +3283,7 @@
       if (started && p.id === turnPlayerId && !eliminated){
         chip.classList.add("turn-pulse");
       }
-      if (eliminated) chip.classList.add("eliminated-dim");
+      if (eliminated) bindEliminatedChipRoomUp(chip, p.id);
       chipWrap.appendChild(chip);
 
       const marker = document.createElement("div");
@@ -4212,6 +4229,45 @@
       roomId
     };
     await update(ref(db, `rooms/${state.roomCode}`), updates);
+  }
+
+  function upperRoomId(roomId){
+    const rid = Number(roomId);
+    if (!Number.isFinite(rid) || rid < 1 || rid > 7) return null;
+    return Math.min(7, rid + 1);
+  }
+
+  async function placePlayerMarkerInRoom(uid, roomId){
+    if (!uid || !roomId || !state.roomCode) return false;
+    let target = null;
+    for (let i = 0; i < 120; i++){
+      const p = randomPointInRoom(roomId);
+      if (!p) break;
+      if (!hasMarkerCollision(p.x, p.y, uid, 22)){
+        target = p;
+        break;
+      }
+      if (!target) target = p;
+    }
+    if (!target) return false;
+
+    await update(ref(db, `rooms/${state.roomCode}/markers/${uid}`), {
+      x: target.x,
+      y: target.y,
+      roomId,
+      updatedAt: Date.now()
+    });
+    return true;
+  }
+
+  async function moveEliminatedPlayerToUpperRoom(uid){
+    if (!uid || !state.roomCode) return;
+    if (!isPlayerEliminated(uid)) return;
+    const marker = markerCache?.[uid] || null;
+    const nowRoomId = markerRoomId(marker);
+    const targetRoomId = upperRoomId(nowRoomId);
+    if (!targetRoomId) return;
+    await placePlayerMarkerInRoom(uid, targetRoomId);
   }
 
   async function placeMarkerByDice(total){
