@@ -629,9 +629,22 @@
     min-height:16px;
     display:flex;
     flex-wrap:wrap;
-    align-items:center;
+    align-items:flex-start;
     justify-content:center;
     gap:4px;
+  }
+  .position-item{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:2px;
+  }
+  .starter-mark{
+    min-height:10px;
+    font-size:10px;
+    font-weight:900;
+    line-height:1;
+    color:#111;
   }
   .position-line.hidden{ display:none; }
   .position-arrow{
@@ -640,6 +653,7 @@
     line-height:1;
     color:#111;
     user-select:none;
+    margin-top:2px;
   }
 
   :root{
@@ -887,6 +901,64 @@
   .zoom-stage .id72{
     box-shadow:0 18px 50px rgba(0,0,0,.45);
   }
+  .zoom-close{
+    position:fixed;
+    right:14px;
+    top:14px;
+    z-index:10000;
+    width:40px;
+    height:40px;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,.55);
+    background:rgba(17,17,17,.7);
+    color:#fff;
+    font-size:20px;
+    font-weight:900;
+    cursor:pointer;
+  }
+  .zoom-close.hidden{ display:none; }
+
+  .green-share-dock{
+    position:fixed;
+    left:50%;
+    bottom:160px;
+    transform:translateX(-50%);
+    z-index:10001;
+    width:min(380px, calc(100vw - 40px));
+    background:rgba(255,255,255,.96);
+    border:1px solid rgba(0,0,0,.12);
+    border-radius:12px;
+    box-shadow:0 12px 28px rgba(0,0,0,.26);
+    padding:10px;
+  }
+  .green-share-dock.hidden{ display:none; }
+  .green-share-title{
+    font-size:13px;
+    font-weight:900;
+    margin:0 0 8px;
+  }
+  .green-share-list{
+    display:grid;
+    grid-template-columns:repeat(3, minmax(0, 1fr));
+    gap:8px;
+  }
+  .green-share-btn{
+    border:1px solid rgba(0,0,0,.15);
+    border-radius:999px;
+    background:#fff;
+    width:100%;
+    padding:4px 8px;
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-size:12px;
+    font-weight:700;
+  }
+  .green-share-btn:disabled{
+    opacity:.45;
+    cursor:default;
+  }
 </style>
 </head>
 <body>
@@ -942,7 +1014,12 @@
 
 <!-- 拡大表示 -->
 <div id="zoomBackdrop" class="zoom-backdrop hidden" aria-label="拡大表示">
+  <button id="zoomCloseBtn" class="zoom-close hidden" aria-label="閉じる">×</button>
   <div id="zoomStage" class="zoom-stage" style="--zoom:2"></div>
+  <div id="greenShareDock" class="green-share-dock hidden" aria-label="緑カード共有">
+    <p class="green-share-title">誰に渡しますか。</p>
+    <div id="greenShareList" class="green-share-list"></div>
+  </div>
 </div>
 
 <!-- 公開確認ポップ -->
@@ -1272,6 +1349,13 @@
 
   const zoomBackdrop = document.getElementById("zoomBackdrop");
   const zoomStage = document.getElementById("zoomStage");
+  const zoomCloseBtn = document.getElementById("zoomCloseBtn");
+  const greenShareDock = document.getElementById("greenShareDock");
+  const greenShareList = document.getElementById("greenShareList");
+  let zoomCloseOnBackdrop = true;
+  let greenShareCard = null;
+  let greenInboxSeenAt = 0;
+  let greenInboxInitialized = false;
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -1301,28 +1385,94 @@
   }
   function hideRevealPop(){ revealPop.classList.add("hidden"); }
 
-  function openZoomFromCard(cardEl){
+
+  function openGreenShareDock(cardObj){
+    greenShareCard = cardObj || null;
+    if (!greenShareCard || !greenShareDock || !greenShareList){
+      greenShareDock?.classList.add("hidden");
+      return;
+    }
+
+    greenShareList.innerHTML = "";
+    const players = latestPlayers
+      .filter(p => p.id !== state.userId)
+      .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
+
+    for (const p of players){
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "green-share-btn";
+      btn.title = `${safeText(p.name)} に渡す`;
+
+      const chip = buildChipFor(p.id);
+      const name = document.createElement("span");
+      const rawName = safeText(p.name || "名無し");
+      const chars = Array.from(rawName);
+      name.textContent = chars.slice(1).join("") || rawName;
+      btn.appendChild(chip);
+      btn.appendChild(name);
+
+      btn.addEventListener("click", async () => {
+        if (!greenShareCard || !state.roomCode || !p?.id) return;
+        const shareRef = ref(db, `rooms/${state.roomCode}/greenInbox/${p.id}`);
+        await set(shareRef, {
+          from: state.userId,
+          card: greenShareCard,
+          at: Date.now()
+        });
+      });
+
+      greenShareList.appendChild(btn);
+    }
+    greenShareDock.classList.remove("hidden");
+  }
+
+  function hideGreenShareDock(){
+    greenShareCard = null;
+    if (greenShareList) greenShareList.innerHTML = "";
+    greenShareDock?.classList.add("hidden");
+  }
+
+  function openZoomContent(contentEl, { closeOnBackdrop=true } = {}){
     zoomStage.innerHTML = "";
+    zoomCloseOnBackdrop = !!closeOnBackdrop;
+    zoomCloseBtn.classList.remove("hidden");
+    zoomStage.appendChild(contentEl);
+    zoomBackdrop.classList.remove("hidden");
+  }
+  function openZoomFromCard(cardEl, options){
     const clone = cardEl.cloneNode(true);
     clone.classList.remove("locked","blocked");
     clone.style.pointerEvents = "auto";
-    zoomStage.appendChild(clone);
-    zoomBackdrop.classList.remove("hidden");
+    openZoomContent(clone, options);
   }
   function openZoomFromRole(role){
     if (!role) return;
-    zoomStage.innerHTML = "";
     const cardEl = createIdentityCard(role);
-    zoomStage.appendChild(cardEl);
-    zoomBackdrop.classList.remove("hidden");
+    openZoomContent(cardEl);
+  }
+  function openZoomFromDeckCard(cardObj, theme, options){
+    if (!cardObj) return;
+    const cardEl = document.createElement("div");
+    cardEl.className = `card72 wb-front ${theme === "black" ? "wb-black" : theme === "green" ? "wb-green" : "wb-white"}`;
+    cardEl.innerHTML = buildWbFrontHTML(cardObj, theme);
+    cardEl.dataset.cardType = theme || "";
+    openZoomContent(cardEl, options);
   }
   function closeZoom(){
     zoomBackdrop.classList.add("hidden");
     zoomStage.innerHTML = "";
+    zoomCloseBtn.classList.add("hidden");
+    zoomCloseOnBackdrop = true;
+    hideGreenShareDock();
     hideRevealPop();
   }
+  zoomCloseBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeZoom();
+  });
   zoomBackdrop.addEventListener("click", (e) => {
-    if (e.target === zoomBackdrop) closeZoom();
+    if (e.target === zoomBackdrop && zoomCloseOnBackdrop) closeZoom();
   });
 
   let slot1 = document.getElementById('slot1');
@@ -1634,9 +1784,23 @@
     if (!positionLine) return;
 
     const started = isGameStarted();
-    const players = latestPlayers
-      .slice()
-      .sort((a,b) => Number(a.seatIndex || 999) - Number(b.seatIndex || 999));
+    const order = Array.isArray(state.room?.positionOrder) ? state.room.positionOrder : [];
+    const startPlayerId = safeText(state.room?.startPlayerId || "");
+
+    let players = [];
+    if (started && order.length > 0){
+      players = order
+        .map(uid => latestPlayers.find(p => p.id === uid) || null)
+        .filter(Boolean);
+      const rest = latestPlayers
+        .filter(p => !order.includes(p.id))
+        .sort((a,b) => Number(a.seatIndex || 999) - Number(b.seatIndex || 999));
+      players.push(...rest);
+    } else {
+      players = latestPlayers
+        .slice()
+        .sort((a,b) => Number(a.seatIndex || 999) - Number(b.seatIndex || 999));
+    }
 
     positionLine.innerHTML = "";
     if (!started || players.length === 0){
@@ -1651,7 +1815,16 @@
         arrow.textContent = "▶";
         positionLine.appendChild(arrow);
       }
-      positionLine.appendChild(buildChipFor(p.id));
+      const item = document.createElement("div");
+      item.className = "position-item";
+      item.appendChild(buildChipFor(p.id));
+
+      const marker = document.createElement("div");
+      marker.className = "starter-mark";
+      marker.textContent = (started && p.id === startPlayerId) ? "△" : "";
+      item.appendChild(marker);
+
+      positionLine.appendChild(item);
     });
 
     positionLine.classList.remove("hidden");
@@ -1739,8 +1912,6 @@
         cur.reveal.slot5 = { theme:"black", card: drawn, at: Date.now() };
       } else if (type === "white"){
         cur.reveal.slot3 = { theme:"white", card: drawn, at: Date.now() };
-      } else if (type === "green"){
-        cur.reveal.slot3 = { theme:"green", card: drawn, at: Date.now() };
       }
       cur.updatedAt = Date.now();
       return cur;
@@ -1748,6 +1919,9 @@
 
     if (drawn && (type === "white" || type === "black")){
       await grantEquipmentToMe(drawn, type);
+    } else if (drawn && type === "green"){
+      openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false });
+      openGreenShareDock(drawn);
     }
   }
 
@@ -2359,6 +2533,27 @@
     });
   }
 
+
+  function subscribeGreenInbox(){
+    const inboxRef = ref(db, `rooms/${state.roomCode}/greenInbox/${state.userId}`);
+    onValue(inboxRef, snap => {
+      const msg = snap.val() || null;
+      const at = Number(msg?.at || 0);
+
+      if (!greenInboxInitialized){
+        greenInboxInitialized = true;
+        greenInboxSeenAt = at || 0;
+        return;
+      }
+
+      if (!msg || !msg.card || !at) return;
+      if (at <= greenInboxSeenAt) return;
+      greenInboxSeenAt = at;
+      openZoomFromDeckCard(msg.card, "green", { closeOnBackdrop:false });
+      hideGreenShareDock();
+    });
+  }
+
   function subscribePlayers(){
     const tablesRef = ref(db, `rooms/${state.roomCode}/tables`);
     onValue(tablesRef, snap => {
@@ -2716,11 +2911,16 @@
       hands[players[i].id] = { roleId: deck[i].id, dealtAt: Date.now() };
     }
 
+    const positionOrder = shuffle(players.map(p => p.id));
+    const startPlayerId = positionOrder[Math.floor(Math.random()*positionOrder.length)] || null;
+
     await update(roomRef, {
       hands,
       gameStarted: true,
       startedAt: Date.now(),
-      playerCountAtStart: n
+      playerCountAtStart: n,
+      positionOrder,
+      startPlayerId,
     });
 
     await initDamageAllToZero(players);
@@ -2763,6 +2963,9 @@
       remove(ref(db, `${base}/deckState`)),
       remove(ref(db, `${base}/equipment`)),
       remove(ref(db, `${base}/damage`)),
+      remove(ref(db, `${base}/positionOrder`)),
+      remove(ref(db, `${base}/startPlayerId`)),
+      remove(ref(db, `${base}/greenInbox`)),
     ]);
 
     deckCache = null;
@@ -2837,6 +3040,7 @@
     subscribeHostState();
     subscribePlayers();
     subscribeHands();
+    subscribeGreenInbox();
     subscribeMarkers();
     subscribeEquipment();
     subscribeDamage();
