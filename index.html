@@ -1850,7 +1850,8 @@
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
       onNo: (typeof options.onNo === "function") ? options.onNo : null,
-      closeZoomOnNo: !!options.closeZoomOnNo
+      closeZoomOnNo: !!options.closeZoomOnNo,
+      dismissOnOutside: options.dismissOnOutside !== false
     };
     roomActionMsg.textContent = safeText(message || "");
     if (btnRoomActionYes) btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
@@ -2519,7 +2520,9 @@
       hideAttackPop();
     }
     if (!roomActionPop.classList.contains("hidden") && !e.target.closest("#roomActionPop")){
-      hideRoomActionPop();
+      if (pendingRoomAction?.dismissOnOutside !== false){
+        hideRoomActionPop();
+      }
     }
   }, true);
 
@@ -2629,41 +2632,21 @@
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (ownerUid !== state.userId || !sourceKey) return;
-      const cardObj = pendingEquipAction?.cardObj || null;
-      pendingEquipAction = { type:"banana_confirm", selectedSourceKey:sourceKey, cardObj };
       const cardName = safeText(card.dataset.cardName || "この装備");
-      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
-      zoomDismissHandler = async () => {
-        restoreBananaZoomSelection();
-      };
-      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 70, `「${cardName}」を渡しますか。`, async () => {
-        const source = safeText(pendingEquipAction?.selectedSourceKey || "");
-        const bananaCardObj = pendingEquipAction?.cardObj || null;
-        zoomDismissHandler = null;
-        openZoomFromDeckCard(bananaCardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
-        setZoomPassthrough(true);
-        pendingEquipAction = { type:"banana_select_target", selectedSourceKey:source, cardObj: bananaCardObj };
-        openTargetSelectDock({
-          title: `「${cardName}」を渡すプレイヤーを選択してください。`,
-          includeSelf: false,
-          onlyAlive: true,
-          onSelect: async (uid) => {
-            const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
-            pendingEquipAction = null;
-            greenShareDock?.classList.add("hidden");
-            const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
-            if (ok){
-              closeZoom();
-              renderEquipmentDock();
-            }
+      pendingEquipAction.selectedSourceKey = sourceKey;
+      openTargetSelectDock({
+        title: `「${cardName}」を誰かに渡しますか。`,
+        includeSelf: false,
+        onlyAlive: true,
+        onSelect: async (uid) => {
+          const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
+          pendingEquipAction = null;
+          greenShareDock?.classList.add("hidden");
+          const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
+          if (ok){
+            closeZoom();
+            renderEquipmentDock();
           }
-        });
-      }, {
-        fixedLower:true,
-        closeZoomOnNo:false,
-        onNo: () => {
-          zoomDismissHandler = null;
-          restoreBananaZoomSelection();
         }
       });
       return;
@@ -2697,10 +2680,6 @@
           restoreOliverZoomSelection();
         }
       });
-      return;
-    }
-
-    if (pendingEquipAction?.type === "banana_confirm" || pendingEquipAction?.type === "banana_select_target"){
       return;
     }
 
@@ -2940,15 +2919,6 @@
     openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
     setZoomPassthrough(true);
     pendingEquipAction = { type:"oliver_target", cardObj };
-    renderEquipmentDock();
-  }
-
-  function restoreBananaZoomSelection(){
-    const cardObj = pendingEquipAction?.cardObj || null;
-    if (!cardObj) return;
-    openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
-    setZoomPassthrough(true);
-    pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
     renderEquipmentDock();
   }
 
@@ -4308,18 +4278,20 @@
       }
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       setZoomPassthrough(true);
-      pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
-      renderEquipmentDock();
       showRoomActionPopAt(
         window.innerWidth/2,
         window.innerHeight/2 + 70,
         "バナナの皮：装備を与えるか、1ダメージ受けますか。",
-        async () => {},
+        async () => {
+          pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
+          renderEquipmentDock();
+        },
         {
           fixedLower:true,
           yesLabel:"装備を与える",
           noLabel:"1ダメージ受ける",
           closeZoomOnNo:false,
+          dismissOnOutside:false,
           onNo: async () => {
             pendingEquipAction = null;
             renderEquipmentDock();
