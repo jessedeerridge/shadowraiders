@@ -792,12 +792,31 @@
   }
   .position-line.hidden{ display:none; }
   .turn-end-wrap{
-    width:100%;
+    position:fixed;
+    right:16px;
+    bottom:230px;
+    z-index:261;
     display:flex;
     justify-content:center;
-    margin-top:4px;
   }
   .turn-end-wrap.hidden{display:none;}
+
+  .endturn-confirm{
+    position:fixed;
+    left:50%;
+    bottom:16px;
+    transform:translateX(-50%);
+    background:#fff;
+    border:1px solid rgba(0,0,0,.18);
+    border-radius:12px;
+    box-shadow:0 18px 40px rgba(0,0,0,.25);
+    padding:10px;
+    z-index:10060;
+    min-width:240px;
+  }
+  .endturn-confirm.hidden{display:none;}
+  .endturn-confirm .msg{font-size:13px;line-height:1.45;margin:0 0 10px;}
+  .endturn-confirm .actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
   .position-arrow{
     font-size:12px;
     font-weight:900;
@@ -1233,6 +1252,14 @@
   <div class="actions">
     <button class="btn ghost" id="btnAttackNo">いいえ</button>
     <button class="btn primary" id="btnAttackYes">はい</button>
+  </div>
+</div>
+
+<div id="endTurnConfirm" class="endturn-confirm hidden" role="dialog" aria-label="手番終了確認">
+  <p class="msg">本当いいいですか。</p>
+  <div class="actions">
+    <button class="btn ghost" id="btnEndTurnNo">いいえ</button>
+    <button class="btn primary" id="btnEndTurnYes">はい</button>
   </div>
 </div>
 
@@ -2129,6 +2156,9 @@
   const positionLine = document.getElementById("positionLine");
   const turnEndWrap = document.getElementById("turnEndWrap");
   const btnEndTurn = document.getElementById("btnEndTurn");
+  const endTurnConfirm = document.getElementById("endTurnConfirm");
+  const btnEndTurnYes = document.getElementById("btnEndTurnYes");
+  const btnEndTurnNo = document.getElementById("btnEndTurnNo");
   let damageCache = {};
 
   function clampDamage(v){
@@ -2187,15 +2217,24 @@
     return !!turnState()?.moveDone && !turnState()?.attackDone;
   }
 
-  function canEndTurn(){
+  function canShowEndTurnButton(){
     if (!isMyTurn()) return false;
-    return !!turnState()?.moveDone && !!turnState()?.attackDone;
+    return !!turnState()?.moveDone;
+  }
+
+  function hideEndTurnConfirm(){
+    endTurnConfirm?.classList.add("hidden");
+  }
+
+  function showEndTurnConfirm(){
+    endTurnConfirm?.classList.remove("hidden");
   }
 
   function renderTurnEndButton(){
     if (!turnEndWrap) return;
-    const visible = isGameStarted() && canEndTurn();
+    const visible = isGameStarted() && canShowEndTurnButton();
     turnEndWrap.classList.toggle("hidden", !visible);
+    if (!visible) hideEndTurnConfirm();
   }
 
   function turnCycleKey(){
@@ -4051,11 +4090,32 @@
     updateEquipDockTop();
   });
 
-  btnEndTurn?.addEventListener('click', async () => {
-    if (!canEndTurn()) return;
+  async function doEndTurn(){
     await advanceTurnToNextPlayer();
     hideAttackPop();
+    hideEndTurnConfirm();
     renderTurnEndButton();
+  }
+
+  btnEndTurn?.addEventListener('click', async () => {
+    if (!canShowEndTurnButton()) return;
+    if (!turnState()?.attackDone){
+      showEndTurnConfirm();
+      return;
+    }
+    await doEndTurn();
+  });
+
+  btnEndTurnNo?.addEventListener('click', () => {
+    hideEndTurnConfirm();
+  });
+
+  btnEndTurnYes?.addEventListener('click', async () => {
+    if (!canShowEndTurnButton()){
+      hideEndTurnConfirm();
+      return;
+    }
+    await doEndTurn();
   });
 
   const urlParams = new URLSearchParams(window.location.search);
