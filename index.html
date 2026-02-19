@@ -4278,29 +4278,8 @@
       }
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       setZoomPassthrough(true);
-      showRoomActionPopAt(
-        window.innerWidth/2,
-        window.innerHeight/2 + 70,
-        "バナナの皮：装備を与えるか、1ダメージ受けますか。",
-        async () => {
-          pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
-          renderEquipmentDock();
-        },
-        {
-          fixedLower:true,
-          yesLabel:"装備を与える",
-          noLabel:"1ダメージ受ける",
-          closeZoomOnNo:false,
-          dismissOnOutside:false,
-          onNo: async () => {
-            pendingEquipAction = null;
-            renderEquipmentDock();
-            await waitMs(1000);
-            await addDamageToPlayer(state.userId, 1);
-            closeZoom();
-          }
-        }
-      );
+      pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
+      renderEquipmentDock();
       return;
     }
 
