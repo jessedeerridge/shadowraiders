@@ -2272,7 +2272,11 @@
     const selectedSum = chooseSumForTestPlayer("攻撃");
     if (isTestPlayer() && selectedSum == null) return;
     const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
-    const d6 = selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6));
+    const useD4Only = hasMyEquipmentByName("妖刀マサムネ");
+    const weaponBonusNames = ["サーベル", "拳銃R", "拳銃L", "クロスボウガン"];
+    const weaponBonus = weaponBonusNames
+      .reduce((sum, name) => sum + countMyEquipmentByName(name), 0);
+    const d6 = useD4Only ? 0 : (selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6)));
     const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -2286,6 +2290,8 @@
       y: endY,
       d6,
       d4,
+      useD4Only,
+      weaponBonus,
       motion,
       at: Date.now()
     });
@@ -2649,6 +2655,8 @@
         force:true,
         finalD6:Number(ev.d6 || 1),
         finalD4:Number(ev.d4 || 1),
+        useD4Only: !!ev.useD4Only,
+        weaponBonus: Number(ev.weaponBonus || 0),
         applyDamage: safeText(ev.uid || "") === state.userId,
         motion: ev.motion || null
       });
@@ -3014,6 +3022,12 @@
       .filter(Boolean);
   }
 
+  function countMyEquipmentByName(name){
+    const n = safeText(name);
+    if (!n) return 0;
+    return myEquipmentNames().filter(v => v === n).length;
+  }
+
   function hasMyEquipmentByName(name){
     const n = safeText(name);
     if (!n) return false;
@@ -3198,6 +3212,18 @@
     const myRoomId = markerRoomId(myMarker);
     if (!myRoomId) return new Set();
 
+    const scopeCount = countMyEquipmentByName("死神スコープ");
+    const backwardReach = 1 + Math.max(0, scopeCount);
+    const attackableRooms = new Set([myRoomId, 7]);
+    if (myRoomId !== 7){
+      let rid = myRoomId;
+      for (let i = 0; i < backwardReach; i++){
+        rid = previousRoomId(rid);
+        if (!rid) break;
+        attackableRooms.add(rid);
+      }
+    }
+
     const targets = new Set();
     for (const [uid, marker] of Object.entries(markerCache || {})){
       if (!marker || uid === state.userId) continue;
@@ -3209,8 +3235,7 @@
         continue;
       }
 
-      const prev = previousRoomId(myRoomId);
-      if (rid === myRoomId || rid === prev || rid === 7){
+      if (attackableRooms.has(rid)){
         targets.add(uid);
       }
     }
@@ -3322,14 +3347,19 @@
   async function runAttackDiceAnimation(targetUid, clickClientX, clickClientY, options = {}){
     if (!diceRollOverlay || !targetUid) return;
     const applyDamage = options.applyDamage !== false;
+    const useD4Only = !!options.useD4Only;
+    const weaponBonus = Math.max(0, Number(options.weaponBonus) || 0);
     clearDiceRollTimers();
     clearAttackResultDice();
 
-    const d6Wrap = document.createElement('div');
-    d6Wrap.className = 'dice-flyer';
-    const d6 = document.createElement('div');
-    d6.className = 'die';
-    d6Wrap.appendChild(d6);
+    const d6Wrap = useD4Only ? null : document.createElement('div');
+    const d6 = useD4Only ? null : document.createElement('div');
+    if (d6Wrap && d6){
+      d6Wrap.className = 'dice-flyer';
+      d6.className = 'die';
+      d6Wrap.appendChild(d6);
+      diceRollOverlay.appendChild(d6Wrap);
+    }
 
     const d4Wrap = document.createElement('div');
     d4Wrap.className = 'dice-flyer';
@@ -3337,7 +3367,6 @@
     d4.className = 'd4';
     d4Wrap.appendChild(d4);
 
-    diceRollOverlay.appendChild(d6Wrap);
     diceRollOverlay.appendChild(d4Wrap);
 
     const width = window.innerWidth;
@@ -3355,7 +3384,7 @@
 
     const startDegA = Number(motion.startDegA || 0);
     const startDegB = Number(motion.startDegB || 0);
-    setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
+    if (d6Wrap) setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
     setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
 
     const animDuration = 950;
@@ -3363,7 +3392,7 @@
     const rollFaceTick = () => {
       const elapsed = Date.now() - rollStartAt;
       if (elapsed >= animDuration) return;
-      renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
+      if (d6) renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
       renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
 
       const t = elapsed / animDuration;
@@ -3379,11 +3408,11 @@
     const damageDelayAfterStopMs = 2000;
 
     const moveTimer = setTimeout(() => {
-      d6Wrap.classList.add('rolling');
+      if (d6Wrap) d6Wrap.classList.add('rolling');
       d4Wrap.classList.add('rolling');
       const endDegA = Number(motion.endDegA || (startDegA + 720));
       const endDegB = Number(motion.endDegB || (startDegB + 720));
-      setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
+      if (d6Wrap) setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
       setFlyerTransform(d4Wrap, endX + offsetB.x, endY + offsetB.y, endDegB);
     }, launchDelayMs);
     diceRollTimers.push(moveTimer);
@@ -3391,19 +3420,23 @@
     const finalD6 = Number(options.finalD6 || (1 + Math.floor(Math.random() * 6)));
     const finalD4 = Number(options.finalD4 || (1 + Math.floor(Math.random() * 4)));
     const diff = Math.abs(finalD6 - finalD4);
+    const baseDamage = useD4Only
+      ? finalD4
+      : (finalD6 === finalD4 ? 0 : diff);
+    const totalDamage = baseDamage > 0 ? baseDamage + weaponBonus : 0;
 
     const stopDelayMs = launchDelayMs + moveDurationMs + settleBufferMs;
     const stopTimer = setTimeout(() => {
-      d6Wrap.classList.remove('rolling');
+      if (d6Wrap) d6Wrap.classList.remove('rolling');
       d4Wrap.classList.remove('rolling');
-      renderD6Face(d6, finalD6);
+      if (d6) renderD6Face(d6, finalD6);
       renderD4Face(d4, finalD4);
 
-      d6Wrap.classList.add('attack-result-pin');
+      if (d6Wrap) d6Wrap.classList.add('attack-result-pin');
       d4Wrap.classList.add('attack-result-pin');
 
       const damageTimer = setTimeout(async () => {
-        if (applyDamage) await addDamageToPlayer(targetUid, diff);
+        if (applyDamage) await addDamageToPlayer(targetUid, totalDamage);
       }, damageDelayAfterStopMs);
       diceRollTimers.push(damageTimer);
     }, stopDelayMs);
