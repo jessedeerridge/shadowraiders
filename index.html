@@ -878,6 +878,11 @@
     transform-origin:center;
     animation:roomChoicePulse 1.2s ease-in-out infinite;
   }
+  .room-choice-once{
+    transform-box:fill-box;
+    transform-origin:center;
+    animation:roomChoicePulse .7s ease-in-out 1;
+  }
   @keyframes roomChoicePulse{
     0%,100%{ transform:scale(1); }
     50%{ transform:scale(1.05); }
@@ -2426,6 +2431,9 @@
     const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
     const d6 = selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6));
     const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
+    const compass = hasMyEquipmentByName('神秘のコンパス');
+    const secondD6 = 1 + Math.floor(Math.random() * 6);
+    const secondD4 = 1 + Math.floor(Math.random() * 4);
     const width = window.innerWidth;
     const height = window.innerHeight;
     const motion = createDiceMotion(width, height, width/2, height/2);
@@ -2433,6 +2441,9 @@
       uid: state.userId,
       d6,
       d4,
+      compass,
+      secondD6,
+      secondD4,
       motion,
       at: Date.now()
     });
@@ -2605,6 +2616,9 @@
         force:true,
         finalD6:Number(ev.d6 || 1),
         finalD4:Number(ev.d4 || 1),
+        secondD6:Number(ev.secondD6 || 1),
+        secondD4:Number(ev.secondD4 || 1),
+        compass: !!ev.compass,
         applyMove: safeText(ev.uid || "") === state.userId,
         motion: ev.motion || null
       });
@@ -2977,10 +2991,63 @@
   const roomPolygons = {};
   const diceRollOverlay = document.getElementById('diceRollOverlay');
   let diceRollTimers = [];
+  let pendingMoveChoice = null;
 
   function clearDiceRollTimers(){
     for (const id of diceRollTimers) clearTimeout(id);
     diceRollTimers = [];
+  }
+
+  function myEquipmentNames(){
+    return Object.values(equipCache?.[state.userId] || {})
+      .map(v => safeText(v?.name))
+      .filter(Boolean);
+  }
+
+  function hasMyEquipmentByName(name){
+    const n = safeText(name);
+    if (!n) return false;
+    return myEquipmentNames().includes(n);
+  }
+
+  function clearPendingMoveChoiceUi(){
+    for (let roomId = 1; roomId <= 7; roomId++){
+      roomShapeEls[roomId]?.classList.remove('room-choice-once');
+      roomHitEls[roomId]?.classList.remove('room-choice-once');
+    }
+  }
+
+  function setPendingMoveChoice(roomIds){
+    clearPendingMoveChoiceUi();
+    const unique = [...new Set((roomIds || []).filter(v => Number.isFinite(v) && v >= 1 && v <= 7))];
+    pendingMoveChoice = unique.length ? { roomIds: unique, consumed: false } : null;
+    for (const rid of unique){
+      roomShapeEls[rid]?.classList.add('room-choice-once');
+      roomHitEls[rid]?.classList.add('room-choice-once');
+    }
+    updateRoomChoiceUi();
+  }
+
+  async function resolvePendingMoveChoice(roomId){
+    if (!pendingMoveChoice || pendingMoveChoice.consumed) return false;
+    if (!pendingMoveChoice.roomIds.includes(roomId)) return false;
+    pendingMoveChoice.consumed = true;
+    clearPendingMoveChoiceUi();
+    pendingMoveChoice = null;
+    await placeMarkerInRoom(roomId);
+    if (state.roomCode && isMyTurn()){
+      await update(ref(db, `rooms/${state.roomCode}/turn`), {
+        moveDone: true,
+        moveAt: Date.now()
+      });
+    }
+    const cleanupTimer = setTimeout(() => {
+      diceRollOverlay.innerHTML = '';
+      clearDiceRollTimers();
+    }, 1000);
+    updateRoomChoiceUi();
+    diceRollTimers.push(cleanupTimer);
+    return true;
   }
 
   function dicePipsD6(face){
@@ -3337,6 +3404,7 @@
     const force = !!options.force;
     if (!force && !canUseMoveDice()) return;
     const applyMove = options.applyMove !== false;
+    const compass = !!options.compass;
     if (!diceRollOverlay) return;
     clearDiceRollTimers();
     diceRollOverlay.innerHTML = '';
@@ -3359,71 +3427,98 @@
     const width = window.innerWidth;
     const height = window.innerHeight;
     const center = { x: width / 2, y: height / 2 };
-    const motion = options.motion || createDiceMotion(width, height, center.x, center.y);
-    const startA = { x:Number(motion.startBase?.x || 0) - 16, y:Number(motion.startBase?.y || 0) - 6 };
-    const startB = { x:Number(motion.startBase?.x || 0) + 16, y:Number(motion.startBase?.y || 0) + 6 };
-    const offsetA = { x:Number(motion.offsetA?.x || 0), y:Number(motion.offsetA?.y || 0) };
-    const offsetB = { x:Number(motion.offsetB?.x || 0), y:Number(motion.offsetB?.y || 0) };
-
-    const startDegA = Number(motion.startDegA || 0);
-    const startDegB = Number(motion.startDegB || 0);
-    setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
-    setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
-
     const animDuration = 950;
-    const rollStartAt = Date.now();
-    const rollFaceTick = () => {
-      const elapsed = Date.now() - rollStartAt;
-      if (elapsed >= animDuration) return;
-      renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
-      renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
 
-      const t = elapsed / animDuration;
-      const nextInterval = 55 + Math.floor(185 * t); // だんだん遅くなる
-      const id = setTimeout(rollFaceTick, nextInterval);
-      diceRollTimers.push(id);
+    const runSingleRoll = ({ motion, finalD6, finalD4, startAfterMs = 0, onStop = null }) => {
+      const m = motion || createDiceMotion(width, height, center.x, center.y);
+      const startA = { x:Number(m.startBase?.x || 0) - 16, y:Number(m.startBase?.y || 0) - 6 };
+      const startB = { x:Number(m.startBase?.x || 0) + 16, y:Number(m.startBase?.y || 0) + 6 };
+      const offsetA = { x:Number(m.offsetA?.x || 0), y:Number(m.offsetA?.y || 0) };
+      const offsetB = { x:Number(m.offsetB?.x || 0), y:Number(m.offsetB?.y || 0) };
+      const startDegA = Number(m.startDegA || 0);
+      const startDegB = Number(m.startDegB || 0);
+
+      const launchTimer = setTimeout(() => {
+        setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
+        setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
+
+        const rollStartAt = Date.now();
+        const rollFaceTick = () => {
+          const elapsed = Date.now() - rollStartAt;
+          if (elapsed >= animDuration) return;
+          renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
+          renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
+          const t = elapsed / animDuration;
+          const nextInterval = 55 + Math.floor(185 * t);
+          const id = setTimeout(rollFaceTick, nextInterval);
+          diceRollTimers.push(id);
+        };
+        rollFaceTick();
+
+        const moveTimer = setTimeout(() => {
+          d6Wrap.classList.add('rolling');
+          d4Wrap.classList.add('rolling');
+          const endDegA = Number(m.endDegA || (startDegA + 720));
+          const endDegB = Number(m.endDegB || (startDegB + 720));
+          const endX = Number(m.endX || center.x);
+          const endY = Number(m.endY || center.y);
+          setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
+          setFlyerTransform(d4Wrap, endX + offsetB.x, endY + offsetB.y, endDegB);
+        }, 30);
+        diceRollTimers.push(moveTimer);
+
+        const stopTimer = setTimeout(() => {
+          d6Wrap.classList.remove('rolling');
+          d4Wrap.classList.remove('rolling');
+          renderD6Face(d6, finalD6);
+          renderD4Face(d4, finalD4);
+          if (typeof onStop === 'function') onStop();
+        }, 980);
+        diceRollTimers.push(stopTimer);
+      }, startAfterMs);
+      diceRollTimers.push(launchTimer);
     };
-    rollFaceTick();
-
-    const moveTimer = setTimeout(() => {
-      d6Wrap.classList.add('rolling');
-      d4Wrap.classList.add('rolling');
-      const endDegA = Number(motion.endDegA || (startDegA + 720));
-      const endDegB = Number(motion.endDegB || (startDegB + 720));
-      const endX = Number(motion.endX || center.x);
-      const endY = Number(motion.endY || center.y);
-      setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
-      setFlyerTransform(d4Wrap, endX + offsetB.x, endY + offsetB.y, endDegB);
-    }, 30);
-    diceRollTimers.push(moveTimer);
 
     const finalD6 = Number(options.finalD6 || (1 + Math.floor(Math.random() * 6)));
     const finalD4 = Number(options.finalD4 || (1 + Math.floor(Math.random() * 4)));
+    const secondD6 = Number(options.secondD6 || (1 + Math.floor(Math.random() * 6)));
+    const secondD4 = Number(options.secondD4 || (1 + Math.floor(Math.random() * 4)));
 
-    const stopTimer = setTimeout(() => {
-      d6Wrap.classList.remove('rolling');
-      d4Wrap.classList.remove('rolling');
-      renderD6Face(d6, finalD6);
-      renderD4Face(d4, finalD4);
-    }, 980);
-    diceRollTimers.push(stopTimer);
+    if (!compass){
+      runSingleRoll({ motion: options.motion || null, finalD6, finalD4 });
 
-    const placeMarkerTimer = setTimeout(async () => {
-      if (applyMove) await placeMarkerByDice(finalD6 + finalD4);
-      if (applyMove && state.roomCode && isMyTurn()){
-        await update(ref(db, `rooms/${state.roomCode}/turn`), {
-          moveDone: true,
-          moveAt: Date.now()
-        });
+      const placeMarkerTimer = setTimeout(async () => {
+        if (applyMove) await placeMarkerByDice(finalD6 + finalD4);
+        if (applyMove && state.roomCode && isMyTurn()){
+          await update(ref(db, `rooms/${state.roomCode}/turn`), {
+            moveDone: true,
+            moveAt: Date.now()
+          });
+        }
+      }, 1900);
+      diceRollTimers.push(placeMarkerTimer);
+
+      const cleanupTimer = setTimeout(() => {
+        diceRollOverlay.innerHTML = '';
+        clearDiceRollTimers();
+      }, 3200);
+      diceRollTimers.push(cleanupTimer);
+      return;
+    }
+
+    runSingleRoll({ motion: options.motion || null, finalD6, finalD4 });
+    runSingleRoll({
+      motion: options.secondMotion || null,
+      finalD6: secondD6,
+      finalD4: secondD4,
+      startAfterMs: 2980,
+      onStop: () => {
+        if (!applyMove) return;
+        const roomA = diceTotalToRoomId(finalD6 + finalD4);
+        const roomB = diceTotalToRoomId(secondD6 + secondD4);
+        setPendingMoveChoice([roomA, roomB]);
       }
-    }, 	1900);
-    diceRollTimers.push(placeMarkerTimer);
-
-    const cleanupTimer = setTimeout(() => {
-      diceRollOverlay.innerHTML = '';
-      clearDiceRollTimers();
-    }, 3200);
-    diceRollTimers.push(cleanupTimer);
+    });
   }
 
   function getMyColor(){
@@ -3507,10 +3602,11 @@
   function updateRoomChoiceUi(){
     const choiceMode = canChooseOuterRoomDirectly();
     for (let roomId = 1; roomId <= 6; roomId++){
+      const pending = !!pendingMoveChoice && !pendingMoveChoice.consumed && pendingMoveChoice.roomIds.includes(roomId);
       roomShapeEls[roomId]?.classList.toggle('room-choice-pulse', choiceMode);
       roomHitEls[roomId]?.classList.toggle('room-choice-pulse', choiceMode);
       if (roomHitEls[roomId]){
-        roomHitEls[roomId].style.cursor = choiceMode ? 'pointer' : (isGameStarted() ? 'default' : 'pointer');
+        roomHitEls[roomId].style.cursor = (choiceMode || pending) ? 'pointer' : (isGameStarted() ? 'default' : 'pointer');
       }
     }
   }
@@ -3597,6 +3693,7 @@
 
       hit.addEventListener('click', async (ev) => {
         if (isGameStarted()){
+          if (await resolvePendingMoveChoice(roomId)) return;
           if (!canChooseOuterRoomDirectly()) return;
           await placeMarkerInRoom(roomId);
           if (state.roomCode && isMyTurn()){
