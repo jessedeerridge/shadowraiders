@@ -633,6 +633,19 @@
     justify-content:center;
     gap:4px;
   }
+  .position-item{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:2px;
+  }
+  .starter-mark{
+    min-height:10px;
+    font-size:10px;
+    font-weight:900;
+    line-height:1;
+    color:#111;
+  }
   .position-line.hidden{ display:none; }
   .position-arrow{
     font-size:12px;
@@ -887,6 +900,22 @@
   .zoom-stage .id72{
     box-shadow:0 18px 50px rgba(0,0,0,.45);
   }
+  .zoom-close{
+    position:fixed;
+    right:14px;
+    top:14px;
+    z-index:10000;
+    width:40px;
+    height:40px;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,.55);
+    background:rgba(17,17,17,.7);
+    color:#fff;
+    font-size:20px;
+    font-weight:900;
+    cursor:pointer;
+  }
+  .zoom-close.hidden{ display:none; }
 </style>
 </head>
 <body>
@@ -942,6 +971,7 @@
 
 <!-- 拡大表示 -->
 <div id="zoomBackdrop" class="zoom-backdrop hidden" aria-label="拡大表示">
+  <button id="zoomCloseBtn" class="zoom-close hidden" aria-label="閉じる">×</button>
   <div id="zoomStage" class="zoom-stage" style="--zoom:2"></div>
 </div>
 
@@ -1272,6 +1302,8 @@
 
   const zoomBackdrop = document.getElementById("zoomBackdrop");
   const zoomStage = document.getElementById("zoomStage");
+  const zoomCloseBtn = document.getElementById("zoomCloseBtn");
+  let zoomCloseOnBackdrop = true;
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -1301,28 +1333,45 @@
   }
   function hideRevealPop(){ revealPop.classList.add("hidden"); }
 
-  function openZoomFromCard(cardEl){
+  function openZoomContent(contentEl, { closeOnBackdrop=true } = {}){
     zoomStage.innerHTML = "";
+    zoomCloseOnBackdrop = !!closeOnBackdrop;
+    zoomCloseBtn.classList.remove("hidden");
+    zoomStage.appendChild(contentEl);
+    zoomBackdrop.classList.remove("hidden");
+  }
+  function openZoomFromCard(cardEl, options){
     const clone = cardEl.cloneNode(true);
     clone.classList.remove("locked","blocked");
     clone.style.pointerEvents = "auto";
-    zoomStage.appendChild(clone);
-    zoomBackdrop.classList.remove("hidden");
+    openZoomContent(clone, options);
   }
   function openZoomFromRole(role){
     if (!role) return;
-    zoomStage.innerHTML = "";
     const cardEl = createIdentityCard(role);
-    zoomStage.appendChild(cardEl);
-    zoomBackdrop.classList.remove("hidden");
+    openZoomContent(cardEl);
+  }
+  function openZoomFromDeckCard(cardObj, theme, options){
+    if (!cardObj) return;
+    const cardEl = document.createElement("div");
+    cardEl.className = `card72 wb-front ${theme === "black" ? "wb-black" : theme === "green" ? "wb-green" : "wb-white"}`;
+    cardEl.innerHTML = buildWbFrontHTML(cardObj, theme);
+    cardEl.dataset.cardType = theme || "";
+    openZoomContent(cardEl, options);
   }
   function closeZoom(){
     zoomBackdrop.classList.add("hidden");
     zoomStage.innerHTML = "";
+    zoomCloseBtn.classList.add("hidden");
+    zoomCloseOnBackdrop = true;
     hideRevealPop();
   }
+  zoomCloseBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeZoom();
+  });
   zoomBackdrop.addEventListener("click", (e) => {
-    if (e.target === zoomBackdrop) closeZoom();
+    if (e.target === zoomBackdrop && zoomCloseOnBackdrop) closeZoom();
   });
 
   let slot1 = document.getElementById('slot1');
@@ -1634,9 +1683,23 @@
     if (!positionLine) return;
 
     const started = isGameStarted();
-    const players = latestPlayers
-      .slice()
-      .sort((a,b) => Number(a.seatIndex || 999) - Number(b.seatIndex || 999));
+    const order = Array.isArray(state.room?.positionOrder) ? state.room.positionOrder : [];
+    const startPlayerId = safeText(state.room?.startPlayerId || "");
+
+    let players = [];
+    if (started && order.length > 0){
+      players = order
+        .map(uid => latestPlayers.find(p => p.id === uid) || null)
+        .filter(Boolean);
+      const rest = latestPlayers
+        .filter(p => !order.includes(p.id))
+        .sort((a,b) => Number(a.seatIndex || 999) - Number(b.seatIndex || 999));
+      players.push(...rest);
+    } else {
+      players = latestPlayers
+        .slice()
+        .sort((a,b) => Number(a.seatIndex || 999) - Number(b.seatIndex || 999));
+    }
 
     positionLine.innerHTML = "";
     if (!started || players.length === 0){
@@ -1651,7 +1714,16 @@
         arrow.textContent = "▶";
         positionLine.appendChild(arrow);
       }
-      positionLine.appendChild(buildChipFor(p.id));
+      const item = document.createElement("div");
+      item.className = "position-item";
+      item.appendChild(buildChipFor(p.id));
+
+      const marker = document.createElement("div");
+      marker.className = "starter-mark";
+      marker.textContent = (started && p.id === startPlayerId) ? "△" : "";
+      item.appendChild(marker);
+
+      positionLine.appendChild(item);
     });
 
     positionLine.classList.remove("hidden");
@@ -1739,8 +1811,6 @@
         cur.reveal.slot5 = { theme:"black", card: drawn, at: Date.now() };
       } else if (type === "white"){
         cur.reveal.slot3 = { theme:"white", card: drawn, at: Date.now() };
-      } else if (type === "green"){
-        cur.reveal.slot3 = { theme:"green", card: drawn, at: Date.now() };
       }
       cur.updatedAt = Date.now();
       return cur;
@@ -1748,6 +1818,8 @@
 
     if (drawn && (type === "white" || type === "black")){
       await grantEquipmentToMe(drawn, type);
+    } else if (drawn && type === "green"){
+      openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false });
     }
   }
 
@@ -2716,11 +2788,16 @@
       hands[players[i].id] = { roleId: deck[i].id, dealtAt: Date.now() };
     }
 
+    const positionOrder = shuffle(players.map(p => p.id));
+    const startPlayerId = positionOrder[Math.floor(Math.random()*positionOrder.length)] || null;
+
     await update(roomRef, {
       hands,
       gameStarted: true,
       startedAt: Date.now(),
-      playerCountAtStart: n
+      playerCountAtStart: n,
+      positionOrder,
+      startPlayerId,
     });
 
     await initDamageAllToZero(players);
@@ -2763,6 +2840,8 @@
       remove(ref(db, `${base}/deckState`)),
       remove(ref(db, `${base}/equipment`)),
       remove(ref(db, `${base}/damage`)),
+      remove(ref(db, `${base}/positionOrder`)),
+      remove(ref(db, `${base}/startPlayerId`)),
     ]);
 
     deckCache = null;
