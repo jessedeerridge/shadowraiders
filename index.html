@@ -4236,14 +4236,13 @@
     }
 
     if (name === "バナナの皮"){
-      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       const myItems = listEquipForUid(state.userId).filter(it => !isIdentityEquipItem(it));
       if (myItems.length === 0){
         await waitMs(1000);
         await addDamageToPlayer(state.userId, 1);
-        closeZoom();
         return;
       }
+      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       pendingEquipAction = { type:"banana_give", selectedSourceKey:"" };
       renderEquipmentDock();
       showRoomActionPopAt(
@@ -4269,21 +4268,19 @@
     }
 
     if (name === "オリバーの子分"){
+      const hasStealableEquip = latestPlayers
+        .filter(p => p.id !== state.userId && !isPlayerEliminated(p.id))
+        .some(p => hasAnyEquipment(p.id));
+      if (!hasStealableEquip){
+        return;
+      }
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       openTargetSelectDock({
         title: "オリバーの子分：プレイヤーを選択してください。",
         includeSelf: false,
         onlyAlive: true,
         onSelect: async (uid) => {
-          const anyOtherEquip = latestPlayers
-            .filter(p => p.id !== state.userId && !isPlayerEliminated(p.id))
-            .some(p => hasAnyEquipment(p.id));
           greenShareDock?.classList.add("hidden");
-          if (!anyOtherEquip){
-            pendingEquipAction = null;
-            closeZoom();
-            return;
-          }
           pendingEquipAction = { type:"oliver_target", ownerUid:uid };
           renderEquipmentDock();
         }
