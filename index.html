@@ -1756,6 +1756,7 @@
   let pendingEquipAction = null;
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
+  let zoomDismissHandler = null;
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -2144,6 +2145,7 @@
     zoomStage.innerHTML = "";
     zoomCloseOnBackdrop = !!closeOnBackdrop;
     zoomPassthroughMode = false;
+    zoomDismissHandler = null;
     zoomBackdrop.classList.remove("passthrough");
     greenZoomLocked = !showCloseButton;
     zoomCloseBtn.classList.toggle("hidden", !showCloseButton);
@@ -2208,6 +2210,7 @@
     zoomCloseBtn.classList.add("hidden");
     zoomCloseOnBackdrop = true;
     zoomPassthroughMode = false;
+    zoomDismissHandler = null;
     greenZoomLocked = false;
     hideGreenShareDock();
     hideRevealPop();
@@ -2216,11 +2219,19 @@
   zoomCloseBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     if (greenZoomLocked) return;
+    if (typeof zoomDismissHandler === "function"){
+      await zoomDismissHandler();
+      return;
+    }
     await clearPendingGreenBubble();
     closeZoom();
   });
   zoomBackdrop.addEventListener("click", async (e) => {
     if (e.target === zoomBackdrop && zoomCloseOnBackdrop){
+      if (typeof zoomDismissHandler === "function"){
+        await zoomDismissHandler();
+        return;
+      }
       await clearPendingGreenBubble();
       closeZoom();
     }
@@ -2643,10 +2654,16 @@
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
-      pendingEquipAction = { type:"oliver_confirm", ownerUid, sourceKey };
+      const cardObj = pendingEquipAction?.cardObj || null;
+      pendingEquipAction = { type:"oliver_confirm", ownerUid, sourceKey, cardObj };
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      zoomDismissHandler = async () => {
+        restoreOliverZoomSelection();
+      };
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 70, "これを奪いますか。", async () => {
         const action = pendingEquipAction;
         pendingEquipAction = null;
+        zoomDismissHandler = null;
         const ok = await stealEquipmentFromPlayer(action.ownerUid, action.sourceKey);
         if (ok){
           closeZoom();
@@ -2656,7 +2673,8 @@
         fixedLower:true,
         closeZoomOnNo:false,
         onNo: () => {
-          pendingEquipAction = { type:"oliver_target" };
+          zoomDismissHandler = null;
+          restoreOliverZoomSelection();
         }
       });
       return;
@@ -2890,6 +2908,15 @@
       return cur;
     });
     return !!result.committed;
+  }
+
+  function restoreOliverZoomSelection(){
+    const cardObj = pendingEquipAction?.cardObj || null;
+    if (!cardObj) return;
+    openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
+    pendingEquipAction = { type:"oliver_target", cardObj };
+    renderEquipmentDock();
   }
 
   function canShowEndTurnButton(){
@@ -4281,16 +4308,8 @@
       }
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       setZoomPassthrough(true);
-      openTargetSelectDock({
-        title: "オリバーの子分：プレイヤーを選択してください。",
-        includeSelf: false,
-        onlyAlive: true,
-        onSelect: async (uid) => {
-          greenShareDock?.classList.add("hidden");
-          pendingEquipAction = { type:"oliver_target", ownerUid:uid };
-          renderEquipmentDock();
-        }
-      });
+      pendingEquipAction = { type:"oliver_target", cardObj };
+      renderEquipmentDock();
       return;
     }
 
