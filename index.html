@@ -937,6 +937,12 @@
     font-weight:900;
     margin:0 0 8px;
   }
+  .green-share-note{
+    margin:8px 0 0;
+    font-size:12px;
+    color:#111;
+    line-height:1.4;
+  }
   .green-share-list{
     display:grid;
     grid-template-columns:repeat(3, minmax(0, 1fr));
@@ -958,6 +964,63 @@
   .green-share-btn:disabled{
     opacity:.45;
     cursor:default;
+  }
+  .green-action-dock{
+    position:fixed;
+    left:50%;
+    bottom:40px;
+    transform:translateX(-50%);
+    z-index:10002;
+    width:min(420px, calc(100vw - 28px));
+    background:rgba(255,255,255,.98);
+    border:1px solid rgba(0,0,0,.14);
+    border-radius:12px;
+    box-shadow:0 12px 28px rgba(0,0,0,.26);
+    padding:12px;
+  }
+  .green-action-dock.hidden{ display:none; }
+  .green-action-title{
+    margin:0 0 10px;
+    font-size:13px;
+    font-weight:900;
+    line-height:1.45;
+  }
+  .green-action-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .green-action-btn{
+    border:1px solid #111;
+    border-radius:999px;
+    background:#111;
+    color:#fff;
+    padding:7px 14px;
+    cursor:pointer;
+    font-size:12px;
+    font-weight:900;
+    line-height:1;
+  }
+  .green-action-btn.disabled{
+    background:#bdbdbd;
+    border-color:#bdbdbd;
+    color:#fff;
+    cursor:default;
+  }
+  .green-action-footer{
+    display:flex;
+    justify-content:flex-end;
+    margin-top:10px;
+  }
+  .green-close-btn{
+    border:1px solid #111;
+    border-radius:8px;
+    background:#111;
+    color:#fff;
+    padding:6px 12px;
+    font-size:12px;
+    font-weight:900;
+    cursor:pointer;
   }
 </style>
 </head>
@@ -1019,6 +1082,14 @@
   <div id="greenShareDock" class="green-share-dock hidden" aria-label="緑カード共有">
     <p class="green-share-title">誰に渡しますか。</p>
     <div id="greenShareList" class="green-share-list"></div>
+    <p id="greenShareNote" class="green-share-note hidden"></p>
+    <div id="greenShareCloseWrap" class="green-action-footer hidden">
+      <button id="greenShareCloseBtn" class="green-close-btn" type="button">閉じる</button>
+    </div>
+  </div>
+  <div id="greenAnswerDock" class="green-action-dock hidden" aria-label="緑カード回答">
+    <p id="greenAnswerTitle" class="green-action-title">回答を選んでください。</p>
+    <div id="greenAnswerList" class="green-action-row"></div>
   </div>
 </div>
 
@@ -1352,10 +1423,18 @@
   const zoomCloseBtn = document.getElementById("zoomCloseBtn");
   const greenShareDock = document.getElementById("greenShareDock");
   const greenShareList = document.getElementById("greenShareList");
+  const greenShareNote = document.getElementById("greenShareNote");
+  const greenShareCloseWrap = document.getElementById("greenShareCloseWrap");
+  const greenShareCloseBtn = document.getElementById("greenShareCloseBtn");
+  const greenAnswerDock = document.getElementById("greenAnswerDock");
+  const greenAnswerTitle = document.getElementById("greenAnswerTitle");
+  const greenAnswerList = document.getElementById("greenAnswerList");
   let zoomCloseOnBackdrop = true;
   let greenShareCard = null;
   let greenInboxSeenAt = 0;
   let greenInboxInitialized = false;
+  let pendingGreenRequestId = null;
+  let greenRepliesInitialized = false;
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -1386,6 +1465,56 @@
   function hideRevealPop(){ revealPop.classList.add("hidden"); }
 
 
+  function myRoleInfo(){
+    const h = state.hands?.[state.userId];
+    if (!h || !h.roleId) return null;
+    return ROLE_BY_ID[h.roleId] || null;
+  }
+
+  function parseGreenQuestion(cardObj, role){
+    const text = safeText(cardObj?.text || "");
+    const initial = String(role?.initial || "").trim();
+    const hp = Number(role?.hp || 0);
+    const faction = String(role?.faction || "").trim();
+
+    let truth = null;
+    if (/D\s*\/\s*F\s*\/\s*G\s*\/\s*V\s*\/\s*W/.test(text)) truth = ["D","F","G","V","W"].includes(initial) && hp >= 12;
+    else if (/A\s*\/\s*B\s*\/\s*C\s*\/\s*E\s*\/\s*U/.test(text)) truth = ["A","B","C","E","U"].includes(initial) && hp <= 11;
+    else if (/レイダー\s*か\s*シャドウ/.test(text)) truth = faction === "レイダー" || faction === "シャドウ";
+    else if (/シチズン\s*か\s*シャドウ/.test(text)) truth = faction === "シチズン" || faction === "シャドウ";
+    else if (/シチズン\s*か\s*レイダー/.test(text)) truth = faction === "シチズン" || faction === "レイダー";
+    else if (/シャドウ\s*？/.test(text)) truth = faction === "シャドウ";
+    else if (/レイダー\s*？/.test(text)) truth = faction === "レイダー";
+    else if (/シチズン\s*？/.test(text)) truth = faction === "シチズン";
+
+    const isThreeChoices = /装備を渡すか、?1ダメージ受けよ/.test(text);
+    if (isThreeChoices){
+      return {
+        options: [
+          { key:"damage", label:"ダメージを1うける", enabled: !!truth },
+          { key:"equip", label:"装備をわたす", enabled: !!truth },
+          { key:"no", label:"いいえ", enabled: !truth }
+        ]
+      };
+    }
+
+    if (truth == null){
+      return {
+        options: [
+          { key:"yes", label:"はい", enabled:true },
+          { key:"no", label:"いいえ", enabled:true }
+        ]
+      };
+    }
+
+    return {
+      options: [
+        { key:"yes", label:"はい", enabled:!!truth },
+        { key:"no", label:"いいえ", enabled:!truth }
+      ]
+    };
+  }
+
   function openGreenShareDock(cardObj){
     greenShareCard = cardObj || null;
     if (!greenShareCard || !greenShareDock || !greenShareList){
@@ -1397,6 +1526,10 @@
     const players = latestPlayers
       .filter(p => p.id !== state.userId)
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
+
+    greenShareNote?.classList.add("hidden");
+    if (greenShareNote) greenShareNote.textContent = "";
+    greenShareCloseWrap?.classList.add("hidden");
 
     for (const p of players){
       const btn = document.createElement("button");
@@ -1414,12 +1547,25 @@
 
       btn.addEventListener("click", async () => {
         if (!greenShareCard || !state.roomCode || !p?.id) return;
+        const requestId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+        pendingGreenRequestId = requestId;
         const shareRef = ref(db, `rooms/${state.roomCode}/greenInbox/${p.id}`);
         await set(shareRef, {
+          id: requestId,
           from: state.userId,
+          fromName: state.userName || "",
           card: greenShareCard,
           at: Date.now()
         });
+        if (greenShareList){
+          greenShareList.querySelectorAll("button").forEach((b) => {
+            b.disabled = true;
+          });
+        }
+        if (greenShareNote){
+          greenShareNote.textContent = "回答待ち...";
+          greenShareNote.classList.remove("hidden");
+        }
       });
 
       greenShareList.appendChild(btn);
@@ -1430,13 +1576,69 @@
   function hideGreenShareDock(){
     greenShareCard = null;
     if (greenShareList) greenShareList.innerHTML = "";
+    if (greenShareNote) {
+      greenShareNote.textContent = "";
+      greenShareNote.classList.add("hidden");
+    }
+    greenShareCloseWrap?.classList.add("hidden");
     greenShareDock?.classList.add("hidden");
   }
 
-  function openZoomContent(contentEl, { closeOnBackdrop=true } = {}){
+  function hideGreenAnswerDock(){
+    if (greenAnswerTitle) greenAnswerTitle.textContent = "回答を選んでください。";
+    if (greenAnswerList) greenAnswerList.innerHTML = "";
+    greenAnswerDock?.classList.add("hidden");
+  }
+
+  function showSenderReply(answerText){
+    if (!greenShareDock) return;
+    if (greenShareNote){
+      greenShareNote.textContent = `回答: ${safeText(answerText || "-")}`;
+      greenShareNote.classList.remove("hidden");
+    }
+    greenShareCloseWrap?.classList.remove("hidden");
+  }
+
+  async function submitGreenAnswer(msg, choice){
+    if (!state.roomCode || !msg?.id || !msg?.from || !choice?.enabled) return;
+    const replyRef = ref(db, `rooms/${state.roomCode}/greenReplies/${msg.from}/${msg.id}`);
+    await set(replyRef, {
+      answer: choice.key,
+      label: choice.label,
+      from: state.userId,
+      fromName: state.userName || "",
+      at: Date.now()
+    });
+    await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${state.userId}`));
+    hideGreenAnswerDock();
+  }
+
+  function openGreenAnswerDock(msg){
+    if (!msg?.card || !greenAnswerDock || !greenAnswerTitle || !greenAnswerList) return;
+    const role = myRoleInfo();
+    const q = parseGreenQuestion(msg.card, role);
+    greenAnswerTitle.textContent = "回答を選んでください。";
+    greenAnswerList.innerHTML = "";
+    for (const choice of q.options){
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `green-action-btn${choice.enabled ? "" : " disabled"}`;
+      btn.textContent = choice.label;
+      if (!choice.enabled) btn.disabled = true;
+      btn.addEventListener("click", async () => {
+        if (!choice.enabled) return;
+        await submitGreenAnswer(msg, choice);
+      });
+      greenAnswerList.appendChild(btn);
+    }
+    greenAnswerDock.classList.remove("hidden");
+  }
+
+  function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true } = {}){
     zoomStage.innerHTML = "";
     zoomCloseOnBackdrop = !!closeOnBackdrop;
-    zoomCloseBtn.classList.remove("hidden");
+    if (showCloseButton) zoomCloseBtn.classList.remove("hidden");
+    else zoomCloseBtn.classList.add("hidden");
     zoomStage.appendChild(contentEl);
     zoomBackdrop.classList.remove("hidden");
   }
@@ -1465,6 +1667,7 @@
     zoomCloseBtn.classList.add("hidden");
     zoomCloseOnBackdrop = true;
     hideGreenShareDock();
+    hideGreenAnswerDock();
     hideRevealPop();
   }
   zoomCloseBtn.addEventListener("click", (e) => {
@@ -1473,6 +1676,9 @@
   });
   zoomBackdrop.addEventListener("click", (e) => {
     if (e.target === zoomBackdrop && zoomCloseOnBackdrop) closeZoom();
+  });
+  greenShareCloseBtn?.addEventListener("click", () => {
+    closeZoom();
   });
 
   let slot1 = document.getElementById('slot1');
@@ -1920,7 +2126,7 @@
     if (drawn && (type === "white" || type === "black")){
       await grantEquipmentToMe(drawn, type);
     } else if (drawn && type === "green"){
-      openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false });
+      openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false, showCloseButton:false });
       openGreenShareDock(drawn);
     }
   }
@@ -2549,8 +2755,27 @@
       if (!msg || !msg.card || !at) return;
       if (at <= greenInboxSeenAt) return;
       greenInboxSeenAt = at;
-      openZoomFromDeckCard(msg.card, "green", { closeOnBackdrop:false });
+      openZoomFromDeckCard(msg.card, "green", { closeOnBackdrop:false, showCloseButton:false });
+      openGreenAnswerDock(msg);
       hideGreenShareDock();
+    });
+  }
+
+
+
+  function subscribeGreenReplies(){
+    const repliesRef = ref(db, `rooms/${state.roomCode}/greenReplies/${state.userId}`);
+    onValue(repliesRef, snap => {
+      const data = snap.val() || {};
+      if (!greenRepliesInitialized){
+        greenRepliesInitialized = true;
+        return;
+      }
+      if (!pendingGreenRequestId) return;
+      const r = data[pendingGreenRequestId];
+      if (!r || !r.label) return;
+      showSenderReply(r.label);
+      pendingGreenRequestId = null;
     });
   }
 
@@ -2966,6 +3191,7 @@
       remove(ref(db, `${base}/positionOrder`)),
       remove(ref(db, `${base}/startPlayerId`)),
       remove(ref(db, `${base}/greenInbox`)),
+      remove(ref(db, `${base}/greenReplies`)),
     ]);
 
     deckCache = null;
@@ -2998,6 +3224,9 @@
     state.roomCode = inputCode.value.trim() || generateRoomCode();
     state.spectating = false;
     state.currentRoomId = 0;
+    pendingGreenRequestId = null;
+    greenInboxInitialized = false;
+    greenRepliesInitialized = false;
 
     await set(ref(db, `rooms/${state.roomCode}/users/${state.userId}`), {
       name: state.userName,
@@ -3041,6 +3270,7 @@
     subscribePlayers();
     subscribeHands();
     subscribeGreenInbox();
+    subscribeGreenReplies();
     subscribeMarkers();
     subscribeEquipment();
     subscribeDamage();
