@@ -1610,15 +1610,20 @@
     greenShareDock?.classList.add("hidden");
   }
 
-  greenShareCloseBtn?.addEventListener("click", async () => {
-    if (state.roomCode && pendingGreenRequestId){
-      const bRef = ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${pendingGreenRequestId}`);
-      const snap = await get(bRef);
-      const val = snap.val();
-      if (val?.from === state.userId){
-        await remove(bRef);
-      }
+  async function clearPendingGreenBubble(){
+    if (!state.roomCode || !pendingGreenRequestId) return;
+    const bubbleId = pendingGreenRequestId;
+    const bRef = ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${bubbleId}`);
+    const snap = await get(bRef);
+    const val = snap.val();
+    if (val?.from === state.userId){
+      await remove(bRef);
     }
+    pendingGreenRequestId = "";
+  }
+
+  greenShareCloseBtn?.addEventListener("click", async () => {
+    await clearPendingGreenBubble();
     closeZoom();
   });
 
@@ -1658,13 +1663,17 @@
     hideGreenShareDock();
     hideRevealPop();
   }
-  zoomCloseBtn.addEventListener("click", (e) => {
+  zoomCloseBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     if (greenZoomLocked) return;
+    await clearPendingGreenBubble();
     closeZoom();
   });
-  zoomBackdrop.addEventListener("click", (e) => {
-    if (e.target === zoomBackdrop && zoomCloseOnBackdrop) closeZoom();
+  zoomBackdrop.addEventListener("click", async (e) => {
+    if (e.target === zoomBackdrop && zoomCloseOnBackdrop){
+      await clearPendingGreenBubble();
+      closeZoom();
+    }
   });
 
   let slot1 = document.getElementById('slot1');
@@ -2792,7 +2801,6 @@
       if (at <= greenReplySeenAt) return;
       if (!pendingGreenRequestId || safeText(msg.requestId || "") !== pendingGreenRequestId) return;
       greenReplySeenAt = at;
-      pendingGreenRequestId = "";
       setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
       greenShareActions?.classList.remove("hidden");
     });
