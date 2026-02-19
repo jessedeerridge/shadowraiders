@@ -2317,7 +2317,7 @@
 
     const started = isGameStarted();
     const order = Array.isArray(state.room?.positionOrder) ? state.room.positionOrder : [];
-    const startPlayerId = safeText(state.room?.startPlayerId || "");
+    const turnPlayerId = currentTurnPlayerId();
 
     let players = [];
     if (started && order.length > 0){
@@ -2354,17 +2354,14 @@
       const chipWrap = document.createElement("div");
       chipWrap.className = "position-chip-wrap";
       const chip = buildChipFor(p.id);
-      if (isMyTurn() && !turnState()?.moveDone && p.id === state.userId){
-        chip.classList.add("turn-pulse");
-      }
-      if (canUseAttackDice() && p.id !== state.userId && highlightedMarkerUids().has(p.id)){
+      if (started && p.id === turnPlayerId){
         chip.classList.add("turn-pulse");
       }
       chipWrap.appendChild(chip);
 
       const marker = document.createElement("div");
       marker.className = "starter-mark";
-      marker.textContent = (started && p.id === startPlayerId) ? "△" : "";
+      marker.textContent = (started && p.id === turnPlayerId) ? "△" : "";
 
       const bubbleText = safeText(activeGreenReplies?.[p.id] || "");
       if (bubbleText){
@@ -3583,6 +3580,7 @@
       renderHpBoard();
       renderPositionLine();
       renderTurnEndButton();
+      renderMarkers();
       maybeAutoRollMoveDiceOnTurnStart();
     });
   }
