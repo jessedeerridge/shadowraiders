@@ -1123,6 +1123,13 @@
     padding:18px;
   }
   .zoom-backdrop.hidden{ display:none; }
+  .zoom-backdrop.passthrough{
+    pointer-events:none;
+    background:transparent;
+  }
+  .zoom-backdrop.passthrough .zoom-stage{
+    pointer-events:none;
+  }
   .zoom-stage{
     position:relative;
     width:72px;
@@ -1166,6 +1173,9 @@
   }
   .eliminated-dim{
     opacity:.7;
+  }
+  .marker-eliminated{
+    opacity:.45;
   }
   .zoom-close{
     position:fixed;
@@ -1718,6 +1728,9 @@
   const greenShareSubtitle = document.getElementById("greenShareSubtitle");
   const greenShareActions = document.getElementById("greenShareActions");
   const greenShareCloseBtn = document.getElementById("greenShareCloseBtn");
+  if (greenShareDock && greenShareDock.parentElement === zoomBackdrop){
+    document.body.appendChild(greenShareDock);
+  }
   let zoomCloseOnBackdrop = true;
   let greenShareCard = null;
   let greenInboxSeenAt = 0;
@@ -1740,6 +1753,10 @@
   let room3ActionUsed = false;
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
+  let pendingEquipAction = null;
+  let effectResolutionLocks = {};
+  let zoomPassthroughMode = false;
+  let zoomDismissHandler = null;
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -1823,6 +1840,8 @@
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
     roomActionPop?.classList.remove("lower-mode");
+    if (btnRoomActionYes) btnRoomActionYes.textContent = "はい";
+    if (btnRoomActionNo) btnRoomActionNo.textContent = "いいえ";
   }
 
   function showRoomActionPopAt(clientX, clientY, message, onYes, options = {}){
@@ -1830,9 +1849,13 @@
     const fixedLower = !!options.fixedLower;
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
-      closeZoomOnNo: !!options.closeZoomOnNo
+      onNo: (typeof options.onNo === "function") ? options.onNo : null,
+      closeZoomOnNo: !!options.closeZoomOnNo,
+      dismissOnOutside: options.dismissOnOutside !== false
     };
     roomActionMsg.textContent = safeText(message || "");
+    if (btnRoomActionYes) btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
+    if (btnRoomActionNo) btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
     roomActionPop.classList.remove("hidden");
     roomActionPop.classList.toggle("lower-mode", fixedLower);
 
@@ -1903,6 +1926,21 @@
     return listEquipForUid(uid).some(v => !isIdentityEquipItem(v));
   }
 
+  function setEffectResolutionLock(lockKey, enabled){
+    const key = safeText(lockKey || "");
+    if (!key) return;
+    if (enabled){
+      effectResolutionLocks[key] = true;
+    } else {
+      delete effectResolutionLocks[key];
+    }
+  }
+
+  function isEffectResolutionLocked(lockKey){
+    const key = safeText(lockKey || "");
+    return !!(key && effectResolutionLocks[key]);
+  }
+
   function greenCardConditionMatched(cardObj){
     const text = safeText(cardObj?.effect || cardObj?.text || "");
     const role = myRoleInfo();
@@ -1959,6 +1997,7 @@
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
     if (players.length === 0) return;
 
+    let selected = false;
     setGreenDockMeta({ title, subtitle:"" });
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
@@ -1974,6 +2013,8 @@
       btn.appendChild(chip);
       btn.appendChild(name);
       btn.addEventListener("click", async () => {
+        if (selected) return;
+        selected = true;
         const handler = (typeof onSelect === "function") ? onSelect : null;
         if (handler) await handler(p.id);
       });
@@ -2104,10 +2145,18 @@
   function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true } = {}){
     zoomStage.innerHTML = "";
     zoomCloseOnBackdrop = !!closeOnBackdrop;
+    zoomPassthroughMode = false;
+    zoomDismissHandler = null;
+    zoomBackdrop.classList.remove("passthrough");
     greenZoomLocked = !showCloseButton;
     zoomCloseBtn.classList.toggle("hidden", !showCloseButton);
     zoomStage.appendChild(contentEl);
     zoomBackdrop.classList.remove("hidden");
+  }
+
+  function setZoomPassthrough(enabled){
+    zoomPassthroughMode = !!enabled;
+    zoomBackdrop?.classList.toggle("passthrough", zoomPassthroughMode);
   }
   function openZoomFromCard(cardEl, options){
     const clone = cardEl.cloneNode(true);
@@ -2157,9 +2206,12 @@
   }
   function closeZoom(){
     zoomBackdrop.classList.add("hidden");
+    zoomBackdrop.classList.remove("passthrough");
     zoomStage.innerHTML = "";
     zoomCloseBtn.classList.add("hidden");
     zoomCloseOnBackdrop = true;
+    zoomPassthroughMode = false;
+    zoomDismissHandler = null;
     greenZoomLocked = false;
     hideGreenShareDock();
     hideRevealPop();
@@ -2168,11 +2220,19 @@
   zoomCloseBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     if (greenZoomLocked) return;
+    if (typeof zoomDismissHandler === "function"){
+      await zoomDismissHandler();
+      return;
+    }
     await clearPendingGreenBubble();
     closeZoom();
   });
   zoomBackdrop.addEventListener("click", async (e) => {
     if (e.target === zoomBackdrop && zoomCloseOnBackdrop){
+      if (typeof zoomDismissHandler === "function"){
+        await zoomDismissHandler();
+        return;
+      }
       await clearPendingGreenBubble();
       closeZoom();
     }
@@ -2370,7 +2430,10 @@
         cardEl.dataset.cardName = safeText(it.name || "");
         cardEl.dataset.cardTheme = safeText(it.theme || "white");
         cardEl.dataset.cardEffect = safeText(it.effect || "");
-        if (canUseRoom4Steal() && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it)){
+        const isNormalStealPulse = canUseRoom4Steal() && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
+        const isOliverPulse = pendingEquipAction?.type === "oliver_target" && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
+        const isBananaPulse = pendingEquipAction?.type === "banana_give" && p.id === state.userId && !isIdentityEquipItem(it);
+        if (isNormalStealPulse || isOliverPulse || isBananaPulse){
           cardEl.classList.add("equip-steal-pulse");
         }
         cards.appendChild(cardEl);
@@ -2457,7 +2520,9 @@
       hideAttackPop();
     }
     if (!roomActionPop.classList.contains("hidden") && !e.target.closest("#roomActionPop")){
-      hideRoomActionPop();
+      if (pendingRoomAction?.dismissOnOutside !== false){
+        hideRoomActionPop();
+      }
     }
   }, true);
 
@@ -2475,10 +2540,12 @@
     e.stopPropagation();
     hideAttackPop();
   });
-  btnRoomActionNo?.addEventListener("click", (e) => {
+  btnRoomActionNo?.addEventListener("click", async (e) => {
     e.stopPropagation();
     const closeZoomOnNo = !!pendingRoomAction?.closeZoomOnNo;
+    const onNo = pendingRoomAction?.onNo;
     hideRoomActionPop();
+    if (typeof onNo === "function") await onNo();
     if (closeZoomOnNo) closeZoom();
   });
   btnRoomActionYes?.addEventListener("click", async (e) => {
@@ -2560,6 +2627,61 @@
   equipBody.addEventListener("click", (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
     if (!card) return;
+
+    if (pendingEquipAction?.type === "banana_give"){
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      if (ownerUid !== state.userId || !sourceKey) return;
+      const cardName = safeText(card.dataset.cardName || "この装備");
+      pendingEquipAction.selectedSourceKey = sourceKey;
+      openTargetSelectDock({
+        title: `「${cardName}」を誰かに渡しますか。`,
+        includeSelf: false,
+        onlyAlive: true,
+        onSelect: async (uid) => {
+          const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
+          pendingEquipAction = null;
+          greenShareDock?.classList.add("hidden");
+          const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
+          if (ok){
+            closeZoom();
+            renderEquipmentDock();
+          }
+        }
+      });
+      return;
+    }
+
+    if (pendingEquipAction?.type === "oliver_target"){
+      if (!card.classList.contains("equip-steal-pulse")) return;
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
+      const cardObj = pendingEquipAction?.cardObj || null;
+      pendingEquipAction = { type:"oliver_confirm", ownerUid, sourceKey, cardObj };
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      zoomDismissHandler = async () => {
+        restoreOliverZoomSelection();
+      };
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 70, "これを奪いますか。", async () => {
+        const action = pendingEquipAction;
+        pendingEquipAction = null;
+        zoomDismissHandler = null;
+        const ok = await stealEquipmentFromPlayer(action.ownerUid, action.sourceKey);
+        if (ok){
+          closeZoom();
+          renderEquipmentDock();
+        }
+      }, {
+        fixedLower:true,
+        closeZoomOnNo:false,
+        onNo: () => {
+          zoomDismissHandler = null;
+          restoreOliverZoomSelection();
+        }
+      });
+      return;
+    }
 
     if (canUseRoom4Steal() && card.classList.contains("equip-steal-pulse")){
       const ownerUid = safeText(card.dataset.ownerUid || "");
@@ -2756,6 +2878,50 @@
     return !!result.committed;
   }
 
+
+  async function moveEquipmentCardBetweenPlayers(fromUid, toUid, sourceKey){
+    if (!state.roomCode || !fromUid || !toUid || !sourceKey) return false;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    const result = await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const fromRow = cur.equipment?.[fromUid];
+      if (!fromRow) return cur;
+      const item = fromRow[sourceKey];
+      if (!item || item.kind === "identity") return cur;
+
+      const oldCount = Math.max(1, Math.floor(Number(item.count ?? item.qty ?? item.quantity ?? 1) || 1));
+      if (oldCount > 1){
+        const next = { ...item, count: oldCount - 1 };
+        delete next.qty;
+        delete next.quantity;
+        fromRow[sourceKey] = next;
+      } else {
+        delete fromRow[sourceKey];
+      }
+
+      cur.equipment = cur.equipment || {};
+      cur.equipment[toUid] = cur.equipment[toUid] || {};
+      const addKey = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      cur.equipment[toUid][addKey] = {
+        theme: safeText(item.theme || "white"),
+        name: safeText(item.name || ""),
+        effect: safeText(item.effect || ""),
+        at: Date.now()
+      };
+      return cur;
+    });
+    return !!result.committed;
+  }
+
+  function restoreOliverZoomSelection(){
+    const cardObj = pendingEquipAction?.cardObj || null;
+    if (!cardObj) return;
+    openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
+    pendingEquipAction = { type:"oliver_target", cardObj };
+    renderEquipmentDock();
+  }
+
   function canShowEndTurnButton(){
     if (!isMyTurn()) return false;
     return !!turnState()?.moveDone;
@@ -2879,6 +3045,7 @@
       const lvl = Number(cell.dataset.damage);
       const uids = byLvl.get(lvl) || [];
       for (const uid of uids){
+        if (isPlayerEliminated(uid)) continue;
         cell.appendChild(buildChipFor(uid));
       }
     }
@@ -2923,12 +3090,14 @@
       const item = document.createElement("div");
       item.className = "position-item";
 
+      const eliminated = isPlayerEliminated(p.id);
       const chipWrap = document.createElement("div");
       chipWrap.className = "position-chip-wrap";
       const chip = buildChipFor(p.id);
-      if (started && p.id === turnPlayerId){
+      if (started && p.id === turnPlayerId && !eliminated){
         chip.classList.add("turn-pulse");
       }
+      if (eliminated) chip.classList.add("eliminated-dim");
       chipWrap.appendChild(chip);
 
       const marker = document.createElement("div");
@@ -2958,11 +3127,20 @@
     renderTurnEndButton();
   }
 
+
+  async function ensureCurrentTurnPlayerAlive(){
+    const curId = currentTurnPlayerId();
+    if (!curId) return;
+    if (!isPlayerEliminated(curId)) return;
+    await advanceTurnToNextPlayer();
+  }
+
   function subscribeDamage(){
     const dRef = ref(db, `rooms/${state.roomCode}/damage`);
     onValue(dRef, snap => {
       damageCache = snap.val() || {};
       renderHpBoard();
+      ensureCurrentTurnPlayerAlive();
 
       for (const [uid, dmgRaw] of Object.entries(damageCache)){
         const myHand = state.hands?.[uid];
@@ -3087,14 +3265,29 @@
       const order = Array.isArray(cur.positionOrder) ? cur.positionOrder : [];
       if (order.length === 0) return cur;
 
+      const isEliminatedInRoom = (uid) => {
+        if (!uid) return false;
+        const hand = cur.hands?.[uid];
+        const role = hand?.roleId ? ROLE_BY_ID[hand.roleId] : null;
+        const hp = Number(role?.hp || 0);
+        if (!hp) return false;
+        const dmg = clampDamage(cur.damage?.[uid]);
+        return dmg >= hp;
+      };
+      const aliveOrder = order.filter(uid => !isEliminatedInRoom(uid));
+      if (aliveOrder.length === 0) return cur;
+
       const curTurn = cur.turn || {};
-      const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || order[0] || "");
-      const repeat = !!curTurn.repeatTurnPending;
+      const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || aliveOrder[0] || "");
+      const repeat = !!curTurn.repeatTurnPending && !isEliminatedInRoom(curId);
       let nextPlayerId = curId;
       if (!repeat){
-        let nextIdx = order.indexOf(curId);
+        let nextIdx = aliveOrder.indexOf(curId);
         if (nextIdx < 0) nextIdx = 0;
-        nextPlayerId = safeText(order[(nextIdx + 1) % order.length] || order[0] || "");
+        nextPlayerId = safeText(aliveOrder[(nextIdx + 1) % aliveOrder.length] || aliveOrder[0] || "");
+      }
+      if (!nextPlayerId || isEliminatedInRoom(nextPlayerId)){
+        nextPlayerId = safeText(aliveOrder[0] || "");
       }
       if (!nextPlayerId) return cur;
 
@@ -3938,8 +4131,12 @@
     if (!name || !state.userId) return;
     const role = myRoleInfo();
     if (!role) return;
+    const lockKey = `${name}:${state.userId}`;
+    if (isEffectResolutionLocked(lockKey)) return;
+    setEffectResolutionLock(lockKey, true);
     const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+    try {
     if (name === "いやしの聖水"){
       await waitMs(1500);
       await healDamageToPlayer(state.userId, 2);
@@ -4072,6 +4269,34 @@
       return;
     }
 
+    if (name === "バナナの皮"){
+      const myItems = listEquipForUid(state.userId).filter(it => !isIdentityEquipItem(it));
+      if (myItems.length === 0){
+        await waitMs(1000);
+        await addDamageToPlayer(state.userId, 1);
+        return;
+      }
+      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+      setZoomPassthrough(true);
+      pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
+      renderEquipmentDock();
+      return;
+    }
+
+    if (name === "オリバーの子分"){
+      const hasStealableEquip = latestPlayers
+        .filter(p => p.id !== state.userId && !isPlayerEliminated(p.id))
+        .some(p => hasAnyEquipment(p.id));
+      if (!hasStealableEquip){
+        return;
+      }
+      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+      setZoomPassthrough(true);
+      pendingEquipAction = { type:"oliver_target", cardObj };
+      renderEquipmentDock();
+      return;
+    }
+
     if (name === "人魚の涙"){
       await waitMs(1500);
       const topUids = maxDamageAlivePlayerIds();
@@ -4112,6 +4337,9 @@
       await addDamageToPlayers(playerIdsInRoom(targetRoomId), 3);
       closeZoom();
       return;
+    }
+    } finally {
+      setEffectResolutionLock(lockKey, false);
     }
   }
 
@@ -4349,15 +4577,16 @@
     if (!markerLayer) return;
     while(markerLayer.firstChild) markerLayer.removeChild(markerLayer.firstChild);
   }
- function drawMarker({x,y,color,initial,uid,pulse=false}){
+ function drawMarker({x,y,color,initial,uid,pulse=false,eliminated=false}){
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
   if (pulse) g.classList.add("mark-pulse-target");
+  if (eliminated) g.classList.add("marker-eliminated");
 
   const size = 16;
   const rx = 3;
 
-  if (uid && uid === state.userId){
+  if (!eliminated && uid && uid === state.userId){
     g.style.cursor = 'pointer';
     g.addEventListener('click', (e) => {
       if (canUseRoom3Action()){
@@ -4377,7 +4606,7 @@
       hideAttackPop();
       triggerMoveDiceForAll();
     });
-  } else if (uid && pulse){
+  } else if (!eliminated && uid && pulse){
     g.style.cursor = 'pointer';
     g.addEventListener('click', (e) => {
       if (canUseRoom3Action()){
@@ -4462,12 +4691,15 @@
       const x = Number(m.x);
       const y = Number(m.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const eliminated = isPlayerEliminated(uid);
+      if (eliminated) continue;
       drawMarker({
         uid,
         x, y,
         color: String(m.color || "#ddd"),
         initial: String(m.initial || ""),
-        pulse: pulseTargets.has(uid)
+        pulse: pulseTargets.has(uid),
+        eliminated
       });
     }
     updateRoomChoiceUi();
