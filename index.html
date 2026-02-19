@@ -931,6 +931,9 @@
     box-shadow:0 12px 28px rgba(0,0,0,.26);
     padding:10px;
   }
+  .green-share-dock.answer-mode{
+    bottom:86px;
+  }
   .green-share-dock.hidden{ display:none; }
   .green-share-title{
     font-size:13px;
@@ -1489,6 +1492,7 @@
       return;
     }
 
+    greenShareDock.classList.remove("answer-mode");
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"", showClose:false });
     greenShareList.innerHTML = "";
     const players = latestPlayers
@@ -1536,6 +1540,7 @@
   function openGreenAnswerDock(msg){
     if (!greenShareDock || !greenShareList || !msg?.card) return;
     greenShareCard = msg.card;
+    greenShareDock.classList.add("answer-mode");
     setGreenDockMeta({ title:"回答を選んでください", subtitle:safeText(msg.card.effect || ""), showClose:false });
     greenShareList.innerHTML = "";
     for (const opt of greenAnswerOptions(msg.card)){
@@ -1566,6 +1571,7 @@
     greenShareCard = null;
     pendingGreenRequestId = "";
     if (greenShareList) greenShareList.innerHTML = "";
+    greenShareDock?.classList.remove("answer-mode");
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"", showClose:false });
     greenShareDock?.classList.add("hidden");
   }
