@@ -1851,7 +1851,7 @@
     }
   }
 
-  function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onSelect=null, namePrefixForUid=null } = {}){
+  function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onSelect=null, nameSuffixForUid=null } = {}){
     if (!greenShareDock || !greenShareList) return;
     const players = latestPlayers
       .filter(p => includeSelf || p.id !== state.userId)
@@ -1868,8 +1868,8 @@
       btn.className = "green-share-btn";
       const chip = buildChipFor(p.id);
       const name = document.createElement("span");
-      const prefix = (typeof namePrefixForUid === "function") ? safeText(namePrefixForUid(p.id, p) || "") : "";
-      name.textContent = `${prefix}${secondCharOrRa(p.name)}`;
+      const suffix = (typeof nameSuffixForUid === "function") ? safeText(nameSuffixForUid(p.id, p) || "") : "";
+      name.textContent = `${secondCharOrRa(p.name)}${suffix}`;
       btn.appendChild(chip);
       btn.appendChild(name);
       btn.addEventListener("click", async () => {
@@ -3643,6 +3643,7 @@
         cardObj,
         cardTheme: "white",
         onYes: async () => {
+          await revealMyIdentityToEquipment();
           await fullRecoverPlayer(state.userId);
         }
       });
@@ -3683,7 +3684,7 @@
       openTargetSelectDock({
         title: "恩恵：回復させるプレイヤーを選択してください。",
         includeSelf: false,
-        namePrefixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
+        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
         onSelect: async (uid) => {
           const eye = await runCornerD6Roll();
           await waitMs(1000);
@@ -3699,7 +3700,7 @@
       openTargetSelectDock({
         title: "吸血コウモリ：対象プレイヤーを選択してください。",
         includeSelf: false,
-        namePrefixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
+        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
         onSelect: async (uid) => {
           await waitMs(1000);
           if (!hasEquipmentByName(uid, "いにしえの聖杯")){
@@ -3717,7 +3718,7 @@
       openTargetSelectDock({
         title: "三つ目の黒犬：対象プレイヤーを選択してください。",
         includeSelf: false,
-        namePrefixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
+        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
         onSelect: async (uid) => {
           await waitMs(1000);
           const targetHasChalice = hasEquipmentByName(uid, "いにしえの聖杯");
