@@ -1322,6 +1322,11 @@
   </div>
 </div>
 
+<div id="playerSelectPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="プレイヤー選択">
+  <p class="msg" id="playerSelectMsg">対象プレイヤーを選択してください。</p>
+  <div class="actions" id="playerSelectActions"></div>
+</div>
+
 <div id="seatPopBackdrop" class="seat-pop-backdrop hidden" aria-label="座席カラータイル">
   <div class="seat-board" id="seatBoard">
     <div class="seat-board-title">
@@ -1686,6 +1691,8 @@
   let identityRevealInitialized = false;
   let identityRevealSeenByUid = {};
   let autoDamageRevealLock = {};
+  let temporaryRoleTagByUid = {};
+  let playerSelectState = null;
 
   const revealPop = document.getElementById("revealPop");
   const btnRevealYes = document.getElementById("btnRevealYes");
@@ -1698,6 +1705,9 @@
   const identityPromptMsg = document.getElementById("identityPromptMsg");
   const btnIdentityPromptYes = document.getElementById("btnIdentityPromptYes");
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
+  const playerSelectPop = document.getElementById("playerSelectPop");
+  const playerSelectMsg = document.getElementById("playerSelectMsg");
+  const playerSelectActions = document.getElementById("playerSelectActions");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
 
@@ -1779,6 +1789,51 @@
   function myRoleInfo(){
     const my = state.hands?.[state.userId];
     return my && my.roleId ? (ROLE_BY_ID[my.roleId] || null) : null;
+  }
+
+  function showTemporaryRoleTag(uid, text, durationMs = 2000){
+    if (!uid || !text) return;
+    const until = Date.now() + Math.max(100, Number(durationMs) || 2000);
+    temporaryRoleTagByUid[uid] = { text: safeText(text), until };
+    renderPositionLine();
+    setTimeout(() => {
+      const cur = temporaryRoleTagByUid[uid];
+      if (!cur || Number(cur.until || 0) !== until) return;
+      delete temporaryRoleTagByUid[uid];
+      renderPositionLine();
+    }, Math.max(100, Number(durationMs) || 2000));
+  }
+
+  function hidePlayerSelectPop(){
+    playerSelectState = null;
+    playerSelectPop?.classList.add("hidden");
+    if (playerSelectActions) playerSelectActions.innerHTML = "";
+  }
+
+  function showPlayerSelectPop({ message, includeSelf = false, onSelect } = {}){
+    if (!playerSelectPop || !playerSelectActions || !playerSelectMsg) return;
+    const players = latestPlayers
+      .slice()
+      .sort((a,b) => Number(a.seatIndex || 999) - Number(b.seatIndex || 999))
+      .filter(p => includeSelf || p.id !== state.userId);
+    if (players.length === 0) return;
+
+    playerSelectState = { onSelect: (typeof onSelect === "function") ? onSelect : null };
+    playerSelectMsg.textContent = safeText(message || "対象プレイヤーを選択してください。");
+    playerSelectActions.innerHTML = "";
+    for (const p of players){
+      const btn = document.createElement("button");
+      btn.className = "btn pop-dark";
+      btn.type = "button";
+      btn.textContent = safeText(p.name || "プレイヤー");
+      btn.addEventListener("click", async () => {
+        const handler = playerSelectState?.onSelect;
+        hidePlayerSelectPop();
+        if (handler) await handler(p.id);
+      });
+      playerSelectActions.appendChild(btn);
+    }
+    playerSelectPop.classList.remove("hidden");
   }
 
   function hasAnyEquipment(uid){
@@ -2010,6 +2065,7 @@
     greenZoomLocked = false;
     hideGreenShareDock();
     hideRevealPop();
+    hidePlayerSelectPop();
   }
   zoomCloseBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -2490,10 +2546,17 @@
     endTurnConfirm?.classList.remove("hidden");
   }
 
+  function repeatTurnPending(){
+    return !!turnState()?.repeatTurnPending;
+  }
+
   function renderTurnEndButton(){
     if (!turnEndWrap) return;
     const visible = isGameStarted() && canShowEndTurnButton();
     turnEndWrap.classList.toggle("hidden", !visible);
+    if (btnEndTurn){
+      btnEndTurn.textContent = repeatTurnPending() ? "もう一度手番を行う" : "手番を終わる";
+    }
     if (!visible) hideEndTurnConfirm();
   }
 
@@ -2653,7 +2716,11 @@
       marker.className = "starter-mark";
       marker.textContent = (started && p.id === turnPlayerId) ? "△" : "";
 
-      const bubbleText = safeText(activeGreenReplies?.[p.id] || "");
+      const tempRole = temporaryRoleTagByUid?.[p.id];
+      if (tempRole && Number(tempRole.until || 0) <= Date.now()){
+        delete temporaryRoleTagByUid[p.id];
+      }
+      const bubbleText = safeText((temporaryRoleTagByUid?.[p.id]?.text) || (activeGreenReplies?.[p.id] || ""));
       if (bubbleText){
         const bubble = document.createElement("div");
         bubble.className = "position-bubble";
@@ -2780,6 +2847,7 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        repeatTurnPending: false,
         updatedAt: Date.now()
       };
       return cur;
@@ -2796,9 +2864,13 @@
 
       const curTurn = cur.turn || {};
       const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || order[0] || "");
-      let nextIdx = order.indexOf(curId);
-      if (nextIdx < 0) nextIdx = 0;
-      const nextPlayerId = safeText(order[(nextIdx + 1) % order.length] || order[0] || "");
+      const repeat = !!curTurn.repeatTurnPending;
+      let nextPlayerId = curId;
+      if (!repeat){
+        let nextIdx = order.indexOf(curId);
+        if (nextIdx < 0) nextIdx = 0;
+        nextPlayerId = safeText(order[(nextIdx + 1) % order.length] || order[0] || "");
+      }
       if (!nextPlayerId) return cur;
 
       cur.turn = {
@@ -2806,6 +2878,7 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        repeatTurnPending: false,
         updatedAt: Date.now()
       };
       return cur;
@@ -3419,6 +3492,71 @@
     await set(ref(db, `rooms/${state.roomCode}/damage/${uid}`), 0);
   }
 
+  async function setDamageToPlayer(uid, damage){
+    if (!uid || !state.roomCode) return;
+    await set(ref(db, `rooms/${state.roomCode}/damage/${uid}`), clampDamage(damage));
+  }
+
+  async function enableRepeatTurnOnce(){
+    if (!state.roomCode || !isMyTurn()) return;
+    await update(ref(db, `rooms/${state.roomCode}/turn`), {
+      repeatTurnPending: true,
+      updatedAt: Date.now()
+    });
+  }
+
+  async function runCornerD6Roll(){
+    if (!diceRollOverlay) return 1 + Math.floor(Math.random() * 6);
+    clearDiceRollTimers();
+    diceRollOverlay.innerHTML = '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'dice-flyer rolling';
+    const d6 = document.createElement('div');
+    d6.className = 'die';
+    wrap.appendChild(d6);
+    diceRollOverlay.appendChild(wrap);
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const corners = [
+      { x: 60, y: 60 },
+      { x: Math.max(60, width - 60), y: 60 },
+      { x: 60, y: Math.max(60, height - 60) },
+      { x: Math.max(60, width - 60), y: Math.max(60, height - 60) }
+    ];
+    const start = corners[Math.floor(Math.random() * corners.length)];
+    const end = { x: width / 2, y: height / 2 };
+    setFlyerTransform(wrap, start.x, start.y, Math.floor(Math.random() * 360));
+
+    const animDuration = 900;
+    const rollStartAt = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - rollStartAt;
+      if (elapsed >= animDuration) return;
+      renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
+      const id = setTimeout(tick, 70 + Math.floor(Math.random() * 80));
+      diceRollTimers.push(id);
+    };
+    tick();
+
+    const launch = setTimeout(() => {
+      setFlyerTransform(wrap, end.x, end.y, 720 + Math.floor(Math.random() * 360));
+    }, 20);
+    diceRollTimers.push(launch);
+
+    const finalFace = 1 + Math.floor(Math.random() * 6);
+    await new Promise(resolve => {
+      const stop = setTimeout(() => {
+        wrap.classList.remove('rolling');
+        renderD6Face(d6, finalFace);
+        resolve();
+      }, 980);
+      diceRollTimers.push(stop);
+    });
+    return finalFace;
+  }
+
   async function addDamageToAllOtherPlayers(uid, amount){
     const add = Math.max(0, Number(amount) || 0);
     if (!state.roomCode || add <= 0) return;
@@ -3471,6 +3609,51 @@
           await fullRecoverPlayer(state.userId);
         }
       });
+      return;
+    }
+
+    if (name === "闇を祓う鏡"){
+      const shouldReveal = role.faction === "シャドウ" && role.name !== "ウルリッヒ" && !isMyIdentityRevealed();
+      if (!shouldReveal) return;
+      await revealMyIdentityToEquipment();
+      showTemporaryRoleTag(state.userId, safeText(role.name || ""), 2000);
+      openIdentityRevealZoom(role, state.userId);
+      setTimeout(() => closeZoom(), 2000);
+      return;
+    }
+
+    if (name === "封印の知恵"){
+      await enableRepeatTurnOnce();
+      return;
+    }
+
+    if (name === "応急手当"){
+      openZoomFromDeckCard(cardObj, "white", { closeOnBackdrop:false, showCloseButton:false });
+      showPlayerSelectPop({
+        message: "応急手当：対象プレイヤーを選択してください。",
+        includeSelf: true,
+        onSelect: async (uid) => {
+          await waitMs(1000);
+          await setDamageToPlayer(uid, 7);
+          closeZoom();
+        }
+      });
+      return;
+    }
+
+    if (name === "恩恵"){
+      openZoomFromDeckCard(cardObj, "white", { closeOnBackdrop:false, showCloseButton:false });
+      showPlayerSelectPop({
+        message: "恩恵：回復させるプレイヤーを選択してください。",
+        includeSelf: false,
+        onSelect: async (uid) => {
+          const eye = await runCornerD6Roll();
+          await waitMs(1000);
+          await healDamageToPlayer(uid, eye);
+          closeZoom();
+        }
+      });
+      return;
     }
   }
 
@@ -4617,6 +4800,7 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        repeatTurnPending: false,
         updatedAt: Date.now()
       }
     });
@@ -4699,6 +4883,10 @@
 
   btnEndTurn?.addEventListener('click', async () => {
     if (!canShowEndTurnButton()) return;
+    if (repeatTurnPending()){
+      await doEndTurn();
+      return;
+    }
     if (!turnState()?.attackDone){
       showEndTurnConfirm();
       return;
