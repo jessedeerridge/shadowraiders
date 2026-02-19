@@ -1125,6 +1125,7 @@
   .zoom-backdrop.hidden{ display:none; }
   .zoom-backdrop.passthrough{
     pointer-events:none;
+    background:transparent;
   }
   .zoom-backdrop.passthrough .zoom-stage{
     pointer-events:none;
@@ -1727,6 +1728,9 @@
   const greenShareSubtitle = document.getElementById("greenShareSubtitle");
   const greenShareActions = document.getElementById("greenShareActions");
   const greenShareCloseBtn = document.getElementById("greenShareCloseBtn");
+  if (greenShareDock && greenShareDock.parentElement === zoomBackdrop){
+    document.body.appendChild(greenShareDock);
+  }
   let zoomCloseOnBackdrop = true;
   let greenShareCard = null;
   let greenInboxSeenAt = 0;
