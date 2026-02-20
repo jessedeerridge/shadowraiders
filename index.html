@@ -1445,11 +1445,10 @@
 
 <!-- 公開確認ポップ -->
 <div id="revealPop" class="confirm-pop hidden" role="dialog" aria-label="公開確認">
-  <div class="caret" aria-hidden="true"></div>
   <p class="msg" id="revealMsg">公開しますか？</p>
   <div class="actions">
-    <button class="btn ghost" id="btnRevealNo">いいえ</button>
     <button class="btn primary" id="btnRevealYes">はい</button>
+    <button class="btn ghost" id="btnRevealNo">いいえ</button>
   </div>
 </div>
 
@@ -1954,14 +1953,34 @@
     return safeText(match?.[1] || effect).trim() || "特殊能力";
   }
 
-  function showRevealPopAt(clientX, clientY){
+  function showRevealPopAt(anchorEl){
     const role = myRoleInfo();
     const ability = roleAbilityName(role);
     if (revealMsg){
       revealMsg.innerHTML = `正体を公開して、<span class="ability-pill">${ability}</span>を使いますか。`;
     }
     revealPop.classList.remove("hidden");
-    placeFloatingPop(revealPop, clientX, clientY);
+    if (!anchorEl){
+      placeFloatingPop(revealPop, window.innerWidth / 2, window.innerHeight / 2);
+      return;
+    }
+    const pad = 10;
+    const gap = 10;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const popRect = revealPop.getBoundingClientRect();
+    const halfW = popRect.width / 2;
+    let x = anchorRect.left + (anchorRect.width / 2);
+    if (x - halfW < pad) x = pad + halfW;
+    if (x + halfW > vw - pad) x = (vw - pad) - halfW;
+    let top = anchorRect.bottom + gap;
+    if (top + popRect.height > vh - pad){
+      top = Math.max(pad, anchorRect.top - popRect.height - gap);
+    }
+    top = Math.max(pad, Math.min(top, vh - pad - popRect.height));
+    revealPop.style.left = `${x}px`;
+    revealPop.style.top = `${top}px`;
   }
   function hideRevealPop(){ revealPop.classList.add("hidden"); }
 
@@ -2911,7 +2930,7 @@
     if (isMyIdentityRevealed()) return;
 
     e.stopPropagation();
-    showRevealPopAt(e.clientX, e.clientY);
+    showRevealPopAt(idCard);
   });
 
   document.addEventListener("click", (e) => {
