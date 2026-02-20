@@ -836,9 +836,9 @@
 
   .endturn-confirm{
     position:fixed;
-    left:0;
-    top:0;
-    transform:translate(-50%,-10px);
+    left:50%;
+    bottom:16px;
+    transform:translateX(-50%);
     background:#fff;
     border:1px solid rgba(0,0,0,.18);
     border-radius:12px;
@@ -4211,7 +4211,6 @@
       endTurnConfirmMsg.textContent = safeText(options.message || "本当に終了しますか。");
     }
     endTurnConfirm?.classList.remove("hidden");
-    placeFloatingPop(endTurnConfirm, options.clientX, options.clientY, { yOffset: 8 });
   }
 
   function repeatTurnPending(){
@@ -7462,16 +7461,10 @@
     renderTurnEndButton();
   }
 
-  btnEndTurn?.addEventListener('click', async (e) => {
+  btnEndTurn?.addEventListener('click', async () => {
     if (!canShowEndTurnButton()) return;
-    const cx = Number(e?.clientX || window.__lastPointerX);
-    const cy = Number(e?.clientY || window.__lastPointerY);
-    if (repeatTurnPending()){
-      await doEndTurn();
-      return;
-    }
     if (!turnState()?.attackDone){
-      showEndTurnConfirm({ message:"本当に終了しますか。", clientX:cx, clientY:cy });
+      showEndTurnConfirm({ message:"本当に終了しますか。" });
       return;
     }
     await doEndTurn();
