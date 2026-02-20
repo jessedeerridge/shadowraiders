@@ -107,27 +107,7 @@
   }
   .room-guide-btn.host-position{bottom:116px;}
   .room-guide-btn.visible{display:flex;}
-
-  .room-guide-overlay{
-    position:fixed;
-    left:50%;
-    top:56%;
-    transform:translate(-50%, -50%);
-    width:min(520px, calc(100% - 28px));
-    background:rgba(229,229,229,.84);
-    color:#111;
-    border:1px solid rgba(0,0,0,.2);
-    border-radius:12px;
-    padding:10px 12px;
-    box-shadow:0 10px 24px rgba(0,0,0,.2);
-    z-index:1990;
-    font-size:13px;
-    line-height:1.45;
-  }
-  .room-guide-overlay.hidden{display:none;}
-  .room-guide-title{font-weight:900;margin-bottom:6px;}
-  .room-guide-row{margin:0 0 4px;white-space:pre-line;}
-  .room-guide-row:last-child{margin-bottom:0;}
+  .room-guide-btn.active{background:#fff;color:#111;}
 
   .help-pop-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.35);
@@ -996,6 +976,21 @@
     50%{ transform:scale(1.05); }
   }
 
+  .room-guide-layer{pointer-events:none;}
+  .room-guide-note{
+    fill:rgba(229,229,229,.84);
+    stroke:rgba(0,0,0,.22);
+    stroke-width:0.6;
+    vector-effect:non-scaling-stroke;
+  }
+  .room-guide-note-text{
+    fill:#111;
+    font-size:7px;
+    font-weight:800;
+    text-anchor:middle;
+    user-select:none;
+  }
+
 .mark-rect{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
 .mark-rect.guardian-shield{stroke:#d4af37;stroke-width:2;}
 .mark-text{font-weight:1000;font-size:10px;dominant-baseline:middle;text-anchor:middle;user-select:none;pointer-events:none;}
@@ -1641,16 +1636,6 @@
 <button id="roomGuideBtn" class="room-guide-btn" title="ルーム効果">〒</button>
 <button id="helpBtn" class="help-btn" title="正体カード一覧">？</button>
 
-<div id="roomGuideOverlay" class="room-guide-overlay hidden" aria-label="ルーム効果説明">
-  <div class="room-guide-title">ルーム効果</div>
-  <p class="room-guide-row">1：白カードが\nひける。</p>
-  <p class="room-guide-row">2：黒カードが\nひける。</p>
-  <p class="room-guide-row">3：任意のプレイヤーへ\n2ダメージ / 1回復</p>
-  <p class="room-guide-row">4：任意のプレイヤーから\n装備をうばう</p>
-  <p class="room-guide-row">5：推理カードが\nひける</p>
-  <p class="room-guide-row">6：推理 / 白 / 黒カード\nがひける</p>
-  <p class="room-guide-row">7：次の手番に自由に\n移動できる</p>
-</div>
 
 <div id="helpBackdrop" class="help-pop-backdrop hidden">
   <div class="help-pop" role="dialog" aria-modal="true" aria-label="正体カード一覧">
@@ -5106,11 +5091,25 @@
 
   let markerLayer = null;
   let attackRangeLayer = null;
+  let roomGuideLayer = null;
   let markerCache = {};
   const roomShapeEls = {};
   const roomHitEls = {};
   let autoMoveTriggeredTurnKey = "";
   const roomPolygons = {};
+  let roomGuideVisible = false;
+  const ROOM_GUIDE_LINES = {
+    1: ["1：白カードが", "ひける。"],
+    2: ["2：黒カードが", "ひける。"],
+    3: ["3：任意のプレイヤーへ", "2ダメージ / 1回復"],
+    4: ["4：任意のプレイヤーから", "装備をうばう"],
+    5: ["5：推理カードが", "ひける"],
+    6: ["6：推理 / 白 / 黒カード", "がひける"],
+    7: ["7：次の手番に自由に", "移動できる"]
+  };
+  const ROOM_GUIDE_OFFSET = {
+    1:[0,-5],2:[0,-5],3:[0,-5],4:[0,-5],5:[0,-5],6:[0,-5],7:[0,0]
+  };
   const diceRollOverlay = document.getElementById('diceRollOverlay');
   let diceRollTimers = [];
   let pendingMoveChoice = null;
@@ -6729,9 +6728,71 @@
     updateCardInteractivity();
   }
 
+  function polygonCenter(pts){
+    if (!Array.isArray(pts) || !pts.length) return { x:0, y:0 };
+    const sum = pts.reduce((acc, [x,y]) => ({ x: acc.x + Number(x || 0), y: acc.y + Number(y || 0) }), { x:0, y:0 });
+    return { x: sum.x / pts.length, y: sum.y / pts.length };
+  }
+
+  function clearRoomGuideLayer(){
+    if (!roomGuideLayer) return;
+    while (roomGuideLayer.firstChild) roomGuideLayer.removeChild(roomGuideLayer.firstChild);
+  }
+
+  function ensureRoomGuideLayer(){
+    if (roomGuideLayer && roomGuideLayer.parentNode === roomG) return;
+    roomGuideLayer = svgEl('g', { class:'room-guide-layer', id:'roomGuideLayer' }, roomG);
+    if (markerLayer && markerLayer.parentNode === roomG){
+      roomG.insertBefore(roomGuideLayer, markerLayer);
+    }
+  }
+
+  function renderRoomGuideLayer(){
+    if (!roomGuideVisible){
+      clearRoomGuideLayer();
+      return;
+    }
+    ensureRoomGuideLayer();
+    clearRoomGuideLayer();
+    for (let roomId = 1; roomId <= 7; roomId++){
+      const pts = roomPolygons[roomId];
+      const lines = ROOM_GUIDE_LINES[roomId];
+      if (!pts || !lines) continue;
+      const center = polygonCenter(pts);
+      const [dx, dy] = ROOM_GUIDE_OFFSET[roomId] || [0,0];
+      const maxChars = lines.reduce((m, line) => Math.max(m, Array.from(String(line)).length), 0);
+      const width = Math.max(34, maxChars * 7 + 8);
+      const lineHeight = 8;
+      const height = lines.length * lineHeight + 6;
+      const x = center.x + dx - (width / 2);
+      const y = center.y + dy - (height / 2);
+
+      svgEl('rect', {
+        class:'room-guide-note',
+        x: x.toFixed(2),
+        y: y.toFixed(2),
+        width: width.toFixed(2),
+        height: height.toFixed(2),
+        rx: 4,
+        ry: 4
+      }, roomGuideLayer);
+
+      lines.forEach((line, idx) => {
+        const txt = svgEl('text', {
+          class:'room-guide-note-text',
+          x: (center.x + dx).toFixed(2),
+          y: (y + 8 + idx * lineHeight).toFixed(2),
+          'dominant-baseline': 'middle'
+        }, roomGuideLayer);
+        txt.textContent = String(line);
+      });
+    }
+  }
+
   function renderRoomShape(){
     ensureRoomPatterns();
     while(roomG.firstChild) roomG.removeChild(roomG.firstChild);
+    roomGuideLayer = null;
     Object.keys(roomPolygons).forEach(k => delete roomPolygons[k]);
     for (const k of Object.keys(roomShapeEls)) delete roomShapeEls[k];
     for (const k of Object.keys(roomHitEls)) delete roomHitEls[k];
@@ -6790,6 +6851,7 @@
     ensureMarkerLayer();
     ensureAttackRangeLayer();
     ensureMarkerLayer();
+    renderRoomGuideLayer();
     updateRoomChoiceUi();
     updateAttackRangeUi();
     fitRoomViewBox(2);
@@ -6896,7 +6958,6 @@
 
   const helpBtn = document.getElementById('helpBtn');
   const roomGuideBtn = document.getElementById('roomGuideBtn');
-  const roomGuideOverlay = document.getElementById('roomGuideOverlay');
   const helpBackdrop = document.getElementById('helpBackdrop');
   const btnHelpClose = document.getElementById('btnHelpClose');
   const helpBody = document.getElementById('helpBody');
@@ -7011,7 +7072,9 @@
   }
   function closeHelp(){ helpBackdrop.classList.add('hidden'); }
   function toggleRoomGuideOverlay(){
-    roomGuideOverlay.classList.toggle('hidden');
+    roomGuideVisible = !roomGuideVisible;
+    roomGuideBtn.classList.toggle('active', roomGuideVisible);
+    renderRoomGuideLayer();
   }
   helpBtn.addEventListener('click', () => {
     if (joinBox.classList.contains('hidden')) openHelp();
