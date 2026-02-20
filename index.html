@@ -945,6 +945,7 @@
   .room-svg{width:100%;height:100%;display:block;}
   .shape{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
   .attack-range-layer{pointer-events:none;}
+  .attack-range-edge-outline{stroke:var(--brown);stroke-width:3;stroke-linecap:round;vector-effect:non-scaling-stroke;}
   .attack-range-edge{stroke:var(--gold);stroke-width:2;stroke-linecap:round;vector-effect:non-scaling-stroke;}
   .roomhit{fill:transparent;cursor:pointer;}
   .roomhit:hover{fill:rgba(0,0,0,.06);}
@@ -6279,7 +6280,10 @@
   }
 
   function ensureMarkerLayer(){
-    if (markerLayer && markerLayer.isConnected) return markerLayer;
+    if (markerLayer && markerLayer.isConnected){
+      roomG.appendChild(markerLayer);
+      return markerLayer;
+    }
     markerLayer = svgEl('g', { id:"markerLayer" }, roomG);
     return markerLayer;
   }
@@ -6289,8 +6293,16 @@
   }
 
   function ensureAttackRangeLayer(){
-    if (attackRangeLayer && attackRangeLayer.isConnected) return attackRangeLayer;
+    if (attackRangeLayer && attackRangeLayer.isConnected){
+      if (markerLayer && markerLayer.parentNode === roomG){
+        roomG.insertBefore(attackRangeLayer, markerLayer);
+      }
+      return attackRangeLayer;
+    }
     attackRangeLayer = svgEl('g', { class:'attack-range-layer' }, roomG);
+    if (markerLayer && markerLayer.parentNode === roomG){
+      roomG.insertBefore(attackRangeLayer, markerLayer);
+    }
     return attackRangeLayer;
   }
 
@@ -6338,6 +6350,13 @@
 
     for (const edge of edges.values()){
       if (edge.count !== 1) continue;
+      const outline = svgEl('line', {
+        class:'attack-range-edge-outline',
+        x1: edge.ax,
+        y1: edge.ay,
+        x2: edge.bx,
+        y2: edge.by
+      });
       const line = svgEl('line', {
         class:'attack-range-edge',
         x1: edge.ax,
@@ -6345,6 +6364,7 @@
         x2: edge.bx,
         y2: edge.by
       });
+      attackRangeLayer.appendChild(outline);
       attackRangeLayer.appendChild(line);
     }
   }
@@ -6679,6 +6699,7 @@
 
     ensureMarkerLayer();
     ensureAttackRangeLayer();
+    ensureMarkerLayer();
     updateRoomChoiceUi();
     updateAttackRangeUi();
     fitRoomViewBox(2);
