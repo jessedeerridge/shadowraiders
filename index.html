@@ -1969,10 +1969,10 @@
       if (showSkip){
         const btn = document.createElement("button");
         btn.className = "btn ghost turn-hint-action";
-        btn.textContent = "スキップして攻撃";
+        btn.textContent = "スキップ(して攻撃)";
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          skipRoom3ActionAndStartAttack();
+          skipRoom3ActionAndStartAttaack();
         });
         turnHintPop.appendChild(btn);
       }
@@ -3301,7 +3301,7 @@
     }
     if (canUseRoom3Action()){
       showTurnHint({
-        text: "対象を選び、1回復するか2ダメージを与えるか選択できます。",
+        text: "任意のプレイヤーへ2ダメージ/1回復できます。",
         showRoom3Skip: true
       });
       return;
