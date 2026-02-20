@@ -2719,8 +2719,7 @@
           identityRevealSeenByUid[uid] = at;
           const rid = safeText(row?.identity?.roleId || "");
           const role = ROLE_BY_ID[rid];
-          const revealedBy = safeText(row?.identity?.revealedBy || "");
-          if (role && revealedBy !== "daniel_forced") openIdentityRevealZoom(role, uid);
+          if (role) openIdentityRevealZoom(role, uid);
         }
       }
       equipCache = next;
