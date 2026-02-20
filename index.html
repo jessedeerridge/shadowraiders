@@ -2112,8 +2112,10 @@
     }
 
     if (text.includes("❿に移動せよ")){
+      const nowRoom = markerRoomId(markerCache?.[state.userId]);
+      const moveLabel = (nowRoom === 7) ? "1ダメージうける" : "➓に移動する";
       return [
-        { id:"yes", label:"➓に移動する", enabled: canJudge ? !!matched : true },
+        { id:"yes", label:moveLabel, enabled: canJudge ? !!matched : true },
         { id:"no", label:"いいえ", enabled: canJudge ? !matched : true }
       ];
     }
