@@ -97,6 +97,20 @@
   }
   .help-btn.visible{display:flex;}
 
+  .room-guide-btn{
+    position:fixed;
+    left:16px;
+    width:44px;height:44px;border-radius:50%;
+    border:1px solid #111;background:#111;color:#fff;
+    box-shadow:0 8px 20px rgba(0,0,0,.18);
+    display:none;align-items:center;justify-content:center;
+    font-size:20px;font-weight:1000;cursor:pointer;
+    z-index:2000;
+  }
+  .room-guide-btn.visible{display:flex;}
+  .room-guide-btn.non-host{bottom:66px;}
+  .room-guide-btn.host{bottom:116px;}
+
   .help-pop-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.35);
     display:flex;align-items:flex-end;justify-content:center;
@@ -762,7 +776,28 @@
     background:transparent !important;
     border:none !important;
     box-shadow:none !important;
+
+    position:relative;
   }
+
+  .room-guide-table{
+    position:absolute;
+    left:10px;
+    right:10px;
+    top:10px;
+    background:rgba(235,235,235,.78);
+    border:1px solid rgba(0,0,0,.25);
+    border-radius:10px;
+    color:#111;
+    padding:10px 12px;
+    font-size:12px;
+    line-height:1.45;
+    z-index:4;
+    box-sizing:border-box;
+  }
+  .room-guide-table.hidden{display:none;}
+  .room-guide-table .line{margin:0 0 6px;white-space:pre-line;}
+  .room-guide-table .line:last-child{margin-bottom:0;}
 
   .position-line{
     position:absolute;
@@ -1479,6 +1514,22 @@
             <svg id="roomSvg" class="room-svg" viewBox="-170 -170 340 340" preserveAspectRatio="xMidYMid meet" aria-label="部屋マップ">
               <g id="roomG"></g>
             </svg>
+            <div id="roomGuideTable" class="room-guide-table hidden" aria-live="polite">
+              <p class="line">room1：白カードが
+ひける</p>
+              <p class="line">room2：黒カードが
+ひける</p>
+              <p class="line">room3：任意のプレイヤーへ
+2ダメージ / 1回復</p>
+              <p class="line">room4：任意のプレイヤーから
+装備をうばう</p>
+              <p class="line">room5：推理カードが
+ひける</p>
+              <p class="line">room6：推理 / 白 / 黒カード
+がひける</p>
+              <p class="line">room7：次の手番に自由に
+移動できる</p>
+            </div>
           </div>
           <div id="turnEndWrap" class="turn-end-wrap hidden">
             <button id="btnEndTurn" class="btn primary">手番を終わる</button>
@@ -1606,6 +1657,7 @@
 </div>
 
 <button id="hostSettingsBtn" class="host-settings-btn" title="設定">⚙</button>
+<button id="roomGuideBtn" class="room-guide-btn" title="ルーム説明">〒</button>
 <button id="helpBtn" class="help-btn" title="正体カード一覧">？</button>
 
 <div id="helpBackdrop" class="help-pop-backdrop hidden">
@@ -6854,6 +6906,8 @@
   const helpBackdrop = document.getElementById('helpBackdrop');
   const btnHelpClose = document.getElementById('btnHelpClose');
   const helpBody = document.getElementById('helpBody');
+  const roomGuideBtn = document.getElementById('roomGuideBtn');
+  const roomGuideTable = document.getElementById('roomGuideTable');
 
   function teamColor(f){
     if (f === "レイダー")  return "#c21d1d";
@@ -7055,11 +7109,16 @@
     refreshRoomLabels();
     if (state.isHost){
       hostSettingsBtn.classList.add('visible');
+      roomGuideBtn.classList.remove('non-host');
+      roomGuideBtn.classList.add('host');
     } else {
       hostSettingsBtn.classList.remove('visible');
       startPop.classList.add('hidden');
+      roomGuideBtn.classList.remove('host');
+      roomGuideBtn.classList.add('non-host');
     }
     helpBtn.classList.add('visible');
+    roomGuideBtn.classList.add('visible');
   }
 
   function subscribeRoom(){
@@ -7640,6 +7699,11 @@
     startPop.classList.toggle('hidden');
   });
   btnStartPopClose.addEventListener('click', () => startPop.classList.add('hidden'));
+  roomGuideBtn.addEventListener('click', () => {
+    if (joinBox.classList.contains('hidden')){
+      roomGuideTable.classList.toggle('hidden');
+    }
+  });
   btnGameStart.addEventListener('click', async () => {
     if (!state.isHost) return;
     await dealIdentityCards();
