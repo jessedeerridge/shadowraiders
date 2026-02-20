@@ -1943,6 +1943,8 @@
   let attackDiceEventInitialized = false;
   let roleFlashEventSeenAt = 0;
   let roleFlashEventInitialized = false;
+  let walpurgisSwapEventSeenAt = 0;
+  let walpurgisSwapEventInitialized = false;
   let roleFlashTimer = null;
   let roleFlashOverlayEl = null;
   let identityRevealInitialized = false;
@@ -2278,6 +2280,18 @@
     await set(ref(db, `rooms/${state.roomCode}/effectEvents/roleFlash`), {
       roleId: rid,
       reason: safeText(reason || ""),
+      at: Date.now()
+    });
+  }
+
+  async function emitWalpurgisSwapEvent(uidA, uidB, durationMs = 620){
+    const a = safeText(uidA || "");
+    const b = safeText(uidB || "");
+    if (!state.roomCode || !a || !b || a === b) return;
+    await set(ref(db, `rooms/${state.roomCode}/effectEvents/walpurgisSwap`), {
+      uidA: a,
+      uidB: b,
+      durationMs: Math.max(240, Number(durationMs) || 620),
       at: Date.now()
     });
   }
@@ -3933,7 +3947,8 @@
       await emitRoleFlashEvent("SHA_W2", "walpurgis_swap");
       await new Promise(resolve => setTimeout(resolve, 1200));
       try {
-        await animateMarkerSwapVisual(state.userId, uid, 620);
+        await emitWalpurgisSwapEvent(state.userId, uid, 620);
+        await new Promise(resolve => setTimeout(resolve, 620));
         await swapMarkerPositionWithPlayer(uid);
       } finally {
         markerLayer?.classList.remove("swap-animating");
@@ -4437,6 +4452,26 @@
       if (!ev || !at || at <= roleFlashEventSeenAt) return;
       roleFlashEventSeenAt = at;
       showRoleFlashOverlay(safeText(ev.roleId || ""), 1200);
+    });
+  }
+
+  function subscribeWalpurgisSwapEvents(){
+    const swapRef = ref(db, `rooms/${state.roomCode}/effectEvents/walpurgisSwap`);
+    onValue(swapRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!walpurgisSwapEventInitialized){
+        walpurgisSwapEventInitialized = true;
+        walpurgisSwapEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= walpurgisSwapEventSeenAt) return;
+      walpurgisSwapEventSeenAt = at;
+      const uidA = safeText(ev.uidA || "");
+      const uidB = safeText(ev.uidB || "");
+      const durationMs = Math.max(240, Number(ev.durationMs) || 620);
+      if (!uidA || !uidB || uidA === uidB) return;
+      animateMarkerSwapVisual(uidA, uidB, durationMs);
     });
   }
 
@@ -7386,6 +7421,7 @@
     subscribeDamage();
     subscribeDiceEvents();
     subscribeRoleFlashEvents();
+    subscribeWalpurgisSwapEvents();
 
     renderSeatTiles();
     refreshStartBadge();
