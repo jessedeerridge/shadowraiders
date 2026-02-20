@@ -946,6 +946,10 @@
   top:55px;
   left:50%;
   transform:translateX(-50%);
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:nowrap;
   background:#111;
   color:#fff;
   border-radius:10px;
@@ -959,7 +963,7 @@
 .turn-hint-pop.hidden{ display:none; }
 .turn-hint-action{
   display:inline-block;
-  margin:4px auto 0;
+  margin:0;
   width:max-content;
   white-space:nowrap;
   font-size:13px;
@@ -1967,7 +1971,7 @@
       const showSkip = !!message.showRoom3Skip;
       turnHintPop.innerHTML = "";
       if (text){
-        const textWrap = document.createElement("div");
+        const textWrap = document.createElement("span");
         textWrap.textContent = text;
         turnHintPop.appendChild(textWrap);
       }
