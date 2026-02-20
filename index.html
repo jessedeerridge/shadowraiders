@@ -4412,6 +4412,20 @@
     return null;
   }
 
+  function isTestPlayerName(){
+    return safeText(state.userName).trim().toLowerCase() === "test";
+  }
+
+  async function moveMyMarkerToPreviousRoom(){
+    if (!state.roomCode) return false;
+    const myMarker = markerCache?.[state.userId] || null;
+    const nowRoomId = markerRoomId(myMarker);
+    const prevRoomId = previousRoomId(nowRoomId);
+    if (!prevRoomId) return false;
+    await placeMarkerInRoom(prevRoomId);
+    return true;
+  }
+
   function attackTargetRoomIdsFromRoom(roomId, extraScope = 0){
     const current = Number(roomId);
     if (!Number.isFinite(current) || current < 1 || current > 7) return new Set();
@@ -5347,8 +5361,51 @@
   const rx = 3;
 
   if (!eliminated && uid && uid === state.userId){
+    const LONG_PRESS_MS = 600;
+    let longPressTimer = null;
+    let longPressFired = false;
+    let suppressClick = false;
+
+    const clearLongPress = () => {
+      if (!longPressTimer) return;
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    };
+
+    const onPointerDown = (e) => {
+      if (!isTestPlayerName()) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      longPressFired = false;
+      clearLongPress();
+      longPressTimer = setTimeout(async () => {
+        longPressTimer = null;
+        longPressFired = true;
+        suppressClick = true;
+        e.stopPropagation();
+        const moved = await moveMyMarkerToPreviousRoom();
+        if (moved) showTurnHint("testモード：ルームを1つ下げました");
+      }, LONG_PRESS_MS);
+    };
+
+    const onPointerUpOrCancel = () => {
+      clearLongPress();
+      if (longPressFired){
+        setTimeout(() => { suppressClick = false; }, 0);
+      }
+    };
+
+    g.addEventListener('pointerdown', onPointerDown);
+    g.addEventListener('pointerup', onPointerUpOrCancel);
+    g.addEventListener('pointercancel', onPointerUpOrCancel);
+    g.addEventListener('pointerleave', onPointerUpOrCancel);
+
     g.style.cursor = 'pointer';
     g.addEventListener('click', (e) => {
+      if (suppressClick){
+        e.stopPropagation();
+        suppressClick = false;
+        return;
+      }
       if (canUseRoom3Action()){
         if (hasEquipmentByName(uid, "幸運のブローチ")) return;
         e.stopPropagation();
@@ -5757,7 +5814,17 @@
 
       const cardWrap = document.createElement('div');
       cardWrap.className = 'role-card-wrap';
-      cardWrap.appendChild(createIdentityCard(r));
+      const identityCardEl = createIdentityCard(r);
+      if (isTestPlayerName()){
+        identityCardEl.style.cursor = 'pointer';
+        identityCardEl.addEventListener('click', () => {
+          const myRoleId = state.hands?.[state.userId]?.roleId;
+          const myRole = myRoleId ? ROLE_BY_ID[myRoleId] : null;
+          if (!myRole) return;
+          identityCardEl.replaceWith(createIdentityCard(myRole));
+        });
+      }
+      cardWrap.appendChild(identityCardEl);
 
       const desc = document.createElement('div');
       desc.className = 'role-desc';
