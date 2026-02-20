@@ -4947,11 +4947,16 @@
       const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
       pattern.setAttribute('id', `roomPattern${roomId}`);
       pattern.setAttribute('patternUnits', 'objectBoundingBox');
+      pattern.setAttribute('patternContentUnits', 'objectBoundingBox');
       pattern.setAttribute('width', '1');
       pattern.setAttribute('height', '1');
 
       const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-      image.setAttribute('href', `room${roomId}.jpg`);
+      const roomImagePath = `room${roomId}.jpg`;
+      image.setAttribute('href', roomImagePath);
+      image.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', roomImagePath);
+      image.setAttribute('x', '0');
+      image.setAttribute('y', '0');
       image.setAttribute('width', '1');
       image.setAttribute('height', '1');
       image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
