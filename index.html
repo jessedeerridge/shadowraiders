@@ -2622,6 +2622,15 @@
     cardEl.dataset.cardType = theme || "";
     openZoomContent(cardEl, options);
   }
+
+  async function waitUntilZoomClosed({ maxWaitMs = 12000, pollMs = 60 } = {}){
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < Math.max(200, Number(maxWaitMs) || 12000)){
+      if (zoomBackdrop?.classList.contains("hidden")) return true;
+      await new Promise(resolve => setTimeout(resolve, Math.max(20, Number(pollMs) || 60)));
+    }
+    return !!zoomBackdrop?.classList.contains("hidden");
+  }
   function closeZoom(){
     zoomBackdrop.classList.add("hidden");
     zoomBackdrop.classList.remove("passthrough");
@@ -3923,6 +3932,7 @@
         if (othersEliminatedNow && !othersEliminatedBefore && !danielAutoRevealTimer){
           danielAutoRevealTimer = setTimeout(async () => {
             danielAutoRevealTimer = null;
+            await waitUntilZoomClosed();
             await revealMyIdentityToEquipment({ revealedBy:"daniel_forced" });
           }, 2000);
         }
