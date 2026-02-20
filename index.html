@@ -2445,15 +2445,17 @@
     return safeText(ev.targetUid || "") === me;
   }
 
-  async function emitReactionAbilityEvent(type, reactorUid, attackerUid){
+  async function emitReactionAbilityEvent(type, reactorUid, attackerUid, options = {}){
     const abilityType = safeText(type || "");
     const rUid = safeText(reactorUid || "");
     const aUid = safeText(attackerUid || "");
     if (!state.roomCode || !abilityType || !rUid || !aUid || rUid === aUid) return;
+    const forceNameTag = !!options.forceNameTag;
     await set(ref(db, `rooms/${state.roomCode}/effectEvents/reactionAbility`), {
       type: abilityType,
       reactorUid: rUid,
       attackerUid: aUid,
+      forceNameTag,
       at: Date.now()
     });
   }
@@ -2631,7 +2633,7 @@
     }
   }
 
-  function showRoleFlashOverlay(roleId, durationMs = 1200){
+  function showRoleFlashOverlay(roleId, durationMs = 1200, options = {}){
     const role = ROLE_BY_ID[safeText(roleId || "")];
     if (!role) return;
     hideRoleFlashOverlay();
@@ -2646,11 +2648,32 @@
     overlay.style.background = "rgba(0,0,0,.35)";
     overlay.style.pointerEvents = "none";
 
+    const wrap = document.createElement("div");
+    wrap.style.display = "flex";
+    wrap.style.flexDirection = "column";
+    wrap.style.alignItems = "center";
+    wrap.style.gap = "10px";
+
     const card = createIdentityCard(role);
     card.style.transform = "scale(2.1)";
     card.style.transformOrigin = "center center";
     card.style.boxShadow = "0 14px 32px rgba(0,0,0,.35)";
-    overlay.appendChild(card);
+    wrap.appendChild(card);
+
+    const ownerUid = safeText(options.ownerUid || "");
+    const forceNameTag = !!options.forceNameTag;
+    const isOwnerRevealed = !!equipCache?.[ownerUid]?.identity?.roleId;
+    if (ownerUid && (forceNameTag || !isOwnerRevealed)){
+      const owner = playerById(ownerUid);
+      const label = document.createElement("div");
+      label.className = "equip-tag";
+      label.textContent = owner ? safeText(owner.name || "") : "正体効果";
+      label.style.background = "#fff";
+      label.style.color = "#111";
+      wrap.appendChild(label);
+    }
+
+    overlay.appendChild(wrap);
     document.body.appendChild(overlay);
     roleFlashOverlayEl = overlay;
 
@@ -2674,7 +2697,7 @@
     const overlay = document.createElement("div");
     overlay.style.position = "fixed";
     overlay.style.inset = "0";
-    overlay.style.zIndex = "10950";
+    overlay.style.zIndex = "10040";
     overlay.style.display = "flex";
     overlay.style.alignItems = "center";
     overlay.style.justifyContent = "center";
@@ -3780,14 +3803,16 @@
     hideReactionTriggerPop();
     if (!action || action.blockedByGuardian) return;
     if (action.type === "werewolf"){
-      if (!isMyIdentityRevealed()) await revealMyIdentityToEquipment({ revealedBy:"werewolf_reaction" });
-      await emitReactionAbilityEvent("werewolf", state.userId, action.attackerUid);
+      const wasHidden = !isMyIdentityRevealed();
+      if (wasHidden) await revealMyIdentityToEquipment({ revealedBy:"werewolf_reaction" });
+      await emitReactionAbilityEvent("werewolf", state.userId, action.attackerUid, { forceNameTag: wasHidden });
       await triggerWerewolfCounterAttack(action.attackerUid);
       return;
     }
     if (action.type === "venom"){
-      if (!isMyIdentityRevealed()) await revealMyIdentityToEquipment({ revealedBy:"venom_reaction" });
-      await emitReactionAbilityEvent("venom", state.userId, action.attackerUid);
+      const wasHidden = !isMyIdentityRevealed();
+      if (wasHidden) await revealMyIdentityToEquipment({ revealedBy:"venom_reaction" });
+      await emitReactionAbilityEvent("venom", state.userId, action.attackerUid, { forceNameTag: wasHidden });
       await emitVenomChoiceEvent(state.userId, action.attackerUid);
     }
   });
@@ -4037,7 +4062,7 @@
         }
       }, {
         fixedLower:true,
-        closeZoomOnNo:false,
+        closeZoomOnNo:true,
         onNo: () => {
           zoomDismissHandler = null;
           pendingEquipAction = { type:"venom_give", fromUid: action.fromUid, toUid: action.toUid };
@@ -4982,17 +5007,18 @@
       const type = safeText(ev.type || "");
       const reactorUid = safeText(ev.reactorUid || "");
       const attackerUid = safeText(ev.attackerUid || "");
+      const forceNameTag = !!ev.forceNameTag;
       if (!type || !reactorUid || !attackerUid) return;
       if (type === "werewolf"){
-        showRoleFlashOverlay("SHA_W3", 1200);
-        if (!equipCache?.[reactorUid]?.identity?.roleId){
+        showRoleFlashOverlay("SHA_W3", 1200, { ownerUid: reactorUid, forceNameTag });
+        if (forceNameTag || !equipCache?.[reactorUid]?.identity?.roleId){
           showTemporaryRoleTag(reactorUid, "反撃", 1200);
         }
         return;
       }
       if (type === "venom"){
-        showRoleFlashOverlay("SHA_V1", 1200);
-        if (!equipCache?.[reactorUid]?.identity?.roleId){
+        showRoleFlashOverlay("SHA_V1", 1200, { ownerUid: reactorUid, forceNameTag });
+        if (forceNameTag || !equipCache?.[reactorUid]?.identity?.roleId){
           showTemporaryRoleTag(reactorUid, "反駁の猛毒", 1200);
         }
       }
