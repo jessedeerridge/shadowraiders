@@ -282,7 +282,7 @@
   .equip-dock{
     position:fixed;
     left:16px;
-    right:calc(6px + 72px + 12px);
+    right:calc(2px + 72px + 12px);
     top:var(--equip-top, auto);
     bottom:16px;
     z-index:259;
@@ -293,12 +293,11 @@
   .equip-dock.david-select-front{ z-index:10030; }
 
   .equip-board{
-    background-color:rgba(255,255,255,.78);
+    background-color:#ffffff;
     background-image:url('gear.jpg');
     background-size:cover;
     background-position:center;
     background-repeat:no-repeat;
-    background-blend-mode:lighten;
     border:1px solid rgba(0,0,0,.10);
     border-radius:16px;
     box-shadow:0 18px 40px rgba(0,0,0,.18);
@@ -559,6 +558,9 @@
     display:flex;
     align-items:stretch;
     justify-content:stretch;
+    background:transparent !important;
+    border:none !important;
+    box-shadow:none !important;
 
     aspect-ratio: 2 / 4.5;
     height:auto;
@@ -891,11 +893,11 @@
   }
 
   /* =========================================================
-     ★③カードテーブル：背景を半透明に
+     ★③カードテーブル：背景をgear.jpgに
      ========================================================= */
   .cards-panel{
-    width:calc(100% + 32px);
-    max-width:min(1040px, calc(100vw - 24px));
+    width:calc(100% + 40px);
+    max-width:min(1060px, calc(100vw - 16px));
     display:flex;
     justify-content:center;
     align-items:flex-start;
@@ -904,7 +906,11 @@
     overflow-y:hidden;
     -webkit-overflow-scrolling:touch;
 
-    background:rgba(255,255,255,.36);
+    background-color:#ffffff;
+    background-image:url('gear.jpg');
+    background-size:cover;
+    background-position:center;
+    background-repeat:no-repeat;
     border:1px solid rgba(0,0,0,.08);
     box-shadow:0 12px 28px rgba(0,0,0,.10);
     border-radius:16px;
