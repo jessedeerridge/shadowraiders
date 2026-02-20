@@ -1369,6 +1369,24 @@
     transform:scale(2);
     transform-origin:center;
   }
+
+  .david-select-preview{
+    position:fixed;
+    left:50%;
+    top:50%;
+    width:72px;
+    height:108px;
+    transform:translate(-50%,-50%) translateX(95px);
+    z-index:10003;
+    pointer-events:none;
+  }
+  .david-select-preview.hidden{ display:none; }
+  .david-select-preview .card72,
+  .david-select-preview .id72{
+    box-shadow:0 18px 50px rgba(0,0,0,.45);
+    transform:scale(2);
+    transform-origin:center;
+  }
 </style>
 </head>
 <body>
@@ -1434,6 +1452,7 @@
     <div id="greenRevealLabel" class="green-reveal-label"></div>
     <div id="greenRevealCardWrap" class="green-reveal-card-wrap"></div>
   </div>
+  <div id="davidSelectPreview" class="david-select-preview hidden" aria-hidden="true"></div>
   <div id="greenShareDock" class="green-share-dock hidden" aria-label="緑カード共有">
     <p class="green-share-title">誰に渡しますか。</p>
     <p id="greenShareSubtitle" class="green-share-subtitle hidden"></p>
@@ -1855,6 +1874,7 @@
   const greenRevealPanel = document.getElementById("greenRevealPanel");
   const greenRevealLabel = document.getElementById("greenRevealLabel");
   const greenRevealCardWrap = document.getElementById("greenRevealCardWrap");
+  const davidSelectPreview = document.getElementById("davidSelectPreview");
   const greenShareDock = document.getElementById("greenShareDock");
   const greenShareList = document.getElementById("greenShareList");
   const greenShareSubtitle = document.getElementById("greenShareSubtitle");
@@ -2059,12 +2079,28 @@
     turnHintPop.classList.toggle("hidden", !message);
   }
 
+  function hideDavidSelectPreview(){
+    davidSelectPreview?.classList.add("hidden");
+    if (davidSelectPreview) davidSelectPreview.innerHTML = "";
+  }
+
+  function showDavidSelectPreviewFromCard(cardEl){
+    if (!davidSelectPreview || !cardEl) return;
+    const clone = cardEl.cloneNode(true);
+    clone.classList.remove("locked","blocked","equip-steal-pulse","equip-defeat-pulse","eliminated-dim");
+    clone.style.pointerEvents = "none";
+    davidSelectPreview.innerHTML = "";
+    davidSelectPreview.appendChild(clone);
+    davidSelectPreview.classList.remove("hidden");
+  }
+
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
     roomActionPop?.classList.remove("lower-mode", "room3-mode");
     if (btnRoomActionYes) btnRoomActionYes.textContent = "はい";
     if (btnRoomActionNo) btnRoomActionNo.textContent = "いいえ";
+    if (pendingEquipAction?.type === "david_select") hideDavidSelectPreview();
   }
 
   function showRoomActionPopAt(clientX, clientY, message, onYes, options = {}){
@@ -2645,6 +2681,7 @@
     hideGreenShareDock();
     hideRevealPop();
     hideRoomActionPop();
+    hideDavidSelectPreview();
     equipDock?.classList.remove("david-select-front");
   }
   zoomCloseBtn.addEventListener("click", async (e) => {
@@ -3216,10 +3253,8 @@
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (!pendingEquipAction.defeatedUids?.includes(ownerUid) || !sourceKey) return;
-      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
-      zoomDismissHandler = async () => {
-        restoreDavidIdentityZoom();
-      };
+      showDavidSelectPreviewFromCard(card);
+      zoomDismissHandler = null;
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードを獲得しますか。", async () => {
         const action = pendingEquipAction;
         if (!action || action.type !== "david_select") return;
@@ -3227,14 +3262,14 @@
         if (ok){
           await markDavidAbilityUsed();
           pendingEquipAction = null;
-          zoomDismissHandler = null;
+          hideDavidSelectPreview();
           closeZoom();
         }
       }, {
         fixedLower:true,
         closeZoomOnNo:false,
         onNo: () => {
-          restoreDavidIdentityZoom();
+          hideDavidSelectPreview();
         }
       });
       return;
