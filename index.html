@@ -1599,6 +1599,22 @@
   </div>
 </div>
 
+<div id="reactionTriggerPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="反応能力発動">
+  <p class="msg" id="reactionTriggerMsg">反撃する(5)</p>
+  <div class="actions">
+    <button class="btn pop-dark" id="btnReactionTrigger">発動</button>
+  </div>
+</div>
+
+<div id="venomChoicePop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="蟲毒使い選択">
+  <p class="msg"><span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#111;color:#fff;font-weight:800;">蟲毒使い</span></p>
+  <p class="msg" style="margin-top:-4px;">どうしますか。</p>
+  <div class="actions" style="justify-content:space-between;">
+    <button class="btn pop-dark" id="btnVenomTakeDamage">1ダメージうける</button>
+    <button class="btn pop-white" id="btnVenomGiveEquip">装備をわたす</button>
+  </div>
+</div>
+
 <div id="turnHintPop" class="turn-hint-pop hidden" aria-live="polite"></div>
 
 <div id="endTurnConfirm" class="endturn-confirm hidden" role="dialog" aria-label="手番終了確認">
@@ -2033,6 +2049,10 @@
   let attackDiceEventInitialized = false;
   let roleFlashEventSeenAt = 0;
   let roleFlashEventInitialized = false;
+  let reactionAbilityEventSeenAt = 0;
+  let reactionAbilityEventInitialized = false;
+  let venomChoiceEventSeenAt = 0;
+  let venomChoiceEventInitialized = false;
   let walpurgisSwapEventSeenAt = 0;
   let walpurgisSwapEventInitialized = false;
   let roleFlashTimer = null;
@@ -2057,6 +2077,9 @@
   let zoomDismissHandler = null;
   let suppressOutsidePopCloseUntil = 0;
   let pendingRevealAction = "";
+  let pendingReactionTrigger = null;
+  let reactionTriggerTimer = null;
+  let pendingVenomChoice = null;
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -2068,6 +2091,12 @@
   const btnAttackNo = document.getElementById("btnAttackNo");
   const roomActionPop = document.getElementById("roomActionPop");
   const roomActionMsg = document.getElementById("roomActionMsg");
+  const reactionTriggerPop = document.getElementById("reactionTriggerPop");
+  const reactionTriggerMsg = document.getElementById("reactionTriggerMsg");
+  const btnReactionTrigger = document.getElementById("btnReactionTrigger");
+  const venomChoicePop = document.getElementById("venomChoicePop");
+  const btnVenomTakeDamage = document.getElementById("btnVenomTakeDamage");
+  const btnVenomGiveEquip = document.getElementById("btnVenomGiveEquip");
   const btnRoomActionYes = document.getElementById("btnRoomActionYes");
   const btnRoomActionNo = document.getElementById("btnRoomActionNo");
   const turnHintPop = document.getElementById("turnHintPop");
@@ -2334,6 +2363,148 @@
   function hideIdentityPrompt(){
     pendingIdentityPrompt = null;
     identityPromptPop?.classList.add("hidden");
+  }
+
+  function clearReactionTriggerTimer(){
+    if (!reactionTriggerTimer) return;
+    clearInterval(reactionTriggerTimer);
+    reactionTriggerTimer = null;
+  }
+
+  function hideReactionTriggerPop(){
+    clearReactionTriggerTimer();
+    pendingReactionTrigger = null;
+    reactionTriggerPop?.classList.add("hidden");
+  }
+
+  function showReactionTriggerPop(type, attackerUid, seconds = 5){
+    const abilityType = safeText(type || "");
+    const srcUid = safeText(attackerUid || "");
+    if (!reactionTriggerPop || !reactionTriggerMsg || !btnReactionTrigger || !abilityType || !srcUid) return;
+    hideReactionTriggerPop();
+    let remain = Math.max(1, Math.floor(Number(seconds) || 5));
+    const baseLabel = abilityType === "werewolf" ? "反撃する" : "蟲毒使い";
+    pendingReactionTrigger = { type: abilityType, attackerUid: srcUid, expiresAt: Date.now() + remain * 1000 };
+    const render = () => {
+      reactionTriggerMsg.textContent = `${baseLabel}(${Math.max(0, remain)})`;
+    };
+    render();
+    reactionTriggerPop.classList.remove("hidden");
+    reactionTriggerTimer = setInterval(() => {
+      remain -= 1;
+      if (remain <= 0){
+        hideReactionTriggerPop();
+        return;
+      }
+      render();
+    }, 1000);
+  }
+
+  function hideVenomChoicePop(){
+    pendingVenomChoice = null;
+    venomChoicePop?.classList.add("hidden");
+  }
+
+  function showVenomChoicePop(venomUid, eventAt){
+    const srcUid = safeText(venomUid || "");
+    if (!venomChoicePop || !srcUid) return;
+    pendingVenomChoice = { venomUid: srcUid, eventAt: Number(eventAt) || Date.now() };
+    const hasEquip = hasNonIdentityEquipment(state.userId);
+    if (btnVenomGiveEquip){
+      btnVenomGiveEquip.disabled = !hasEquip;
+      btnVenomGiveEquip.classList.toggle("pop-disabled", !hasEquip);
+    }
+    venomChoicePop.classList.remove("hidden");
+  }
+
+  function isAttackEventTargetedToMe(ev){
+    if (!ev || !state.userId) return false;
+    const me = safeText(state.userId);
+    const g = Array.isArray(ev.gatlingTargetUids) ? ev.gatlingTargetUids.map(v => safeText(v)).filter(Boolean) : [];
+    if (g.length > 0) return g.includes(me);
+    return safeText(ev.targetUid || "") === me;
+  }
+
+  async function emitReactionAbilityEvent(type, reactorUid, attackerUid){
+    const abilityType = safeText(type || "");
+    const rUid = safeText(reactorUid || "");
+    const aUid = safeText(attackerUid || "");
+    if (!state.roomCode || !abilityType || !rUid || !aUid || rUid === aUid) return;
+    await set(ref(db, `rooms/${state.roomCode}/effectEvents/reactionAbility`), {
+      type: abilityType,
+      reactorUid: rUid,
+      attackerUid: aUid,
+      at: Date.now()
+    });
+  }
+
+  async function emitVenomChoiceEvent(venomUid, attackerUid){
+    const vUid = safeText(venomUid || "");
+    const aUid = safeText(attackerUid || "");
+    if (!state.roomCode || !vUid || !aUid || vUid === aUid) return;
+    await set(ref(db, `rooms/${state.roomCode}/effectEvents/venomChoice`), {
+      venomUid: vUid,
+      attackerUid: aUid,
+      at: Date.now()
+    });
+  }
+
+  function getMarkerClientPoint(uid){
+    const marker = markerCache?.[safeText(uid || "")] || null;
+    const x = Number(marker?.x);
+    const y = Number(marker?.y);
+    if (!roomSvg || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+    const ctm = roomSvg.getScreenCTM();
+    if (!ctm) return null;
+    const pt = roomSvg.createSVGPoint();
+    pt.x = x;
+    pt.y = y;
+    return pt.matrixTransform(ctm);
+  }
+
+  async function triggerWerewolfCounterAttack(attackerUid){
+    const targetUid = safeText(attackerUid || "");
+    if (!state.roomCode || !targetUid || targetUid === state.userId) return;
+    const selectedSum = chooseSumForTestPlayer("反撃");
+    if (isTestPlayer() && selectedSum == null) return;
+    const masamuneMode = hasMyEquipmentByName("妖刀マサムネ");
+    const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
+    const d6 = masamuneMode ? 0 : (selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6)));
+    const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const point = getMarkerClientPoint(targetUid);
+    const endX = point?.x || width / 2;
+    const endY = point?.y || height / 2;
+    const motion = createDiceMotion(width, height, endX, endY);
+    await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
+      uid: state.userId,
+      targetUid,
+      gatlingTargetUids: [],
+      x: endX,
+      y: endY,
+      d6,
+      d4,
+      masamuneMode,
+      vendettaMode: false,
+      motion,
+      at: Date.now()
+    });
+  }
+
+  async function maybeShowReactiveAbilityPrompt(ev){
+    if (!ev || !state.userId) return;
+    const attackerUid = safeText(ev.uid || "");
+    if (!attackerUid || attackerUid === state.userId) return;
+    if (!isAttackEventTargetedToMe(ev)) return;
+    if (isPlayerEliminated(state.userId)) return;
+    if (isMyRole("SHA_W3")){
+      showReactionTriggerPop("werewolf", attackerUid, 5);
+      return;
+    }
+    if (isMyRole("SHA_V1")){
+      showReactionTriggerPop("venom", attackerUid, 5);
+    }
   }
 
   function showIdentityPromptPop({ message, canReveal, onYes, onNo=null, cardObj=null, cardTheme="white", openZoom=false }){
@@ -3233,6 +3404,7 @@
         const isOliverPulse = pendingEquipAction?.type === "oliver_target" && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
         const isBananaPulse = pendingEquipAction?.type === "banana_give" && p.id === state.userId && !isIdentityEquipItem(it);
         const isGreenGivePulse = pendingEquipAction?.type === "green_give" && p.id === state.userId && !isIdentityEquipItem(it);
+        const isVenomGivePulse = pendingEquipAction?.type === "venom_give" && p.id === state.userId && !isIdentityEquipItem(it);
         const promotedUid = defeatLootQueue[0] || "";
         const isDefeatPulse = promotedUid && p.id === promotedUid && p.id !== state.userId && eliminated && !isIdentityEquipItem(it);
         const isDavidPulse = pendingEquipAction?.type === "david_select"
@@ -3240,7 +3412,7 @@
           && p.id !== state.userId
           && eliminated
           && !isIdentityEquipItem(it);
-        if (isNormalStealPulse || isOliverPulse || isBananaPulse || isGreenGivePulse){
+        if (isNormalStealPulse || isOliverPulse || isBananaPulse || isGreenGivePulse || isVenomGivePulse){
           cardEl.classList.add("equip-steal-pulse");
         }
         if (isDefeatPulse || isDavidPulse){
@@ -3479,6 +3651,12 @@
     if (!attackPop.classList.contains("hidden") && !e.target.closest("#attackPop")){
       hideAttackPop();
     }
+    if (!reactionTriggerPop?.classList.contains("hidden") && !e.target.closest("#reactionTriggerPop")){
+      hideReactionTriggerPop();
+    }
+    if (!venomChoicePop?.classList.contains("hidden") && !e.target.closest("#venomChoicePop")){
+      hideVenomChoicePop();
+    }
     if (!endTurnConfirm?.classList.contains("hidden") && !e.target.closest("#endTurnConfirm") && !e.target.closest("#btnEndTurn")){
       hideEndTurnConfirm();
     }
@@ -3527,6 +3705,39 @@
   btnAttackNo.addEventListener("click", (e) => {
     e.stopPropagation();
     hideAttackPop();
+  });
+  btnReactionTrigger?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const action = pendingReactionTrigger;
+    hideReactionTriggerPop();
+    if (!action) return;
+    if (action.type === "werewolf"){
+      await emitReactionAbilityEvent("werewolf", state.userId, action.attackerUid);
+      await triggerWerewolfCounterAttack(action.attackerUid);
+      return;
+    }
+    if (action.type === "venom"){
+      await emitReactionAbilityEvent("venom", state.userId, action.attackerUid);
+      await emitVenomChoiceEvent(state.userId, action.attackerUid);
+    }
+  });
+  btnVenomTakeDamage?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    hideVenomChoicePop();
+    await addDamageToPlayer(state.userId, 1, { source:"venom" });
+  });
+  btnVenomGiveEquip?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const action = pendingVenomChoice;
+    hideVenomChoicePop();
+    if (!action) return;
+    if (!hasNonIdentityEquipment(state.userId)){
+      showTurnHint("装備がないため、渡せません。");
+      return;
+    }
+    pendingEquipAction = { type:"venom_give", fromUid: state.userId, toUid: action.venomUid };
+    renderEquipmentDock();
+    showTurnHint("渡す装備を選択してください。");
   });
   btnRoomActionNo?.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -3736,6 +3947,37 @@
           }
         }
       });
+      return;
+    }
+
+    if (pendingEquipAction?.type === "venom_give"){
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      if (ownerUid !== state.userId || !sourceKey) return;
+      const action = { ...pendingEquipAction, sourceKey };
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードをわたしますか。", async () => {
+        pendingEquipAction = null;
+        zoomDismissHandler = null;
+        const ok = await moveEquipmentCardBetweenPlayers(action.fromUid, action.toUid, sourceKey);
+        if (ok){
+          closeZoom();
+          renderEquipmentDock();
+          showTurnHint("");
+        }
+      }, {
+        fixedLower:true,
+        closeZoomOnNo:false,
+        onNo: () => {
+          zoomDismissHandler = null;
+          pendingEquipAction = { type:"venom_give", fromUid: action.fromUid, toUid: action.toUid };
+          renderEquipmentDock();
+        }
+      });
+      zoomDismissHandler = async () => {
+        pendingEquipAction = { type:"venom_give", fromUid: action.fromUid, toUid: action.toUid };
+        renderEquipmentDock();
+      };
       return;
     }
 
@@ -4635,6 +4877,7 @@
         applyDamage: safeText(ev.uid || "") === state.userId,
         motion: ev.motion || null
       });
+      maybeShowReactiveAbilityPrompt(ev);
     });
   }
 
@@ -4651,6 +4894,58 @@
       if (!ev || !at || at <= roleFlashEventSeenAt) return;
       roleFlashEventSeenAt = at;
       showRoleFlashOverlay(safeText(ev.roleId || ""), 1200);
+    });
+  }
+
+  function subscribeReactionAbilityEvents(){
+    const reactionRef = ref(db, `rooms/${state.roomCode}/effectEvents/reactionAbility`);
+    onValue(reactionRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!reactionAbilityEventInitialized){
+        reactionAbilityEventInitialized = true;
+        reactionAbilityEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= reactionAbilityEventSeenAt) return;
+      reactionAbilityEventSeenAt = at;
+      const type = safeText(ev.type || "");
+      const reactorUid = safeText(ev.reactorUid || "");
+      const attackerUid = safeText(ev.attackerUid || "");
+      if (!type || !reactorUid || !attackerUid) return;
+      if (type === "werewolf"){
+        showRoleFlashOverlay("SHA_W3", 1200);
+        if (!equipCache?.[reactorUid]?.identity?.roleId){
+          showTemporaryRoleTag(reactorUid, "反撃", 1200);
+        }
+        return;
+      }
+      if (type === "venom"){
+        showRoleFlashOverlay("SHA_V1", 1200);
+        if (!equipCache?.[reactorUid]?.identity?.roleId){
+          showTemporaryRoleTag(reactorUid, "反駁の猛毒", 1200);
+        }
+      }
+    });
+  }
+
+  function subscribeVenomChoiceEvents(){
+    const venomRef = ref(db, `rooms/${state.roomCode}/effectEvents/venomChoice`);
+    onValue(venomRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!venomChoiceEventInitialized){
+        venomChoiceEventInitialized = true;
+        venomChoiceEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= venomChoiceEventSeenAt) return;
+      venomChoiceEventSeenAt = at;
+      const attackerUid = safeText(ev.attackerUid || "");
+      const venomUid = safeText(ev.venomUid || "");
+      if (!attackerUid || !venomUid) return;
+      if (attackerUid !== state.userId) return;
+      showVenomChoicePop(venomUid, at);
     });
   }
 
@@ -8011,6 +8306,8 @@
     subscribeDamage();
     subscribeDiceEvents();
     subscribeRoleFlashEvents();
+    subscribeReactionAbilityEvents();
+    subscribeVenomChoiceEvents();
     subscribeWalpurgisSwapEvents();
 
     renderSeatTiles();
