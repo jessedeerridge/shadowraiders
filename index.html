@@ -4943,6 +4943,16 @@
     defs.setAttribute('id', 'roomPatternDefs');
     roomSvg.insertBefore(defs, roomSvg.firstChild);
 
+    const roomImageScaleMap = {
+      1: 1.40,
+      2: 1.30,
+      3: 1.50,
+      4: 1.50,
+      5: 1.30,
+      6: 1.40,
+      7: 1.05,
+    };
+
     for (let roomId = 1; roomId <= 7; roomId++){
       const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
       pattern.setAttribute('id', `roomPattern${roomId}`);
@@ -4952,10 +4962,15 @@
       pattern.setAttribute('width', '1');
       pattern.setAttribute('height', '1');
 
+      const scale = roomImageScaleMap[roomId] || 1;
+      const imageSize = 100 * scale;
+      const imageOffset = (100 - imageSize) / 2;
       const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
       image.setAttribute('href', `room${roomId}.jpg`);
-      image.setAttribute('width', '100');
-      image.setAttribute('height', '100');
+      image.setAttribute('x', String(imageOffset));
+      image.setAttribute('y', String(imageOffset));
+      image.setAttribute('width', String(imageSize));
+      image.setAttribute('height', String(imageSize));
       image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
 
       pattern.appendChild(image);
