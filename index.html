@@ -542,12 +542,6 @@
     margin-top:-10px;
   }
 
-  .left-stack{
-    width:170px;
-    position:relative;
-    flex:0 0 auto;
-  }
-
   /* パネル共通 */
   .panel{
     background:rgba(255,255,255,.78);
@@ -902,7 +896,7 @@
      ★③カードテーブル：背景をgear.jpgに
      ========================================================= */
   .cards-panel{
-    width:max-content;
+    width:calc(100% + 40px);
     max-width:min(1060px, calc(100vw - 16px));
     display:flex;
     justify-content:center;
@@ -920,12 +914,6 @@
     border:1px solid rgba(0,0,0,.08);
     box-shadow:0 12px 28px rgba(0,0,0,.10);
     border-radius:16px;
-
-    position:absolute;
-    top:100%;
-    left:0;
-    margin-top:0;
-    z-index:5;
   }
 
   .empty-cards-row{
@@ -1463,20 +1451,8 @@
 
     <div id="gameArea" class="game-area hidden" aria-label="ゲーム面">
       <div class="top-row">
-        <div class="left-stack">
-          <div class="panel left-panel">
-            <div id="hpBoard" class="hp-board" aria-label="HPボード"></div>
-          </div>
-
-          <div class="panel cards-panel" id="cardsPanel" aria-label="デッキ">
-            <div class="empty-cards-row">
-              <div id="slot1" class="card72"></div>
-              <div id="slot2" class="card72"></div>
-              <div id="slot3" class="card72"></div>
-              <div id="slot4" class="card72"></div>
-              <div id="slot5" class="card72"></div>
-            </div>
-          </div>
+        <div class="panel left-panel">
+          <div id="hpBoard" class="hp-board" aria-label="HPボード"></div>
         </div>
 
         <div class="right-panel">
@@ -1489,6 +1465,16 @@
           <div id="turnEndWrap" class="turn-end-wrap hidden">
             <button id="btnEndTurn" class="btn primary">手番を終わる</button>
           </div>
+        </div>
+      </div>
+
+      <div class="panel cards-panel" id="cardsPanel" aria-label="デッキ">
+        <div class="empty-cards-row">
+          <div id="slot1" class="card72"></div>
+          <div id="slot2" class="card72"></div>
+          <div id="slot3" class="card72"></div>
+          <div id="slot4" class="card72"></div>
+          <div id="slot5" class="card72"></div>
         </div>
       </div>
     </div>
