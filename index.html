@@ -6118,7 +6118,8 @@
         roleId: role.id,
         testReplacedAt: Date.now()
       },
-      [`equipment/${state.userId}/identity`]: null
+      [`equipment/${state.userId}/identity`]: null,
+      [`abilityUsage/david/${state.userId}`]: null
     });
   }
   function closeHelp(){ helpBackdrop.classList.add('hidden'); }
