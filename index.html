@@ -6736,9 +6736,9 @@
         roleId: role.id,
         testReplacedAt: Date.now()
       },
-      [`equipment/${state.userId}/identity`]: null,
-      [`abilityUsage/david/${state.userId}`]: null
+      [`equipment/${state.userId}/identity`]: null
     });
+    await resetAllAbilityUsageForUids([state.userId]);
   }
   function closeHelp(){ helpBackdrop.classList.add('hidden'); }
   helpBtn.addEventListener('click', () => {
@@ -6757,6 +6757,26 @@
 
   function isGameStarted(){
     return !!(state.room && (state.room.gameStarted || state.room.startedAt));
+  }
+
+
+  async function resetAllAbilityUsageForUids(uids){
+    if (!state.roomCode) return;
+    const targets = [...new Set((uids || []).map(uid => safeText(uid)).filter(Boolean))];
+    if (!targets.length) return;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur || !cur.abilityUsage) return cur;
+      for (const usageMap of Object.values(cur.abilityUsage || {})){
+        if (!usageMap || typeof usageMap !== 'object') continue;
+        for (const uid of targets){
+          if (Object.prototype.hasOwnProperty.call(usageMap, uid)){
+            delete usageMap[uid];
+          }
+        }
+      }
+      return cur;
+    });
   }
   function isSeated(){ return state.seatedTable != null; }
 
@@ -7143,6 +7163,7 @@
 
     if (Object.keys(updates).length){
       await update(roomRef, updates);
+      await resetAllAbilityUsageForUids([state.userId, previousPlayerId]);
     }
 
     if (roomData.hostId && previousPlayerId && roomData.hostId === previousPlayerId) {
@@ -7192,6 +7213,7 @@
     }
 
     await update(roomRef, updates);
+    await resetAllAbilityUsageForUids([state.userId, previousPlayerId]);
 
     state.seatedTable = seatIndex;
     sessionStorage.setItem(seatKey(state.roomCode), String(seatIndex));
