@@ -1939,6 +1939,7 @@
     if (!canUseRoom3Action()) return;
     room3ActionUsed = true;
     hideRoomActionPop();
+    showTurnHint("");
     renderMarkers();
   }
 
@@ -1981,7 +1982,7 @@
         btn.textContent = "スキップ(して攻撃)";
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          skipRoom3ActionAndStartAttaack();
+          skipRoom3ActionAndStartAttack();
         });
         turnHintPop.appendChild(btn);
       }
