@@ -1515,7 +1515,7 @@
 <div id="turnHintPop" class="turn-hint-pop hidden" aria-live="polite"></div>
 
 <div id="endTurnConfirm" class="endturn-confirm hidden" role="dialog" aria-label="手番終了確認">
-  <p class="msg">本当いいいですか。</p>
+  <p class="msg" id="endTurnConfirmMsg">本当に終了しますか。</p>
   <div class="actions">
     <button class="btn primary" id="btnEndTurnYes">はい</button>
     <button class="btn ghost" id="btnEndTurnNo">いいえ</button>
@@ -1966,6 +1966,7 @@
   let zoomPassthroughMode = false;
   let zoomDismissHandler = null;
   let suppressOutsidePopCloseUntil = 0;
+  let pendingRevealAction = "";
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -2031,9 +2032,13 @@
     const ability = roleAbilityName(role);
     const mode = options.mode === "notice" ? "notice" : "confirm";
     const message = safeText(options.message || "").trim();
+    pendingRevealAction = safeText(options.action || "");
     if (revealMsg){
       if (mode === "notice"){
         revealMsg.textContent = message || "手番の初めにだけ正体を公開できます。";
+        pendingRevealAction = "";
+      } else if (options.messageHtml){
+        revealMsg.innerHTML = String(options.messageHtml);
       } else {
         const suffix = options.appendEndTurnNotice ? "使用後に手番が終了します。" : "";
         revealMsg.innerHTML = `正体を公開して、<span class="ability-pill">${ability}</span>を使いますか。${suffix}`;
@@ -2066,7 +2071,45 @@
     revealPop.style.left = `${x}px`;
     revealPop.style.top = `${top}px`;
   }
-  function hideRevealPop(){ revealPop.classList.add("hidden"); }
+  function hideRevealPop(){
+    revealPop.classList.add("hidden");
+    pendingRevealAction = "";
+  }
+
+  function eliminatedPlayerCount(){
+    return latestPlayers.filter(p => isPlayerEliminated(p.id)).length;
+  }
+
+  function isWightAbilityUsed(){
+    return !!state.room?.abilityUsage?.wight?.[state.userId];
+  }
+
+  async function markWightAbilityUsed(){
+    if (!state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/wight/${state.userId}`), true);
+  }
+
+  function canUseWightAbilityNow(){
+    if (!isMyRole("SHA_W1")) return { ok:false, message:"今は公開できません。" };
+    if (isWightAbilityUsed()) return { ok:false, message:"今は公開できません。" };
+    if (!turnState()?.moveDone) return { ok:false, message:"今は公開できません。" };
+    const eliminated = eliminatedPlayerCount();
+    if (eliminated <= 0) return { ok:false, message:"今は公開できません。" };
+    return { ok:true, eliminated };
+  }
+
+  async function activateWightAbilityAndEndTurn(){
+    const check = canUseWightAbilityNow();
+    if (!check.ok) return false;
+    await markWightAbilityUsed();
+    await update(ref(db, `rooms/${state.roomCode}/turn`), {
+      repeatTurnRemaining: check.eliminated,
+      repeatTurnTotal: check.eliminated,
+      updatedAt: Date.now()
+    });
+    await doEndTurn();
+    return true;
+  }
 
   function showAttackPopAt(clientX, clientY, targetName){
     if (!attackPop) return;
@@ -3254,9 +3297,24 @@
 
     const my = state.hands?.[state.userId];
     if (!my || !my.roleId) return;
-    if (isMyIdentityRevealed()) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if (isMyIdentityRevealed()){
+      if (myRoleId !== "SHA_W1") return;
+      const check = canUseWightAbilityNow();
+      if (!check.ok){
+        e.stopPropagation();
+        showRevealPopAt(idCard, { mode:"notice", message:check.message || "今は公開できません。" });
+        return;
+      }
+      e.stopPropagation();
+      showRevealPopAt(idCard, {
+        action: "wight_ability",
+        messageHtml: `(<span class="ability-pill">亡者の王</span>)を使いますか。`
+      });
+      return;
+    }
+
     if (myRoleId === "CIT_D1"){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
@@ -3286,6 +3344,20 @@
       showRevealPopAt(idCard, { mode: "notice", message: "手番の初めにだけ正体を公開できます。" });
       return;
     }
+    if (myRoleId === "SHA_W1"){
+      const check = canUseWightAbilityNow();
+      if (!check.ok){
+        e.stopPropagation();
+        showRevealPopAt(idCard, { mode:"notice", message:check.message || "今は公開できません。" });
+        return;
+      }
+      e.stopPropagation();
+      showRevealPopAt(idCard, {
+        action: "wight_ability",
+        messageHtml: `正体を公開して、<span class="ability-pill">亡者の王</span>を使いますか。<br>この手番を終了して、もう一手番行う。`
+      });
+      return;
+    }
     if (REVEAL_ENDS_TURN_ROLE_IDS.has(myRoleId) && !moved){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "手番の最後にだけ正体を公開できます。" });
@@ -3296,6 +3368,13 @@
     showRevealPopAt(idCard, { appendEndTurnNotice: REVEAL_ENDS_TURN_ROLE_IDS.has(myRoleId) });
   });
 
+  window.__lastPointerX = window.innerWidth / 2;
+  window.__lastPointerY = window.innerHeight / 2;
+  document.addEventListener("pointerdown", (e) => {
+    window.__lastPointerX = Number(e.clientX);
+    window.__lastPointerY = Number(e.clientY);
+  }, true);
+
   document.addEventListener("click", (e) => {
     const now = Date.now();
     if (now < suppressOutsidePopCloseUntil) return;
@@ -3304,6 +3383,9 @@
     }
     if (!attackPop.classList.contains("hidden") && !e.target.closest("#attackPop")){
       hideAttackPop();
+    }
+    if (!endTurnConfirm?.classList.contains("hidden") && !e.target.closest("#endTurnConfirm") && !e.target.closest("#btnEndTurn")){
+      hideEndTurnConfirm();
     }
     if (!roomActionPop.classList.contains("hidden") && !e.target.closest("#roomActionPop")){
       if (pendingRoomAction?.dismissOnOutside !== false){
@@ -3325,6 +3407,17 @@
     if (myRoleId === "CIT_D2"){
       await startDavidAbilityFlow();
       hideRevealPop();
+      return;
+    }
+    if (pendingRevealAction === "wight_ability"){
+      if (!isMyIdentityRevealed()){
+        await revealMyIdentityToEquipment({ revealedBy:"wight_ability" });
+      }
+      const ok = await activateWightAbilityAndEndTurn();
+      hideRevealPop();
+      if (!ok){
+        showRevealPopAt(null, { mode:"notice", message:canUseWightAbilityNow().message || "今は公開できません。" });
+      }
       return;
     }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
@@ -3622,6 +3715,7 @@
   const turnEndWrap = document.getElementById("turnEndWrap");
   const btnEndTurn = document.getElementById("btnEndTurn");
   const endTurnConfirm = document.getElementById("endTurnConfirm");
+  const endTurnConfirmMsg = document.getElementById("endTurnConfirmMsg");
   const btnEndTurnYes = document.getElementById("btnEndTurnYes");
   const btnEndTurnNo = document.getElementById("btnEndTurnNo");
   let damageCache = {};
@@ -4112,12 +4206,22 @@
     endTurnConfirm?.classList.add("hidden");
   }
 
-  function showEndTurnConfirm(){
+  function showEndTurnConfirm(options = {}){
+    if (endTurnConfirmMsg){
+      endTurnConfirmMsg.textContent = safeText(options.message || "本当に終了しますか。");
+    }
     endTurnConfirm?.classList.remove("hidden");
   }
 
   function repeatTurnPending(){
-    return !!turnState()?.repeatTurnPending;
+    return Number(turnState()?.repeatTurnRemaining || 0) > 0;
+  }
+
+  function repeatTurnLabel(){
+    const rest = Math.max(0, Number(turnState()?.repeatTurnRemaining || 0));
+    const total = Math.max(0, Number(turnState()?.repeatTurnTotal || 0));
+    if (rest <= 0 || total <= 0) return "もう一度手番を行う";
+    return `もう一度手番を行う(${rest}/${total})`;
   }
 
   function renderTurnEndButton(){
@@ -4126,7 +4230,7 @@
     const visible = isGameStarted() && canShowEndTurnButton();
     turnEndWrap.classList.toggle("hidden", !visible);
     if (btnEndTurn){
-      btnEndTurn.textContent = repeatTurnPending() ? "もう一度手番を行う" : "手番を終わる";
+      btnEndTurn.textContent = repeatTurnPending() ? repeatTurnLabel() : "手番を終わる";
     }
     if (!visible) hideEndTurnConfirm();
   }
@@ -4514,7 +4618,8 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
-        repeatTurnPending: false,
+        repeatTurnRemaining: 0,
+        repeatTurnTotal: 0,
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[startPlayerId]){
@@ -4546,7 +4651,11 @@
 
       const curTurn = cur.turn || {};
       const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || aliveOrder[0] || "");
-      const repeat = !!curTurn.repeatTurnPending && !isEliminatedInRoom(curId);
+      const rest = Math.max(0, Number(curTurn.repeatTurnRemaining || 0));
+      const total = Math.max(0, Number(curTurn.repeatTurnTotal || 0));
+      const repeat = rest > 0 && !isEliminatedInRoom(curId);
+      const nextRepeatRemaining = repeat ? Math.max(0, rest - 1) : 0;
+      const nextRepeatTotal = repeat ? Math.max(total, rest) : 0;
       let nextPlayerId = curId;
       if (!repeat){
         let nextIdx = aliveOrder.indexOf(curId);
@@ -4563,7 +4672,8 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
-        repeatTurnPending: false,
+        repeatTurnRemaining: nextRepeatRemaining,
+        repeatTurnTotal: nextRepeatTotal,
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
@@ -5376,7 +5486,8 @@
   async function enableRepeatTurnOnce(){
     if (!state.roomCode || !isMyTurn()) return;
     await update(ref(db, `rooms/${state.roomCode}/turn`), {
-      repeatTurnPending: true,
+      repeatTurnRemaining: 1,
+      repeatTurnTotal: 1,
       updatedAt: Date.now()
     });
   }
@@ -6446,7 +6557,7 @@
     { id:"SHA_V1", name:"ヴェノム",    en:"VENOM",   initial:"V", faction:"シャドウ", hp:13, win:"レイダー全員またはシチズン3人の脱落", effect:"反駁の猛毒：攻撃者は1ダメージ受けるか装備を渡すか選択" },
     { id:"SHA_V2", name:"ヴァンパイア", en:"VAMPIRE", initial:"V", faction:"シャドウ", hp:13, win:"レイダー全員またはシチズン3人の脱落", effect:"吸血：攻撃成功時、ダメージを2回復" },
     { id:"SHA_V3", name:"ヴェンデッタ", en:"VENDETTA", initial:"V", faction:"シャドウ", hp:13, win:"レイダー全員またはシチズン3人の脱落", effect:"冥府の大鎌：攻撃は4面ダイスのみ使用" },
-    { id:"SHA_W1", name:"ワイト",      en:"WIGHT",    initial:"W", faction:"シャドウ", hp:14, win:"レイダー全員またはシチズン3人の脱落", effect:"亡者の王：手番終了後、脱落者の数だけ追加手番（1回）" },
+    { id:"SHA_W1", name:"ワイト",      en:"WIGHT",    initial:"W", faction:"シャドウ", hp:14, win:"レイダー全員またはシチズン3人の脱落", effect:"亡者の王：移動後に公開して使用。手番を終了して、脱落者数ぶん追加手番（1回）" },
     { id:"SHA_W2", name:"ワルプルギス", en:"WALPURGIS", initial:"W", faction:"シャドウ", hp:14, win:"レイダー全員またはシチズン3人の脱落", effect:"重力の虹：攻撃時、任意のPL1人と位置を交換可" },
     { id:"SHA_W3", name:"ワーウルフ",   en:"WEREWOLF", initial:"W", faction:"シャドウ", hp:14, win:"レイダー全員またはシチズン3人の脱落", effect:"反撃：攻撃を受けた時、そのPLをただちに攻撃" },
   ];
@@ -6624,9 +6735,9 @@
         roleId: role.id,
         testReplacedAt: Date.now()
       },
-      [`equipment/${state.userId}/identity`]: null,
-      [`abilityUsage/david/${state.userId}`]: null
+      [`equipment/${state.userId}/identity`]: null
     });
+    await resetAllAbilityUsageForUids([state.userId]);
   }
   function closeHelp(){ helpBackdrop.classList.add('hidden'); }
   helpBtn.addEventListener('click', () => {
@@ -6645,6 +6756,26 @@
 
   function isGameStarted(){
     return !!(state.room && (state.room.gameStarted || state.room.startedAt));
+  }
+
+
+  async function resetAllAbilityUsageForUids(uids){
+    if (!state.roomCode) return;
+    const targets = [...new Set((uids || []).map(uid => safeText(uid)).filter(Boolean))];
+    if (!targets.length) return;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur || !cur.abilityUsage) return cur;
+      for (const usageMap of Object.values(cur.abilityUsage || {})){
+        if (!usageMap || typeof usageMap !== 'object') continue;
+        for (const uid of targets){
+          if (Object.prototype.hasOwnProperty.call(usageMap, uid)){
+            delete usageMap[uid];
+          }
+        }
+      }
+      return cur;
+    });
   }
   function isSeated(){ return state.seatedTable != null; }
 
@@ -7031,6 +7162,7 @@
 
     if (Object.keys(updates).length){
       await update(roomRef, updates);
+      await resetAllAbilityUsageForUids([state.userId, previousPlayerId]);
     }
 
     if (roomData.hostId && previousPlayerId && roomData.hostId === previousPlayerId) {
@@ -7080,6 +7212,7 @@
     }
 
     await update(roomRef, updates);
+    await resetAllAbilityUsageForUids([state.userId, previousPlayerId]);
 
     state.seatedTable = seatIndex;
     sessionStorage.setItem(seatKey(state.roomCode), String(seatIndex));
@@ -7243,7 +7376,8 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
-        repeatTurnPending: false,
+        repeatTurnRemaining: 0,
+        repeatTurnTotal: 0,
         updatedAt: Date.now()
       }
     });
@@ -7329,12 +7463,8 @@
 
   btnEndTurn?.addEventListener('click', async () => {
     if (!canShowEndTurnButton()) return;
-    if (repeatTurnPending()){
-      await doEndTurn();
-      return;
-    }
     if (!turnState()?.attackDone){
-      showEndTurnConfirm();
+      showEndTurnConfirm({ message:"本当に終了しますか。" });
       return;
     }
     await doEndTurn();
