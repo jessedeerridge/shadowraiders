@@ -2964,6 +2964,7 @@
       equipBody.appendChild(row);
     }
     refreshRoomAbilityHint();
+    ensureDavidIdentityZoomVisible();
   }
 
   async function grantEquipmentToMe(cardObj, theme){
@@ -3040,6 +3041,12 @@
     if (pendingEquipAction?.type !== "david_select") return;
     restoreDavidIdentityZoom();
     renderEquipmentDock();
+  }
+
+  function ensureDavidIdentityZoomVisible(){
+    if (pendingEquipAction?.type !== "david_select") return;
+    if (!zoomBackdrop?.classList.contains("hidden")) return;
+    restoreDavidAbilitySelection();
   }
 
   async function startDavidAbilityFlow(){
@@ -3270,7 +3277,8 @@
     if (pendingEquipAction?.type === "david_select"){
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
-      const canPick = pendingEquipAction.defeatedUids?.includes(ownerUid) && !!sourceKey;
+      const isPulseCard = card.classList.contains("equip-defeat-pulse");
+      const canPick = isPulseCard && pendingEquipAction.defeatedUids?.includes(ownerUid) && !!sourceKey;
       if (!canPick){
         restoreDavidAbilitySelection();
         return;
