@@ -1874,6 +1874,23 @@
   let pendingGreenCloseSeenAt = 0;
   let pendingGreenCloseInitialized = false;
   let greenRevealByRequestId = {};
+  const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
+    "CIT_D2", // デーヴィッド
+    "CIT_D3", // デボラ
+    "CIT_A1", // アリス
+    "CIT_C3", // クレア
+    "CIT_C2", // キャロル
+    "RAI_E2", // エリカ
+    "RAI_F1", // フェリックス
+    "RAI_F2", // フェリシア
+    "SHA_U2", // ウラヌス
+  ]);
+  const REVEAL_ENDS_TURN_ROLE_IDS = new Set([
+    "CIT_A3", // アガサ
+    "CIT_B2", // ベンジャミン
+    "RAI_E3", // エマ
+    "RAI_G1", // ゴードン
+  ]);
   let cardPlayerSelectActive = false;
   let activeGreenReplies = {};
   let moveDiceEventSeenAt = 0;
@@ -1953,11 +1970,22 @@
     return safeText(match?.[1] || effect).trim() || "特殊能力";
   }
 
-  function showRevealPopAt(anchorEl){
+  function showRevealPopAt(anchorEl, options = {}){
     const role = myRoleInfo();
     const ability = roleAbilityName(role);
+    const mode = options.mode === "notice" ? "notice" : "confirm";
+    const message = safeText(options.message || "").trim();
     if (revealMsg){
-      revealMsg.innerHTML = `正体を公開して、<span class="ability-pill">${ability}</span>を使いますか。`;
+      if (mode === "notice"){
+        revealMsg.textContent = message || "手番の初めにだけ正体を公開できます。";
+      } else {
+        const suffix = options.appendEndTurnNotice ? "使用後に手番が終了します。" : "";
+        revealMsg.innerHTML = `正体を公開して、<span class="ability-pill">${ability}</span>を使いますか。${suffix}`;
+      }
+    }
+    btnRevealYes?.classList.toggle("hidden", mode === "notice");
+    if (btnRevealNo){
+      btnRevealNo.textContent = (mode === "notice") ? "OK" : "いいえ";
     }
     revealPop.classList.remove("hidden");
     if (!anchorEl){
@@ -2929,8 +2957,15 @@
     if (!my || !my.roleId) return;
     if (isMyIdentityRevealed()) return;
 
+    const myRoleId = safeText(my.roleId || "");
+    if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && !!turnState()?.moveDone){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "手番の初めにだけ正体を公開できます。" });
+      return;
+    }
+
     e.stopPropagation();
-    showRevealPopAt(idCard);
+    showRevealPopAt(idCard, { appendEndTurnNotice: REVEAL_ENDS_TURN_ROLE_IDS.has(myRoleId) });
   });
 
   document.addEventListener("click", (e) => {
