@@ -1753,7 +1753,7 @@
 
   function buildWbFrontHTML(cardObj, theme){
     const name = safeText(cardObj?.name || "（なし）").trim();
-    const img  = cardImageFileFromName(name);
+    const img  = (theme === "green") ? "suiri.jpg" : cardImageFileFromName(name);
 
     let eff = safeText(cardObj?.effect || "");
     let showEquip = false;
@@ -2103,7 +2103,7 @@
     if (text.includes("装備を渡すか、1ダメージ受けよ")){
       const canEquip = hasAnyEquipment(state.userId);
       return [
-        { id:"take_damage", label:"ダメージを1うける", enabled: canJudge ? !!matched : true },
+        { id:"take_damage", label:"1ダメージうける", enabled: canJudge ? !!matched : true },
         { id:"give_equip", label:"装備をわたす", enabled: canJudge ? (!!matched && canEquip) : canEquip },
         { id:"no", label:"いいえ", enabled: canJudge ? !matched : true }
       ];
