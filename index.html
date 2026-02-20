@@ -88,7 +88,7 @@
   .btn.pop-white{background:#fff;color:#111;border-color:#d1d5db;}
 
   .help-btn{
-    position:fixed;left:16px;bottom:16px;width:44px;height:44px;border-radius:50%;
+    position:fixed;left:16px;bottom:24px;width:44px;height:44px;border-radius:50%;
     border:1px solid #111;background:#111;color:#fff;
     box-shadow:0 8px 20px rgba(0,0,0,.18);
     display:none;align-items:center;justify-content:center;
@@ -98,14 +98,14 @@
   .help-btn.visible{display:flex;}
 
   .room-guide-btn{
-    position:fixed;left:16px;bottom:66px;width:44px;height:44px;border-radius:50%;
+    position:fixed;left:16px;bottom:74px;width:44px;height:44px;border-radius:50%;
     border:1px solid #111;background:#111;color:#fff;
     box-shadow:0 8px 20px rgba(0,0,0,.18);
     display:none;align-items:center;justify-content:center;
     font-size:20px;font-weight:1000;cursor:pointer;
     z-index:2000;
   }
-  .room-guide-btn.host-position{bottom:116px;}
+  .room-guide-btn.host-position{bottom:124px;}
   .room-guide-btn.visible{display:flex;}
  .room-guide-btn.active{background:#111;color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.35), 0 8px 20px rgba(0,0,0,.25);}
   .room-guide-btn img{width:22px;height:22px;display:block;object-fit:contain;pointer-events:none;}
@@ -120,7 +120,7 @@
   .help-pop-backdrop.hidden{display:none;}
   .help-pop{
     width:min(560px, calc(100% - 0px));
-    max-height:min(74vh, 700px);
+    max-height:min(82vh, 780px);
     background:#fff;border:1px solid #ddd;border-radius:16px;
     box-shadow:0 18px 40px rgba(0,0,0,.35);
     overflow:hidden;
@@ -130,7 +130,15 @@
     padding:10px 12px;border-bottom:1px solid #eee;
   }
   .help-pop-title{font-weight:1000;font-size:14px;}
-  .help-pop-body{padding:12px;overflow:auto;max-height:calc(74vh - 48px);}
+  .help-pop-body{padding:12px;overflow:auto;max-height:calc(82vh - 48px);}
+
+  .help-section{padding:6px 0 10px;}
+  .help-section + .help-section{border-top:1px solid rgba(0,0,0,.16);}
+  .help-section-title{font-weight:900;font-size:13px;margin:0 0 8px;}
+  .help-card-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
+  .help-card-grid .card72,.help-card-grid .id72{margin:0 auto;}
+  .help-role-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+  .help-role-row:last-child{margin-bottom:0;}
 
   .role-row{
     display:flex;gap:12px;align-items:flex-start;
@@ -7032,41 +7040,86 @@
 
   function renderHelpList(){
     helpBody.innerHTML = '';
-    const sorted = [...ROLES].sort((a,b) => {
+    const sortedRoles = [...ROLES].sort((a,b) => {
       const order = { "レイダー": 0, "シャドウ": 1, "シチズン": 2 };
       const ao = order[a.faction] ?? 9;
       const bo = order[b.faction] ?? 9;
       if (ao !== bo) return ao - bo;
-      return a.name.localeCompare(b.name, 'ja');
+      if (a.initial !== b.initial) return safeText(a.initial).localeCompare(safeText(b.initial), 'ja');
+      return safeText(a.name).localeCompare(safeText(b.name), 'ja');
     });
 
-    sorted.forEach((r) => {
+    const byInitial = new Map();
+    sortedRoles.forEach((r) => {
+      const key = safeText(r.initial || "?");
+      if (!byInitial.has(key)) byInitial.set(key, []);
+      byInitial.get(key).push(r);
+    });
+
+    function isEquipCard(cardObj){
+      const txt = safeText(cardObj?.effect || "").trim();
+      return txt.startsWith("装備");
+    }
+    function sortDeckForHelp(deck){
+      return [...(deck || [])].sort((a,b) => {
+        const ae = isEquipCard(a) ? 0 : 1;
+        const be = isEquipCard(b) ? 0 : 1;
+        if (ae !== be) return ae - be;
+        return safeText(a?.name || a?.text || "").localeCompare(safeText(b?.name || b?.text || ""), 'ja');
+      });
+    }
+
+    function makeSection(title){
+      const sec = document.createElement('section');
+      sec.className = 'help-section';
+      const h = document.createElement('h3');
+      h.className = 'help-section-title';
+      h.textContent = title;
+      sec.appendChild(h);
+      return sec;
+    }
+
+    const roleSec = makeSection('正体カードリスト');
+    for (const group of byInitial.values()){
       const row = document.createElement('div');
-      row.className = 'role-row';
+      row.className = 'help-role-row';
+      group.forEach((r) => {
+        const cardWrap = document.createElement('div');
+        cardWrap.className = 'role-card-wrap';
+        cardWrap.appendChild(createIdentityCard(r));
+        if (isTestPlayer()){
+          cardWrap.style.cursor = 'pointer';
+          cardWrap.title = 'クリックで自分の正体カードをこのカードに変更';
+          cardWrap.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await replaceMyRoleCardForTest(r);
+          });
+        }
+        row.appendChild(cardWrap);
+      });
+      roleSec.appendChild(row);
+    }
+    helpBody.appendChild(roleSec);
 
-      const cardWrap = document.createElement('div');
-      cardWrap.className = 'role-card-wrap';
-      cardWrap.appendChild(createIdentityCard(r));
-      if (isTestPlayer()){
-        cardWrap.style.cursor = 'pointer';
-        cardWrap.title = 'クリックで自分の正体カードをこのカードに変更';
-        cardWrap.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          await replaceMyRoleCardForTest(r);
-        });
-      }
+    function appendDeckSection(title, deck, theme, toCardObj){
+      const sec = makeSection(title);
+      const grid = document.createElement('div');
+      grid.className = 'help-card-grid';
+      sortDeckForHelp(deck).forEach((cardData) => {
+        const card = document.createElement('div');
+        card.className = `card72 wb-front ${theme === 'black' ? 'wb-black' : theme === 'green' ? 'wb-green' : 'wb-white'}`;
+        card.innerHTML = buildWbFrontHTML(toCardObj(cardData), theme);
+        grid.appendChild(card);
+      });
+      sec.appendChild(grid);
+      helpBody.appendChild(sec);
+    }
 
-      const desc = document.createElement('div');
-      desc.className = 'role-desc';
-      desc.innerHTML = `
-        <div class="name">${r.name} <span class="small" style="margin-left:6px;">(${r.faction})</span></div>
-        <div class="text">${r.effect}</div>
-        <div class="meta">HP：${r.hp}\n勝利条件：${r.win}</div>
-      `;
-
-      row.appendChild(cardWrap);
-      row.appendChild(desc);
-      helpBody.appendChild(row);
+    appendDeckSection('白カードリスト', WHITE_DECK, 'white', (c) => c);
+    appendDeckSection('黒カードリスト', BLACK_DECK, 'black', (c) => c);
+    appendDeckSection('推理カードリスト', GREEN_DECK, 'green', (c) => {
+      const text = safeText(c?.text || '').replace(/^推理カード：/, '').trim();
+      return { name:'推理カード', effect:text };
     });
   }
   function openHelp(){
