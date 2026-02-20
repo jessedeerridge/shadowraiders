@@ -943,7 +943,9 @@
   }
 
   .room-svg{width:100%;height:100%;display:block;}
-  .shape{stroke:#111;stroke-width:2;vector-effect:non-scaling-stroke;}
+  .shape{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
+  .attack-range-layer{pointer-events:none;}
+  .attack-range-edge{stroke:var(--gold);stroke-width:2;stroke-linecap:round;vector-effect:non-scaling-stroke;}
   .roomhit{fill:transparent;cursor:pointer;}
   .roomhit:hover{fill:rgba(0,0,0,.06);}
   .room-choice-pulse{
@@ -5058,6 +5060,7 @@
   }
 
   let markerLayer = null;
+  let attackRangeLayer = null;
   let markerCache = {};
   const roomShapeEls = {};
   const roomHitEls = {};
@@ -5193,6 +5196,7 @@
       roomHitEls[rid]?.classList.add('room-choice-once');
     }
     updateRoomChoiceUi();
+    updateAttackRangeUi();
     refreshRoomAbilityHint();
   }
 
@@ -6284,6 +6288,67 @@
     while(markerLayer.firstChild) markerLayer.removeChild(markerLayer.firstChild);
   }
 
+  function ensureAttackRangeLayer(){
+    if (attackRangeLayer && attackRangeLayer.isConnected) return attackRangeLayer;
+    attackRangeLayer = svgEl('g', { class:'attack-range-layer' }, roomG);
+    return attackRangeLayer;
+  }
+
+  function clearAttackRangeLayer(){
+    if (!attackRangeLayer) return;
+    while (attackRangeLayer.firstChild) attackRangeLayer.removeChild(attackRangeLayer.firstChild);
+  }
+
+  function normalizedEdgeKey(ax, ay, bx, by){
+    const pa = `${Number(ax).toFixed(3)},${Number(ay).toFixed(3)}`;
+    const pb = `${Number(bx).toFixed(3)},${Number(by).toFixed(3)}`;
+    return pa < pb ? `${pa}|${pb}` : `${pb}|${pa}`;
+  }
+
+  function updateAttackRangeUi(){
+    ensureAttackRangeLayer();
+    clearAttackRangeLayer();
+
+    if (!canUseAttackDice()) return;
+
+    const myMarker = markerCache?.[state.userId] || null;
+    const myRoomId = markerRoomId(myMarker);
+    if (!myRoomId) return;
+
+    const deadScopeCount = countEquipmentByNames(state.userId, ["死神スコープ"]);
+    const attackRooms = attackTargetRoomIdsFromRoom(myRoomId, deadScopeCount);
+    if (!attackRooms.size) return;
+
+    const edges = new Map();
+    for (const rid of attackRooms){
+      const pts = roomPolygons[rid];
+      if (!Array.isArray(pts) || pts.length < 2) continue;
+      for (let i = 0; i < pts.length; i++){
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        const key = normalizedEdgeKey(a[0], a[1], b[0], b[1]);
+        const cur = edges.get(key);
+        if (cur){
+          cur.count += 1;
+        } else {
+          edges.set(key, { ax:a[0], ay:a[1], bx:b[0], by:b[1], count:1 });
+        }
+      }
+    }
+
+    for (const edge of edges.values()){
+      if (edge.count !== 1) continue;
+      const line = svgEl('line', {
+        class:'attack-range-edge',
+        x1: edge.ax,
+        y1: edge.ay,
+        x2: edge.bx,
+        y2: edge.by
+      });
+      attackRangeLayer.appendChild(line);
+    }
+  }
+
 
   function showUranusSkipPop(clientX, clientY){
     const ability = '<span class="ability-pill">メテオストライク</span>';
@@ -6516,6 +6581,7 @@
       });
     }
     updateRoomChoiceUi();
+    updateAttackRangeUi();
     refreshRoomAbilityHint();
   }
 
@@ -6612,7 +6678,9 @@
     });
 
     ensureMarkerLayer();
+    ensureAttackRangeLayer();
     updateRoomChoiceUi();
+    updateAttackRangeUi();
     fitRoomViewBox(2);
   }
 
