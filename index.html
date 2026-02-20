@@ -3264,14 +3264,18 @@
     if (pendingEquipAction?.type === "david_select"){
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
-      if (!pendingEquipAction.defeatedUids?.includes(ownerUid) || !sourceKey) return;
-      showDavidSelectPreviewFromCard(card);
-      zoomDismissHandler = null;
+      const isPulsingCard = card.classList.contains("equip-defeat-pulse");
+      if (!isPulsingCard || !pendingEquipAction.defeatedUids?.includes(ownerUid) || !sourceKey) return;
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      zoomDismissHandler = async () => {
+        restoreDavidIdentityZoom();
+      };
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードを獲得しますか。", async () => {
         const action = pendingEquipAction;
         if (!action || action.type !== "david_select") return;
         const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
         if (ok){
+          zoomDismissHandler = null;
           await markDavidAbilityUsed();
           pendingEquipAction = null;
           hideDavidSelectPreview();
@@ -3281,7 +3285,7 @@
         fixedLower:true,
         closeZoomOnNo:false,
         onNo: () => {
-          hideDavidSelectPreview();
+          restoreDavidIdentityZoom();
         }
       });
       return;
