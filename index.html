@@ -1709,6 +1709,14 @@
     return a;
   }
   function safeText(s){ return String(s ?? ""); }
+  function escapeHtml(s){
+    return safeText(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
   function escHtml(s){
     return String(s ?? "")
       .replaceAll("&","&amp;")
@@ -1936,6 +1944,9 @@
   let room3ActionUsed = false;
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
+  let uranusMeteorResolved = false;
+  let vampireHiddenAttackSuccess = false;
+  let vampireHealScheduled = false;
   let pendingEquipAction = null;
   let danielAutoRevealTimer = null;
   let effectResolutionLocks = {};
@@ -2124,7 +2135,11 @@
       closeZoomOnNo: !!options.closeZoomOnNo,
       dismissOnOutside: options.dismissOnOutside !== false
     };
-    roomActionMsg.textContent = safeText(message || "");
+    if (options.messageHtml){
+      roomActionMsg.innerHTML = String(options.messageHtml);
+    } else {
+      roomActionMsg.textContent = safeText(message || "");
+    }
     if (btnRoomActionYes) btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
     if (btnRoomActionNo) btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
     roomActionPop.classList.remove("hidden");
@@ -2186,6 +2201,48 @@
     return my && my.roleId ? (ROLE_BY_ID[my.roleId] || null) : null;
   }
 
+  function isMyRole(roleId){
+    return safeText(state.hands?.[state.userId]?.roleId || "") === safeText(roleId || "");
+  }
+
+  function uranusMeteorTargetUids(){
+    if (!state.userId) return [];
+    const targets = [];
+    for (const [uid, marker] of Object.entries(markerCache || {})){
+      if (!uid || uid === state.userId) continue;
+      if (!marker || isPlayerEliminated(uid)) continue;
+      if (hasGuardianAngelShield(uid)) continue;
+      const roomId = markerRoomId(marker);
+      if (roomId === 6 || roomId === 7) targets.push(uid);
+    }
+    return targets;
+  }
+
+  function mustResolveUranusMeteorStrike(){
+    if (!isMyTurn()) return false;
+    if (!isMyRole("SHA_U2")) return false;
+    if (!isMyIdentityRevealed()) return false;
+    if (!!turnState()?.moveDone) return false;
+    if (uranusMeteorResolved) return false;
+    return uranusMeteorTargetUids().length > 0;
+  }
+
+  function scheduleVampireHeal(){
+    if (!isMyRole("SHA_V2")) return;
+    if (vampireHealScheduled) return;
+    vampireHealScheduled = true;
+    setTimeout(() => {
+      healDamageToPlayer(state.userId, 2);
+    }, 1500);
+  }
+
+  function maybeResolveVampireHiddenHealOnReveal(){
+    if (!isMyRole("SHA_V2")) return;
+    if (!vampireHiddenAttackSuccess) return;
+    if (!isMyTurn()) return;
+    scheduleVampireHeal();
+  }
+
   function showTemporaryRoleTag(uid, text, durationMs = 2000){
     if (!uid || !text) return;
     const until = Date.now() + Math.max(100, Number(durationMs) || 2000);
@@ -2238,7 +2295,8 @@
   function greenAnswerOptions(cardObj){
     const text = safeText(cardObj?.effect || cardObj?.text || "");
     const matched = greenCardConditionMatched(cardObj);
-    const canJudge = matched !== null;
+    const isUlrich = isMyRole("SHA_U1");
+    const canJudge = isUlrich ? false : (matched !== null);
 
     if (text.includes("正体カードを見せよ")){
       return [{ id:"reveal_identity", label:"私の正体です。", enabled:true }];
@@ -2527,12 +2585,13 @@
       return;
     }
 
+    const isUlrich = isMyRole("SHA_U1");
     for (const opt of greenAnswerOptions(msg.card)){
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "green-share-btn answer";
       btn.textContent = opt.label;
-      btn.disabled = !opt.enabled;
+      btn.disabled = isUlrich ? (opt.id === "give_equip" && !hasAnyEquipment(state.userId)) : !opt.enabled;
       btn.addEventListener("click", async () => {
         if (!state.roomCode || !msg?.from || !msg?.requestId) return;
 
@@ -3000,6 +3059,7 @@
       if (revealedBy) next.revealedBy = revealedBy;
       return next;
     });
+    maybeResolveVampireHiddenHealOnReveal();
   }
 
   function hasNonIdentityEquipment(uid){
@@ -3117,6 +3177,11 @@
         showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
         return;
       }
+    }
+    if (myRoleId === "SHA_U1"){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
+      return;
     }
 
     const moved = !!turnState()?.moveDone;
@@ -3599,6 +3664,7 @@
   function canUseMoveDice(){
     if (!isMyTurn()) return false;
     if (isDavidAbilityPending()) return false;
+    if (mustResolveUranusMeteorStrike()) return false;
     return !turnState()?.moveDone;
   }
 
@@ -3614,6 +3680,9 @@
     room4StealUsed = false;
     room3ActionUsed = false;
     movedByDiceRoomId = null;
+    uranusMeteorResolved = false;
+    vampireHiddenAttackSuccess = false;
+    vampireHealScheduled = false;
     hideRoomActionPop();
     showTurnHint("");
   }
@@ -4798,6 +4867,9 @@
   }
 
   function highlightedMarkerUids(){
+    if (mustResolveUranusMeteorStrike()){
+      return new Set(uranusMeteorTargetUids());
+    }
     if (canUseRoom3Action()){
       return new Set(
         Object.keys(markerCache || {}).filter(uid => !!uid && !isPlayerEliminated(uid) && !hasEquipmentByName(uid, "幸運のブローチ"))
@@ -5517,7 +5589,8 @@
       d4Wrap.classList.add('attack-result-pin');
 
       const damageTimer = setTimeout(async () => {
-        setAttackRollResultLabel(didAttackRollSucceed(finalD6, finalD4, { masamuneMode }));
+        const attackSucceeded = didAttackRollSucceed(finalD6, finalD4, { masamuneMode });
+        setAttackRollResultLabel(attackSucceeded);
         try {
           if (!applyDamage) return;
           const revealBoost = masamuneMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
@@ -5525,11 +5598,23 @@
           const gatlingTargets = Array.isArray(options.gatlingTargetUids)
             ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
             : [];
+          const targetUids = (gatlingTargets.length > 0) ? gatlingTargets : [targetUid];
+          const dealtDamage = attackSucceeded && damage > 0 && targetUids.some(uid => {
+            if (!uid) return false;
+            return applyIncomingDamageModifiers(uid, damage, { source:"attack" }) > 0;
+          });
           if (damage > 0){
             if (gatlingTargets.length > 0){
               await addDamageToPlayers(gatlingTargets, damage, { source:"attack" });
             } else {
               await addDamageToPlayer(targetUid, damage, { source:"attack" });
+            }
+          }
+          if (dealtDamage && isMyRole("SHA_V2")){
+            if (isMyIdentityRevealed()){
+              scheduleVampireHeal();
+            } else {
+              vampireHiddenAttackSuccess = true;
             }
           }
         } finally {
@@ -5688,6 +5773,36 @@
     if (!markerLayer) return;
     while(markerLayer.firstChild) markerLayer.removeChild(markerLayer.firstChild);
   }
+
+
+  function showUranusSkipPop(clientX, clientY){
+    const ability = '<span class="ability-pill">メテオストライク</span>';
+    showRoomActionPopAt(clientX, clientY, "", async () => {
+      uranusMeteorResolved = true;
+      renderMarkers();
+    }, {
+      messageHtml: `${ability}を使用せずに移動しますか。`,
+      yesLabel: "はい",
+      noLabel: "いいえ"
+    });
+  }
+
+  function showUranusMeteorConfirmPop(clientX, clientY, targetUid){
+    const uid = safeText(targetUid || "");
+    if (!uid) return;
+    const player = playerById(uid);
+    const name = safeText(player?.name || "このプレイヤー");
+    const ability = '<span class="ability-pill">メテオストライク</span>';
+    showRoomActionPopAt(clientX, clientY, "", async () => {
+      await addDamageToPlayer(uid, 3);
+      uranusMeteorResolved = true;
+      renderMarkers();
+    }, {
+      messageHtml: `${ability}${escapeHtml(name)}に3ダメージ与えますか。`,
+      yesLabel: "はい",
+      noLabel: "いいえ"
+    });
+  }
  function drawMarker({x,y,color,initial,uid,pulse=false,eliminated=false}){
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
@@ -5726,6 +5841,11 @@
         });
         return;
       }
+      if (mustResolveUranusMeteorStrike()){
+        e.stopPropagation();
+        showUranusSkipPop(e.clientX, e.clientY);
+        return;
+      }
       if (!canUseMoveDice()) return;
       if (canChooseOuterRoomDirectly()) return;
       e.stopPropagation();
@@ -5759,6 +5879,11 @@
             renderMarkers();
           }
         });
+        return;
+      }
+      if (mustResolveUranusMeteorStrike()){
+        e.stopPropagation();
+        showUranusMeteorConfirmPop(e.clientX, e.clientY, uid);
         return;
       }
       if (!canUseAttackDice()) return;
@@ -5824,7 +5949,7 @@
     ensureMarkerLayer();
     clearMarkerLayer();
     const pulseTargets = highlightedMarkerUids();
-    if (canUseMoveDice()) pulseTargets.add(state.userId);
+    if (canUseMoveDice() && !mustResolveUranusMeteorStrike()) pulseTargets.add(state.userId);
     const entries = Object.entries(markerCache || {});
     for (const [uid, m] of entries){
       if (!m) continue;
@@ -5963,7 +6088,7 @@
     { id:"RAI_G2", name:"ガラハド",  en:"GALAHAD",  initial:"G", faction:"レイダー", hp:14, win:"シャドウ全員の脱落", effect:"魔剣の伝承者：エクスカリバー所持時に攻撃失敗ならダイス振り直し" },
     { id:"RAI_G3", name:"ゴドウィン", en:"GODWIN",  initial:"G", faction:"レイダー", hp:14, win:"シャドウ全員の脱落", effect:"蘇生装置TYPE-G：自分脱落時、既に脱落しているPL1人をダメージ7で復活" },
     { id:"SHA_U1", name:"ウルリッヒ", en:"ULRICH",  initial:"U", faction:"シャドウ", hp:11, win:"レイダー全員またはシチズン3人の脱落", effect:"推理カードを受け取った時、ウソをついてよい" },
-    { id:"SHA_U2", name:"ウラヌス",   en:"URANUS",  initial:"U", faction:"シャドウ", hp:11, win:"レイダー全員またはシチズン3人の脱落", effect:"メテオストライク：手番初めにエリア4-5,10にいるPL1人へ3ダメージ" },
+    { id:"SHA_U2", name:"ウラヌス",   en:"URANUS",  initial:"U", faction:"シャドウ", hp:11, win:"レイダー全員またはシチズン3人の脱落", effect:"メテオストライク：正体公開済みで移動前なら、エリア6-7のPL1人に3ダメージ" },
     { id:"SHA_U3", name:"アルスター", en:"ULSTER",  initial:"U", faction:"シャドウ", hp:11, win:"レイダー全員またはシチズン3人の脱落", effect:"デル・フリス：2回攻撃できる" },
     { id:"SHA_V1", name:"ヴェノム",    en:"VENOM",   initial:"V", faction:"シャドウ", hp:13, win:"レイダー全員またはシチズン3人の脱落", effect:"反駁の猛毒：攻撃者は1ダメージ受けるか装備を渡すか選択" },
     { id:"SHA_V2", name:"ヴァンパイア", en:"VAMPIRE", initial:"V", faction:"シャドウ", hp:13, win:"レイダー全員またはシチズン3人の脱落", effect:"吸血：攻撃成功時、ダメージを2回復" },
