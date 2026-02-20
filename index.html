@@ -83,6 +83,7 @@
   }
   .confirm-pop.bottom-fixed .caret{display:none;}
   .btn.pop-dark{background:#111;color:#fff;border-color:#111;}
+  .btn.pop-purple{background:#7e22ce;color:#fff;border-color:#7e22ce;}
   .btn.pop-disabled{background:#bcbcbc;color:#fff;border-color:#bcbcbc;cursor:not-allowed;}
 
   .help-btn{
@@ -1509,7 +1510,7 @@
 <div id="turnHintPop" class="turn-hint-pop hidden" aria-live="polite"></div>
 
 <div id="endTurnConfirm" class="endturn-confirm hidden" role="dialog" aria-label="手番終了確認">
-  <p class="msg">本当いいいですか。</p>
+  <p class="msg" id="endTurnConfirmMsg">本当にいいですか。</p>
   <div class="actions">
     <button class="btn primary" id="btnEndTurnYes">はい</button>
     <button class="btn ghost" id="btnEndTurnNo">いいえ</button>
@@ -1927,7 +1928,6 @@
     "CIT_B2", // ベンジャミン
     "RAI_E3", // エマ
     "RAI_G1", // ゴードン
-    "SHA_W1", // ワイト
   ]);
   let cardPlayerSelectActive = false;
   let activeGreenReplies = {};
@@ -1976,6 +1976,7 @@
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+  let pendingWightActionConfirm = false;
 
   function placeFloatingPop(popEl, clientX, clientY, { yOffset = 0 } = {}){
     if (!popEl) return;
@@ -2014,6 +2015,26 @@
     if (!effect) return "特殊能力";
     const match = effect.match(/^([^：:]+)[：:]/);
     return safeText(match?.[1] || effect).trim() || "特殊能力";
+  }
+
+  function countEliminatedPlayers(){
+    return latestPlayers.filter(p => !!p?.id && isPlayerEliminated(p.id)).length;
+  }
+
+  function canUseWalpurgisSwap(){
+    if (!isMyTurn()) return false;
+    if (!isMyRole("SHA_W2")) return false;
+    if (!isMyIdentityRevealed()) return false;
+    if (!turnState()?.moveDone) return false;
+    if (!!turnState()?.attackDone) return false;
+    return true;
+  }
+
+  function canUseWightAbilityNow(){
+    if (!isMyTurn()) return false;
+    if (!isMyRole("SHA_W1")) return false;
+    if (!turnState()?.moveDone) return false;
+    return countEliminatedPlayers() > 0;
   }
 
   function showRevealPopAt(anchorEl, options = {}){
@@ -2123,8 +2144,16 @@
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
     roomActionPop?.classList.remove("lower-mode", "room3-mode");
-    if (btnRoomActionYes) btnRoomActionYes.textContent = "はい";
-    if (btnRoomActionNo) btnRoomActionNo.textContent = "いいえ";
+    if (btnRoomActionYes){
+      btnRoomActionYes.textContent = "はい";
+      btnRoomActionYes.classList.remove("pop-purple", "pop-dark");
+      btnRoomActionYes.classList.add("primary");
+    }
+    if (btnRoomActionNo){
+      btnRoomActionNo.textContent = "いいえ";
+      btnRoomActionNo.classList.remove("pop-purple", "pop-dark");
+      btnRoomActionNo.classList.add("ghost");
+    }
     if (pendingEquipAction?.type === "david_select") hideDavidSelectPreview();
   }
 
@@ -2144,8 +2173,22 @@
     } else {
       roomActionMsg.textContent = safeText(message || "");
     }
-    if (btnRoomActionYes) btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
-    if (btnRoomActionNo) btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
+    if (btnRoomActionYes){
+      btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
+      const yesClass = safeText(options.yesClass || "").trim();
+      if (yesClass){
+        btnRoomActionYes.classList.remove("primary");
+        btnRoomActionYes.classList.add(...yesClass.split(/\s+/).filter(Boolean));
+      }
+    }
+    if (btnRoomActionNo){
+      btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
+      const noClass = safeText(options.noClass || "").trim();
+      if (noClass){
+        btnRoomActionNo.classList.remove("ghost");
+        btnRoomActionNo.classList.add(...noClass.split(/\s+/).filter(Boolean));
+      }
+    }
     roomActionPop.classList.remove("hidden");
     roomActionPop.classList.toggle("lower-mode", fixedLower);
     roomActionPop.classList.toggle("room3-mode", compactButtons);
@@ -2308,6 +2351,78 @@
       delete temporaryRoleTagByUid[uid];
       renderPositionLine();
     }, Math.max(100, Number(durationMs) || 2000));
+  }
+
+  async function swapMarkerPositions(uidA, uidB){
+    const a = safeText(uidA || "");
+    const b = safeText(uidB || "");
+    if (!state.roomCode || !a || !b || a === b) return;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const ma = cur.markers?.[a];
+      const mb = cur.markers?.[b];
+      if (!ma || !mb) return cur;
+      const now = Date.now();
+      cur.markers[a] = { ...mb, updatedAt: now };
+      cur.markers[b] = { ...ma, updatedAt: now };
+      return cur;
+    });
+  }
+
+  function animateSwapChips(fromUid, toUid){
+    const markerA = markerCache?.[fromUid] || null;
+    const markerB = markerCache?.[toUid] || null;
+    if (!markerA || !markerB || !roomSvg) return Promise.resolve();
+    const ctm = roomSvg.getScreenCTM();
+    if (!ctm) return Promise.resolve();
+    const ptA = roomSvg.createSVGPoint();
+    ptA.x = Number(markerA.x) || 0;
+    ptA.y = Number(markerA.y) || 0;
+    const ptB = roomSvg.createSVGPoint();
+    ptB.x = Number(markerB.x) || 0;
+    ptB.y = Number(markerB.y) || 0;
+    const screenA = ptA.matrixTransform(ctm);
+    const screenB = ptB.matrixTransform(ctm);
+
+    const mkChip = (uid, point) => {
+      const chip = buildChipFor(uid);
+      chip.style.position = "fixed";
+      chip.style.left = `${point.x - 8}px`;
+      chip.style.top = `${point.y - 8}px`;
+      chip.style.zIndex = "12000";
+      chip.style.pointerEvents = "none";
+      chip.style.transition = "left 0.45s ease, top 0.45s ease";
+      document.body.appendChild(chip);
+      return chip;
+    };
+
+    const chipA = mkChip(fromUid, screenA);
+    const chipB = mkChip(toUid, screenB);
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        chipA.style.left = `${screenB.x - 8}px`;
+        chipA.style.top = `${screenB.y - 8}px`;
+        chipB.style.left = `${screenA.x - 8}px`;
+        chipB.style.top = `${screenA.y - 8}px`;
+      });
+      setTimeout(() => {
+        chipA.remove();
+        chipB.remove();
+        resolve();
+      }, 520);
+    });
+  }
+
+  async function startWalpurgisSwapFlow(targetUid){
+    const uid = safeText(targetUid || "");
+    if (!uid || uid === state.userId) return;
+    if (!canUseWalpurgisSwap()) return;
+    await emitRoleFlashEvent("SHA_W2", "gravity_rainbow");
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    await animateSwapChips(state.userId, uid);
+    await swapMarkerPositions(state.userId, uid);
+    renderMarkers();
   }
 
 
@@ -3141,6 +3256,27 @@
     await set(ref(db, `rooms/${state.roomCode}/abilityUsage/david/${state.userId}`), true);
   }
 
+  function isWightAbilityUsed(){
+    return !!state.room?.abilityUsage?.wight?.[state.userId];
+  }
+
+  async function markWightAbilityUsed(){
+    if (!state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/wight/${state.userId}`), true);
+  }
+
+  async function activateWightRepeatTurns(){
+    if (!state.roomCode || !isMyTurn()) return;
+    const total = countEliminatedPlayers();
+    if (total <= 0) return;
+    await markWightAbilityUsed();
+    await update(ref(db, `rooms/${state.roomCode}/turn`), {
+      wightRepeatRemaining: total,
+      wightRepeatTotal: total,
+      updatedAt: Date.now()
+    });
+  }
+
   function restoreDavidIdentityZoom(){
     const my = state.hands?.[state.userId];
     const role = my?.roleId ? ROLE_BY_ID[my.roleId] : null;
@@ -3216,9 +3352,34 @@
 
     const my = state.hands?.[state.userId];
     if (!my || !my.roleId) return;
-    if (isMyIdentityRevealed()) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if (isMyIdentityRevealed()){
+      if (myRoleId !== "SHA_W1") return;
+      e.stopPropagation();
+      const role = myRoleInfo();
+      const ability = roleAbilityName(role);
+      if (isWightAbilityUsed()){
+        showRevealPopAt(idCard, { mode:"notice", message:"この能力はすでに使用済みです。" });
+        return;
+      }
+      if (!canUseWightAbilityNow()){
+        showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
+        return;
+      }
+      showRoomActionPopAt(window.innerWidth / 2, window.innerHeight / 2, "", async () => {
+        await activateWightRepeatTurns();
+        renderTurnEndButton();
+      }, {
+        messageHtml: `<span class="ability-pill">${escapeHtml(ability)}</span>を使いますか。`,
+        yesLabel: "はい",
+        noLabel: "いいえ",
+        fixedLower: true,
+        yesClass: "pop-dark"
+      });
+      return;
+    }
+
     if (myRoleId === "CIT_D1"){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
@@ -3243,6 +3404,11 @@
     }
 
     const moved = !!turnState()?.moveDone;
+    if (myRoleId === "SHA_W1" && !canUseWightAbilityNow()){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
+      return;
+    }
     if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && moved){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "手番の初めにだけ正体を公開できます。" });
@@ -3273,6 +3439,9 @@
         }
       }
     }
+    if (!endTurnConfirm?.classList.contains("hidden") && !e.target.closest("#endTurnConfirm")){
+      hideEndTurnConfirm();
+    }
   }, true);
 
   btnRevealNo.addEventListener("click", (e) => {
@@ -3288,6 +3457,10 @@
       return;
     }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
+    if (myRoleId === "SHA_W1"){
+      await activateWightRepeatTurns();
+      renderTurnEndButton();
+    }
     if (myRoleId === "CIT_A1"){
       setTimeout(() => {
         setDamageToPlayer(state.userId, 0);
@@ -3582,6 +3755,7 @@
   const turnEndWrap = document.getElementById("turnEndWrap");
   const btnEndTurn = document.getElementById("btnEndTurn");
   const endTurnConfirm = document.getElementById("endTurnConfirm");
+  const endTurnConfirmMsg = document.getElementById("endTurnConfirmMsg");
   const btnEndTurnYes = document.getElementById("btnEndTurnYes");
   const btnEndTurnNo = document.getElementById("btnEndTurnNo");
   let damageCache = {};
@@ -3773,6 +3947,10 @@
       });
       return;
     }
+    if (canUseWalpurgisSwap()){
+      showTurnHint("プレイヤーを長押しで位置を交換");
+      return;
+    }
     showTurnHint("");
   }
 
@@ -3904,14 +4082,41 @@
 
   function hideEndTurnConfirm(){
     endTurnConfirm?.classList.add("hidden");
+    pendingWightActionConfirm = false;
   }
 
-  function showEndTurnConfirm(){
+  function showEndTurnConfirm(clientX, clientY, message = "本当にいいですか。", options = {}){
+    if (endTurnConfirmMsg) endTurnConfirmMsg.textContent = safeText(message || "本当にいいですか。");
+    if (btnEndTurnYes) btnEndTurnYes.textContent = safeText(options.yesLabel || "はい");
+    if (btnEndTurnNo) btnEndTurnNo.textContent = safeText(options.noLabel || "いいえ");
     endTurnConfirm?.classList.remove("hidden");
+    if (Number.isFinite(Number(clientX)) && Number.isFinite(Number(clientY))){
+      endTurnConfirm.style.bottom = "";
+      endTurnConfirm.style.transform = "translateX(-50%)";
+      placeFloatingPop(endTurnConfirm, Number(clientX), Number(clientY));
+    } else {
+      endTurnConfirm.style.left = "50%";
+      endTurnConfirm.style.top = "";
+      endTurnConfirm.style.bottom = "16px";
+      endTurnConfirm.style.transform = "translateX(-50%)";
+    }
+    pendingWightActionConfirm = !!options.wightAction;
   }
 
   function repeatTurnPending(){
     return !!turnState()?.repeatTurnPending;
+  }
+
+  function wightRepeatInfo(){
+    const t = turnState() || {};
+    const remaining = Math.max(0, Number(t.wightRepeatRemaining || 0));
+    const total = Math.max(0, Number(t.wightRepeatTotal || 0));
+    return { remaining, total };
+  }
+
+  function hasWightRepeatTurns(){
+    const info = wightRepeatInfo();
+    return info.remaining > 0 && info.total > 0;
   }
 
   function renderTurnEndButton(){
@@ -3920,7 +4125,12 @@
     const visible = isGameStarted() && canShowEndTurnButton();
     turnEndWrap.classList.toggle("hidden", !visible);
     if (btnEndTurn){
-      btnEndTurn.textContent = repeatTurnPending() ? "もう一度手番を行う" : "手番を終わる";
+      if (hasWightRepeatTurns()){
+        const info = wightRepeatInfo();
+        btnEndTurn.textContent = `もう一度手番を行う${info.remaining}/${info.total}`;
+      } else {
+        btnEndTurn.textContent = repeatTurnPending() ? "もう一度手番を行う" : "手番を終わる";
+      }
     }
     if (!visible) hideEndTurnConfirm();
   }
@@ -4289,6 +4499,8 @@
         attackDone: false,
         deckDrawDone: false,
         repeatTurnPending: false,
+        wightRepeatRemaining: 0,
+        wightRepeatTotal: 0,
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[startPlayerId]){
@@ -4338,6 +4550,8 @@
         attackDone: false,
         deckDrawDone: false,
         repeatTurnPending: false,
+        wightRepeatRemaining: 0,
+        wightRepeatTotal: 0,
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
@@ -5950,9 +6164,46 @@
       hideAttackPop();
       triggerMoveDiceForAll();
     });
-  } else if (!eliminated && uid && pulse){
-    g.style.cursor = 'pointer';
+  } else if (!eliminated && uid){
+    let longPressTimer = null;
+    let longPressDone = false;
+    const clearPress = () => {
+      if (longPressTimer){
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    };
+
+    g.style.cursor = (pulse || canUseWalpurgisSwap()) ? 'pointer' : 'default';
+    g.addEventListener('pointerdown', (e) => {
+      longPressDone = false;
+      clearPress();
+      if (!canUseWalpurgisSwap()) return;
+      longPressTimer = setTimeout(() => {
+        longPressDone = true;
+        const p = playerById(uid);
+        const nm = safeText(p?.name || "このプレイヤー");
+        showRoomActionPopAt(e.clientX, e.clientY, `${nm}と位置を交換しますか。`, async () => {
+          await startWalpurgisSwapFlow(uid);
+        }, {
+          yesLabel: "はい",
+          noLabel: "いいえ",
+          yesClass: "pop-purple",
+          noClass: "ghost"
+        });
+      }, 420);
+    });
+    g.addEventListener('pointerup', clearPress);
+    g.addEventListener('pointerleave', clearPress);
+    g.addEventListener('pointercancel', clearPress);
+
     g.addEventListener('click', (e) => {
+      clearPress();
+      if (longPressDone){
+        longPressDone = false;
+        e.stopPropagation();
+        return;
+      }
       if (canUseRoom3Action()){
         if (hasEquipmentByName(uid, "幸運のブローチ")) return;
         e.stopPropagation();
@@ -5984,7 +6235,7 @@
         showUranusMeteorConfirmPop(e.clientX, e.clientY, uid);
         return;
       }
-      if (!canUseAttackDice()) return;
+      if (!pulse || !canUseAttackDice()) return;
       e.stopPropagation();
       const p = playerById(uid);
       pendingAttackTargetUid = uid;
@@ -6989,6 +7240,8 @@
         attackDone: false,
         deckDrawDone: false,
         repeatTurnPending: false,
+        wightRepeatRemaining: 0,
+        wightRepeatTotal: 0,
         updatedAt: Date.now()
       }
     });
@@ -7072,14 +7325,37 @@
     renderTurnEndButton();
   }
 
-  btnEndTurn?.addEventListener('click', async () => {
+  async function consumeWightRepeatTurn(){
+    if (!state.roomCode || !isMyTurn()) return;
+    const info = wightRepeatInfo();
+    if (info.remaining <= 0) return;
+    const nextRemaining = Math.max(0, info.remaining - 1);
+    await update(ref(db, `rooms/${state.roomCode}/turn`), {
+      moveDone: false,
+      attackDone: false,
+      deckDrawDone: false,
+      repeatTurnPending: false,
+      wightRepeatRemaining: nextRemaining,
+      wightRepeatTotal: info.total,
+      updatedAt: Date.now()
+    });
+    hideEndTurnConfirm();
+    hideAttackPop();
+    renderTurnEndButton();
+  }
+
+  btnEndTurn?.addEventListener('click', async (e) => {
     if (!canShowEndTurnButton()) return;
+    if (hasWightRepeatTurns()){
+      showEndTurnConfirm(e.clientX, e.clientY, "この手番を終了して、次の手番を開始しますか。", { wightAction:true });
+      return;
+    }
     if (repeatTurnPending()){
       await doEndTurn();
       return;
     }
     if (!turnState()?.attackDone){
-      showEndTurnConfirm();
+      showEndTurnConfirm(e.clientX, e.clientY, "本当にいいですか。");
       return;
     }
     await doEndTurn();
@@ -7092,6 +7368,10 @@
   btnEndTurnYes?.addEventListener('click', async () => {
     if (!canShowEndTurnButton()){
       hideEndTurnConfirm();
+      return;
+    }
+    if (pendingWightActionConfirm){
+      await consumeWightRepeatTurn();
       return;
     }
     await doEndTurn();
