@@ -1062,7 +1062,7 @@
     background: radial-gradient(circle at 30% 30%, rgba(243,220,138,.45), rgba(0,0,0,0) 55%);
     box-sizing:border-box;
     overflow:hidden;
-    z-index:1;
+    z-index:0;
   }
   .card72.wb-front.wb-green .wb-circle{
     background: radial-gradient(circle at 30% 30%, rgba(34,197,94,.25), rgba(0,0,0,0) 60%);
@@ -1085,13 +1085,15 @@
     flex-direction:column;
     gap:4px;
     overflow:hidden;
-    z-index:4;
+    z-index:5;
   }
   .card72.wb-front.wb-green .wb-effect{
     background:rgba(34,197,94,.12);
     border:1px solid rgba(11,59,46,.18);
   }
   .card72.wb-front .wb-desc{
+    position:relative;
+    z-index:6;
     font-size:6px;
     line-height:1.25;
     font-weight:700;
@@ -1311,6 +1313,13 @@
     opacity:1;
   }
   .green-reveal-panel.hidden{ display:none; }
+  .green-reveal-panel.reveal-slide-in .green-reveal-card-wrap .id72{
+    animation:greenRevealSlideIn .42s cubic-bezier(.16,.84,.28,1);
+  }
+  @keyframes greenRevealSlideIn{
+    from{ transform:translateX(220px) scale(2); opacity:0; }
+    to{ transform:translateX(0) scale(2); opacity:1; }
+  }
   .green-reveal-label{
     position:absolute;
     left:50%;
@@ -2141,6 +2150,7 @@
     if (greenRevealLabel) greenRevealLabel.textContent = "";
     if (greenRevealCardWrap) greenRevealCardWrap.innerHTML = "";
     greenRevealPanel?.classList.add("hidden");
+    greenRevealPanel?.classList.remove("reveal-slide-in");
     zoomBackdrop?.classList.remove("green-reveal-active");
   }
 
@@ -2154,6 +2164,10 @@
     greenRevealLabel.textContent = label;
     greenRevealPanel.classList.remove("hidden");
     zoomBackdrop?.classList.add("green-reveal-active");
+    greenRevealPanel.classList.remove("reveal-slide-in");
+    requestAnimationFrame(() => {
+      greenRevealPanel.classList.add("reveal-slide-in");
+    });
   }
 
   async function sendGreenResponse(msg, opt, overrideLabel=""){
@@ -2194,7 +2208,7 @@
         if (cur <= 0) addDamageToPlayer(state.userId, 1);
         else healDamageToPlayer(state.userId, 1);
       }, 1000);
-    } else {
+    } else if (!text.includes("❿に移動せよ")) {
       const damageMatch = text.match(/(\d+)ダメージ受けよ/);
       const damage = damageMatch ? Number(damageMatch[1] || 0) : 0;
       if (damage > 0){
@@ -2333,6 +2347,8 @@
             answerLabel: "私の正体です。",
             at: Date.now()
           });
+          setGreenDockMeta({ title:"回答が届きました", subtitle:"私の正体です。" });
+          greenShareActions?.classList.remove("hidden");
         }
 
         pendingGreenRequestId = requestId;
@@ -2342,8 +2358,10 @@
         selected.setAttribute("aria-disabled", "true");
         selected.style.pointerEvents = "none";
         greenShareList.appendChild(selected);
-        setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
-        greenShareActions?.classList.add("hidden");
+        if (!safeText(greenShareCard?.effect || "").includes("正体カードを見せよ")){
+          setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
+          greenShareActions?.classList.add("hidden");
+        }
       });
 
       greenShareList.appendChild(btn);
