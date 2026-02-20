@@ -1205,6 +1205,22 @@
   .zoom-stage .equip-defeat-pulse{
     animation:none;
   }
+  .zoom-identity-row{
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    flex-wrap:nowrap;
+  }
+  .zoom-identity-item{
+    position:relative;
+    width:72px;
+    height:132px;
+  }
+  .zoom-identity-item .id72{
+    position:absolute;
+    left:0;
+    bottom:0;
+  }
   .zoom-identity-owner{
     position:absolute;
     left:50%;
@@ -2608,6 +2624,9 @@
   function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true } = {}){
     zoomStage.innerHTML = "";
     hideGreenRevealPanel();
+    zoomStage.style.width = "72px";
+    zoomStage.style.height = "108px";
+    zoomStage.style.setProperty("--zoom", "4");
     zoomCloseOnBackdrop = !!closeOnBackdrop;
     zoomPassthroughMode = false;
     zoomDismissHandler = null;
@@ -2634,6 +2653,23 @@
     const cardEl = createIdentityCard(role);
     openZoomContent(cardEl, options);
   }
+
+  function tuneIdentityRevealZoom(cardCount, includeOwnerLabel){
+    const count = Math.max(1, Number(cardCount) || 1);
+    const gap = count > 1 ? 10 : 0;
+    const stageWidth = (72 * count) + (gap * Math.max(0, count - 1));
+    const stageHeight = includeOwnerLabel ? 132 : 108;
+    const viewportWidth = Math.max(300, window.innerWidth - 36);
+    const viewportHeight = Math.max(220, window.innerHeight - 36);
+    const scaleByWidth = viewportWidth / stageWidth;
+    const scaleByHeight = viewportHeight / stageHeight;
+    const preferred = 4 - Math.min(2.4, (count - 1) * 0.45);
+    const zoom = Math.max(1, Math.min(4, preferred, scaleByWidth, scaleByHeight));
+    zoomStage.style.width = `${stageWidth}px`;
+    zoomStage.style.height = `${stageHeight}px`;
+    zoomStage.style.setProperty("--zoom", String(zoom));
+  }
+
   function openIdentityRevealZoom(role, revealerUid){
     if (!role) return;
     const wrap = document.createElement("div");
@@ -2641,6 +2677,7 @@
     const cardEl = createIdentityCard(role);
     wrap.appendChild(cardEl);
 
+    let hasOwnerLabel = false;
     if (revealerUid && revealerUid !== state.userId){
       const owner = playerById(revealerUid);
       if (owner){
@@ -2652,10 +2689,55 @@
         label.appendChild(chip);
         label.appendChild(name);
         wrap.appendChild(label);
+        hasOwnerLabel = true;
       }
     }
 
     openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
+    tuneIdentityRevealZoom(1, hasOwnerLabel);
+    setTimeout(() => {
+      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
+    }, 2000);
+  }
+
+  function openIdentityRevealZoomMany(reveals){
+    const list = (Array.isArray(reveals) ? reveals : []).filter(x => x?.role);
+    if (list.length === 0) return;
+    if (list.length === 1){
+      openIdentityRevealZoom(list[0].role, list[0].uid);
+      return;
+    }
+
+    const row = document.createElement("div");
+    row.className = "zoom-identity-row";
+    let hasOwnerLabel = false;
+
+    for (const item of list){
+      const cell = document.createElement("div");
+      cell.className = "zoom-identity-item";
+
+      const cardEl = createIdentityCard(item.role);
+      cell.appendChild(cardEl);
+
+      if (item.uid && item.uid !== state.userId){
+        const owner = playerById(item.uid);
+        if (owner){
+          const chip = buildChipFor(item.uid);
+          const label = document.createElement("div");
+          label.className = "zoom-identity-owner";
+          const name = document.createElement("span");
+          name.textContent = nameFromSecondChar(owner.name || "");
+          label.appendChild(chip);
+          label.appendChild(name);
+          cell.appendChild(label);
+          hasOwnerLabel = true;
+        }
+      }
+      row.appendChild(cell);
+    }
+
+    openZoomContent(row, { closeOnBackdrop:false, showCloseButton:false });
+    tuneIdentityRevealZoom(list.length, hasOwnerLabel);
     setTimeout(() => {
       if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
     }, 2000);
@@ -4032,6 +4114,7 @@
       renderHpBoard();
       ensureCurrentTurnPlayerAlive();
 
+      const simultaneousReveals = [];
       for (const [uid, dmgRaw] of Object.entries(damageCache)){
         const myHand = state.hands?.[uid];
         const role = myHand?.roleId ? ROLE_BY_ID[myHand.roleId] : null;
@@ -4043,8 +4126,16 @@
         }
         if (autoDamageRevealLock[uid]) continue;
         autoDamageRevealLock[uid] = true;
-        openIdentityRevealZoom(role, uid);
+        const becameEliminated = !!eliminatedNow[uid] && !previousEliminatedMap[uid];
+        if (becameEliminated){
+          simultaneousReveals.push({ uid, role });
+        } else {
+          openIdentityRevealZoom(role, uid);
+        }
         revealIdentityByDamage(uid);
+      }
+      if (simultaneousReveals.length > 0){
+        openIdentityRevealZoomMany(simultaneousReveals);
       }
 
       renderEquipmentDock();
