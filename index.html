@@ -943,7 +943,7 @@
   }
 
   .room-svg{width:100%;height:100%;display:block;}
-  .shape{stroke:#111;stroke-width:2;vector-effect:non-scaling-stroke;}
+  .shape{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
   .roomhit{fill:transparent;cursor:pointer;}
   .roomhit:hover{fill:rgba(0,0,0,.06);}
   .room-choice-pulse{
@@ -4950,7 +4950,10 @@
       4: 2.80,
       5: 1.90,
       6: 2.20,
-      7: 1.05,
+      7: 1.00,
+    };
+    const roomImageAspectMap = {
+      7: 'xMidYMid meet',
     };
 
     for (let roomId = 1; roomId <= 7; roomId++){
@@ -4971,7 +4974,7 @@
       image.setAttribute('y', String(imageOffset));
       image.setAttribute('width', String(imageSize));
       image.setAttribute('height', String(imageSize));
-      image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+      image.setAttribute('preserveAspectRatio', roomImageAspectMap[roomId] || 'xMidYMid slice');
 
       pattern.appendChild(image);
       defs.appendChild(pattern);
