@@ -4947,14 +4947,15 @@
       const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
       pattern.setAttribute('id', `roomPattern${roomId}`);
       pattern.setAttribute('patternUnits', 'objectBoundingBox');
-      pattern.setAttribute('patternContentUnits', 'objectBoundingBox');
+      pattern.setAttribute('patternContentUnits', 'userSpaceOnUse');
+      pattern.setAttribute('viewBox', '0 0 100 100');
       pattern.setAttribute('width', '1');
       pattern.setAttribute('height', '1');
 
       const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
       image.setAttribute('href', `room${roomId}.jpg`);
-      image.setAttribute('width', '1');
-      image.setAttribute('height', '1');
+      image.setAttribute('width', '100');
+      image.setAttribute('height', '100');
       image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
 
       pattern.appendChild(image);
