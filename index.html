@@ -84,6 +84,8 @@
   .confirm-pop.bottom-fixed .caret{display:none;}
   .btn.pop-dark{background:#111;color:#fff;border-color:#111;}
   .btn.pop-disabled{background:#bcbcbc;color:#fff;border-color:#bcbcbc;cursor:not-allowed;}
+  .btn.pop-purple{background:#6d28d9;color:#fff;border-color:#6d28d9;}
+  .btn.pop-white{background:#fff;color:#111;border-color:#d1d5db;}
 
   .help-btn{
     position:fixed;left:16px;bottom:16px;width:44px;height:44px;border-radius:50%;
@@ -625,7 +627,7 @@
     gap:10px;
   }
 /* 自分のマーカーだけ、丸い点線リング */
-.mark-me-ring{
+  .mark-me-ring{
   fill: transparent;
   stroke: rgba(17,17,17,.95);
   stroke-width: 2;
@@ -634,6 +636,10 @@
   vector-effect: non-scaling-stroke;
   cursor:pointer;
   pointer-events:all;
+}
+
+#markerLayer.swap-animating{
+  opacity:0;
 }
 
 .chip16.turn-pulse{
@@ -1937,6 +1943,8 @@
   let attackDiceEventInitialized = false;
   let roleFlashEventSeenAt = 0;
   let roleFlashEventInitialized = false;
+  let walpurgisSwapEventSeenAt = 0;
+  let walpurgisSwapEventInitialized = false;
   let roleFlashTimer = null;
   let roleFlashOverlayEl = null;
   let identityRevealInitialized = false;
@@ -1946,6 +1954,7 @@
   let roomAbilityTurnKey = "";
   let room4StealUsed = false;
   let room3ActionUsed = false;
+  let walpurgisSwapUsed = false;
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
   let uranusMeteorResolved = false;
@@ -1956,6 +1965,7 @@
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
   let zoomDismissHandler = null;
+  let suppressOutsidePopCloseUntil = 0;
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -2123,8 +2133,14 @@
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
     roomActionPop?.classList.remove("lower-mode", "room3-mode");
-    if (btnRoomActionYes) btnRoomActionYes.textContent = "はい";
-    if (btnRoomActionNo) btnRoomActionNo.textContent = "いいえ";
+    if (btnRoomActionYes){
+      btnRoomActionYes.textContent = "はい";
+      btnRoomActionYes.classList.remove("pop-purple","pop-white");
+    }
+    if (btnRoomActionNo){
+      btnRoomActionNo.textContent = "いいえ";
+      btnRoomActionNo.classList.remove("pop-purple","pop-white");
+    }
     if (pendingEquipAction?.type === "david_select") hideDavidSelectPreview();
   }
 
@@ -2139,13 +2155,23 @@
       closeZoomOnNo: !!options.closeZoomOnNo,
       dismissOnOutside: options.dismissOnOutside !== false
     };
+    const yesBtnClass = safeText(options.yesBtnClass || "");
+    const noBtnClass = safeText(options.noBtnClass || "");
     if (options.messageHtml){
       roomActionMsg.innerHTML = String(options.messageHtml);
     } else {
       roomActionMsg.textContent = safeText(message || "");
     }
-    if (btnRoomActionYes) btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
-    if (btnRoomActionNo) btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
+    if (btnRoomActionYes){
+      btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
+      btnRoomActionYes.classList.remove("pop-purple","pop-white");
+      if (yesBtnClass) btnRoomActionYes.classList.add(yesBtnClass);
+    }
+    if (btnRoomActionNo){
+      btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
+      btnRoomActionNo.classList.remove("pop-purple","pop-white");
+      if (noBtnClass) btnRoomActionNo.classList.add(noBtnClass);
+    }
     roomActionPop.classList.remove("hidden");
     roomActionPop.classList.toggle("lower-mode", fixedLower);
     roomActionPop.classList.toggle("room3-mode", compactButtons);
@@ -2254,6 +2280,18 @@
     await set(ref(db, `rooms/${state.roomCode}/effectEvents/roleFlash`), {
       roleId: rid,
       reason: safeText(reason || ""),
+      at: Date.now()
+    });
+  }
+
+  async function emitWalpurgisSwapEvent(uidA, uidB, durationMs = 620){
+    const a = safeText(uidA || "");
+    const b = safeText(uidB || "");
+    if (!state.roomCode || !a || !b || a === b) return;
+    await set(ref(db, `rooms/${state.roomCode}/effectEvents/walpurgisSwap`), {
+      uidA: a,
+      uidB: b,
+      durationMs: Math.max(240, Number(durationMs) || 620),
       at: Date.now()
     });
   }
@@ -3259,6 +3297,8 @@
   });
 
   document.addEventListener("click", (e) => {
+    const now = Date.now();
+    if (now < suppressOutsidePopCloseUntil) return;
     if (!revealPop.classList.contains("hidden") && !e.target.closest("#revealPop")){
       hideRevealPop();
     }
@@ -3739,6 +3779,7 @@
     roomAbilityTurnKey = key;
     room4StealUsed = false;
     room3ActionUsed = false;
+    walpurgisSwapUsed = false;
     movedByDiceRoomId = null;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
@@ -3761,6 +3802,167 @@
     return movedByDiceRoomId === 3;
   }
 
+
+  function canUseWalpurgisSwap(){
+    if (!isMyTurn() || !canUseAttackDice()) return false;
+    if (!isMyRole("SHA_W2")) return false;
+    if (!isMyIdentityRevealed()) return false;
+    if (walpurgisSwapUsed) return false;
+    return true;
+  }
+
+  async function animateMarkerSwapVisual(uidA, uidB, durationMs = 560){
+    const markerA = markerCache?.[uidA] || null;
+    const markerB = markerCache?.[uidB] || null;
+    if (!markerA || !markerB) return;
+    const ax = Number(markerA.x), ay = Number(markerA.y);
+    const bx = Number(markerB.x), by = Number(markerB.y);
+    if (![ax, ay, bx, by].every(Number.isFinite)) return;
+
+    const ctm = roomSvg?.getScreenCTM();
+    if (!roomSvg || !ctm) return;
+    const aPt = roomSvg.createSVGPoint();
+    aPt.x = ax; aPt.y = ay;
+    const bPt = roomSvg.createSVGPoint();
+    bPt.x = bx; bPt.y = by;
+    const aScr = aPt.matrixTransform(ctm);
+    const bScr = bPt.matrixTransform(ctm);
+
+    const makeChip = (m) => {
+      const chip = document.createElement("div");
+      chip.className = "chip16";
+      chip.style.position = "fixed";
+      chip.style.left = "0";
+      chip.style.top = "0";
+      chip.style.zIndex = "11200";
+      chip.style.pointerEvents = "none";
+      chip.style.background = String(m.color || "#ddd");
+      chip.style.color = textColorFor(String(m.color || "#ddd"));
+      chip.style.transform = "translate(-50%,-50%)";
+      chip.style.transition = `transform ${durationMs}ms cubic-bezier(.22,.78,.24,1)`;
+      chip.textContent = String(m.initial || "").slice(0,1);
+      document.body.appendChild(chip);
+      return chip;
+    };
+
+    const setChipPos = (chip, x, y) => {
+      chip.style.transform = `translate(${x}px, ${y}px) translate(-50%,-50%)`;
+    };
+
+    const bezierPoint = (p0, p1, p2, t) => {
+      const it = 1 - t;
+      return {
+        x: it * it * p0.x + 2 * it * t * p1.x + t * t * p2.x,
+        y: it * it * p0.y + 2 * it * t * p1.y + t * t * p2.y
+      };
+    };
+
+    const chipA = makeChip(markerA);
+    const chipB = makeChip(markerB);
+    setChipPos(chipA, aScr.x, aScr.y);
+    setChipPos(chipB, bScr.x, bScr.y);
+
+    markerLayer?.classList.add("swap-animating");
+
+    const mid = { x: (aScr.x + bScr.x) / 2, y: (aScr.y + bScr.y) / 2 };
+    const dx = bScr.x - aScr.x;
+    const dy = bScr.y - aScr.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const nx = -dy / dist;
+    const ny = dx / dist;
+    const arc = Math.max(26, Math.min(96, dist * 0.34));
+
+    const pA0 = { x: aScr.x, y: aScr.y };
+    const pA1 = { x: mid.x + nx * arc, y: mid.y + ny * arc };
+    const pA2 = { x: bScr.x, y: bScr.y };
+    const pB0 = { x: bScr.x, y: bScr.y };
+    const pB1 = { x: mid.x - nx * arc, y: mid.y - ny * arc };
+    const pB2 = { x: aScr.x, y: aScr.y };
+
+    await new Promise(resolve => {
+      const startedAt = performance.now();
+      const step = (now) => {
+        const elapsed = now - startedAt;
+        const raw = Math.max(0, Math.min(1, elapsed / durationMs));
+        const eased = 1 - Math.pow(1 - raw, 3);
+        const pa = bezierPoint(pA0, pA1, pA2, eased);
+        const pb = bezierPoint(pB0, pB1, pB2, eased);
+        setChipPos(chipA, pa.x, pa.y);
+        setChipPos(chipB, pb.x, pb.y);
+        if (raw < 1){
+          requestAnimationFrame(step);
+          return;
+        }
+        resolve();
+      };
+      requestAnimationFrame(step);
+    });
+
+    chipA.remove();
+    chipB.remove();
+    markerLayer?.classList.remove("swap-animating");
+  }
+
+  async function swapMarkerPositionWithPlayer(targetUid){
+    const myUid = safeText(state.userId || "");
+    const otherUid = safeText(targetUid || "");
+    if (!state.roomCode || !myUid || !otherUid || myUid === otherUid) return false;
+
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    const tx = await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      cur.markers = cur.markers || {};
+      const mine = cur.markers[myUid];
+      const other = cur.markers[otherUid];
+      if (!mine || !other) return cur;
+      const nextMine = { ...mine };
+      const nextOther = { ...other };
+
+      nextMine.x = Number(other.x);
+      nextMine.y = Number(other.y);
+      nextMine.roomId = Number(other.roomId || mine.roomId || 7);
+      nextMine.updatedAt = Date.now();
+
+      nextOther.x = Number(mine.x);
+      nextOther.y = Number(mine.y);
+      nextOther.roomId = Number(mine.roomId || other.roomId || 7);
+      nextOther.updatedAt = Date.now();
+
+      cur.markers[myUid] = nextMine;
+      cur.markers[otherUid] = nextOther;
+      return cur;
+    });
+    return !!tx?.committed;
+  }
+
+  function showWalpurgisSwapConfirm(clientX, clientY, targetUid){
+    const uid = safeText(targetUid || "");
+    if (!uid || !canUseWalpurgisSwap()) return;
+    const player = playerById(uid);
+    const name = safeText(player?.name || "このプレイヤー");
+    suppressOutsidePopCloseUntil = Date.now() + 700;
+    showRoomActionPopAt(clientX, clientY, "", async () => {
+      if (!canUseWalpurgisSwap()) return;
+      walpurgisSwapUsed = true;
+      await emitRoleFlashEvent("SHA_W2", "walpurgis_swap");
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      try {
+        await emitWalpurgisSwapEvent(state.userId, uid, 620);
+        await new Promise(resolve => setTimeout(resolve, 620));
+        await swapMarkerPositionWithPlayer(uid);
+      } finally {
+        markerLayer?.classList.remove("swap-animating");
+        renderMarkers();
+      }
+    }, {
+      messageHtml: `${escapeHtml(name)}と位置を交換しますか。`,
+      yesLabel: "はい",
+      noLabel: "いいえ",
+      yesBtnClass: "pop-purple",
+      noBtnClass: "pop-white"
+    });
+  }
+
   function refreshRoomAbilityHint(){
     if (canUseRoom4Steal()){
       showTurnHint("他プレイヤーの装備を奪うことができます。");
@@ -3771,6 +3973,10 @@
         text: "任意のプレイヤーへ2ダメージ/1回復できます。",
         showRoom3Skip: true
       });
+      return;
+    }
+    if (canUseWalpurgisSwap()){
+      showTurnHint("プレイヤーを長押しで位置を交換");
       return;
     }
     showTurnHint("");
@@ -4246,6 +4452,26 @@
       if (!ev || !at || at <= roleFlashEventSeenAt) return;
       roleFlashEventSeenAt = at;
       showRoleFlashOverlay(safeText(ev.roleId || ""), 1200);
+    });
+  }
+
+  function subscribeWalpurgisSwapEvents(){
+    const swapRef = ref(db, `rooms/${state.roomCode}/effectEvents/walpurgisSwap`);
+    onValue(swapRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!walpurgisSwapEventInitialized){
+        walpurgisSwapEventInitialized = true;
+        walpurgisSwapEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= walpurgisSwapEventSeenAt) return;
+      walpurgisSwapEventSeenAt = at;
+      const uidA = safeText(ev.uidA || "");
+      const uidB = safeText(ev.uidB || "");
+      const durationMs = Math.max(240, Number(ev.durationMs) || 620);
+      if (!uidA || !uidB || uidA === uidB) return;
+      animateMarkerSwapVisual(uidA, uidB, durationMs);
     });
   }
 
@@ -5950,12 +6176,43 @@
       hideAttackPop();
       triggerMoveDiceForAll();
     });
-  } else if (!eliminated && uid && pulse){
-    g.style.cursor = 'pointer';
+  } else if (!eliminated && uid){
+    if (pulse) g.style.cursor = 'pointer';
+    const longPressMs = 500;
+    let markerLongPressTimer = null;
+    let markerLongPressDone = false;
+    const clearMarkerLongPress = () => {
+      if (!markerLongPressTimer) return;
+      clearTimeout(markerLongPressTimer);
+      markerLongPressTimer = null;
+    };
+
+    g.addEventListener('pointerdown', (e) => {
+      markerLongPressDone = false;
+      clearMarkerLongPress();
+      if (!canUseWalpurgisSwap()) return;
+      if (uid === state.userId) return;
+      markerLongPressTimer = setTimeout(() => {
+        markerLongPressDone = true;
+        showWalpurgisSwapConfirm(e.clientX, e.clientY, uid);
+      }, longPressMs);
+    });
+    g.addEventListener('pointerup', clearMarkerLongPress);
+    g.addEventListener('pointerleave', clearMarkerLongPress);
+    g.addEventListener('pointercancel', clearMarkerLongPress);
+
     g.addEventListener('click', (e) => {
+      clearMarkerLongPress();
+      if (markerLongPressDone){
+        e.preventDefault();
+        e.stopPropagation();
+        markerLongPressDone = false;
+        return;
+      }
+      if (!pulse) return;
+      e.stopPropagation();
       if (canUseRoom3Action()){
         if (hasEquipmentByName(uid, "幸運のブローチ")) return;
-        e.stopPropagation();
         const p = playerById(uid);
         const nm = safeText(p?.name || "このプレイヤー");
         showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
@@ -5980,12 +6237,10 @@
         return;
       }
       if (mustResolveUranusMeteorStrike()){
-        e.stopPropagation();
         showUranusMeteorConfirmPop(e.clientX, e.clientY, uid);
         return;
       }
       if (!canUseAttackDice()) return;
-      e.stopPropagation();
       const p = playerById(uid);
       pendingAttackTargetUid = uid;
       showAttackPopAt(e.clientX, e.clientY, p?.name || 'このプレイヤー');
@@ -7166,6 +7421,7 @@
     subscribeDamage();
     subscribeDiceEvents();
     subscribeRoleFlashEvents();
+    subscribeWalpurgisSwapEvents();
 
     renderSeatTiles();
     refreshStartBadge();
