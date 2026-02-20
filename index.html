@@ -896,8 +896,8 @@
      ★③カードテーブル：背景をgear.jpgに
      ========================================================= */
   .cards-panel{
-    width:calc(100% + 40px);
-    max-width:min(1060px, calc(100vw - 16px));
+    width:max-content;
+    max-width:calc(100vw - 16px);
     display:flex;
     justify-content:center;
     align-items:flex-start;
@@ -914,6 +914,40 @@
     border:1px solid rgba(0,0,0,.08);
     box-shadow:0 12px 28px rgba(0,0,0,.10);
     border-radius:16px;
+
+    position:fixed;
+    left:50%;
+    bottom:16px;
+    transform:translateX(-50%);
+    z-index:1300;
+  }
+  .cards-panel.dragging{
+    user-select:none;
+  }
+
+  .cards-panel-handle{
+    width:100%;
+    margin:0 0 6px;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:6px;
+    font-size:11px;
+    font-weight:900;
+    color:rgba(17,17,17,.75);
+    letter-spacing:.03em;
+    cursor:grab;
+    touch-action:none;
+  }
+  .cards-panel-handle:active{ cursor:grabbing; }
+
+  .cards-panel-handle::before,
+  .cards-panel-handle::after{
+    content:"";
+    width:18px;
+    height:2px;
+    border-radius:999px;
+    background:rgba(17,17,17,.35);
   }
 
   .empty-cards-row{
@@ -1469,6 +1503,7 @@
       </div>
 
       <div class="panel cards-panel" id="cardsPanel" aria-label="デッキ">
+        <div id="cardsPanelDragHandle" class="cards-panel-handle" title="ドラッグでデッキ欄を移動">デッキ欄を移動</div>
         <div class="empty-cards-row">
           <div id="slot1" class="card72"></div>
           <div id="slot2" class="card72"></div>
@@ -2938,6 +2973,61 @@
   const slot3 = document.getElementById('slot3');
   let slot4 = document.getElementById('slot4');
   const slot5 = document.getElementById('slot5');
+  const cardsPanel = document.getElementById('cardsPanel');
+  const cardsPanelDragHandle = document.getElementById('cardsPanelDragHandle');
+
+  function setupCardsPanelDrag(){
+    if (!cardsPanel || !cardsPanelDragHandle) return;
+    const margin = 8;
+    let drag = null;
+
+    const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+    const onMove = (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      const w = drag.rect.width;
+      const h = drag.rect.height;
+      const maxX = Math.max(margin, window.innerWidth - w - margin);
+      const maxY = Math.max(margin, window.innerHeight - h - margin);
+      const nextLeft = clamp(drag.left + dx, margin, maxX);
+      const nextTop = clamp(drag.top + dy, margin, maxY);
+
+      cardsPanel.style.left = `${nextLeft}px`;
+      cardsPanel.style.top = `${nextTop}px`;
+      cardsPanel.style.bottom = 'auto';
+      cardsPanel.style.transform = 'none';
+    };
+
+    const endDrag = () => {
+      if (!drag) return;
+      cardsPanel.classList.remove('dragging');
+      cardsPanelDragHandle.releasePointerCapture?.(drag.pointerId);
+      drag = null;
+    };
+
+    cardsPanelDragHandle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const rect = cardsPanel.getBoundingClientRect();
+      drag = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        left: rect.left,
+        top: rect.top,
+        rect
+      };
+      cardsPanel.classList.add('dragging');
+      cardsPanelDragHandle.setPointerCapture?.(e.pointerId);
+      e.preventDefault();
+    });
+
+    cardsPanelDragHandle.addEventListener('pointermove', onMove);
+    cardsPanelDragHandle.addEventListener('pointerup', endDrag);
+    cardsPanelDragHandle.addEventListener('pointercancel', endDrag);
+  }
+  setupCardsPanelDrag();
 
   function updateCardInteractivity(){
     const s1 = document.getElementById('slot1');
