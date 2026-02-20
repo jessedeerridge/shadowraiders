@@ -5176,8 +5176,8 @@
       d4Wrap.classList.add('attack-result-pin');
 
       const damageTimer = setTimeout(async () => {
-        if (!applyDamage) return;
         setAttackRollResultLabel(didAttackRollSucceed(finalD6, finalD4, { masamuneMode }));
+        if (!applyDamage) return;
         const revealBoost = masamuneMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
         const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, excaliburRevealBoost: revealBoost });
         const gatlingTargets = Array.isArray(options.gatlingTargetUids)
