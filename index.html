@@ -1323,7 +1323,7 @@
   .green-reveal-card-wrap{
     width:72px;
     height:108px;
-    transform:scale(2.2);
+    transform:scale(2);
     transform-origin:center;
   }
   .green-reveal-card-wrap .id72{
@@ -2222,6 +2222,7 @@
   function restoreGreenGiveZoomSelection(action){
     if (!action?.cardObj) return;
     openZoomFromDeckCard(action.cardObj, "green", { closeOnBackdrop:false, showCloseButton:false });
+    greenShareDock?.classList.add("hidden");
     setZoomPassthrough(true);
     pendingEquipAction = action;
     renderEquipmentDock();
@@ -2352,11 +2353,12 @@
 
     if (cardText.includes("正体カードを見せよ")){
       const opt = { id:"reveal_identity", label:"私の正体です。", enabled:true };
-      applyGreenAnswerEffect(msg, opt).then(async () => {
+      (async () => {
         await sendGreenResponse(msg, opt, "私の正体です。");
+        await applyGreenAnswerEffect(msg, opt);
         setGreenDockMeta({ title:"公開しました", subtitle:"私の正体です。" });
         greenShareActions?.classList.remove("hidden");
-      });
+      })();
       greenShareDock.classList.remove("hidden");
       return;
     }
