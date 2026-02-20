@@ -31,7 +31,7 @@
     background-repeat:no-repeat;
   }
   main.prejoin{ background-image:url('maemain.jpg'); }
-  main.joined{ background-image:url('maingazo.jpg'); }
+  main.joined{ background-image:url('back.jpg'); }
 
   .dialog-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.35);
@@ -293,7 +293,12 @@
   .equip-dock.david-select-front{ z-index:10030; }
 
   .equip-board{
-    background:rgba(255,255,255,.90);
+    background-color:rgba(255,255,255,.78);
+    background-image:url('gear.jpg');
+    background-size:cover;
+    background-position:center;
+    background-repeat:no-repeat;
+    background-blend-mode:lighten;
     border:1px solid rgba(0,0,0,.10);
     border-radius:16px;
     box-shadow:0 18px 40px rgba(0,0,0,.18);
@@ -833,6 +838,18 @@
     justify-content:center;
   }
   .turn-end-wrap.hidden{display:none;}
+  #btnEndTurn{
+    width:88px;
+    height:88px;
+    border-radius:50%;
+    padding:0 10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    line-height:1.2;
+    font-size:13px;
+  }
 
   .endturn-confirm{
     position:fixed;
@@ -887,7 +904,7 @@
     overflow-y:hidden;
     -webkit-overflow-scrolling:touch;
 
-    background:rgba(255,255,255,.45);     /* ←ここ */
+    background:rgba(255,255,255,.36);
     border:1px solid rgba(0,0,0,.08);
     box-shadow:0 12px 28px rgba(0,0,0,.10);
     border-radius:16px;
@@ -4895,6 +4912,32 @@
   function ptsToStr(pts){ return pts.map(p=>`${p[0]},${p[1]}`).join(' '); }
   function poly(pts, cls, parent=roomG){ return svgEl('polygon', {points: ptsToStr(pts), class: cls}, parent); }
 
+  function ensureRoomPatterns(){
+    let defs = roomSvg.querySelector('#roomPatternDefs');
+    if (defs) return defs;
+    defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    defs.setAttribute('id', 'roomPatternDefs');
+    roomSvg.insertBefore(defs, roomSvg.firstChild);
+
+    for (let roomId = 1; roomId <= 7; roomId++){
+      const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+      pattern.setAttribute('id', `roomPattern${roomId}`);
+      pattern.setAttribute('patternUnits', 'objectBoundingBox');
+      pattern.setAttribute('width', '1');
+      pattern.setAttribute('height', '1');
+
+      const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+      image.setAttribute('href', `room${roomId}.jpg`);
+      image.setAttribute('width', '1');
+      image.setAttribute('height', '1');
+      image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+
+      pattern.appendChild(image);
+      defs.appendChild(pattern);
+    }
+    return defs;
+  }
+
   function hexFlat(cx, cy, s){
     const rt3 = Math.sqrt(3);
     const h = (rt3/2)*s;
@@ -6470,6 +6513,7 @@
   }
 
   function renderRoomShape(){
+    ensureRoomPatterns();
     while(roomG.firstChild) roomG.removeChild(roomG.firstChild);
     Object.keys(roomPolygons).forEach(k => delete roomPolygons[k]);
     for (const k of Object.keys(roomShapeEls)) delete roomShapeEls[k];
@@ -6480,12 +6524,14 @@
 
     const centerShape = poly(centerHex, 'shape');
     centerShape.dataset.roomId = "7";
+    centerShape.setAttribute('fill', "url('#roomPattern7')");
     roomShapeEls[7] = centerShape;
 
     rooms.forEach((pts, idx)=>{
       const shapeEl = poly(pts, 'shape');
       const hit = poly(pts, 'roomhit');
       const roomId = idx + 1;
+      shapeEl.setAttribute('fill', `url('#roomPattern${roomId}')`);
       shapeEl.dataset.roomId = String(roomId);
       roomPolygons[roomId] = pts.map(([x,y]) => [x,y]);
       hit.dataset.roomId = String(roomId);
@@ -6639,8 +6685,10 @@
     if (f === "シチズン") return "#eab308";
     return "#111";
   }
-  function cardImageUrl(roleName){
-    const safe = encodeURI(String(roleName || "").trim());
+  function cardImageUrl(role){
+    const initial = safeText(role?.initial || "").trim();
+    const roleName = safeText(role?.name || "").trim();
+    const safe = encodeURI(`${initial}${roleName}`.trim());
     return safe ? `url('${safe}.jpg')` : "none";
   }
   function createIdentityCard(role){
@@ -6658,7 +6706,7 @@
     const card = document.createElement('div');
     card.className = 'id72';
     card.style.setProperty('--team', team);
-    card.style.backgroundImage = cardImageUrl(role.name);
+    card.style.backgroundImage = cardImageUrl(role);
 
     card.innerHTML = `
       <div class="initial"><span>${ini}</span></div>
@@ -7253,18 +7301,33 @@
       return;
     }
 
-    const back = document.createElement('div');
-    back.className = 'role-back';
-    back.style.backgroundImage = `url('browncard.jpg')`;
-    back.title = "クリックで拡大表示";
-    back.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
+    const identity = equipCache?.[state.userId]?.identity;
+    const isIdentityRevealed = !!(identity && identity.kind === 'identity' && identity.roleId === role.id);
 
-    back.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openZoomFromRole(role); // 拡大はオモテ（id72）
-    });
+    if (isIdentityRevealed){
+      const face = createIdentityCard(role);
+      face.title = "公開済みの正体カード";
+      face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
+      face.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openZoomFromRole(role);
+      });
+      myRoleCard.appendChild(face);
+    } else {
+      const back = document.createElement('div');
+      back.className = 'role-back';
+      back.style.backgroundImage = `url('browncard.jpg')`;
+      back.title = "クリックで拡大表示";
+      back.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
 
-    myRoleCard.appendChild(back);
+      back.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openZoomFromRole(role); // 拡大はオモテ（id72）
+      });
+
+      myRoleCard.appendChild(back);
+    }
+
     myRoleDock.classList.add('visible');
     renderEquipmentDock();
   }
