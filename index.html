@@ -636,16 +636,16 @@
   .hp-cell::after{ display:none; } /* セル線を消す */
 
 .chip16{
-    width:16px;height:16px;
-    border-radius:6px;
-    border:1px solid rgba(0,0,0,.35);
+    width:18px;height:18px;
+    border-radius:7px;
+    border:1px solid rgba(0,0,0,.42);
     display:grid;
     place-items:center;
     font-weight:1000;
     font-size:11px;
     line-height:1;
     user-select:none;
-    box-shadow:0 4px 10px rgba(0,0,0,.12);
+    box-shadow:0 4px 10px rgba(0,0,0,.16);
     flex:0 0 auto;
   }
 
@@ -872,13 +872,19 @@
     width:60px;
     height:60px;
     border-radius:50%;
-    padding:0 10px;
+    padding:0 6px;
     display:flex;
     align-items:center;
     justify-content:center;
     text-align:center;
-    line-height:1.2;
-    font-size:7px;
+    line-height:1.15;
+    font-size:8px;
+    font-weight:1000;
+    border:none;
+    background:url('endgear.png') center/cover no-repeat;
+    color:#fff;
+    text-shadow:0 1px 2px rgba(0,0,0,.65);
+    box-shadow:0 8px 18px rgba(0,0,0,.24);
   }
 
   .endturn-confirm{
@@ -7098,18 +7104,20 @@
         cardWrap.className = 'role-card-wrap';
         const roleCard = createIdentityCard(r);
         roleCard.style.cursor = 'pointer';
-        roleCard.addEventListener('click', (e) => {
-          e.stopPropagation();
-          openZoomFromCard(roleCard, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
-        });
-        cardWrap.appendChild(roleCard);
         if (isTestPlayer()){
-          cardWrap.style.cursor = 'pointer';
-          cardWrap.title = 'クリックで自分の正体カードをこのカードに変更';
-          cardWrap.addEventListener('click', async (e) => {
+          roleCard.addEventListener('click', async (e) => {
             e.stopPropagation();
             await replaceMyRoleCardForTest(r);
           });
+        } else {
+          roleCard.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openZoomFromCard(roleCard, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+          });
+        }
+        cardWrap.appendChild(roleCard);
+        if (isTestPlayer()){
+          cardWrap.title = 'クリックで自分の正体カードをこのカードに変更（能力使用状況はリセット）';
         }
         row.appendChild(cardWrap);
       });
