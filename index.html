@@ -540,7 +540,7 @@
     gap:14px;
     align-items:flex-start;
     justify-content:center;
-    margin-top:-10px;  border:2px solid rgba(0,0,0,.08);
+    margin-top:-10px;
   }
 
   /* パネル共通 */
@@ -765,12 +765,17 @@
   }
 
   .position-line{
+    position:absolute;
+    right:12px;
+    bottom:calc(100% + 6px);
     min-height:16px;
     display:flex;
     flex-wrap:wrap;
     align-items:flex-start;
-    justify-content:center;
+    justify-content:flex-end;
     gap:4px;
+    max-width:min(280px, calc(100vw - 28px));
+    z-index:3;
   }
   .position-item{
     display:flex;
@@ -915,6 +920,14 @@
     border:1px solid rgba(0,0,0,.08);
     box-shadow:0 12px 28px rgba(0,0,0,.10);
     border-radius:16px;
+  }
+
+  .cards-zone{
+    width:100%;
+    position:relative;
+    display:flex;
+    justify-content:center;
+    margin-top:3px;
   }
 
   .empty-cards-row{
@@ -1462,20 +1475,22 @@
               <g id="roomG"></g>
             </svg>
           </div>
-          <div id="positionLine" class="position-line hidden" aria-label="位置列"></div>
           <div id="turnEndWrap" class="turn-end-wrap hidden">
             <button id="btnEndTurn" class="btn primary">手番を終わる</button>
           </div>
         </div>
       </div>
 
-      <div class="panel cards-panel" id="cardsPanel" aria-label="デッキ">
-        <div class="empty-cards-row">
-          <div id="slot1" class="card72"></div>
-          <div id="slot2" class="card72"></div>
-          <div id="slot3" class="card72"></div>
-          <div id="slot4" class="card72"></div>
-          <div id="slot5" class="card72"></div>
+      <div class="cards-zone">
+        <div id="positionLine" class="position-line hidden" aria-label="位置列"></div>
+        <div class="panel cards-panel" id="cardsPanel" aria-label="デッキ">
+          <div class="empty-cards-row">
+            <div id="slot1" class="card72"></div>
+            <div id="slot2" class="card72"></div>
+            <div id="slot3" class="card72"></div>
+            <div id="slot4" class="card72"></div>
+            <div id="slot5" class="card72"></div>
+          </div>
         </div>
       </div>
     </div>
