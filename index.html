@@ -1192,6 +1192,9 @@
   .zoom-backdrop.green-reveal-active .zoom-stage{
     transform:translateX(-90px) scale(var(--zoom, 4));
   }
+  .zoom-backdrop.david-select-active .zoom-stage{
+    transform:translateX(-90px) scale(var(--zoom, 4));
+  }
   .zoom-stage .card72,
   .zoom-stage .id72{
     box-shadow:0 18px 50px rgba(0,0,0,.45);
@@ -1379,6 +1382,11 @@
     transform:translate(-50%,-50%) translateX(95px);
     z-index:10003;
     pointer-events:none;
+    opacity:0;
+    transition:transform .2s ease, opacity .2s ease;
+  }
+  .zoom-backdrop.david-select-active .david-select-preview{
+    opacity:1;
   }
   .david-select-preview.hidden{ display:none; }
   .david-select-preview .card72,
@@ -2080,6 +2088,7 @@
   }
 
   function hideDavidSelectPreview(){
+    zoomBackdrop?.classList.remove("david-select-active");
     davidSelectPreview?.classList.add("hidden");
     if (davidSelectPreview) davidSelectPreview.innerHTML = "";
   }
@@ -2092,6 +2101,7 @@
     davidSelectPreview.innerHTML = "";
     davidSelectPreview.appendChild(clone);
     davidSelectPreview.classList.remove("hidden");
+    zoomBackdrop?.classList.add("david-select-active");
   }
 
   function hideRoomActionPop(){
@@ -2682,6 +2692,7 @@
     hideRevealPop();
     hideRoomActionPop();
     hideDavidSelectPreview();
+    zoomBackdrop?.classList.remove("david-select-active");
     equipDock?.classList.remove("david-select-front");
   }
   zoomCloseBtn.addEventListener("click", async (e) => {
@@ -3020,7 +3031,8 @@
     const role = my?.roleId ? ROLE_BY_ID[my.roleId] : null;
     if (!role) return;
     openZoomFromRole(role, { closeOnBackdrop:false, showCloseButton:false });
-    setZoomPassthrough(true);
+    setZoomPassthrough(false);
+    hideDavidSelectPreview();
     zoomDismissHandler = null;
   }
 
