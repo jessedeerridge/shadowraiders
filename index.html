@@ -2121,8 +2121,10 @@
     }
 
     if (text.includes("1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ")){
+      const nowDamage = clampDamage(damageCache?.[state.userId]);
+      const healLabel = (nowDamage <= 0) ? "1ダメージうける" : "1ダメージ回復する";
       return [
-        { id:"yes", label:"1ダメージ回復する", enabled: canJudge ? !!matched : true },
+        { id:"yes", label:healLabel, enabled: canJudge ? !!matched : true },
         { id:"no", label:"いいえ", enabled: canJudge ? !matched : true }
       ];
     }
@@ -2323,6 +2325,15 @@
           at: Date.now()
         };
         await set(ref(db, `rooms/${state.roomCode}/greenInbox/${p.id}`), payload);
+        if (safeText(greenShareCard?.effect || "").includes("正体カードを見せよ")){
+          await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`), {
+            from: state.userId,
+            responderId: p.id,
+            requestId,
+            answerLabel: "私の正体です。",
+            at: Date.now()
+          });
+        }
 
         pendingGreenRequestId = requestId;
         greenShareList.innerHTML = "";
