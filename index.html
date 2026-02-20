@@ -3206,6 +3206,10 @@
     return !!(v && v.kind === "identity" && v.roleId);
   }
 
+  function isMyRevealedVendetta(){
+    return isMyRole("SHA_V3") && isMyIdentityRevealed();
+  }
+
   zoomStage.addEventListener("click", (e) => {
     const idCard = e.target.closest(".id72");
     if (!idCard) return;
@@ -3339,6 +3343,7 @@
     const selectedSum = chooseSumForTestPlayer("攻撃");
     if (isTestPlayer() && selectedSum == null) return;
     const masamuneMode = hasMyEquipmentByName("妖刀マサムネ");
+    const vendettaMode = isMyRevealedVendetta();
     const gatlingMode = hasMyEquipmentByName("ガトリング");
     const gatlingTargetUids = gatlingMode ? [...highlightedMarkerUids()] : [];
     const attackTargetUids = gatlingMode ? gatlingTargetUids : [uid];
@@ -3349,7 +3354,7 @@
       at: Date.now()
     };
     const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
-    const d6 = masamuneMode ? 0 : (selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6)));
+    const d6 = (masamuneMode || vendettaMode) ? 0 : (selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6)));
     const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -3365,6 +3370,7 @@
       d6,
       d4,
       masamuneMode,
+      vendettaMode,
       motion,
       at: Date.now()
     });
@@ -4219,6 +4225,7 @@
         finalD6:Number(ev.d6 || 1),
         finalD4:Number(ev.d4 || 1),
         masamuneMode: !!ev.masamuneMode,
+        vendettaMode: !!ev.vendettaMode,
         gatlingTargetUids: Array.isArray(ev.gatlingTargetUids) ? ev.gatlingTargetUids : [],
         applyDamage: safeText(ev.uid || "") === state.userId,
         motion: ev.motion || null
@@ -4684,6 +4691,10 @@
     if (!uid) return 0;
 
     if (options.masamuneMode){
+      return Math.max(0, b);
+    }
+
+    if (options.vendettaMode){
       return Math.max(0, b);
     }
 
@@ -5562,6 +5573,14 @@
     if (!diceRollOverlay || !targetUid) return;
     const applyDamage = options.applyDamage !== false;
     const masamuneMode = !!options.masamuneMode;
+    const vendettaMode = !!options.vendettaMode;
+    const d4OnlyMode = masamuneMode || vendettaMode;
+
+    if (vendettaMode){
+      showRoleFlashOverlay("SHA_V3", 1200);
+      await new Promise(resolve => setTimeout(resolve, 1200));
+    }
+
     clearDiceRollTimers();
     clearAttackResultDice();
 
@@ -5577,7 +5596,7 @@
     d4.className = 'd4';
     d4Wrap.appendChild(d4);
 
-    if (!masamuneMode){
+    if (!d4OnlyMode){
       diceRollOverlay.appendChild(d6Wrap);
     }
     diceRollOverlay.appendChild(d4Wrap);
@@ -5597,7 +5616,7 @@
 
     const startDegA = Number(motion.startDegA || 0);
     const startDegB = Number(motion.startDegB || 0);
-    if (!masamuneMode){
+    if (!d4OnlyMode){
       setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
     }
     setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
@@ -5607,7 +5626,7 @@
     const rollFaceTick = () => {
       const elapsed = Date.now() - rollStartAt;
       if (elapsed >= animDuration) return;
-      if (!masamuneMode){
+      if (!d4OnlyMode){
         renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
       }
       renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
@@ -5626,13 +5645,13 @@
     const hideAttackDiceAfterDamageMs = 1000;
 
     const moveTimer = setTimeout(() => {
-      if (!masamuneMode){
+      if (!d4OnlyMode){
         d6Wrap.classList.add('rolling');
       }
       d4Wrap.classList.add('rolling');
       const endDegA = Number(motion.endDegA || (startDegA + 720));
       const endDegB = Number(motion.endDegB || (startDegB + 720));
-      if (!masamuneMode){
+      if (!d4OnlyMode){
         setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
       }
       setFlyerTransform(d4Wrap, endX + offsetB.x, endY + offsetB.y, endDegB);
@@ -5644,27 +5663,27 @@
 
     const stopDelayMs = launchDelayMs + moveDurationMs + settleBufferMs;
     const stopTimer = setTimeout(() => {
-      if (!masamuneMode){
+      if (!d4OnlyMode){
         d6Wrap.classList.remove('rolling');
       }
       d4Wrap.classList.remove('rolling');
-      if (!masamuneMode){
+      if (!d4OnlyMode){
         renderD6Face(d6, finalD6);
       }
       renderD4Face(d4, finalD4);
 
-      if (!masamuneMode){
+      if (!d4OnlyMode){
         d6Wrap.classList.add('attack-result-pin');
       }
       d4Wrap.classList.add('attack-result-pin');
 
       const damageTimer = setTimeout(async () => {
-        const attackSucceeded = didAttackRollSucceed(finalD6, finalD4, { masamuneMode });
+        const attackSucceeded = didAttackRollSucceed(finalD6, finalD4, { masamuneMode, vendettaMode });
         setAttackRollResultLabel(attackSucceeded);
         try {
           if (!applyDamage) return;
-          const revealBoost = masamuneMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
-          const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, excaliburRevealBoost: revealBoost });
+          const revealBoost = d4OnlyMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
+          const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, vendettaMode, excaliburRevealBoost: revealBoost });
           const gatlingTargets = Array.isArray(options.gatlingTargetUids)
             ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
             : [];
@@ -6412,7 +6431,7 @@
   }
 
   function didAttackRollSucceed(d6, d4, options = {}){
-    if (options.masamuneMode) return true;
+    if (options.masamuneMode || options.vendettaMode) return true;
     return (Number(d6) || 0) !== (Number(d4) || 0);
   }
 
