@@ -297,6 +297,7 @@
     box-sizing:border-box;
     display:flex;
     flex-direction:column;
+    overflow:visible;
   }
 
   .equip-body{
@@ -309,7 +310,8 @@
     min-height:0;
     overflow-y:auto;
     overflow-x:visible;
-    padding-right:2px;
+    padding:8px 4px 8px 0;
+    margin:-8px -4px -8px 0;
     -ms-overflow-style:none;
     scrollbar-width:none;
   }
@@ -321,7 +323,7 @@
 
   .equip-row{
     display:inline-flex;
-    align-items:center;
+    align-items:flex-start;
     gap:5px;
     padding:2px 0;
     overflow:visible;
@@ -1077,7 +1079,7 @@
     background: radial-gradient(circle at 30% 30%, rgba(243,220,138,.45), rgba(0,0,0,0) 55%);
     box-sizing:border-box;
     overflow:hidden;
-    z-index:0;
+    z-index:1;
   }
   .card72.wb-front.wb-green .wb-circle{
     background: radial-gradient(circle at 30% 30%, rgba(34,197,94,.25), rgba(0,0,0,0) 60%);
@@ -1100,7 +1102,7 @@
     flex-direction:column;
     gap:4px;
     overflow:hidden;
-    z-index:5;
+    z-index:2;
   }
   .card72.wb-front.wb-green .wb-effect{
     background:rgba(34,197,94,.12);
@@ -1858,6 +1860,8 @@
   let greenZoomLocked = false;
   let pendingGreenRequestId = "";
   let pendingGreenAnswerMsg = null;
+  let pendingGreenCloseSeenAt = 0;
+  let pendingGreenCloseInitialized = false;
   let greenRevealByRequestId = {};
   let cardPlayerSelectActive = false;
   let activeGreenReplies = {};
@@ -1898,6 +1902,30 @@
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
 
+  function placeFloatingPop(popEl, clientX, clientY, { yOffset = 0 } = {}){
+    if (!popEl) return;
+    const pad = 10;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const r = popEl.getBoundingClientRect();
+
+    let x = Number(clientX);
+    let y = Number(clientY);
+    if (!Number.isFinite(x)) x = vw / 2;
+    if (!Number.isFinite(y)) y = vh / 2;
+
+    const halfW = r.width / 2;
+    if (x - halfW < pad) x = pad + halfW;
+    if (x + halfW > vw - pad) x = (vw - pad) - halfW;
+
+    let top = y + 18 + Number(yOffset || 0);
+    if (top + r.height > vh - pad) top = y - r.height - 18;
+    top = Math.max(pad, Math.min(top, vh - pad - r.height));
+
+    popEl.style.left = x + "px";
+    popEl.style.top = top + "px";
+  }
+
   function skipRoom3ActionAndStartAttack(){
     if (!canUseRoom3Action()) return;
     room3ActionUsed = true;
@@ -1906,34 +1934,13 @@
   }
 
   function showRevealPopAt(clientX, clientY){
-    const pad = 10;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-
     revealPop.classList.remove("hidden");
-    const r = revealPop.getBoundingClientRect();
-
-    let x = clientX;
-    let y = clientY;
-
-    const halfW = r.width / 2;
-    if (x - halfW < pad) x = pad + halfW;
-    if (x + halfW > vw - pad) x = (vw - pad) - halfW;
-
-    let top = y + 18 + yOffset;
-    if (top + r.height > vh - pad) top = y - r.height - 18;
-    top = Math.max(pad, Math.min(top, vh - pad - r.height));
-
-    revealPop.style.left = x + "px";
-    revealPop.style.top  = top + "px";
+    placeFloatingPop(revealPop, clientX, clientY);
   }
   function hideRevealPop(){ revealPop.classList.add("hidden"); }
 
   function showAttackPopAt(clientX, clientY, targetName){
     if (!attackPop) return;
-    const pad = 10;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
 
     if (hasMyEquipmentByName("ガトリング")){
       attackMsg.textContent = "レンジ内のプレイヤー全員を攻撃します。はい、いいえ";
@@ -1941,21 +1948,7 @@
       attackMsg.textContent = `${safeText(targetName || "このプレイヤー")}を攻撃しますか。`;
     }
     attackPop.classList.remove("hidden");
-    const r = attackPop.getBoundingClientRect();
-
-    let x = clientX;
-    let y = clientY;
-
-    const halfW = r.width / 2;
-    if (x - halfW < pad) x = pad + halfW;
-    if (x + halfW > vw - pad) x = (vw - pad) - halfW;
-
-    let top = y + 18 + yOffset;
-    if (top + r.height > vh - pad) top = y - r.height - 18;
-    top = Math.max(pad, Math.min(top, vh - pad - r.height));
-
-    attackPop.style.left = x + "px";
-    attackPop.style.top  = top + "px";
+    placeFloatingPop(attackPop, clientX, clientY);
   }
   function hideAttackPop(){
     pendingAttackTargetUid = "";
@@ -2470,7 +2463,22 @@
     pendingGreenRequestId = "";
   }
 
+  async function notifyGreenCloseToResponder(){
+    if (!state.roomCode || !pendingGreenRequestId) return;
+    const requestId = safeText(pendingGreenRequestId);
+    if (!requestId) return;
+    const reveal = greenRevealByRequestId[requestId];
+    const responderId = safeText(reveal?.responderId || "");
+    if (!responderId || responderId === state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/greenCloseSignals/${responderId}`), {
+      requestId,
+      from: state.userId,
+      at: Date.now()
+    });
+  }
+
   greenShareCloseBtn?.addEventListener("click", async () => {
+    await notifyGreenCloseToResponder();
     await clearPendingGreenBubble();
     closeZoom();
   });
@@ -5928,6 +5936,33 @@
     });
   }
 
+
+  function subscribeGreenCloseSignals(){
+    const closeRef = ref(db, `rooms/${state.roomCode}/greenCloseSignals/${state.userId}`);
+    onValue(closeRef, snap => {
+      const msg = snap.val() || null;
+      const at = Number(msg?.at || 0);
+
+      if (!pendingGreenCloseInitialized){
+        pendingGreenCloseInitialized = true;
+        pendingGreenCloseSeenAt = at || 0;
+        return;
+      }
+
+      if (!msg || !at) return;
+      if (at <= pendingGreenCloseSeenAt) return;
+      pendingGreenCloseSeenAt = at;
+
+      const requestId = safeText(msg.requestId || "");
+      const pendingRequest = safeText(pendingGreenAnswerMsg?.requestId || "");
+      if (!requestId || !pendingRequest || requestId !== pendingRequest) return;
+
+      pendingGreenAnswerMsg = null;
+      hideGreenShareDock();
+      closeZoom();
+    });
+  }
+
   function subscribePlayers(){
     const tablesRef = ref(db, `rooms/${state.roomCode}/tables`);
     onValue(tablesRef, snap => {
@@ -6506,6 +6541,7 @@
     subscribeGreenInbox();
     subscribeGreenResponses();
     subscribeGreenReveals();
+    subscribeGreenCloseSignals();
     subscribeGreenReplyBubbles();
     subscribeMarkers();
     subscribeEquipment();
