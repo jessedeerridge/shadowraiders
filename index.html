@@ -97,6 +97,38 @@
   }
   .help-btn.visible{display:flex;}
 
+  .room-guide-btn{
+    position:fixed;left:16px;bottom:66px;width:44px;height:44px;border-radius:50%;
+    border:1px solid #111;background:#111;color:#fff;
+    box-shadow:0 8px 20px rgba(0,0,0,.18);
+    display:none;align-items:center;justify-content:center;
+    font-size:20px;font-weight:1000;cursor:pointer;
+    z-index:2000;
+  }
+  .room-guide-btn.host-position{bottom:116px;}
+  .room-guide-btn.visible{display:flex;}
+
+  .room-guide-overlay{
+    position:fixed;
+    left:50%;
+    top:56%;
+    transform:translate(-50%, -50%);
+    width:min(520px, calc(100% - 28px));
+    background:rgba(229,229,229,.84);
+    color:#111;
+    border:1px solid rgba(0,0,0,.2);
+    border-radius:12px;
+    padding:10px 12px;
+    box-shadow:0 10px 24px rgba(0,0,0,.2);
+    z-index:1990;
+    font-size:13px;
+    line-height:1.45;
+  }
+  .room-guide-overlay.hidden{display:none;}
+  .room-guide-title{font-weight:900;margin-bottom:6px;}
+  .room-guide-row{margin:0 0 4px;white-space:pre-line;}
+  .room-guide-row:last-child{margin-bottom:0;}
+
   .help-pop-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.35);
     display:flex;align-items:flex-end;justify-content:center;
@@ -1606,7 +1638,19 @@
 </div>
 
 <button id="hostSettingsBtn" class="host-settings-btn" title="設定">⚙</button>
+<button id="roomGuideBtn" class="room-guide-btn" title="ルーム効果">〒</button>
 <button id="helpBtn" class="help-btn" title="正体カード一覧">？</button>
+
+<div id="roomGuideOverlay" class="room-guide-overlay hidden" aria-label="ルーム効果説明">
+  <div class="room-guide-title">ルーム効果</div>
+  <p class="room-guide-row">1：白カードが\nひける。</p>
+  <p class="room-guide-row">2：黒カードが\nひける。</p>
+  <p class="room-guide-row">3：任意のプレイヤーへ\n2ダメージ / 1回復</p>
+  <p class="room-guide-row">4：任意のプレイヤーから\n装備をうばう</p>
+  <p class="room-guide-row">5：推理カードが\nひける</p>
+  <p class="room-guide-row">6：推理 / 白 / 黒カード\nがひける</p>
+  <p class="room-guide-row">7：次の手番に自由に\n移動できる</p>
+</div>
 
 <div id="helpBackdrop" class="help-pop-backdrop hidden">
   <div class="help-pop" role="dialog" aria-modal="true" aria-label="正体カード一覧">
@@ -6851,6 +6895,8 @@
   const startBadge = document.getElementById('startBadge');
 
   const helpBtn = document.getElementById('helpBtn');
+  const roomGuideBtn = document.getElementById('roomGuideBtn');
+  const roomGuideOverlay = document.getElementById('roomGuideOverlay');
   const helpBackdrop = document.getElementById('helpBackdrop');
   const btnHelpClose = document.getElementById('btnHelpClose');
   const helpBody = document.getElementById('helpBody');
@@ -6964,8 +7010,14 @@
     await resetAllAbilityUsageForUids([state.userId]);
   }
   function closeHelp(){ helpBackdrop.classList.add('hidden'); }
+  function toggleRoomGuideOverlay(){
+    roomGuideOverlay.classList.toggle('hidden');
+  }
   helpBtn.addEventListener('click', () => {
     if (joinBox.classList.contains('hidden')) openHelp();
+  });
+  roomGuideBtn.addEventListener('click', () => {
+    if (joinBox.classList.contains('hidden')) toggleRoomGuideOverlay();
   });
   btnHelpClose.addEventListener('click', closeHelp);
   helpBackdrop.addEventListener('click', (e) => { if (e.target === helpBackdrop) closeHelp(); });
@@ -7055,11 +7107,14 @@
     refreshRoomLabels();
     if (state.isHost){
       hostSettingsBtn.classList.add('visible');
+      roomGuideBtn.classList.add('host-position');
     } else {
       hostSettingsBtn.classList.remove('visible');
       startPop.classList.add('hidden');
+      roomGuideBtn.classList.remove('host-position');
     }
     helpBtn.classList.add('visible');
+    roomGuideBtn.classList.add('visible');
   }
 
   function subscribeRoom(){
