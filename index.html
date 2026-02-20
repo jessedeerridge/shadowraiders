@@ -5779,7 +5779,14 @@
     const ability = '<span class="ability-pill">メテオストライク</span>';
     showRoomActionPopAt(clientX, clientY, "", async () => {
       uranusMeteorResolved = true;
-      renderMarkers();
+      if (canChooseOuterRoomDirectly()){
+        renderMarkers();
+        return;
+      }
+      hideAttackPop();
+      setTimeout(() => {
+        triggerMoveDiceForAll();
+      }, 40);
     }, {
       messageHtml: `${ability}を使用せずに移動しますか。`,
       yesLabel: "はい",
