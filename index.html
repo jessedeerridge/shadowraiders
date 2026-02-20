@@ -1908,6 +1908,7 @@
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
   let pendingEquipAction = null;
+  let danielAutoRevealTimer = null;
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
   let zoomDismissHandler = null;
@@ -2581,10 +2582,10 @@
     clone.style.pointerEvents = "auto";
     openZoomContent(clone, options);
   }
-  function openZoomFromRole(role){
+  function openZoomFromRole(role, options){
     if (!role) return;
     const cardEl = createIdentityCard(role);
-    openZoomContent(cardEl);
+    openZoomContent(cardEl, options);
   }
   function openIdentityRevealZoom(role, revealerUid){
     if (!role) return;
@@ -2716,7 +2717,8 @@
           identityRevealSeenByUid[uid] = at;
           const rid = safeText(row?.identity?.roleId || "");
           const role = ROLE_BY_ID[rid];
-          if (role) openIdentityRevealZoom(role, uid);
+          const revealedBy = safeText(row?.identity?.revealedBy || "");
+          if (role && revealedBy !== "daniel_forced") openIdentityRevealZoom(role, uid);
         }
       }
       equipCache = next;
@@ -2803,12 +2805,18 @@
 
     const promotedUid = defeatLootQueue.find(uid => byId.has(uid)) || "";
     const promoted = promotedUid ? byId.get(promotedUid) : null;
+    const davidPromoted = (pendingEquipAction?.type === "david_select")
+      ? others.filter(p => pendingEquipAction.defeatedUids?.includes(p.id))
+      : [];
 
     const arr = [];
-    if (promoted) arr.push(promoted);
+    for (const p of davidPromoted){
+      arr.push(p);
+    }
+    if (promoted && !arr.some(p => p.id === promoted.id)) arr.push(promoted);
     if (me) arr.push(me);
     for (const p of others){
-      if (p.id === promotedUid) continue;
+      if (arr.some(row => row.id === p.id)) continue;
       arr.push(p);
     }
     return arr;
@@ -2880,10 +2888,15 @@
         const isGreenGivePulse = pendingEquipAction?.type === "green_give" && p.id === state.userId && !isIdentityEquipItem(it);
         const promotedUid = defeatLootQueue[0] || "";
         const isDefeatPulse = promotedUid && p.id === promotedUid && p.id !== state.userId && eliminated && !isIdentityEquipItem(it);
+        const isDavidPulse = pendingEquipAction?.type === "david_select"
+          && pendingEquipAction.defeatedUids?.includes(p.id)
+          && p.id !== state.userId
+          && eliminated
+          && !isIdentityEquipItem(it);
         if (isNormalStealPulse || isOliverPulse || isBananaPulse || isGreenGivePulse){
           cardEl.classList.add("equip-steal-pulse");
         }
-        if (isDefeatPulse){
+        if (isDefeatPulse || isDavidPulse){
           cardEl.classList.add("equip-defeat-pulse");
         }
         cards.appendChild(cardEl);
@@ -2909,18 +2922,70 @@
     });
   }
 
-  async function revealMyIdentityToEquipment(){
+  async function revealMyIdentityToEquipment(options = {}){
     if (!state.roomCode) return;
     const my = state.hands?.[state.userId];
     if (!my || !my.roleId) return;
 
+    const revealedBy = safeText(options.revealedBy || "");
     const eRef = ref(db, `rooms/${state.roomCode}/equipment/${state.userId}/identity`);
-    await set(eRef, {
-      kind: "identity",
-      roleId: String(my.roleId),
-      at: 0,
-      revealedAt: Date.now()
+    await runTransaction(eRef, (cur) => {
+      if (cur && cur.kind === "identity" && cur.roleId) return cur;
+      const next = {
+        kind: "identity",
+        roleId: String(my.roleId),
+        at: 0,
+        revealedAt: Date.now()
+      };
+      if (revealedBy) next.revealedBy = revealedBy;
+      return next;
     });
+  }
+
+  function hasNonIdentityEquipment(uid){
+    return listEquipForUid(uid).some(it => !isIdentityEquipItem(it));
+  }
+
+  function getDavidEligibleEliminatedUids(){
+    return latestPlayers
+      .filter(p => p.id !== state.userId)
+      .filter(p => isPlayerEliminated(p.id))
+      .filter(p => hasNonIdentityEquipment(p.id))
+      .map(p => p.id);
+  }
+
+  function isDavidAbilityPending(){
+    return pendingEquipAction?.type === "david_select";
+  }
+
+  function isDavidAbilityUsed(){
+    return !!state.room?.abilityUsage?.david?.[state.userId];
+  }
+
+  async function markDavidAbilityUsed(){
+    if (!state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/david/${state.userId}`), true);
+  }
+
+  function restoreDavidIdentityZoom(){
+    const my = state.hands?.[state.userId];
+    const role = my?.roleId ? ROLE_BY_ID[my.roleId] : null;
+    if (!role) return;
+    openZoomFromRole(role, { closeOnBackdrop:false, showCloseButton:false });
+    showTurnHint("デーヴィッド：脱落者の装備カードを1枚選んでください。");
+    zoomDismissHandler = null;
+  }
+
+  async function startDavidAbilityFlow(){
+    const defeatedUids = getDavidEligibleEliminatedUids();
+    if (defeatedUids.length === 0){
+      showRevealPopAt(null, { mode:"notice", message:"今は公開できません。" });
+      return;
+    }
+    await revealMyIdentityToEquipment({ revealedBy:"david_ability" });
+    pendingEquipAction = { type:"david_select", defeatedUids };
+    restoreDavidIdentityZoom();
+    renderEquipmentDock();
   }
 
   async function revealIdentityByDamage(uid){
@@ -2959,6 +3024,24 @@
     if (isMyIdentityRevealed()) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if (myRoleId === "CIT_D1"){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
+      return;
+    }
+    if (myRoleId === "CIT_D2"){
+      if (isDavidAbilityUsed()){
+        e.stopPropagation();
+        showRevealPopAt(idCard, { mode: "notice", message: "この能力はすでに使用済みです。" });
+        return;
+      }
+      if (getDavidEligibleEliminatedUids().length === 0){
+        e.stopPropagation();
+        showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
+        return;
+      }
+    }
+
     const moved = !!turnState()?.moveDone;
     if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && moved){
       e.stopPropagation();
@@ -2995,7 +3078,18 @@
   });
   btnRevealYes.addEventListener("click", async (e) => {
     e.stopPropagation();
-    await revealMyIdentityToEquipment();
+    const myRoleId = safeText(state.hands?.[state.userId]?.roleId || "");
+    if (myRoleId === "CIT_D2"){
+      await startDavidAbilityFlow();
+      hideRevealPop();
+      return;
+    }
+    await revealMyIdentityToEquipment({ revealedBy:"manual" });
+    if (myRoleId === "CIT_A1"){
+      setTimeout(() => {
+        setDamageToPlayer(state.userId, 0);
+      }, 1500);
+    }
     hideRevealPop();
   });
 
@@ -3106,6 +3200,35 @@
   equipBody.addEventListener("click", (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
     if (!card) return;
+
+    if (pendingEquipAction?.type === "david_select"){
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      if (!pendingEquipAction.defeatedUids?.includes(ownerUid) || !sourceKey) return;
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      zoomDismissHandler = async () => {
+        restoreDavidIdentityZoom();
+      };
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードを獲得しますか。", async () => {
+        const action = pendingEquipAction;
+        if (!action || action.type !== "david_select") return;
+        const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
+        if (ok){
+          await markDavidAbilityUsed();
+          pendingEquipAction = null;
+          zoomDismissHandler = null;
+          closeZoom();
+          showTurnHint("");
+        }
+      }, {
+        fixedLower:true,
+        closeZoomOnNo:false,
+        onNo: () => {
+          restoreDavidIdentityZoom();
+        }
+      });
+      return;
+    }
 
     if (pendingEquipAction?.type === "green_give"){
       const ownerUid = safeText(card.dataset.ownerUid || "");
@@ -3376,6 +3499,7 @@
 
   function canUseMoveDice(){
     if (!isMyTurn()) return false;
+    if (isDavidAbilityPending()) return false;
     return !turnState()?.moveDone;
   }
 
@@ -3790,6 +3914,19 @@
           }
         }
       }
+
+      const myRoleId = safeText(state.hands?.[state.userId]?.roleId || "");
+      if (myRoleId === "CIT_D1" && !isMyIdentityRevealed()){
+        const othersEliminatedNow = latestPlayers.some(p => p.id !== state.userId && !!eliminatedNow[p.id]);
+        const othersEliminatedBefore = latestPlayers.some(p => p.id !== state.userId && !!previousEliminatedMap[p.id]);
+        if (othersEliminatedNow && !othersEliminatedBefore && !danielAutoRevealTimer){
+          danielAutoRevealTimer = setTimeout(async () => {
+            danielAutoRevealTimer = null;
+            await revealMyIdentityToEquipment({ revealedBy:"daniel_forced" });
+          }, 2000);
+        }
+      }
+
       previousEliminatedMap = eliminatedNow;
 
       renderHpBoard();
