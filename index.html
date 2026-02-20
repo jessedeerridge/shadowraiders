@@ -1189,6 +1189,52 @@
     will-change:transform;
     transition:transform .35s ease;
   }
+  .zoom-stage.multi-reveal-stage{
+    width:auto;
+    height:auto;
+    transform:none;
+  }
+  .multi-reveal-row{
+    display:flex;
+    align-items:flex-start;
+    gap:14px;
+    flex-wrap:nowrap;
+  }
+  .multi-reveal-item{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:8px;
+    width:var(--multi-card-w, 160px);
+    flex:0 0 auto;
+  }
+  .multi-reveal-item .id72{
+    transform:scale(var(--multi-card-scale, 2.2));
+    transform-origin:top center;
+    box-shadow:0 18px 50px rgba(0,0,0,.45);
+  }
+  .multi-reveal-owner{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    background:#fff;
+    border:1px solid rgba(0,0,0,.15);
+    border-radius:999px;
+    padding:4px 8px;
+    font-size:12px;
+    font-weight:700;
+    color:#111;
+    white-space:nowrap;
+    line-height:1;
+  }
+  .multi-reveal-owner .equip-tag{
+    width:8px;
+    height:8px;
+    min-width:8px;
+    min-height:8px;
+    font-size:8px;
+    border-width:1px;
+  }
   .zoom-backdrop.green-reveal-active .zoom-stage{
     transform:translateX(-90px) scale(var(--zoom, 4));
   }
@@ -2607,6 +2653,7 @@
 
   function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true } = {}){
     zoomStage.innerHTML = "";
+    zoomStage.classList.remove("multi-reveal-stage");
     hideGreenRevealPanel();
     zoomCloseOnBackdrop = !!closeOnBackdrop;
     zoomPassthroughMode = false;
@@ -2681,6 +2728,7 @@
     zoomBackdrop.classList.add("hidden");
     zoomBackdrop.classList.remove("passthrough");
     zoomStage.innerHTML = "";
+    zoomStage.classList.remove("multi-reveal-stage");
     hideGreenRevealPanel();
     zoomCloseBtn.classList.add("hidden");
     zoomCloseOnBackdrop = true;
@@ -2881,9 +2929,66 @@
   function enqueueIdentityReveal(uid){
     const targetUid = safeText(uid);
     if (!targetUid) return;
-    if (identityRevealQueue.some(row => row.uid === targetUid)) return;
-    identityRevealQueue.push({ uid: targetUid });
+    if (identityRevealQueue.some(row => Array.isArray(row.uids) && row.uids.includes(targetUid))) return;
+    identityRevealQueue.push({ uids:[targetUid] });
     processIdentityRevealQueue();
+  }
+
+  function enqueueIdentityRevealBatch(uids){
+    const ordered = sortUidsByTurnOrder(uids).filter(uid => {
+      if (!uid) return false;
+      return !identityRevealQueue.some(row => Array.isArray(row.uids) && row.uids.includes(uid));
+    });
+    if (ordered.length === 0) return;
+    identityRevealQueue.push({ uids: ordered });
+    processIdentityRevealQueue();
+  }
+
+  function openMultiIdentityRevealZoom(entries){
+    const rows = Array.isArray(entries) ? entries.filter(Boolean) : [];
+    if (rows.length <= 1){
+      const one = rows[0];
+      if (one?.role) openIdentityRevealZoom(one.role, one.uid);
+      return;
+    }
+
+    const gap = 14;
+    const outerPad = 80;
+    const widthScale = (window.innerWidth - outerPad - (rows.length - 1) * gap) / (72 * rows.length);
+    const heightScale = (window.innerHeight - 130) / 108;
+    const scale = Math.max(1.2, Math.min(2.8, widthScale, heightScale));
+
+    const wrap = document.createElement("div");
+    wrap.className = "multi-reveal-row";
+    wrap.style.setProperty("--multi-card-scale", String(scale));
+    wrap.style.setProperty("--multi-card-w", `${72 * scale}px`);
+
+    for (const row of rows){
+      const role = row?.role;
+      if (!role) continue;
+      const item = document.createElement("div");
+      item.className = "multi-reveal-item";
+
+      const owner = playerById(row.uid);
+      if (owner){
+        const label = document.createElement("div");
+        label.className = "multi-reveal-owner";
+        label.appendChild(buildChipFor(row.uid));
+        const name = document.createElement("span");
+        name.textContent = nameFromSecondChar(owner.name || "");
+        label.appendChild(name);
+        item.appendChild(label);
+      }
+
+      item.appendChild(createIdentityCard(role));
+      wrap.appendChild(item);
+    }
+
+    zoomStage.classList.add("multi-reveal-stage");
+    openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
+    setTimeout(() => {
+      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
+    }, 2000);
   }
 
   async function processIdentityRevealQueue(){
@@ -2892,15 +2997,29 @@
     try {
       while (identityRevealQueue.length > 0){
         const row = identityRevealQueue.shift();
-        const uid = safeText(row?.uid || "");
-        if (!uid || !isPlayerEliminated(uid)) continue;
-        const hand = state.hands?.[uid];
-        const role = hand?.roleId ? ROLE_BY_ID[hand.roleId] : null;
-        if (!role) continue;
-        openIdentityRevealZoom(role, uid);
-        await revealIdentityByDamage(uid);
+        const uids = sortUidsByTurnOrder(Array.isArray(row?.uids) ? row.uids : [row?.uid]);
+        const revealRows = [];
+        for (const uid of uids){
+          const safeUid = safeText(uid || "");
+          if (!safeUid || !isPlayerEliminated(safeUid)) continue;
+          const hand = state.hands?.[safeUid];
+          const role = hand?.roleId ? ROLE_BY_ID[hand.roleId] : null;
+          if (!role) continue;
+          revealRows.push({ uid: safeUid, role });
+        }
+        if (revealRows.length === 0) continue;
+        if (revealRows.length > 1){
+          openMultiIdentityRevealZoom(revealRows);
+        } else {
+          openIdentityRevealZoom(revealRows[0].role, revealRows[0].uid);
+        }
+        for (const row of revealRows){
+          await revealIdentityByDamage(row.uid);
+        }
         await waitUntilZoomClosed();
-        await maybeRunBruceAutoReveal(uid);
+        for (const row of revealRows){
+          await maybeRunBruceAutoReveal(row.uid);
+        }
       }
     } finally {
       identityRevealProcessing = false;
@@ -4110,8 +4229,8 @@
       renderHpBoard();
       ensureCurrentTurnPlayerAlive();
 
-      for (const uid of sortUidsByTurnOrder(newlyEliminatedUids)){
-        enqueueIdentityReveal(uid);
+      if (newlyEliminatedUids.length > 0){
+        enqueueIdentityRevealBatch(newlyEliminatedUids);
       }
 
       renderEquipmentDock();
