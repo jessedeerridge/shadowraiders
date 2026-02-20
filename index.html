@@ -170,7 +170,7 @@
     grid-template-columns:repeat(4, 54px);
     grid-auto-rows:54px;
     gap:10px;
-    justify-content:center;
+    justify-content:flex-start;
     padding:4px 0 2px;
   }
   .seat-tile{
@@ -308,8 +308,15 @@
     gap:6px;
     min-height:0;
     overflow-y:auto;
-    overflow-x:hidden;
+    overflow-x:visible;
     padding-right:2px;
+    -ms-overflow-style:none;
+    scrollbar-width:none;
+  }
+  .equip-body::-webkit-scrollbar{
+    width:0;
+    height:0;
+    display:none;
   }
 
   .equip-row{
@@ -317,6 +324,7 @@
     align-items:center;
     gap:5px;
     padding:2px 0;
+    overflow:visible;
   }
 
   .equip-tag{
@@ -337,7 +345,7 @@
     gap:5px;
     align-items:flex-start;
     justify-content:flex-start;
-    overflow-x:hidden;
+    overflow:visible;
     padding-bottom:2px;
     flex:0 1 auto;
   }
@@ -959,6 +967,13 @@
   transform:translateX(-50%);
 }
 #roomActionPop.lower-mode .caret{ display:none; }
+#roomActionPop.room3-mode .actions{
+  flex-wrap:nowrap;
+  justify-content:center;
+}
+#roomActionPop.room3-mode .actions .btn{
+  white-space:nowrap;
+}
 
   .card72{
     width:var(--card-w);
@@ -1905,7 +1920,7 @@
     if (x - halfW < pad) x = pad + halfW;
     if (x + halfW > vw - pad) x = (vw - pad) - halfW;
 
-    let top = y + 18;
+    let top = y + 18 + yOffset;
     if (top + r.height > vh - pad) top = y - r.height - 18;
     top = Math.max(pad, Math.min(top, vh - pad - r.height));
 
@@ -1935,7 +1950,7 @@
     if (x - halfW < pad) x = pad + halfW;
     if (x + halfW > vw - pad) x = (vw - pad) - halfW;
 
-    let top = y + 18;
+    let top = y + 18 + yOffset;
     if (top + r.height > vh - pad) top = y - r.height - 18;
     top = Math.max(pad, Math.min(top, vh - pad - r.height));
 
@@ -1978,7 +1993,7 @@
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
-    roomActionPop?.classList.remove("lower-mode");
+    roomActionPop?.classList.remove("lower-mode", "room3-mode");
     if (btnRoomActionYes) btnRoomActionYes.textContent = "はい";
     if (btnRoomActionNo) btnRoomActionNo.textContent = "いいえ";
   }
@@ -1986,6 +2001,8 @@
   function showRoomActionPopAt(clientX, clientY, message, onYes, options = {}){
     if (!roomActionPop || !roomActionMsg) return;
     const fixedLower = !!options.fixedLower;
+    const compactButtons = !!options.compactButtons;
+    const yOffset = Number(options.yOffset) || 0;
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
       onNo: (typeof options.onNo === "function") ? options.onNo : null,
@@ -1997,6 +2014,7 @@
     if (btnRoomActionNo) btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
     roomActionPop.classList.remove("hidden");
     roomActionPop.classList.toggle("lower-mode", fixedLower);
+    roomActionPop.classList.toggle("room3-mode", compactButtons);
 
     if (fixedLower){
       roomActionPop.style.left = "";
@@ -2013,7 +2031,7 @@
     const halfW = r.width / 2;
     if (x - halfW < pad) x = pad + halfW;
     if (x + halfW > vw - pad) x = (vw - pad) - halfW;
-    let top = y + 18;
+    let top = y + 18 + yOffset;
     if (top + r.height > vh - pad) top = y - r.height - 18;
     top = Math.max(pad, Math.min(top, vh - pad - r.height));
     roomActionPop.style.left = x + "px";
@@ -3000,7 +3018,7 @@
       if (ownerUid !== state.userId || !sourceKey) return;
       const action = { ...pendingEquipAction, sourceKey };
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
-      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 70, "このカードをわたしますか。", async () => {
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードをわたしますか。", async () => {
         pendingEquipAction = null;
         zoomDismissHandler = null;
         const ok = await moveEquipmentCardBetweenPlayers(action.fromUid, action.toUid, sourceKey);
@@ -3062,7 +3080,7 @@
       zoomDismissHandler = async () => {
         restoreOliverZoomSelection();
       };
-      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 70, "これを奪いますか。", async () => {
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "これを奪いますか。", async () => {
         const action = pendingEquipAction;
         pendingEquipAction = null;
         zoomDismissHandler = null;
@@ -3087,7 +3105,7 @@
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
-      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 70, "この装備を奪いますか。", async () => {
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
         const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
         if (ok){
           clearDefeatLootState();
@@ -3103,7 +3121,7 @@
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
-      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 70, "この装備を奪いますか。", async () => {
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
         room4StealUsed = true;
         const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
         if (ok){
@@ -4480,6 +4498,8 @@
   async function placeMarkerInRoom(roomId){
     if (!roomId || !state.roomCode || !state.userId) return;
 
+    movedByDiceRoomId = roomId;
+
     let target = null;
     for (let i = 0; i < 120; i++){
       const p = randomPointInRoom(roomId);
@@ -4573,7 +4593,6 @@
 
   async function placeMarkerByDice(total){
     const roomId = diceTotalToRoomId(total);
-    movedByDiceRoomId = roomId;
     await placeMarkerInRoom(roomId);
     renderEquipmentDock();
     renderMarkers();
@@ -5326,6 +5345,8 @@
         }, {
           yesLabel: "1回復する",
           noLabel: "2ダメージ与える",
+          compactButtons: true,
+          yOffset: -14,
           onNo: async () => {
             room3ActionUsed = true;
             showTurnHint("");
@@ -5359,6 +5380,8 @@
         }, {
           yesLabel: "1回復する",
           noLabel: "2ダメージ与える",
+          compactButtons: true,
+          yOffset: -14,
           onNo: async () => {
             room3ActionUsed = true;
             showTurnHint("");
