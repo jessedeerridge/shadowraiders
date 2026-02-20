@@ -1223,6 +1223,32 @@
     white-space:nowrap;
     line-height:1;
   }
+
+  .zoom-stage.multi-reveal{
+    width:min(92vw, 1200px);
+    height:auto;
+    transform:none;
+    transform-origin:center;
+  }
+  .multi-reveal-row{
+    display:flex;
+    flex-wrap:nowrap;
+    gap:10px;
+    align-items:flex-start;
+    justify-content:center;
+    width:100%;
+  }
+  .multi-reveal-item{
+    flex:0 1 auto;
+  }
+  .multi-reveal-item .id72{
+    width:var(--multi-card-w, 72px);
+    height:calc(var(--multi-card-w, 72px) * 1.5);
+    cursor:default;
+  }
+  .multi-reveal-item .zoom-identity-owner{
+    top:-28px;
+  }
   .zoom-identity-owner .equip-tag{
     width:8px;
     height:8px;
@@ -2680,6 +2706,7 @@
   function closeZoom(){
     zoomBackdrop.classList.add("hidden");
     zoomBackdrop.classList.remove("passthrough");
+    zoomStage?.classList.remove("multi-reveal");
     zoomStage.innerHTML = "";
     hideGreenRevealPanel();
     zoomCloseBtn.classList.add("hidden");
@@ -2843,6 +2870,120 @@
   let defeatLootQueue = [];
   let lastAttackWatch = null;
   let previousEliminatedMap = {};
+  let identityRevealQueue = [];
+  let identityRevealProcessing = false;
+  let pendingBruceRevealTargetUid = "";
+  let pendingBruceRevealAt = 0;
+
+
+  function turnOrderIndex(uid){
+    const targetUid = safeText(uid);
+    if (!targetUid) return Number.POSITIVE_INFINITY;
+    const order = Array.isArray(state.room?.positionOrder) ? state.room.positionOrder : [];
+    const idx = order.indexOf(targetUid);
+    if (idx >= 0) return idx;
+    const p = playerById(targetUid);
+    return Number.isFinite(Number(p?.seatIndex)) ? Number(p.seatIndex) + 1000 : Number.POSITIVE_INFINITY;
+  }
+
+  function sortUidsByTurnOrder(uids){
+    return [...new Set((uids || []).map(uid => safeText(uid)).filter(Boolean))]
+      .sort((a, b) => turnOrderIndex(a) - turnOrderIndex(b));
+  }
+
+  async function maybeRunBruceAutoReveal(triggeredByUid){
+    const isExpired = (Date.now() - Number(pendingBruceRevealAt || 0)) > 12000;
+    if (!triggeredByUid || isExpired || safeText(triggeredByUid) !== safeText(pendingBruceRevealTargetUid)) return;
+    pendingBruceRevealTargetUid = "";
+    pendingBruceRevealAt = 0;
+    const myRoleId = safeText(state.hands?.[state.userId]?.roleId || "");
+    if (myRoleId !== "CIT_B3") return;
+    const role = myRoleInfo();
+    if (!role) return;
+    await revealMyIdentityToEquipment({ revealedBy:"bruce_auto" });
+    openIdentityRevealZoom(role, state.userId);
+    await waitUntilZoomClosed();
+  }
+
+  function enqueueIdentityRevealBatch(uids){
+    const ordered = sortUidsByTurnOrder(uids)
+      .filter(uid => isPlayerEliminated(uid));
+    if (ordered.length === 0) return;
+    const key = ordered.join("|");
+    if (identityRevealQueue.some(row => row.key === key)) return;
+    identityRevealQueue.push({ key, uids: ordered });
+    processIdentityRevealQueue();
+  }
+
+  function openMultiIdentityRevealZoom(uids){
+    const ordered = sortUidsByTurnOrder(uids)
+      .filter(uid => isPlayerEliminated(uid));
+    if (ordered.length === 0) return false;
+
+    const wrap = document.createElement("div");
+    wrap.className = "multi-reveal-row";
+
+    const count = ordered.length;
+    const maxWidth = Math.max(38, Math.floor((window.innerWidth - 80 - ((count - 1) * 10)) / Math.max(1, count)));
+    const cardWidth = Math.min(72, maxWidth);
+    wrap.style.setProperty("--multi-card-w", `${cardWidth}px`);
+
+    for (const uid of ordered){
+      const hand = state.hands?.[uid];
+      const role = hand?.roleId ? ROLE_BY_ID[hand.roleId] : null;
+      if (!role) continue;
+      const item = document.createElement("div");
+      item.className = "multi-reveal-item";
+      const cardEl = createIdentityCard(role);
+      item.appendChild(cardEl);
+
+      if (uid && uid !== state.userId){
+        const owner = playerById(uid);
+        if (owner){
+          const chip = buildChipFor(uid);
+          const label = document.createElement("div");
+          label.className = "zoom-identity-owner";
+          const name = document.createElement("span");
+          name.textContent = nameFromSecondChar(owner.name || "");
+          label.appendChild(chip);
+          label.appendChild(name);
+          item.appendChild(label);
+        }
+      }
+      wrap.appendChild(item);
+    }
+
+    zoomStage?.classList.add("multi-reveal");
+    openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
+    setTimeout(() => {
+      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
+    }, 2000);
+    return true;
+  }
+
+  async function processIdentityRevealQueue(){
+    if (identityRevealProcessing) return;
+    identityRevealProcessing = true;
+    try {
+      while (identityRevealQueue.length > 0){
+        const row = identityRevealQueue.shift();
+        const ordered = sortUidsByTurnOrder(row?.uids || [])
+          .filter(uid => isPlayerEliminated(uid));
+        if (ordered.length === 0) continue;
+        for (const uid of ordered){
+          await revealIdentityByDamage(uid);
+        }
+        const opened = openMultiIdentityRevealZoom(ordered);
+        if (!opened) continue;
+        await waitUntilZoomClosed();
+        if (pendingBruceRevealTargetUid && ordered.includes(safeText(pendingBruceRevealTargetUid))){
+          await maybeRunBruceAutoReveal(safeText(pendingBruceRevealTargetUid));
+        }
+      }
+    } finally {
+      identityRevealProcessing = false;
+    }
+  }
 
   function clearDefeatLootState(){
     defeatLootQueue = [];
@@ -3101,7 +3242,7 @@
     if (isMyIdentityRevealed()) return;
 
     const myRoleId = safeText(my.roleId || "");
-    if (myRoleId === "CIT_D1"){
+    if (myRoleId === "CIT_D1" || myRoleId === "CIT_B3"){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
       return;
@@ -4027,25 +4168,27 @@
         }
       }
 
+      const newlyEliminatedUids = [];
+      for (const p of latestPlayers){
+        const uid = safeText(p.id || "");
+        if (!uid) continue;
+        const isEliminated = !!eliminatedNow[uid];
+        if (!isEliminated){
+          autoDamageRevealLock[uid] = false;
+          continue;
+        }
+        if (!autoDamageRevealLock[uid]){
+          autoDamageRevealLock[uid] = true;
+          newlyEliminatedUids.push(uid);
+        }
+      }
+
       previousEliminatedMap = eliminatedNow;
 
       renderHpBoard();
       ensureCurrentTurnPlayerAlive();
 
-      for (const [uid, dmgRaw] of Object.entries(damageCache)){
-        const myHand = state.hands?.[uid];
-        const role = myHand?.roleId ? ROLE_BY_ID[myHand.roleId] : null;
-        const hp = Number(role?.hp || 0);
-        const dmg = clampDamage(dmgRaw);
-        if (!uid || !hp || dmg < hp){
-          autoDamageRevealLock[uid] = false;
-          continue;
-        }
-        if (autoDamageRevealLock[uid]) continue;
-        autoDamageRevealLock[uid] = true;
-        openIdentityRevealZoom(role, uid);
-        revealIdentityByDamage(uid);
-      }
+      enqueueIdentityRevealBatch(newlyEliminatedUids);
 
       renderEquipmentDock();
       const myRoleBack = myRoleCard?.querySelector('.role-back');
@@ -5480,7 +5623,7 @@
     const launchDelayMs = 30;
     const moveDurationMs = 950;
     const settleBufferMs = 80;
-    const damageDelayAfterStopMs = 2000;
+    const damageDelayAfterStopMs = 3000;
 
     const moveTimer = setTimeout(() => {
       if (!masamuneMode){
@@ -5516,20 +5659,34 @@
       d4Wrap.classList.add('attack-result-pin');
 
       const damageTimer = setTimeout(async () => {
-        setAttackRollResultLabel(didAttackRollSucceed(finalD6, finalD4, { masamuneMode }));
-        if (!applyDamage) return;
-        const revealBoost = masamuneMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
-        const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, excaliburRevealBoost: revealBoost });
-        const gatlingTargets = Array.isArray(options.gatlingTargetUids)
-          ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
-          : [];
-        if (damage > 0){
-          if (gatlingTargets.length > 0){
-            await addDamageToPlayers(gatlingTargets, damage, { source:"attack" });
+        const attackSuccess = didAttackRollSucceed(finalD6, finalD4, { masamuneMode });
+        setAttackRollResultLabel(attackSuccess);
+        if (applyDamage){
+          const revealBoost = masamuneMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
+          const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, excaliburRevealBoost: revealBoost });
+          const gatlingTargets = Array.isArray(options.gatlingTargetUids)
+            ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
+            : [];
+          const myRoleId = safeText(state.hands?.[state.userId]?.roleId || "");
+          if (myRoleId === "CIT_B3" && attackSuccess && gatlingTargets.length === 0){
+            pendingBruceRevealTargetUid = safeText(targetUid || "");
+            pendingBruceRevealAt = Date.now();
           } else {
-            await addDamageToPlayer(targetUid, damage, { source:"attack" });
+            pendingBruceRevealTargetUid = "";
+            pendingBruceRevealAt = 0;
+          }
+          if (damage > 0){
+            if (gatlingTargets.length > 0){
+              await addDamageToPlayers(gatlingTargets, damage, { source:"attack" });
+            } else {
+              await addDamageToPlayer(targetUid, damage, { source:"attack" });
+            }
           }
         }
+        const cleanupAttackDiceTimer = setTimeout(() => {
+          clearAttackResultDice();
+        }, 1000);
+        diceRollTimers.push(cleanupAttackDiceTimer);
       }, damageDelayAfterStopMs);
       diceRollTimers.push(damageTimer);
     }, stopDelayMs);
@@ -6835,6 +6992,8 @@
   async function doEndTurn(){
     clearDefeatLootState();
     lastAttackWatch = null;
+    pendingBruceRevealTargetUid = "";
+    pendingBruceRevealAt = 0;
     await advanceTurnToNextPlayer();
     hideAttackPop();
     hideEndTurnConfirm();
