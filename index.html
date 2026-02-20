@@ -1935,6 +1935,10 @@
   let moveDiceEventInitialized = false;
   let attackDiceEventSeenAt = 0;
   let attackDiceEventInitialized = false;
+  let roleFlashEventSeenAt = 0;
+  let roleFlashEventInitialized = false;
+  let roleFlashTimer = null;
+  let roleFlashOverlayEl = null;
   let identityRevealInitialized = false;
   let identityRevealSeenByUid = {};
   let autoDamageRevealLock = {};
@@ -2231,8 +2235,9 @@
     if (!isMyRole("SHA_V2")) return;
     if (vampireHealScheduled) return;
     vampireHealScheduled = true;
-    setTimeout(() => {
-      healDamageToPlayer(state.userId, 2);
+    setTimeout(async () => {
+      await emitRoleFlashEvent("SHA_V2", "vampire_heal");
+      await healDamageToPlayer(state.userId, 2);
     }, 1500);
   }
 
@@ -2241,6 +2246,55 @@
     if (!vampireHiddenAttackSuccess) return;
     if (!isMyTurn()) return;
     scheduleVampireHeal();
+  }
+
+  async function emitRoleFlashEvent(roleId, reason = ""){
+    const rid = safeText(roleId || "");
+    if (!state.roomCode || !rid) return;
+    await set(ref(db, `rooms/${state.roomCode}/effectEvents/roleFlash`), {
+      roleId: rid,
+      reason: safeText(reason || ""),
+      at: Date.now()
+    });
+  }
+
+  function hideRoleFlashOverlay(){
+    if (roleFlashTimer){
+      clearTimeout(roleFlashTimer);
+      roleFlashTimer = null;
+    }
+    if (roleFlashOverlayEl){
+      roleFlashOverlayEl.remove();
+      roleFlashOverlayEl = null;
+    }
+  }
+
+  function showRoleFlashOverlay(roleId, durationMs = 1200){
+    const role = ROLE_BY_ID[safeText(roleId || "")];
+    if (!role) return;
+    hideRoleFlashOverlay();
+
+    const overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.zIndex = "11000";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.background = "rgba(0,0,0,.35)";
+    overlay.style.pointerEvents = "none";
+
+    const card = createIdentityCard(role);
+    card.style.transform = "scale(2.1)";
+    card.style.transformOrigin = "center center";
+    card.style.boxShadow = "0 14px 32px rgba(0,0,0,.35)";
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    roleFlashOverlayEl = overlay;
+
+    roleFlashTimer = setTimeout(() => {
+      hideRoleFlashOverlay();
+    }, Math.max(100, Number(durationMs) || 1200));
   }
 
   function showTemporaryRoleTag(uid, text, durationMs = 2000){
@@ -4172,6 +4226,22 @@
     });
   }
 
+  function subscribeRoleFlashEvents(){
+    const flashRef = ref(db, `rooms/${state.roomCode}/effectEvents/roleFlash`);
+    onValue(flashRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!roleFlashEventInitialized){
+        roleFlashEventInitialized = true;
+        roleFlashEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= roleFlashEventSeenAt) return;
+      roleFlashEventSeenAt = at;
+      showRoleFlashOverlay(safeText(ev.roleId || ""), 1200);
+    });
+  }
+
   function subscribeGreenReplyBubbles(){
     const bRef = ref(db, `rooms/${state.roomCode}/greenReplyBubbles`);
     onValue(bRef, snap => {
@@ -5801,6 +5871,8 @@
     const name = safeText(player?.name || "このプレイヤー");
     const ability = '<span class="ability-pill">メテオストライク</span>';
     showRoomActionPopAt(clientX, clientY, "", async () => {
+      await emitRoleFlashEvent("SHA_U2", "meteor_strike");
+      await new Promise(resolve => setTimeout(resolve, 1200));
       await addDamageToPlayer(uid, 3);
       uranusMeteorResolved = true;
       renderMarkers();
@@ -7074,6 +7146,7 @@
     subscribeEquipment();
     subscribeDamage();
     subscribeDiceEvents();
+    subscribeRoleFlashEvents();
 
     renderSeatTiles();
     refreshStartBadge();
