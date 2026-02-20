@@ -945,7 +945,7 @@
   .room-svg{width:100%;height:100%;display:block;}
   .shape{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
   .attack-range-layer{pointer-events:none;}
-  .attack-range-edge-outline{stroke:var(--brown);stroke-width:3;stroke-linecap:round;vector-effect:non-scaling-stroke;}
+  .attack-range-edge-outline{stroke:var(--brown);stroke-width:0.5;stroke-linecap:round;vector-effect:non-scaling-stroke;}
   .attack-range-edge{stroke:var(--gold);stroke-width:2;stroke-linecap:round;vector-effect:non-scaling-stroke;}
   .roomhit{fill:transparent;cursor:pointer;}
   .roomhit:hover{fill:rgba(0,0,0,.06);}
@@ -6317,6 +6317,51 @@
     return pa < pb ? `${pa}|${pb}` : `${pb}|${pa}`;
   }
 
+  function polygonCentroid(pts){
+    if (!Array.isArray(pts) || !pts.length) return { x:0, y:0 };
+    let sx = 0;
+    let sy = 0;
+    for (const [x, y] of pts){
+      sx += Number(x) || 0;
+      sy += Number(y) || 0;
+    }
+    return { x: sx / pts.length, y: sy / pts.length };
+  }
+
+  function offsetEdgeOutward(edge){
+    const ax = Number(edge.ax) || 0;
+    const ay = Number(edge.ay) || 0;
+    const bx = Number(edge.bx) || 0;
+    const by = Number(edge.by) || 0;
+
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = Math.hypot(dx, dy) || 1;
+
+    let nx = -dy / len;
+    let ny = dx / len;
+
+    const mx = (ax + bx) / 2;
+    const my = (ay + by) / 2;
+    const pts = roomPolygons[edge.roomId];
+    const c = polygonCentroid(pts);
+
+    const plusDist = Math.hypot((mx + nx) - c.x, (my + ny) - c.y);
+    const minusDist = Math.hypot((mx - nx) - c.x, (my - ny) - c.y);
+    if (plusDist < minusDist){
+      nx *= -1;
+      ny *= -1;
+    }
+
+    const offset = 1.25;
+    return {
+      x1: ax + nx * offset,
+      y1: ay + ny * offset,
+      x2: bx + nx * offset,
+      y2: by + ny * offset
+    };
+  }
+
   function updateAttackRangeUi(){
     ensureAttackRangeLayer();
     clearAttackRangeLayer();
@@ -6343,19 +6388,20 @@
         if (cur){
           cur.count += 1;
         } else {
-          edges.set(key, { ax:a[0], ay:a[1], bx:b[0], by:b[1], count:1 });
+          edges.set(key, { ax:a[0], ay:a[1], bx:b[0], by:b[1], count:1, roomId: rid });
         }
       }
     }
 
     for (const edge of edges.values()){
       if (edge.count !== 1) continue;
+      const outlinePos = offsetEdgeOutward(edge);
       const outline = svgEl('line', {
         class:'attack-range-edge-outline',
-        x1: edge.ax,
-        y1: edge.ay,
-        x2: edge.bx,
-        y2: edge.by
+        x1: outlinePos.x1,
+        y1: outlinePos.y1,
+        x2: outlinePos.x2,
+        y2: outlinePos.y2
       });
       const line = svgEl('line', {
         class:'attack-range-edge',
