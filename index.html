@@ -5820,10 +5820,13 @@
     if (!isTestPlayer()) return;
     if (!state.roomCode || !state.userId || !role?.id) return;
     const prev = state.hands?.[state.userId] || {};
-    await update(ref(db, `rooms/${state.roomCode}/hands/${state.userId}`), {
-      ...prev,
-      roleId: role.id,
-      testReplacedAt: Date.now()
+    await update(ref(db, `rooms/${state.roomCode}`), {
+      [`hands/${state.userId}`]: {
+        ...prev,
+        roleId: role.id,
+        testReplacedAt: Date.now()
+      },
+      [`equipment/${state.userId}/identity`]: null
     });
   }
   function closeHelp(){ helpBackdrop.classList.add('hidden'); }
