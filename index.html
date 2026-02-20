@@ -3216,8 +3216,36 @@
     d.title = p ? p.name : "";
     if (isTestPlayer()){
       d.style.cursor = "pointer";
+      const longPressMs = 500;
+      let longPressTimer = null;
+      let longPressDone = false;
+      const clearLongPressTimer = () => {
+        if (!longPressTimer) return;
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      };
+
+      d.addEventListener("pointerdown", (e) => {
+        if (!e.target.closest("#hpBoard")) return;
+        longPressDone = false;
+        clearLongPressTimer();
+        longPressTimer = setTimeout(async () => {
+          longPressDone = true;
+          if (!uid) return;
+          await healDamageToPlayer(uid, 1);
+        }, longPressMs);
+      });
+      d.addEventListener("pointerup", clearLongPressTimer);
+      d.addEventListener("pointerleave", clearLongPressTimer);
+      d.addEventListener("pointercancel", clearLongPressTimer);
+
       d.addEventListener("click", async (e) => {
         e.stopPropagation();
+        clearLongPressTimer();
+        if (longPressDone || !e.target.closest("#hpBoard")){
+          longPressDone = false;
+          return;
+        }
         if (!uid) return;
         await addDamageToPlayer(uid, 1);
       });
@@ -5762,6 +5790,14 @@
       const cardWrap = document.createElement('div');
       cardWrap.className = 'role-card-wrap';
       cardWrap.appendChild(createIdentityCard(r));
+      if (isTestPlayer()){
+        cardWrap.style.cursor = 'pointer';
+        cardWrap.title = 'クリックで自分の正体カードをこのカードに変更';
+        cardWrap.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await replaceMyRoleCardForTest(r);
+        });
+      }
 
       const desc = document.createElement('div');
       desc.className = 'role-desc';
@@ -5779,6 +5815,16 @@
   function openHelp(){
     renderHelpList();
     helpBackdrop.classList.remove('hidden');
+  }
+  async function replaceMyRoleCardForTest(role){
+    if (!isTestPlayer()) return;
+    if (!state.roomCode || !state.userId || !role?.id) return;
+    const prev = state.hands?.[state.userId] || {};
+    await update(ref(db, `rooms/${state.roomCode}/hands/${state.userId}`), {
+      ...prev,
+      roleId: role.id,
+      testReplacedAt: Date.now()
+    });
   }
   function closeHelp(){ helpBackdrop.classList.add('hidden'); }
   helpBtn.addEventListener('click', () => {
