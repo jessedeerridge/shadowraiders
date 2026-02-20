@@ -3292,7 +3292,8 @@
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
       const isPulseCard = card.classList.contains("equip-defeat-pulse");
-      const canPick = isPulseCard && pendingEquipAction.defeatedUids?.includes(ownerUid) && !!sourceKey;
+      const isEligibleDavidCard = pendingEquipAction.defeatedUids?.includes(ownerUid) && !!sourceKey;
+      const canPick = isPulseCard || (pendingEquipAction.selectedSourceKey && isEligibleDavidCard);
       if (!canPick){
         restoreDavidAbilitySelection();
         return;
@@ -3304,6 +3305,7 @@
       };
       renderEquipmentDock();
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      setZoomPassthrough(true);
       hideDavidSelectPreview();
       zoomDismissHandler = async () => {
         restoreDavidAbilitySelection();
