@@ -1020,7 +1020,7 @@
   }
   .card72.wb-front.wb-white{ background:#fff; }
   .card72.wb-front.wb-black{ background:#000; }
-  .card72.wb-front.wb-green{ background:var(--green-soft); border-color:#0b3b2e; }
+  .card72.wb-front.wb-green{ background:#74745a; border-color:#0b3b2e; }
 
   .card72.wb-front .wb-name{
     position:absolute;
@@ -1062,7 +1062,7 @@
     background: radial-gradient(circle at 30% 30%, rgba(243,220,138,.45), rgba(0,0,0,0) 55%);
     box-sizing:border-box;
     overflow:hidden;
-    z-index:2;
+    z-index:1;
   }
   .card72.wb-front.wb-green .wb-circle{
     background: radial-gradient(circle at 30% 30%, rgba(34,197,94,.25), rgba(0,0,0,0) 60%);
@@ -1085,7 +1085,7 @@
     flex-direction:column;
     gap:4px;
     overflow:hidden;
-    z-index:2;
+    z-index:4;
   }
   .card72.wb-front.wb-green .wb-effect{
     background:rgba(34,197,94,.12);
@@ -1156,6 +1156,10 @@
     transform:scale(var(--zoom, 4));
     transform-origin:center;
     will-change:transform;
+    transition:transform .35s ease;
+  }
+  .zoom-backdrop.green-reveal-active .zoom-stage{
+    transform:translateX(-90px) scale(var(--zoom, 4));
   }
   .zoom-stage .card72,
   .zoom-stage .id72{
@@ -1289,6 +1293,44 @@
   .green-share-btn.waiting-selected{
     opacity:1;
   }
+
+  .green-reveal-panel{
+    position:fixed;
+    left:50%;
+    top:50%;
+    width:72px;
+    height:108px;
+    transform:translate(-50%,-50%) translateX(60px);
+    z-index:10002;
+    pointer-events:none;
+    opacity:0;
+    transition:transform .35s ease, opacity .35s ease;
+  }
+  .zoom-backdrop.green-reveal-active .green-reveal-panel{
+    transform:translate(-50%,-50%) translateX(95px);
+    opacity:1;
+  }
+  .green-reveal-panel.hidden{ display:none; }
+  .green-reveal-label{
+    position:absolute;
+    left:50%;
+    top:calc(100% + 8px);
+    transform:translateX(-50%);
+    font-size:12px;
+    font-weight:900;
+    color:#fff;
+    text-shadow:0 2px 8px rgba(0,0,0,.55);
+    white-space:nowrap;
+  }
+  .green-reveal-card-wrap{
+    position:absolute;
+    inset:0;
+  }
+  .green-reveal-card-wrap .id72{
+    box-shadow:0 18px 50px rgba(0,0,0,.45);
+    transform:scale(2);
+    transform-origin:center;
+  }
 </style>
 </head>
 <body>
@@ -1349,6 +1391,10 @@
 <div id="zoomBackdrop" class="zoom-backdrop hidden" aria-label="拡大表示">
   <button id="zoomCloseBtn" class="zoom-close hidden" aria-label="閉じる">×</button>
   <div id="zoomStage" class="zoom-stage" style="--zoom:2"></div>
+  <div id="greenRevealPanel" class="green-reveal-panel hidden" aria-live="polite">
+    <div id="greenRevealLabel" class="green-reveal-label"></div>
+    <div id="greenRevealCardWrap" class="green-reveal-card-wrap"></div>
+  </div>
   <div id="greenShareDock" class="green-share-dock hidden" aria-label="緑カード共有">
     <p class="green-share-title">誰に渡しますか。</p>
     <p id="greenShareSubtitle" class="green-share-subtitle hidden"></p>
@@ -1709,7 +1755,7 @@
 
   function buildWbFrontHTML(cardObj, theme){
     const name = safeText(cardObj?.name || "（なし）").trim();
-    const img  = cardImageFileFromName(name);
+    const img  = (theme === "green") ? "suiri.jpg" : cardImageFileFromName(name);
 
     let eff = safeText(cardObj?.effect || "");
     let showEquip = false;
@@ -1768,6 +1814,9 @@
   const zoomBackdrop = document.getElementById("zoomBackdrop");
   const zoomStage = document.getElementById("zoomStage");
   const zoomCloseBtn = document.getElementById("zoomCloseBtn");
+  const greenRevealPanel = document.getElementById("greenRevealPanel");
+  const greenRevealLabel = document.getElementById("greenRevealLabel");
+  const greenRevealCardWrap = document.getElementById("greenRevealCardWrap");
   const greenShareDock = document.getElementById("greenShareDock");
   const greenShareList = document.getElementById("greenShareList");
   const greenShareSubtitle = document.getElementById("greenShareSubtitle");
@@ -1784,6 +1833,8 @@
   let greenReplyInitialized = false;
   let greenZoomLocked = false;
   let pendingGreenRequestId = "";
+  let pendingGreenAnswerMsg = null;
+  let greenRevealByRequestId = {};
   let cardPlayerSelectActive = false;
   let activeGreenReplies = {};
   let moveDiceEventSeenAt = 0;
@@ -2046,22 +2097,141 @@
     const text = safeText(cardObj?.effect || cardObj?.text || "");
     const matched = greenCardConditionMatched(cardObj);
     const canJudge = matched !== null;
-    const damageMatch = text.match(/(\d+)ダメージ受けよ/);
-    const damageLabel = damageMatch ? `${damageMatch[1]}ダメージうける` : "はい";
+
+    if (text.includes("正体カードを見せよ")){
+      return [{ id:"reveal_identity", label:"私の正体です。", enabled:true }];
+    }
 
     if (text.includes("装備を渡すか、1ダメージ受けよ")){
       const canEquip = hasAnyEquipment(state.userId);
       return [
-        { id:"take_damage", label:"ダメージを1うける", enabled: canJudge ? !!matched : true },
+        { id:"take_damage", label:"1ダメージうける", enabled: canJudge ? !!matched : true },
         { id:"give_equip", label:"装備をわたす", enabled: canJudge ? (!!matched && canEquip) : canEquip },
         { id:"no", label:"いいえ", enabled: canJudge ? !matched : true }
       ];
     }
 
+    if (text.includes("❿に移動せよ")){
+      const nowRoom = markerRoomId(markerCache?.[state.userId]);
+      const moveLabel = (nowRoom === 7) ? "1ダメージうける" : "➓に移動する";
+      return [
+        { id:"yes", label:moveLabel, enabled: canJudge ? !!matched : true },
+        { id:"no", label:"いいえ", enabled: canJudge ? !matched : true }
+      ];
+    }
+
+    if (text.includes("1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ")){
+      const nowDamage = clampDamage(damageCache?.[state.userId]);
+      const healLabel = (nowDamage <= 0) ? "1ダメージうける" : "1ダメージ回復する";
+      return [
+        { id:"yes", label:healLabel, enabled: canJudge ? !!matched : true },
+        { id:"no", label:"いいえ", enabled: canJudge ? !matched : true }
+      ];
+    }
+
+    const damageMatch = text.match(/(\d+)ダメージ受けよ/);
+    const damageLabel = damageMatch ? `${damageMatch[1]}ダメージうける` : "はい";
     return [
       { id:"yes", label:damageLabel, enabled: canJudge ? !!matched : true },
       { id:"no", label:"いいえ", enabled: canJudge ? !matched : true }
     ];
+  }
+
+  function hideGreenRevealPanel(){
+    if (greenRevealLabel) greenRevealLabel.textContent = "";
+    if (greenRevealCardWrap) greenRevealCardWrap.innerHTML = "";
+    greenRevealPanel?.classList.add("hidden");
+    zoomBackdrop?.classList.remove("green-reveal-active");
+  }
+
+  function showGreenRevealPanel(roleId, responderId){
+    const role = roleId ? ROLE_BY_ID[roleId] : null;
+    if (!role || !greenRevealCardWrap || !greenRevealLabel || !greenRevealPanel) return;
+    greenRevealCardWrap.innerHTML = "";
+    greenRevealCardWrap.appendChild(createIdentityCard(role));
+    const me = safeText(state.userId || "");
+    const label = (safeText(responderId || "") === me) ? "私の正体です。" : "選択したプレイヤーの正体";
+    greenRevealLabel.textContent = label;
+    greenRevealPanel.classList.remove("hidden");
+    zoomBackdrop?.classList.add("green-reveal-active");
+  }
+
+  async function sendGreenResponse(msg, opt, overrideLabel=""){
+    if (!state.roomCode || !msg?.from || !msg?.requestId || !opt?.id) return;
+    const answerLabel = safeText(overrideLabel || opt.label || "");
+    await set(ref(db, `rooms/${state.roomCode}/greenResponses/${msg.from}`), {
+      from: msg.from,
+      to: state.userId,
+      requestId: msg.requestId,
+      answerId: opt.id,
+      answerLabel,
+      card: msg.card,
+      at: Date.now()
+    });
+    await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${msg.requestId}`), {
+      from: msg.from,
+      responderId: state.userId,
+      requestId: msg.requestId,
+      answerLabel,
+      at: Date.now()
+    });
+  }
+
+  async function applyGreenAnswerEffect(msg, opt){
+    const text = safeText(msg?.card?.effect || msg?.card?.text || "");
+
+    if (opt?.id === "take_damage"){
+      setTimeout(() => { addDamageToPlayer(state.userId, 1); }, 1000);
+      return;
+    }
+
+    const isPositive = (opt?.id === "yes" || opt?.id === "reveal_identity");
+    if (!isPositive) return;
+
+    if (text.includes("1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ")){
+      setTimeout(() => {
+        const cur = clampDamage(damageCache?.[state.userId]);
+        if (cur <= 0) addDamageToPlayer(state.userId, 1);
+        else healDamageToPlayer(state.userId, 1);
+      }, 1000);
+    } else {
+      const damageMatch = text.match(/(\d+)ダメージ受けよ/);
+      const damage = damageMatch ? Number(damageMatch[1] || 0) : 0;
+      if (damage > 0){
+        setTimeout(() => { addDamageToPlayer(state.userId, damage); }, 1000);
+      }
+    }
+
+    if (text.includes("❿に移動せよ")){
+      setTimeout(() => {
+        const nowRoom = markerRoomId(markerCache?.[state.userId]);
+        if (nowRoom === 7) addDamageToPlayer(state.userId, 1);
+        else placePlayerMarkerInRoom(state.userId, 7);
+      }, 1000);
+    }
+
+    if (text.includes("正体カードを見せよ")){
+      const roleId = safeText(state.hands?.[state.userId]?.roleId || "");
+      if (roleId){
+        await set(ref(db, `rooms/${state.roomCode}/greenReveals/${msg.requestId}`), {
+          requestId: msg.requestId,
+          from: msg.from,
+          responderId: state.userId,
+          roleId,
+          at: Date.now()
+        });
+        showGreenRevealPanel(roleId, state.userId);
+      }
+    }
+  }
+
+  function restoreGreenGiveZoomSelection(action){
+    if (!action?.cardObj) return;
+    openZoomFromDeckCard(action.cardObj, "green", { closeOnBackdrop:false, showCloseButton:false });
+    greenShareDock?.classList.add("hidden");
+    setZoomPassthrough(true);
+    pendingEquipAction = action;
+    renderEquipmentDock();
   }
 
   function setGreenDockMeta({ title="", subtitle="" } = {}){
@@ -2155,6 +2325,15 @@
           at: Date.now()
         };
         await set(ref(db, `rooms/${state.roomCode}/greenInbox/${p.id}`), payload);
+        if (safeText(greenShareCard?.effect || "").includes("正体カードを見せよ")){
+          await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`), {
+            from: state.userId,
+            responderId: p.id,
+            requestId,
+            answerLabel: "私の正体です。",
+            at: Date.now()
+          });
+        }
 
         pendingGreenRequestId = requestId;
         greenShareList.innerHTML = "";
@@ -2175,9 +2354,28 @@
   function openGreenAnswerDock(msg){
     if (!greenShareDock || !greenShareList || !msg?.card) return;
     greenShareCard = msg.card;
-    setGreenDockMeta({ title:"回答を選んでください", subtitle:safeText(msg.card.effect || "") });
+    pendingGreenAnswerMsg = msg;
+    const reveal = greenRevealByRequestId[safeText(msg.requestId || "")];
+    if (reveal?.roleId){
+      showGreenRevealPanel(reveal.roleId, reveal.responderId);
+    } else {
+      hideGreenRevealPanel();
+    }
+    const cardText = safeText(msg.card.effect || "");
+    setGreenDockMeta({ title:"回答を選んでください", subtitle:cardText });
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
+
+    if (cardText.includes("正体カードを見せよ")){
+      const opt = { id:"reveal_identity", label:"私の正体です。", enabled:true };
+      greenShareDock.classList.add("hidden");
+      (async () => {
+        await sendGreenResponse(msg, opt, "私の正体です。");
+        await applyGreenAnswerEffect(msg, opt);
+      })();
+      return;
+    }
+
     for (const opt of greenAnswerOptions(msg.card)){
       const btn = document.createElement("button");
       btn.type = "button";
@@ -2186,22 +2384,24 @@
       btn.disabled = !opt.enabled;
       btn.addEventListener("click", async () => {
         if (!state.roomCode || !msg?.from || !msg?.requestId) return;
-        await set(ref(db, `rooms/${state.roomCode}/greenResponses/${msg.from}`), {
-          from: msg.from,
-          to: state.userId,
-          requestId: msg.requestId,
-          answerId: opt.id,
-          answerLabel: opt.label,
-          card: msg.card,
-          at: Date.now()
-        });
-        await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${msg.requestId}`), {
-          from: msg.from,
-          responderId: state.userId,
-          requestId: msg.requestId,
-          answerLabel: opt.label,
-          at: Date.now()
-        });
+
+        if (opt.id === "give_equip"){
+          const myItems = listEquipForUid(state.userId).filter(it => !isIdentityEquipItem(it));
+          if (myItems.length === 0) return;
+          const action = {
+            type:"green_give",
+            fromUid: state.userId,
+            toUid: msg.from,
+            requestId: msg.requestId,
+            cardObj: msg.card,
+            answerOpt: opt
+          };
+          restoreGreenGiveZoomSelection(action);
+          return;
+        }
+
+        await applyGreenAnswerEffect(msg, opt);
+        await sendGreenResponse(msg, opt);
         closeZoom();
       });
       greenShareList.appendChild(btn);
@@ -2212,6 +2412,8 @@
   function hideGreenShareDock(){
     greenShareCard = null;
     pendingGreenRequestId = "";
+    pendingGreenAnswerMsg = null;
+    hideGreenRevealPanel();
     if (greenShareList) greenShareList.innerHTML = "";
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareActions?.classList.add("hidden");
@@ -2239,6 +2441,7 @@
 
   function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true } = {}){
     zoomStage.innerHTML = "";
+    hideGreenRevealPanel();
     zoomCloseOnBackdrop = !!closeOnBackdrop;
     zoomPassthroughMode = false;
     zoomDismissHandler = null;
@@ -2303,9 +2506,11 @@
     zoomBackdrop.classList.add("hidden");
     zoomBackdrop.classList.remove("passthrough");
     zoomStage.innerHTML = "";
+    hideGreenRevealPanel();
     zoomCloseBtn.classList.add("hidden");
     zoomCloseOnBackdrop = true;
     zoomPassthroughMode = false;
+    pendingGreenAnswerMsg = null;
     zoomDismissHandler = null;
     greenZoomLocked = false;
     hideGreenShareDock();
@@ -2554,9 +2759,10 @@
         const isNormalStealPulse = canUseRoom4Steal() && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
         const isOliverPulse = pendingEquipAction?.type === "oliver_target" && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
         const isBananaPulse = pendingEquipAction?.type === "banana_give" && p.id === state.userId && !isIdentityEquipItem(it);
+        const isGreenGivePulse = pendingEquipAction?.type === "green_give" && p.id === state.userId && !isIdentityEquipItem(it);
         const promotedUid = defeatLootQueue[0] || "";
         const isDefeatPulse = promotedUid && p.id === promotedUid && p.id !== state.userId && eliminated && !isIdentityEquipItem(it);
-        if (isNormalStealPulse || isOliverPulse || isBananaPulse){
+        if (isNormalStealPulse || isOliverPulse || isBananaPulse || isGreenGivePulse){
           cardEl.classList.add("equip-steal-pulse");
         }
         if (isDefeatPulse){
@@ -2769,6 +2975,39 @@
   equipBody.addEventListener("click", (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
     if (!card) return;
+
+    if (pendingEquipAction?.type === "green_give"){
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      if (ownerUid !== state.userId || !sourceKey) return;
+      const action = { ...pendingEquipAction, sourceKey };
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 70, "このカードをわたしますか。", async () => {
+        pendingEquipAction = null;
+        zoomDismissHandler = null;
+        const ok = await moveEquipmentCardBetweenPlayers(action.fromUid, action.toUid, sourceKey);
+        if (ok){
+          await sendGreenResponse(
+            { from: action.toUid, requestId: action.requestId, card: action.cardObj },
+            action.answerOpt,
+            "装備をわたす"
+          );
+          closeZoom();
+          renderEquipmentDock();
+        }
+      }, {
+        fixedLower:true,
+        closeZoomOnNo:false,
+        onNo: () => {
+          zoomDismissHandler = null;
+          restoreGreenGiveZoomSelection(action);
+        }
+      });
+      zoomDismissHandler = async () => {
+        restoreGreenGiveZoomSelection(action);
+      };
+      return;
+    }
 
     if (pendingEquipAction?.type === "banana_give"){
       const ownerUid = safeText(card.dataset.ownerUid || "");
@@ -5622,7 +5861,29 @@
       if (!pendingGreenRequestId || safeText(msg.requestId || "") !== pendingGreenRequestId) return;
       greenReplySeenAt = at;
       setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
+      const reveal = greenRevealByRequestId[safeText(msg.requestId || "")];
+      if (reveal?.roleId){
+        showGreenRevealPanel(reveal.roleId, reveal.responderId);
+      }
       greenShareActions?.classList.remove("hidden");
+    });
+  }
+
+  function subscribeGreenReveals(){
+    const revealRef = ref(db, `rooms/${state.roomCode}/greenReveals`);
+    onValue(revealRef, snap => {
+      greenRevealByRequestId = snap.val() || {};
+      const pendingReveal = greenRevealByRequestId[safeText(pendingGreenRequestId || "")];
+      if (pendingReveal?.roleId){
+        showGreenRevealPanel(pendingReveal.roleId, pendingReveal.responderId);
+        return;
+      }
+      const answerReveal = greenRevealByRequestId[safeText(pendingGreenAnswerMsg?.requestId || "")];
+      if (answerReveal?.roleId){
+        showGreenRevealPanel(answerReveal.roleId, answerReveal.responderId);
+        return;
+      }
+      hideGreenRevealPanel();
     });
   }
 
@@ -6083,6 +6344,7 @@
       remove(ref(db, `${base}/greenInbox`)),
       remove(ref(db, `${base}/greenResponses`)),
       remove(ref(db, `${base}/greenReplyBubbles`)),
+      remove(ref(db, `${base}/greenReveals`)),
       remove(ref(db, `${base}/turn`)),
     ]);
 
@@ -6202,6 +6464,7 @@
     subscribeHands();
     subscribeGreenInbox();
     subscribeGreenResponses();
+    subscribeGreenReveals();
     subscribeGreenReplyBubbles();
     subscribeMarkers();
     subscribeEquipment();
