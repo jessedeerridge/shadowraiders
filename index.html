@@ -115,7 +115,7 @@
     position:fixed;inset:0;background:rgba(0,0,0,.35);
     display:flex;align-items:flex-end;justify-content:center;
     z-index:2010;
-    padding:16px;
+    padding:16px 16px 64px;
   }
   .help-pop-backdrop.hidden{display:none;}
   .help-pop{
@@ -509,7 +509,7 @@
   .host-settings-btn{
     position:fixed;
     left:16px;
-    bottom:66px;
+    bottom:74px;
     width:44px;height:44px;border-radius:50%;
     border:1px solid #ddd;background:#fff;box-shadow:0 8px 20px rgba(0,0,0,.18);
     display:none;align-items:center;justify-content:center;font-size:22px;cursor:pointer;
@@ -1989,6 +1989,7 @@
     document.body.appendChild(greenShareDock);
   }
   let zoomCloseOnBackdrop = true;
+  let zoomCloseOnAnyClick = false;
   let greenShareCard = null;
   let greenInboxSeenAt = 0;
   let greenInboxInitialized = false;
@@ -2882,10 +2883,11 @@
     closeZoom();
   });
 
-  function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true } = {}){
+  function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true, closeOnAnyClick=false } = {}){
     zoomStage.innerHTML = "";
     hideGreenRevealPanel();
     zoomCloseOnBackdrop = !!closeOnBackdrop;
+    zoomCloseOnAnyClick = !!closeOnAnyClick;
     zoomPassthroughMode = false;
     zoomDismissHandler = null;
     zoomBackdrop.classList.remove("passthrough");
@@ -2961,6 +2963,7 @@
     hideGreenRevealPanel();
     zoomCloseBtn.classList.add("hidden");
     zoomCloseOnBackdrop = true;
+    zoomCloseOnAnyClick = false;
     zoomPassthroughMode = false;
     pendingGreenAnswerMsg = null;
     zoomDismissHandler = null;
@@ -2983,7 +2986,8 @@
     closeZoom();
   });
   zoomBackdrop.addEventListener("click", async (e) => {
-    if (e.target === zoomBackdrop && zoomCloseOnBackdrop){
+    const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
+    if (canClose){
       if (typeof zoomDismissHandler === "function"){
         await zoomDismissHandler();
         return;
@@ -6701,6 +6705,9 @@
     }
     updateRoomChoiceUi();
     updateAttackRangeUi();
+    if (roomGuideVisible && roomGuideLayer && roomGuideLayer.parentNode === roomG){
+      roomG.appendChild(roomGuideLayer);
+    }
     refreshRoomAbilityHint();
   }
 
@@ -6750,11 +6757,12 @@
   }
 
   function ensureRoomGuideLayer(){
-    if (roomGuideLayer && roomGuideLayer.parentNode === roomG) return;
-    roomGuideLayer = svgEl('g', { class:'room-guide-layer', id:'roomGuideLayer' }, roomG);
-    if (markerLayer && markerLayer.parentNode === roomG){
-      roomG.insertBefore(roomGuideLayer, markerLayer);
+    if (roomGuideLayer && roomGuideLayer.parentNode === roomG){
+      roomG.appendChild(roomGuideLayer);
+      return;
     }
+    roomGuideLayer = svgEl('g', { class:'room-guide-layer', id:'roomGuideLayer' }, roomG);
+    roomG.appendChild(roomGuideLayer);
   }
 
   function renderRoomGuideLayer(){
@@ -7086,7 +7094,13 @@
       group.forEach((r) => {
         const cardWrap = document.createElement('div');
         cardWrap.className = 'role-card-wrap';
-        cardWrap.appendChild(createIdentityCard(r));
+        const roleCard = createIdentityCard(r);
+        roleCard.style.cursor = 'pointer';
+        roleCard.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openZoomFromCard(roleCard, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+        });
+        cardWrap.appendChild(roleCard);
         if (isTestPlayer()){
           cardWrap.style.cursor = 'pointer';
           cardWrap.title = 'クリックで自分の正体カードをこのカードに変更';
@@ -7109,6 +7123,11 @@
         const card = document.createElement('div');
         card.className = `card72 wb-front ${theme === 'black' ? 'wb-black' : theme === 'green' ? 'wb-green' : 'wb-white'}`;
         card.innerHTML = buildWbFrontHTML(toCardObj(cardData), theme);
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+        });
         grid.appendChild(card);
       });
       sec.appendChild(grid);
@@ -7147,13 +7166,17 @@
     renderRoomGuideLayer();
   }
   helpBtn.addEventListener('click', () => {
-    if (joinBox.classList.contains('hidden')) openHelp();
+    if (!joinBox.classList.contains('hidden')) return;
+    if (helpBackdrop.classList.contains('hidden')) openHelp();
+    else closeHelp();
   });
   roomGuideBtn.addEventListener('click', () => {
     if (joinBox.classList.contains('hidden')) toggleRoomGuideOverlay();
   });
   btnHelpClose.addEventListener('click', closeHelp);
-  helpBackdrop.addEventListener('click', (e) => { if (e.target === helpBackdrop) closeHelp(); });
+  helpBackdrop.addEventListener('click', (e) => {
+    if (!helpBackdrop.classList.contains('hidden') && !e.target.closest('.help-pop')) closeHelp();
+  });
 
   const SEAT_COLORS = [
     "#ef4444", "#f97316", "#f59e0b", "#eab308",
