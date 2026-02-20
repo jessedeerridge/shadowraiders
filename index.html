@@ -534,12 +534,15 @@
     padding-bottom:18px;
   }
   .top-row{
+    --left-panel-w:170px;
+    --left-panel-h:calc(var(--left-panel-w) * 4.5 / 2);
     width:100%;
     display:flex;
     gap:14px;
     align-items:flex-start;
     justify-content:center;
     margin-top:-10px;
+    height:var(--left-panel-h);
   }
 
   /* パネル共通 */
@@ -553,7 +556,7 @@
   }
 
   .left-panel{
-    width:170px;
+    width:var(--left-panel-w);
     padding:0px;
     display:flex;
     align-items:stretch;
