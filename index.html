@@ -1927,7 +1927,6 @@
     "CIT_B2", // ベンジャミン
     "RAI_E3", // エマ
     "RAI_G1", // ゴードン
-    "SHA_W1", // ワイト
   ]);
   let cardPlayerSelectActive = false;
   let activeGreenReplies = {};
@@ -1946,6 +1945,9 @@
   let roomAbilityTurnKey = "";
   let room4StealUsed = false;
   let room3ActionUsed = false;
+  let pendingWalpurgisLongPress = null;
+  let walpurgisLongPressTriggered = false;
+  let walpurgisSwapAnimating = false;
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
   let uranusMeteorResolved = false;
@@ -3212,9 +3214,31 @@
 
     const my = state.hands?.[state.userId];
     if (!my || !my.roleId) return;
-    if (isMyIdentityRevealed()) return;
 
     const myRoleId = safeText(my.roleId || "");
+    const revealed = isMyIdentityRevealed();
+    if (revealed){
+      if (myRoleId === "SHA_W1"){
+        e.stopPropagation();
+        if (isWightAbilityUsed()){
+          showRevealPopAt(idCard, { mode: "notice", message: "この能力はすでに使用済みです。" });
+          return;
+        }
+        if (!canUseWightAbilityNow()){
+          showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
+          return;
+        }
+        showRoomActionPopAt(e.clientX, e.clientY, "", async () => {
+          await activateWightAbility();
+        }, {
+          messageHtml: `<span class="ability-pill">亡者の王</span>を使いますか。`,
+          yesLabel: "はい",
+          noLabel: "いいえ"
+        });
+      }
+      return;
+    }
+
     if (myRoleId === "CIT_D1"){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
@@ -3239,6 +3263,11 @@
     }
 
     const moved = !!turnState()?.moveDone;
+    if (myRoleId === "SHA_W1" && (!moved || eliminatedPlayerCount() <= 0 || isWightAbilityUsed())){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
+      return;
+    }
     if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && moved){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "手番の初めにだけ正体を公開できます。" });
@@ -3269,6 +3298,9 @@
         }
       }
     }
+    if (!endTurnConfirm?.classList.contains("hidden") && !e.target.closest("#endTurnConfirm")){
+      hideEndTurnConfirm();
+    }
   }, true);
 
   btnRevealNo.addEventListener("click", (e) => {
@@ -3284,6 +3316,9 @@
       return;
     }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
+    if (myRoleId === "SHA_W1"){
+      await activateWightAbility();
+    }
     if (myRoleId === "CIT_A1"){
       setTimeout(() => {
         setDamageToPlayer(state.userId, 0);
@@ -3338,7 +3373,8 @@
     hideAttackPop();
     const selectedSum = chooseSumForTestPlayer("攻撃");
     if (isTestPlayer() && selectedSum == null) return;
-    const masamuneMode = hasMyEquipmentByName("妖刀マサムネ");
+    const vendettaMode = isMyRole("SHA_V3") && isMyIdentityRevealed();
+    const masamuneMode = vendettaMode || hasMyEquipmentByName("妖刀マサムネ");
     const gatlingMode = hasMyEquipmentByName("ガトリング");
     const gatlingTargetUids = gatlingMode ? [...highlightedMarkerUids()] : [];
     const attackTargetUids = gatlingMode ? gatlingTargetUids : [uid];
@@ -3349,13 +3385,17 @@
       at: Date.now()
     };
     const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
-    const d6 = masamuneMode ? 0 : (selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6)));
+    const d6 = (masamuneMode || vendettaMode) ? 0 : (selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6)));
     const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
     const width = window.innerWidth;
     const height = window.innerHeight;
     const endX = point?.x || width/2;
     const endY = point?.y || height/2;
     const motion = createDiceMotion(width, height, endX, endY);
+    if (vendettaMode){
+      await emitRoleFlashEvent("SHA_V3", "vendetta_attack");
+      await new Promise(resolve => setTimeout(resolve, 1200));
+    }
     await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
       uid: state.userId,
       targetUid: uid,
@@ -3365,6 +3405,7 @@
       d6,
       d4,
       masamuneMode,
+      vendettaMode,
       motion,
       at: Date.now()
     });
@@ -3576,6 +3617,7 @@
   const turnEndWrap = document.getElementById("turnEndWrap");
   const btnEndTurn = document.getElementById("btnEndTurn");
   const endTurnConfirm = document.getElementById("endTurnConfirm");
+  const endTurnConfirmMsg = endTurnConfirm?.querySelector('.msg') || null;
   const btnEndTurnYes = document.getElementById("btnEndTurnYes");
   const btnEndTurnNo = document.getElementById("btnEndTurnNo");
   let damageCache = {};
@@ -3727,6 +3769,43 @@
     return !!turnState()?.moveDone && !turnState()?.attackDone;
   }
 
+  function eliminatedPlayerCount(){
+    return latestPlayers.filter(p => isPlayerEliminated(p.id)).length;
+  }
+
+  function isWalpurgisSwapReady(){
+    if (!isMyTurn()) return false;
+    if (!isMyRole("SHA_W2")) return false;
+    if (!isMyIdentityRevealed()) return false;
+    return !!turnState()?.moveDone;
+  }
+
+  function isWightAbilityUsed(){
+    return !!state.room?.abilityUsage?.wight?.[state.userId];
+  }
+
+  function canUseWightAbilityNow(){
+    if (!isMyTurn()) return false;
+    if (!isMyRole("SHA_W1")) return false;
+    if (!turnState()?.moveDone) return false;
+    if (isWightAbilityUsed()) return false;
+    return eliminatedPlayerCount() > 0;
+  }
+
+  async function activateWightAbility(){
+    if (!state.roomCode || !state.userId) return false;
+    const total = eliminatedPlayerCount();
+    if (total <= 0) return false;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/wight/${state.userId}`), true);
+    await update(ref(db, `rooms/${state.roomCode}/turn`), {
+      repeatTurnPending: true,
+      repeatTurnRemaining: total,
+      repeatTurnTotal: total,
+      updatedAt: Date.now()
+    });
+    return true;
+  }
+
   function syncRoomAbilityTurnState(){
     const key = turnCycleKey();
     if (roomAbilityTurnKey === key) return;
@@ -3765,6 +3844,10 @@
         text: "任意のプレイヤーへ2ダメージ/1回復できます。",
         showRoom3Skip: true
       });
+      return;
+    }
+    if (isWalpurgisSwapReady()){
+      showTurnHint("プレイヤーを長押しで位置を交換");
       return;
     }
     showTurnHint("");
@@ -3900,12 +3983,22 @@
     endTurnConfirm?.classList.add("hidden");
   }
 
-  function showEndTurnConfirm(){
-    endTurnConfirm?.classList.remove("hidden");
+  function showEndTurnConfirm(options = {}){
+    if (!endTurnConfirm) return;
+    const message = safeText(options.message || "本当にいいですか。");
+    if (endTurnConfirmMsg) endTurnConfirmMsg.textContent = message;
+    endTurnConfirm.classList.remove("hidden");
+    if (Number.isFinite(options.clientX) && Number.isFinite(options.clientY)){
+      placeFloatingPop(endTurnConfirm, options.clientX, options.clientY);
+    } else {
+      endTurnConfirm.style.left = '';
+      endTurnConfirm.style.top = '';
+    }
   }
 
   function repeatTurnPending(){
-    return !!turnState()?.repeatTurnPending;
+    const t = turnState() || {};
+    return !!t.repeatTurnPending && Number(t.repeatTurnRemaining || 0) > 0;
   }
 
   function renderTurnEndButton(){
@@ -3914,7 +4007,13 @@
     const visible = isGameStarted() && canShowEndTurnButton();
     turnEndWrap.classList.toggle("hidden", !visible);
     if (btnEndTurn){
-      btnEndTurn.textContent = repeatTurnPending() ? "もう一度手番を行う" : "手番を終わる";
+      if (repeatTurnPending()){
+        const remain = Math.max(0, Number(turnState()?.repeatTurnRemaining || 0));
+        const total = Math.max(remain, Number(turnState()?.repeatTurnTotal || 0));
+        btnEndTurn.textContent = `もう一度手番を行う${remain}/${total}`;
+      } else {
+        btnEndTurn.textContent = "手番を終わる";
+      }
     }
     if (!visible) hideEndTurnConfirm();
   }
@@ -4219,6 +4318,7 @@
         finalD6:Number(ev.d6 || 1),
         finalD4:Number(ev.d4 || 1),
         masamuneMode: !!ev.masamuneMode,
+        vendettaMode: !!ev.vendettaMode,
         gatlingTargetUids: Array.isArray(ev.gatlingTargetUids) ? ev.gatlingTargetUids : [],
         applyDamage: safeText(ev.uid || "") === state.userId,
         motion: ev.motion || null
@@ -4282,6 +4382,8 @@
         attackDone: false,
         deckDrawDone: false,
         repeatTurnPending: false,
+        repeatTurnRemaining: 0,
+        repeatTurnTotal: 0,
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[startPlayerId]){
@@ -4313,7 +4415,9 @@
 
       const curTurn = cur.turn || {};
       const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || aliveOrder[0] || "");
-      const repeat = !!curTurn.repeatTurnPending && !isEliminatedInRoom(curId);
+      const remain = Math.max(0, Number(curTurn.repeatTurnRemaining || 0));
+      const total = Math.max(remain, Number(curTurn.repeatTurnTotal || 0));
+      const repeat = remain > 0 && !isEliminatedInRoom(curId);
       let nextPlayerId = curId;
       if (!repeat){
         let nextIdx = aliveOrder.indexOf(curId);
@@ -4325,12 +4429,15 @@
       }
       if (!nextPlayerId) return cur;
 
+      const nextRemain = repeat ? Math.max(0, remain - 1) : 0;
       cur.turn = {
         currentPlayerId: nextPlayerId,
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
-        repeatTurnPending: false,
+        repeatTurnPending: nextRemain > 0,
+        repeatTurnRemaining: nextRemain,
+        repeatTurnTotal: nextRemain > 0 ? total : 0,
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
@@ -4683,7 +4790,7 @@
     const b = Number(d4) || 0;
     if (!uid) return 0;
 
-    if (options.masamuneMode){
+    if (options.masamuneMode || options.vendettaMode){
       return Math.max(0, b);
     }
 
@@ -5140,6 +5247,8 @@
     if (!state.roomCode || !isMyTurn()) return;
     await update(ref(db, `rooms/${state.roomCode}/turn`), {
       repeatTurnPending: true,
+      repeatTurnRemaining: 1,
+      repeatTurnTotal: 1,
       updatedAt: Date.now()
     });
   }
@@ -5562,6 +5671,8 @@
     if (!diceRollOverlay || !targetUid) return;
     const applyDamage = options.applyDamage !== false;
     const masamuneMode = !!options.masamuneMode;
+    const vendettaMode = !!options.vendettaMode;
+    const singleD4Mode = masamuneMode || vendettaMode;
     clearDiceRollTimers();
     clearAttackResultDice();
 
@@ -5577,7 +5688,7 @@
     d4.className = 'd4';
     d4Wrap.appendChild(d4);
 
-    if (!masamuneMode){
+    if (!singleD4Mode){
       diceRollOverlay.appendChild(d6Wrap);
     }
     diceRollOverlay.appendChild(d4Wrap);
@@ -5597,7 +5708,7 @@
 
     const startDegA = Number(motion.startDegA || 0);
     const startDegB = Number(motion.startDegB || 0);
-    if (!masamuneMode){
+    if (!singleD4Mode){
       setFlyerTransform(d6Wrap, startA.x, startA.y, startDegA);
     }
     setFlyerTransform(d4Wrap, startB.x, startB.y, startDegB);
@@ -5607,7 +5718,7 @@
     const rollFaceTick = () => {
       const elapsed = Date.now() - rollStartAt;
       if (elapsed >= animDuration) return;
-      if (!masamuneMode){
+      if (!singleD4Mode){
         renderD6Face(d6, 1 + Math.floor(Math.random() * 6));
       }
       renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
@@ -5626,13 +5737,13 @@
     const hideAttackDiceAfterDamageMs = 1000;
 
     const moveTimer = setTimeout(() => {
-      if (!masamuneMode){
+      if (!singleD4Mode){
         d6Wrap.classList.add('rolling');
       }
       d4Wrap.classList.add('rolling');
       const endDegA = Number(motion.endDegA || (startDegA + 720));
       const endDegB = Number(motion.endDegB || (startDegB + 720));
-      if (!masamuneMode){
+      if (!singleD4Mode){
         setFlyerTransform(d6Wrap, endX + offsetA.x, endY + offsetA.y, endDegA);
       }
       setFlyerTransform(d4Wrap, endX + offsetB.x, endY + offsetB.y, endDegB);
@@ -5644,27 +5755,27 @@
 
     const stopDelayMs = launchDelayMs + moveDurationMs + settleBufferMs;
     const stopTimer = setTimeout(() => {
-      if (!masamuneMode){
+      if (!singleD4Mode){
         d6Wrap.classList.remove('rolling');
       }
       d4Wrap.classList.remove('rolling');
-      if (!masamuneMode){
+      if (!singleD4Mode){
         renderD6Face(d6, finalD6);
       }
       renderD4Face(d4, finalD4);
 
-      if (!masamuneMode){
+      if (!singleD4Mode){
         d6Wrap.classList.add('attack-result-pin');
       }
       d4Wrap.classList.add('attack-result-pin');
 
       const damageTimer = setTimeout(async () => {
-        const attackSucceeded = didAttackRollSucceed(finalD6, finalD4, { masamuneMode });
+        const attackSucceeded = didAttackRollSucceed(finalD6, finalD4, { masamuneMode, vendettaMode });
         setAttackRollResultLabel(attackSucceeded);
         try {
           if (!applyDamage) return;
-          const revealBoost = masamuneMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
-          const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, excaliburRevealBoost: revealBoost });
+          const revealBoost = singleD4Mode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
+          const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, vendettaMode, excaliburRevealBoost: revealBoost });
           const gatlingTargets = Array.isArray(options.gatlingTargetUids)
             ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
             : [];
@@ -5882,6 +5993,36 @@
       noLabel: "いいえ"
     });
   }
+
+
+  async function swapMarkerPositionWithWalpurgis(targetUid){
+    const uid = safeText(targetUid || "");
+    const me = safeText(state.userId || "");
+    if (!state.roomCode || !uid || !me || uid === me) return false;
+    if (walpurgisSwapAnimating) return false;
+    const myMarker = markerCache?.[me] || null;
+    const targetMarker = markerCache?.[uid] || null;
+    if (!myMarker || !targetMarker) return false;
+
+    walpurgisSwapAnimating = true;
+    try {
+      await emitRoleFlashEvent("SHA_W2", "walpurgis_swap");
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      await update(ref(db, `rooms/${state.roomCode}/markers`), {
+        [`${me}/x`]: Number(targetMarker.x || 0),
+        [`${me}/y`]: Number(targetMarker.y || 0),
+        [`${me}/roomId`]: markerRoomId(targetMarker),
+        [`${me}/updatedAt`]: Date.now(),
+        [`${uid}/x`]: Number(myMarker.x || 0),
+        [`${uid}/y`]: Number(myMarker.y || 0),
+        [`${uid}/roomId`]: markerRoomId(myMarker),
+        [`${uid}/updatedAt`]: Date.now()
+      });
+      return true;
+    } finally {
+      walpurgisSwapAnimating = false;
+    }
+  }
  function drawMarker({x,y,color,initial,uid,pulse=false,eliminated=false}){
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
@@ -5933,7 +6074,13 @@
     });
   } else if (!eliminated && uid && pulse){
     g.style.cursor = 'pointer';
-    g.addEventListener('click', (e) => {
+
+    const onPulseClick = (e) => {
+      if (walpurgisLongPressTriggered){
+        walpurgisLongPressTriggered = false;
+        e.stopPropagation();
+        return;
+      }
       if (canUseRoom3Action()){
         if (hasEquipmentByName(uid, "幸運のブローチ")) return;
         e.stopPropagation();
@@ -5970,7 +6117,43 @@
       const p = playerById(uid);
       pendingAttackTargetUid = uid;
       showAttackPopAt(e.clientX, e.clientY, p?.name || 'このプレイヤー');
-    });
+    };
+
+    g.addEventListener('click', onPulseClick);
+
+    if (isWalpurgisSwapReady()){
+      const holdMs = 550;
+      g.addEventListener('pointerdown', (e) => {
+        if (!isWalpurgisSwapReady()) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        pendingWalpurgisLongPress = setTimeout(async () => {
+          pendingWalpurgisLongPress = null;
+          walpurgisLongPressTriggered = true;
+          e.stopPropagation();
+          const p = playerById(uid);
+          const nm = safeText(p?.name || 'このプレイヤー');
+          showRoomActionPopAt(e.clientX, e.clientY, '', async () => {
+            const ok = await swapMarkerPositionWithWalpurgis(uid);
+            if (!ok) return;
+            pendingAttackTargetUid = uid;
+            renderMarkers();
+          }, {
+            messageHtml: `${escapeHtml(nm)}と位置を交換しますか。`,
+            yesLabel: 'はい',
+            noLabel: 'いいえ'
+          });
+        }, holdMs);
+      });
+
+      const cancelLongPress = () => {
+        if (!pendingWalpurgisLongPress) return;
+        clearTimeout(pendingWalpurgisLongPress);
+        pendingWalpurgisLongPress = null;
+      };
+      g.addEventListener('pointerup', cancelLongPress);
+      g.addEventListener('pointerleave', cancelLongPress);
+      g.addEventListener('pointercancel', cancelLongPress);
+    }
   }
 
   // ★自分だけ丸い点線リング（四角マーカーの外側）
@@ -6412,7 +6595,7 @@
   }
 
   function didAttackRollSucceed(d6, d4, options = {}){
-    if (options.masamuneMode) return true;
+    if (options.masamuneMode || options.vendettaMode) return true;
     return (Number(d6) || 0) !== (Number(d4) || 0);
   }
 
@@ -6970,6 +7153,8 @@
         attackDone: false,
         deckDrawDone: false,
         repeatTurnPending: false,
+        repeatTurnRemaining: 0,
+        repeatTurnTotal: 0,
         updatedAt: Date.now()
       }
     });
@@ -7053,10 +7238,14 @@
     renderTurnEndButton();
   }
 
-  btnEndTurn?.addEventListener('click', async () => {
+  btnEndTurn?.addEventListener('click', async (e) => {
     if (!canShowEndTurnButton()) return;
     if (repeatTurnPending()){
-      await doEndTurn();
+      showEndTurnConfirm({
+        message: "この手番を終了して、次の手番を開始しますか。",
+        clientX: Number(e?.clientX || window.innerWidth / 2),
+        clientY: Number(e?.clientY || window.innerHeight / 2)
+      });
       return;
     }
     if (!turnState()?.attackDone){
