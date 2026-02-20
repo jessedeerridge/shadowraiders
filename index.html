@@ -2911,6 +2911,7 @@
   function openZoomFromRole(role, options){
     if (!role) return;
     const cardEl = createIdentityCard(role);
+    if (options?.enableRevealPop) cardEl.dataset.revealInteractive = "1";
     openZoomContent(cardEl, options);
   }
   function openIdentityRevealZoom(role, revealerUid){
@@ -3381,6 +3382,7 @@
   zoomStage.addEventListener("click", (e) => {
     const idCard = e.target.closest(".id72");
     if (!idCard) return;
+    if (idCard.dataset.revealInteractive !== "1") return;
 
     const my = state.hands?.[state.userId];
     if (!my || !my.roleId) return;
@@ -7697,7 +7699,7 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
-        openZoomFromRole(role);
+        openZoomFromRole(role, { enableRevealPop:true });
       });
       myRoleCard.appendChild(face);
     } else {
@@ -7709,7 +7711,7 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
-        openZoomFromRole(role); // 拡大はオモテ（id72）
+        openZoomFromRole(role, { enableRevealPop:true }); // 拡大はオモテ（id72）
       });
 
       myRoleCard.appendChild(back);
