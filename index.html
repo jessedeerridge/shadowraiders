@@ -3254,9 +3254,30 @@
 
     const my = state.hands?.[state.userId];
     if (!my || !my.roleId) return;
-    if (isMyIdentityRevealed()) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if (isMyIdentityRevealed()){
+      if (myRoleId !== "SHA_W1") return;
+      e.stopPropagation();
+      if (isWightAbilityUsed()){
+        showRevealPopAt(idCard, { mode: "notice", message: "この能力はすでに使用済みです。" });
+        return;
+      }
+      if (!turnState()?.moveDone){
+        showRevealPopAt(idCard, { mode: "notice", message: "移動後に使用できます。" });
+        return;
+      }
+      if (eliminatedPlayerCount() <= 0){
+        showRevealPopAt(idCard, { mode: "notice", message: "脱落プレイヤーがいないため使えません。" });
+        return;
+      }
+      showRoomActionPopAt(e.clientX, e.clientY, `<span class="ability-pill">亡者の王</span>を使いますか。`, async () => {
+        await startWightRepeatTurns();
+        renderTurnEndButton();
+      }, { messageHtml:true, dismissOnOutside:true });
+      return;
+    }
+
     if (myRoleId === "CIT_D1"){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
@@ -3289,6 +3310,11 @@
     if (REVEAL_ENDS_TURN_ROLE_IDS.has(myRoleId) && !moved){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "手番の最後にだけ正体を公開できます。" });
+      return;
+    }
+    if (myRoleId === "SHA_W1" && eliminatedPlayerCount() <= 0){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "脱落プレイヤーがいないため公開できません。" });
       return;
     }
 
@@ -3327,13 +3353,22 @@
       hideRevealPop();
       return;
     }
+    if (myRoleId === "SHA_W1" && !canUseWightAbilityNow()){
+      hideRevealPop();
+      showRevealPopAt(null, { mode:"notice", message:"今は公開できません。" });
+      return;
+    }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
+    if (myRoleId === "SHA_W1"){
+      await startWightRepeatTurns();
+    }
     if (myRoleId === "CIT_A1"){
       setTimeout(() => {
         setDamageToPlayer(state.userId, 0);
       }, 1500);
     }
     hideRevealPop();
+    renderTurnEndButton();
   });
 
   btnAttackNo.addEventListener("click", (e) => {
@@ -4120,13 +4155,116 @@
     return !!turnState()?.repeatTurnPending;
   }
 
+  function wightRepeatInfo(){
+    const t = turnState() || {};
+    const remaining = Math.max(0, Math.floor(Number(t.wightRepeatRemaining || 0) || 0));
+    const total = Math.max(0, Math.floor(Number(t.wightRepeatTotal || 0) || 0));
+    return { remaining, total };
+  }
+
+  function wightRepeatPending(){
+    return wightRepeatInfo().remaining > 0;
+  }
+
+  function eliminatedPlayerCount(){
+    return latestPlayers.filter(p => isPlayerEliminated(p.id)).length;
+  }
+
+  function isWightAbilityUsed(){
+    return !!state.room?.abilityUsage?.wight?.[state.userId];
+  }
+
+  function canUseWightAbilityNow(){
+    if (!isMyRole("SHA_W1")) return false;
+    if (!isMyTurn()) return false;
+    if (!turnState()?.moveDone) return false;
+    if (isWightAbilityUsed()) return false;
+    return eliminatedPlayerCount() > 0;
+  }
+
+  async function startWightRepeatTurns(){
+    if (!state.roomCode || !state.userId || !canUseWightAbilityNow()) return false;
+    const repeatTotal = eliminatedPlayerCount();
+    if (repeatTotal <= 0) return false;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    const result = await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const turn = cur.turn || {};
+      if (safeText(turn.currentPlayerId || "") !== state.userId) return cur;
+      if (!turn.moveDone) return cur;
+      const used = !!cur.abilityUsage?.wight?.[state.userId];
+      if (used) return cur;
+
+      const isEliminatedInRoom = (uid) => {
+        if (!uid) return false;
+        const hand = cur.hands?.[uid];
+        const role = hand?.roleId ? ROLE_BY_ID[hand.roleId] : null;
+        const hp = Number(role?.hp || 0);
+        if (!hp) return false;
+        const dmg = clampDamage(cur.damage?.[uid]);
+        return dmg >= hp;
+      };
+      const players = Array.isArray(cur.users) ? cur.users : null;
+      const allIds = players
+        ? players.map(x => safeText(x?.id || "")).filter(Boolean)
+        : Object.keys(cur.users || {});
+      const total = allIds.filter(uid => isEliminatedInRoom(uid)).length;
+      if (total <= 0) return cur;
+
+      cur.turn = {
+        ...turn,
+        wightRepeatRemaining: total,
+        wightRepeatTotal: total,
+        updatedAt: Date.now()
+      };
+      cur.abilityUsage = cur.abilityUsage || {};
+      cur.abilityUsage.wight = cur.abilityUsage.wight || {};
+      cur.abilityUsage.wight[state.userId] = true;
+      return cur;
+    });
+    return !!result.committed;
+  }
+
+  async function consumeWightRepeatTurn(){
+    if (!state.roomCode || !state.userId) return false;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    const result = await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const turn = cur.turn || {};
+      if (safeText(turn.currentPlayerId || "") !== state.userId) return cur;
+      const remaining = Math.max(0, Math.floor(Number(turn.wightRepeatRemaining || 0) || 0));
+      if (remaining <= 0) return cur;
+      const total = Math.max(0, Math.floor(Number(turn.wightRepeatTotal || 0) || 0));
+      cur.turn = {
+        currentPlayerId: state.userId,
+        moveDone: false,
+        attackDone: false,
+        deckDrawDone: false,
+        repeatTurnPending: false,
+        wightRepeatRemaining: Math.max(0, remaining - 1),
+        wightRepeatTotal: total,
+        updatedAt: Date.now()
+      };
+      if (cur.guardianAngelShield && cur.guardianAngelShield[state.userId]){
+        delete cur.guardianAngelShield[state.userId];
+      }
+      return cur;
+    });
+    return !!result.committed;
+  }
+
   function renderTurnEndButton(){
     syncRoomAbilityTurnState();
     if (!turnEndWrap) return;
     const visible = isGameStarted() && canShowEndTurnButton();
     turnEndWrap.classList.toggle("hidden", !visible);
     if (btnEndTurn){
-      btnEndTurn.textContent = repeatTurnPending() ? "もう一度手番を行う" : "手番を終わる";
+      if (wightRepeatPending()){
+        const info = wightRepeatInfo();
+        btnEndTurn.textContent = `もう一度手番を行う(${info.remaining}/${info.total || info.remaining})`;
+      } else {
+        btnEndTurn.textContent = repeatTurnPending() ? "もう一度手番を行う" : "手番を終わる";
+      }
     }
     if (!visible) hideEndTurnConfirm();
   }
@@ -4515,6 +4653,8 @@
         attackDone: false,
         deckDrawDone: false,
         repeatTurnPending: false,
+        wightRepeatRemaining: 0,
+        wightRepeatTotal: 0,
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[startPlayerId]){
@@ -4564,6 +4704,8 @@
         attackDone: false,
         deckDrawDone: false,
         repeatTurnPending: false,
+        wightRepeatRemaining: 0,
+        wightRepeatTotal: 0,
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
@@ -6625,7 +6767,8 @@
         testReplacedAt: Date.now()
       },
       [`equipment/${state.userId}/identity`]: null,
-      [`abilityUsage/david/${state.userId}`]: null
+      [`abilityUsage/david/${state.userId}`]: null,
+      [`abilityUsage/wight/${state.userId}`]: null
     });
   }
   function closeHelp(){ helpBackdrop.classList.add('hidden'); }
@@ -7238,12 +7381,15 @@
       markers,
       positionOrder,
       startPlayerId,
+      abilityUsage: {},
       turn: {
         currentPlayerId: startPlayerId,
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
         repeatTurnPending: false,
+        wightRepeatRemaining: 0,
+        wightRepeatTotal: 0,
         updatedAt: Date.now()
       }
     });
@@ -7295,6 +7441,7 @@
       remove(ref(db, `${base}/greenReplyBubbles`)),
       remove(ref(db, `${base}/greenReveals`)),
       remove(ref(db, `${base}/turn`)),
+      remove(ref(db, `${base}/abilityUsage`)),
     ]);
 
     deckCache = null;
@@ -7327,8 +7474,16 @@
     renderTurnEndButton();
   }
 
-  btnEndTurn?.addEventListener('click', async () => {
+  btnEndTurn?.addEventListener('click', async (e) => {
     if (!canShowEndTurnButton()) return;
+    if (wightRepeatPending()){
+      showRoomActionPopAt(e.clientX, e.clientY, "この手番を終了して、次の手番を開始しますか。", async () => {
+        await consumeWightRepeatTurn();
+        hideAttackPop();
+        renderTurnEndButton();
+      }, { dismissOnOutside:true });
+      return;
+    }
     if (repeatTurnPending()){
       await doEndTurn();
       return;
