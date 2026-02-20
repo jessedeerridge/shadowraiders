@@ -6760,32 +6760,47 @@
       if (!pts || !lines) continue;
       const center = polygonCenter(pts);
       const [dx, dy] = ROOM_GUIDE_OFFSET[roomId] || [0,0];
-      const maxChars = lines.reduce((m, line) => Math.max(m, Array.from(String(line)).length), 0);
-      const width = Math.max(34, maxChars * 7 + 8);
-      const lineHeight = 8;
-      const height = lines.length * lineHeight + 6;
-      const x = center.x + dx - (width / 2);
-      const y = center.y + dy - (height / 2);
-
-      svgEl('rect', {
-        class:'room-guide-note',
-        x: x.toFixed(2),
-        y: y.toFixed(2),
-        width: width.toFixed(2),
-        height: height.toFixed(2),
-        rx: 4,
-        ry: 4
+      const noteG = svgEl('g', {
+        transform: `translate(${(center.x + dx).toFixed(2)}, ${(center.y + dy).toFixed(2)})`
       }, roomGuideLayer);
+      const lineHeight = 8;
+      const paddingX = 5;
+      const paddingY = 3;
+      const contentHeight = lines.length * lineHeight;
+      const topY = -contentHeight / 2;
+      const textNodes = [];
 
       lines.forEach((line, idx) => {
         const txt = svgEl('text', {
           class:'room-guide-note-text',
-          x: (center.x + dx).toFixed(2),
-          y: (y + 8 + idx * lineHeight).toFixed(2),
+          x: '0',
+          y: (topY + (idx + 0.5) * lineHeight).toFixed(2),
           'dominant-baseline': 'middle'
-        }, roomGuideLayer);
+        }, noteG);
         txt.textContent = String(line);
+        textNodes.push(txt);
       });
+
+      const contentWidth = textNodes.reduce((maxWidth, node) => {
+        try {
+          const w = Number(node.getBBox().width) || 0;
+          return Math.max(maxWidth, w);
+        } catch {
+          return maxWidth;
+        }
+      }, 0);
+      const width = Math.max(34, contentWidth + paddingX * 2);
+      const height = contentHeight + paddingY * 2;
+      const rect = svgEl('rect', {
+        class:'room-guide-note',
+        x: (-width / 2).toFixed(2),
+        y: (-height / 2).toFixed(2),
+        width: width.toFixed(2),
+        height: height.toFixed(2),
+        rx: 4,
+        ry: 4
+      }, noteG);
+      noteG.insertBefore(rect, noteG.firstChild);
     }
   }
 
