@@ -2964,6 +2964,7 @@
       equipBody.appendChild(row);
     }
     refreshRoomAbilityHint();
+    ensureDavidIdentityZoomVisible();
   }
 
   async function grantEquipmentToMe(cardObj, theme){
@@ -3034,6 +3035,18 @@
     setZoomPassthrough(false);
     hideDavidSelectPreview();
     zoomDismissHandler = null;
+  }
+
+  function restoreDavidAbilitySelection(){
+    if (pendingEquipAction?.type !== "david_select") return;
+    restoreDavidIdentityZoom();
+    renderEquipmentDock();
+  }
+
+  function ensureDavidIdentityZoomVisible(){
+    if (pendingEquipAction?.type !== "david_select") return;
+    if (!zoomBackdrop?.classList.contains("hidden")) return;
+    restoreDavidAbilitySelection();
   }
 
   async function startDavidAbilityFlow(){
@@ -3128,6 +3141,9 @@
     if (!roomActionPop.classList.contains("hidden") && !e.target.closest("#roomActionPop")){
       if (pendingRoomAction?.dismissOnOutside !== false){
         hideRoomActionPop();
+        if (pendingEquipAction?.type === "david_select"){
+          restoreDavidAbilitySelection();
+        }
       }
     }
   }, true);
@@ -3259,17 +3275,32 @@
 
   equipBody.addEventListener("click", (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
-    if (!card) return;
+    if (!card){
+      if (pendingEquipAction?.type === "david_select"){
+        hideRoomActionPop();
+        restoreDavidAbilitySelection();
+      }
+      return;
+    }
 
     if (pendingEquipAction?.type === "david_select"){
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
-      if (!pendingEquipAction.defeatedUids?.includes(ownerUid) || !sourceKey) return;
-      showDavidSelectPreviewFromCard(card);
-      zoomDismissHandler = null;
+      const isPulseCard = card.classList.contains("equip-defeat-pulse");
+      const canPick = isPulseCard && pendingEquipAction.defeatedUids?.includes(ownerUid) && !!sourceKey;
+      if (!canPick){
+        restoreDavidAbilitySelection();
+        return;
+      }
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      hideDavidSelectPreview();
+      zoomDismissHandler = async () => {
+        restoreDavidAbilitySelection();
+      };
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードを獲得しますか。", async () => {
         const action = pendingEquipAction;
         if (!action || action.type !== "david_select") return;
+        zoomDismissHandler = null;
         const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
         if (ok){
           await markDavidAbilityUsed();
@@ -3281,7 +3312,7 @@
         fixedLower:true,
         closeZoomOnNo:false,
         onNo: () => {
-          hideDavidSelectPreview();
+          restoreDavidAbilitySelection();
         }
       });
       return;
@@ -6096,7 +6127,8 @@
         roleId: role.id,
         testReplacedAt: Date.now()
       },
-      [`equipment/${state.userId}/identity`]: null
+      [`equipment/${state.userId}/identity`]: null,
+      [`abilityUsage/david/${state.userId}`]: null
     });
   }
   function closeHelp(){ helpBackdrop.classList.add('hidden'); }
