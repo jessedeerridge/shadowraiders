@@ -1890,6 +1890,7 @@
     "CIT_B2", // ベンジャミン
     "RAI_E3", // エマ
     "RAI_G1", // ゴードン
+    "SHA_W1", // ワイト
   ]);
   let cardPlayerSelectActive = false;
   let activeGreenReplies = {};
@@ -2958,9 +2959,15 @@
     if (isMyIdentityRevealed()) return;
 
     const myRoleId = safeText(my.roleId || "");
-    if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && !!turnState()?.moveDone){
+    const moved = !!turnState()?.moveDone;
+    if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && moved){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "手番の初めにだけ正体を公開できます。" });
+      return;
+    }
+    if (REVEAL_ENDS_TURN_ROLE_IDS.has(myRoleId) && !moved){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "手番の最後にだけ正体を公開できます。" });
       return;
     }
 
