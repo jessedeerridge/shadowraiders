@@ -5480,7 +5480,8 @@
     const launchDelayMs = 30;
     const moveDurationMs = 950;
     const settleBufferMs = 80;
-    const damageDelayAfterStopMs = 2000;
+    const damageDelayAfterStopMs = 3000;
+    const hideAttackDiceAfterDamageMs = 1000;
 
     const moveTimer = setTimeout(() => {
       if (!masamuneMode){
@@ -5517,18 +5518,25 @@
 
       const damageTimer = setTimeout(async () => {
         setAttackRollResultLabel(didAttackRollSucceed(finalD6, finalD4, { masamuneMode }));
-        if (!applyDamage) return;
-        const revealBoost = masamuneMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
-        const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, excaliburRevealBoost: revealBoost });
-        const gatlingTargets = Array.isArray(options.gatlingTargetUids)
-          ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
-          : [];
-        if (damage > 0){
-          if (gatlingTargets.length > 0){
-            await addDamageToPlayers(gatlingTargets, damage, { source:"attack" });
-          } else {
-            await addDamageToPlayer(targetUid, damage, { source:"attack" });
+        try {
+          if (!applyDamage) return;
+          const revealBoost = masamuneMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
+          const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, excaliburRevealBoost: revealBoost });
+          const gatlingTargets = Array.isArray(options.gatlingTargetUids)
+            ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
+            : [];
+          if (damage > 0){
+            if (gatlingTargets.length > 0){
+              await addDamageToPlayers(gatlingTargets, damage, { source:"attack" });
+            } else {
+              await addDamageToPlayer(targetUid, damage, { source:"attack" });
+            }
           }
+        } finally {
+          const hideDiceTimer = setTimeout(() => {
+            clearAttackResultDice();
+          }, hideAttackDiceAfterDamageMs);
+          diceRollTimers.push(hideDiceTimer);
         }
       }, damageDelayAfterStopMs);
       diceRollTimers.push(damageTimer);
