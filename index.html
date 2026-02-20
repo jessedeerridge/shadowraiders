@@ -228,6 +228,9 @@
   }
 
   :root{
+    --field-left-gap:16px;
+    --field-right-gap:calc(2px + 72px + 12px);
+
     --outer:#0b3b2e;
     --gold:#d6b35a;
     --brown:#5a4032;
@@ -281,8 +284,8 @@
      ========================= */
   .equip-dock{
     position:fixed;
-    left:16px;
-    right:calc(2px + 72px + 12px);
+    left:var(--field-left-gap);
+    right:var(--field-right-gap);
     top:var(--equip-top, auto);
     bottom:16px;
     z-index:259;
@@ -902,8 +905,7 @@
      ★③カードテーブル：背景をgear.jpgに
      ========================================================= */
   .cards-panel{
-    width:calc(100% + 40px);
-    max-width:min(1060px, calc(100vw - 16px));
+    width:calc(100vw - var(--field-left-gap) - var(--field-right-gap));
     display:flex;
     justify-content:center;
     align-items:flex-start;
