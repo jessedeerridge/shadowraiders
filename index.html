@@ -2701,7 +2701,7 @@
     overlay.style.display = "flex";
     overlay.style.alignItems = "center";
     overlay.style.justifyContent = "center";
-    overlay.style.background = "rgba(0,0,0,.35)";
+    overlay.style.background = "transparent";
     overlay.style.pointerEvents = "none";
 
     const wrap = document.createElement("div");
@@ -3211,6 +3211,35 @@
       if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
     }, 2000);
   }
+  function openRoleAbilityZoom(role, ownerUid, { durationMs = 1200, forceNameTag = false } = {}){
+    if (!role) return;
+    const uid = safeText(ownerUid || "");
+    const wrap = document.createElement("div");
+    wrap.style.position = "relative";
+    const cardEl = createIdentityCard(role);
+    wrap.appendChild(cardEl);
+
+    const isRevealed = !!equipCache?.[uid]?.identity?.roleId;
+    if (uid && uid !== state.userId && (forceNameTag || !isRevealed)){
+      const owner = playerById(uid);
+      if (owner){
+        const chip = buildChipFor(uid);
+        const label = document.createElement("div");
+        label.className = "zoom-identity-owner";
+        const name = document.createElement("span");
+        name.textContent = nameFromSecondChar(owner.name || "");
+        label.appendChild(chip);
+        label.appendChild(name);
+        wrap.appendChild(label);
+      }
+    }
+
+    openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
+    setTimeout(() => {
+      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
+    }, Math.max(200, Number(durationMs) || 1200));
+  }
+
   function openZoomFromDeckCard(cardObj, theme, options){
     if (!cardObj) return;
     const cardEl = document.createElement("div");
@@ -4050,29 +4079,23 @@
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (ownerUid !== state.userId || !sourceKey) return;
       const action = { ...pendingEquipAction, sourceKey };
-      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードをわたしますか。", async () => {
         pendingEquipAction = null;
         zoomDismissHandler = null;
         const ok = await moveEquipmentCardBetweenPlayers(action.fromUid, action.toUid, sourceKey);
         if (ok){
-          closeZoom();
           renderEquipmentDock();
           showTurnHint("");
         }
       }, {
         fixedLower:true,
-        closeZoomOnNo:true,
+        closeZoomOnNo:false,
         onNo: () => {
           zoomDismissHandler = null;
           pendingEquipAction = { type:"venom_give", fromUid: action.fromUid, toUid: action.toUid };
           renderEquipmentDock();
         }
       });
-      zoomDismissHandler = async () => {
-        pendingEquipAction = { type:"venom_give", fromUid: action.fromUid, toUid: action.toUid };
-        renderEquipmentDock();
-      };
       return;
     }
 
@@ -5010,14 +5033,18 @@
       const forceNameTag = !!ev.forceNameTag;
       if (!type || !reactorUid || !attackerUid) return;
       if (type === "werewolf"){
-        showRoleFlashOverlay("SHA_W3", 1200, { ownerUid: reactorUid, forceNameTag });
+        if (!forceNameTag){
+          openRoleAbilityZoom(ROLE_BY_ID["SHA_W3"], reactorUid, { durationMs:1200, forceNameTag:false });
+        }
         if (forceNameTag || !equipCache?.[reactorUid]?.identity?.roleId){
           showTemporaryRoleTag(reactorUid, "反撃", 1200);
         }
         return;
       }
       if (type === "venom"){
-        showRoleFlashOverlay("SHA_V1", 1200, { ownerUid: reactorUid, forceNameTag });
+        if (!forceNameTag){
+          openRoleAbilityZoom(ROLE_BY_ID["SHA_V1"], reactorUid, { durationMs:1200, forceNameTag:false });
+        }
         if (forceNameTag || !equipCache?.[reactorUid]?.identity?.roleId){
           showTemporaryRoleTag(reactorUid, "反駁の猛毒", 1200);
         }
