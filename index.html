@@ -3141,6 +3141,9 @@
     if (!roomActionPop.classList.contains("hidden") && !e.target.closest("#roomActionPop")){
       if (pendingRoomAction?.dismissOnOutside !== false){
         hideRoomActionPop();
+        if (pendingEquipAction?.type === "david_select"){
+          restoreDavidAbilitySelection();
+        }
       }
     }
   }, true);
@@ -3272,7 +3275,13 @@
 
   equipBody.addEventListener("click", (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
-    if (!card) return;
+    if (!card){
+      if (pendingEquipAction?.type === "david_select"){
+        hideRoomActionPop();
+        restoreDavidAbilitySelection();
+      }
+      return;
+    }
 
     if (pendingEquipAction?.type === "david_select"){
       const ownerUid = safeText(card.dataset.ownerUid || "");
