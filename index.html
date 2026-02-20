@@ -2776,7 +2776,7 @@
           identityRevealSeenByUid[uid] = at;
           const rid = safeText(row?.identity?.roleId || "");
           const role = ROLE_BY_ID[rid];
-          if (role) openIdentityRevealZoom(role, uid);
+          if (role && uid !== state.userId) openIdentityRevealZoom(role, uid);
         }
       }
       equipCache = next;
@@ -2948,6 +2948,7 @@
         const promotedUid = defeatLootQueue[0] || "";
         const isDefeatPulse = promotedUid && p.id === promotedUid && p.id !== state.userId && eliminated && !isIdentityEquipItem(it);
         const isDavidPulse = pendingEquipAction?.type === "david_select"
+          && !pendingEquipAction.selectedSourceKey
           && pendingEquipAction.defeatedUids?.includes(p.id)
           && p.id !== state.userId
           && eliminated
@@ -3039,6 +3040,10 @@
 
   function restoreDavidAbilitySelection(){
     if (pendingEquipAction?.type !== "david_select") return;
+    pendingEquipAction = {
+      type: "david_select",
+      defeatedUids: [...(pendingEquipAction.defeatedUids || [])]
+    };
     restoreDavidIdentityZoom();
     renderEquipmentDock();
   }
@@ -3292,6 +3297,12 @@
         restoreDavidAbilitySelection();
         return;
       }
+      pendingEquipAction = {
+        ...pendingEquipAction,
+        selectedOwnerUid: ownerUid,
+        selectedSourceKey: sourceKey
+      };
+      renderEquipmentDock();
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       hideDavidSelectPreview();
       zoomDismissHandler = async () => {
