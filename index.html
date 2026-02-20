@@ -1963,6 +1963,7 @@
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
   let zoomDismissHandler = null;
+  let suppressOutsidePopCloseUntil = 0;
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -3282,6 +3283,8 @@
   });
 
   document.addEventListener("click", (e) => {
+    const now = Date.now();
+    if (now < suppressOutsidePopCloseUntil) return;
     if (!revealPop.classList.contains("hidden") && !e.target.closest("#revealPop")){
       hideRevealPop();
     }
@@ -3923,6 +3926,7 @@
     if (!uid || !canUseWalpurgisSwap()) return;
     const player = playerById(uid);
     const name = safeText(player?.name || "このプレイヤー");
+    suppressOutsidePopCloseUntil = Date.now() + 700;
     showRoomActionPopAt(clientX, clientY, "", async () => {
       if (!canUseWalpurgisSwap()) return;
       walpurgisSwapUsed = true;
