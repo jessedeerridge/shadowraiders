@@ -62,6 +62,16 @@
   }
   .confirm-pop.hidden{display:none;}
   .confirm-pop .msg{font-size:13px;line-height:1.45;margin:0 0 10px;}
+  .confirm-pop .ability-tag{
+    display:inline-block;
+    background:#111;
+    color:#fff;
+    font-weight:700;
+    border-radius:6px;
+    padding:1px 6px;
+    margin:0 2px;
+    line-height:1.35;
+  }
   .confirm-pop .actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
   .confirm-pop .caret{
     position:absolute;
@@ -1447,7 +1457,7 @@
   <div class="caret" aria-hidden="true"></div>
   <p class="msg" id="revealMsg">公開しますか？</p>
   <div class="actions">
-    <button class="btn ghost" id="btnRevealNo">キャンセル</button>
+    <button class="btn ghost" id="btnRevealNo">いいえ</button>
     <button class="btn primary" id="btnRevealYes">はい</button>
   </div>
 </div>
@@ -1895,6 +1905,7 @@
   let zoomDismissHandler = null;
 
   const revealPop = document.getElementById("revealPop");
+  const revealMsg = document.getElementById("revealMsg");
   const btnRevealYes = document.getElementById("btnRevealYes");
   const btnRevealNo  = document.getElementById("btnRevealNo");
   const attackPop = document.getElementById("attackPop");
@@ -1912,6 +1923,30 @@
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+  let revealPopBlocked = false;
+  const MOVE_START_REVEAL_ONLY_ROLE_NAMES = new Set([
+    "デーヴィッド", "デボラ", "アリス", "クレア", "キャロル",
+    "エリカ", "フェリックス", "フェリシア", "ウラヌス"
+  ]);
+
+  function myAbilityName(role){
+    const effect = safeText(role?.effect || "");
+    if (!effect) return "特殊能力";
+    const idx = effect.indexOf("：");
+    if (idx > 0) return effect.slice(0, idx).trim() || "特殊能力";
+    return effect.trim() || "特殊能力";
+  }
+
+  function isMoveStartRevealOnlyRole(role){
+    const name = safeText(role?.name || "");
+    return !!name && MOVE_START_REVEAL_ONLY_ROLE_NAMES.has(name);
+  }
+
+  function shouldShowMoveStartOnlyRevealNotice(role){
+    if (!isMoveStartRevealOnlyRole(role)) return false;
+    if (!isMyTurn()) return false;
+    return !!turnState()?.moveDone;
+  }
 
   function placeFloatingPop(popEl, clientX, clientY, { yOffset = 0 } = {}){
     if (!popEl) return;
@@ -1946,10 +1981,28 @@
   }
 
   function showRevealPopAt(clientX, clientY){
+    const role = myRoleInfo();
+    const ability = myAbilityName(role);
+    const blocked = shouldShowMoveStartOnlyRevealNotice(role);
+    revealPopBlocked = blocked;
+    if (blocked){
+      revealMsg.textContent = "手番の初めにだけ正体を公開できます。";
+      btnRevealYes.classList.add("hidden");
+      btnRevealNo.textContent = "OK";
+    } else {
+      revealMsg.innerHTML = `正体を公開して、<span class="ability-tag">${escapeHtml(ability)}</span>を使いますか。`;
+      btnRevealYes.classList.remove("hidden");
+      btnRevealNo.textContent = "いいえ";
+    }
     revealPop.classList.remove("hidden");
     placeFloatingPop(revealPop, clientX, clientY);
   }
-  function hideRevealPop(){ revealPop.classList.add("hidden"); }
+  function hideRevealPop(){
+    revealPop.classList.add("hidden");
+    revealPopBlocked = false;
+    btnRevealYes.classList.remove("hidden");
+    btnRevealNo.textContent = "いいえ";
+  }
 
   function showAttackPopAt(clientX, clientY, targetName){
     if (!attackPop) return;
@@ -2920,6 +2973,10 @@
   });
   btnRevealYes.addEventListener("click", async (e) => {
     e.stopPropagation();
+    if (revealPopBlocked){
+      hideRevealPop();
+      return;
+    }
     await revealMyIdentityToEquipment();
     hideRevealPop();
   });
