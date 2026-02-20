@@ -288,6 +288,7 @@
     min-height:120px;
   }
   .equip-dock.visible{ display:block; }
+  .equip-dock.david-select-front{ z-index:10030; }
 
   .equip-board{
     background:rgba(255,255,255,.90);
@@ -2635,6 +2636,7 @@
     hideGreenShareDock();
     hideRevealPop();
     hideRoomActionPop();
+    equipDock?.classList.remove("david-select-front");
   }
   zoomCloseBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -2840,6 +2842,7 @@
 
   function renderEquipmentDock(){
     syncRoomAbilityTurnState();
+    equipDock?.classList.toggle("david-select-front", pendingEquipAction?.type === "david_select");
     if (!state.roomCode) { equipDock.classList.remove("visible"); return; }
     if (!isMyTurn() && defeatLootQueue.length > 0){
       defeatLootQueue = [];
@@ -2972,7 +2975,7 @@
     const role = my?.roleId ? ROLE_BY_ID[my.roleId] : null;
     if (!role) return;
     openZoomFromRole(role, { closeOnBackdrop:false, showCloseButton:false });
-    showTurnHint("デーヴィッド：脱落者の装備カードを1枚選んでください。");
+    setZoomPassthrough(true);
     zoomDismissHandler = null;
   }
 
@@ -3218,7 +3221,6 @@
           pendingEquipAction = null;
           zoomDismissHandler = null;
           closeZoom();
-          showTurnHint("");
         }
       }, {
         fixedLower:true,
