@@ -1608,8 +1608,7 @@
 
 <div id="venomChoicePop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="蟲毒使い選択">
   <p class="msg"><span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#111;color:#fff;font-weight:800;">蟲毒使い</span></p>
-  <p class="msg" style="margin-top:-4px;">どうしますか。</p>
-  <div class="actions" style="justify-content:space-between;">
+    <div class="actions" style="justify-content:center;gap:6px;">
     <button class="btn pop-dark" id="btnVenomTakeDamage">1ダメージうける</button>
     <button class="btn pop-white" id="btnVenomGiveEquip">装備をわたす</button>
   </div>
@@ -2080,6 +2079,7 @@
   let pendingReactionTrigger = null;
   let reactionTriggerTimer = null;
   let pendingVenomChoice = null;
+  let persistentRoleOverlayEl = null;
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -2374,6 +2374,11 @@
   function hideReactionTriggerPop(){
     clearReactionTriggerTimer();
     pendingReactionTrigger = null;
+    if (btnReactionTrigger){
+      btnReactionTrigger.disabled = false;
+      btnReactionTrigger.classList.remove("pop-disabled");
+      btnReactionTrigger.classList.add("pop-dark");
+    }
     reactionTriggerPop?.classList.add("hidden");
   }
 
@@ -2384,7 +2389,13 @@
     hideReactionTriggerPop();
     let remain = Math.max(1, Math.floor(Number(seconds) || 5));
     const baseLabel = abilityType === "werewolf" ? "反撃する" : "蟲毒使い";
-    pendingReactionTrigger = { type: abilityType, attackerUid: srcUid, expiresAt: Date.now() + remain * 1000 };
+    const blockedByGuardian = hasGuardianAngelShield(srcUid);
+    pendingReactionTrigger = { type: abilityType, attackerUid: srcUid, blockedByGuardian, expiresAt: Date.now() + remain * 1000 };
+    if (btnReactionTrigger){
+      btnReactionTrigger.disabled = blockedByGuardian;
+      btnReactionTrigger.classList.toggle("pop-disabled", blockedByGuardian);
+      btnReactionTrigger.classList.toggle("pop-dark", !blockedByGuardian);
+    }
     const render = () => {
       reactionTriggerMsg.textContent = `${baseLabel}(${Math.max(0, remain)})`;
     };
@@ -2402,6 +2413,7 @@
 
   function hideVenomChoicePop(){
     pendingVenomChoice = null;
+    hidePersistentRoleOverlay();
     venomChoicePop?.classList.add("hidden");
   }
 
@@ -2410,10 +2422,18 @@
     if (!venomChoicePop || !srcUid) return;
     pendingVenomChoice = { venomUid: srcUid, eventAt: Number(eventAt) || Date.now() };
     const hasEquip = hasNonIdentityEquipment(state.userId);
+    if (btnVenomTakeDamage){
+      btnVenomTakeDamage.disabled = false;
+      btnVenomTakeDamage.classList.remove("pop-disabled");
+      btnVenomTakeDamage.classList.add("pop-dark");
+    }
     if (btnVenomGiveEquip){
       btnVenomGiveEquip.disabled = !hasEquip;
       btnVenomGiveEquip.classList.toggle("pop-disabled", !hasEquip);
+      btnVenomGiveEquip.classList.toggle("pop-dark", hasEquip);
+      btnVenomGiveEquip.classList.remove("pop-white");
     }
+    showPersistentRoleOverlay("SHA_V1", srcUid);
     venomChoicePop.classList.remove("hidden");
   }
 
@@ -2637,6 +2657,57 @@
     roleFlashTimer = setTimeout(() => {
       hideRoleFlashOverlay();
     }, Math.max(100, Number(durationMs) || 1200));
+  }
+
+  function hidePersistentRoleOverlay(){
+    if (persistentRoleOverlayEl){
+      persistentRoleOverlayEl.remove();
+      persistentRoleOverlayEl = null;
+    }
+  }
+
+  function showPersistentRoleOverlay(roleId, ownerUid = ""){
+    const role = ROLE_BY_ID[safeText(roleId || "")];
+    if (!role) return;
+    hidePersistentRoleOverlay();
+
+    const overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.zIndex = "10950";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.background = "rgba(0,0,0,.35)";
+    overlay.style.pointerEvents = "none";
+
+    const wrap = document.createElement("div");
+    wrap.style.display = "flex";
+    wrap.style.flexDirection = "column";
+    wrap.style.alignItems = "center";
+    wrap.style.gap = "10px";
+
+    const card = createIdentityCard(role);
+    card.style.transform = "scale(2.1)";
+    card.style.transformOrigin = "center center";
+    card.style.boxShadow = "0 14px 32px rgba(0,0,0,.35)";
+    wrap.appendChild(card);
+
+    const uid = safeText(ownerUid || "");
+    const isRevealed = !!equipCache?.[uid]?.identity?.roleId;
+    if (uid && !isRevealed){
+      const owner = playerById(uid);
+      const label = document.createElement("div");
+      label.className = "equip-tag";
+      label.textContent = owner ? safeText(owner.name || "") : "正体効果";
+      label.style.background = "#fff";
+      label.style.color = "#111";
+      wrap.appendChild(label);
+    }
+
+    overlay.appendChild(wrap);
+    document.body.appendChild(overlay);
+    persistentRoleOverlayEl = overlay;
   }
 
   function showTemporaryRoleTag(uid, text, durationMs = 2000){
@@ -3654,9 +3725,6 @@
     if (!reactionTriggerPop?.classList.contains("hidden") && !e.target.closest("#reactionTriggerPop")){
       hideReactionTriggerPop();
     }
-    if (!venomChoicePop?.classList.contains("hidden") && !e.target.closest("#venomChoicePop")){
-      hideVenomChoicePop();
-    }
     if (!endTurnConfirm?.classList.contains("hidden") && !e.target.closest("#endTurnConfirm") && !e.target.closest("#btnEndTurn")){
       hideEndTurnConfirm();
     }
@@ -3710,13 +3778,15 @@
     e.stopPropagation();
     const action = pendingReactionTrigger;
     hideReactionTriggerPop();
-    if (!action) return;
+    if (!action || action.blockedByGuardian) return;
     if (action.type === "werewolf"){
+      if (!isMyIdentityRevealed()) await revealMyIdentityToEquipment({ revealedBy:"werewolf_reaction" });
       await emitReactionAbilityEvent("werewolf", state.userId, action.attackerUid);
       await triggerWerewolfCounterAttack(action.attackerUid);
       return;
     }
     if (action.type === "venom"){
+      if (!isMyIdentityRevealed()) await revealMyIdentityToEquipment({ revealedBy:"venom_reaction" });
       await emitReactionAbilityEvent("venom", state.userId, action.attackerUid);
       await emitVenomChoiceEvent(state.userId, action.attackerUid);
     }
