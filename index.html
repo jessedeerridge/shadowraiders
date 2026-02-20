@@ -2948,7 +2948,6 @@
         const promotedUid = defeatLootQueue[0] || "";
         const isDefeatPulse = promotedUid && p.id === promotedUid && p.id !== state.userId && eliminated && !isIdentityEquipItem(it);
         const isDavidPulse = pendingEquipAction?.type === "david_select"
-          && !pendingEquipAction.selectedSourceKey
           && pendingEquipAction.defeatedUids?.includes(p.id)
           && p.id !== state.userId
           && eliminated
@@ -3318,6 +3317,7 @@
           pendingEquipAction = null;
           hideDavidSelectPreview();
           closeZoom();
+          renderEquipmentDock();
         }
       }, {
         fixedLower:true,
