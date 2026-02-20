@@ -288,6 +288,7 @@
     min-height:120px;
   }
   .equip-dock.visible{ display:block; }
+  .equip-dock.david-select-front{ z-index:10030; }
 
   .equip-board{
     background:rgba(255,255,255,.90);
@@ -1191,6 +1192,9 @@
   .zoom-backdrop.green-reveal-active .zoom-stage{
     transform:translateX(-90px) scale(var(--zoom, 4));
   }
+  .zoom-backdrop.david-select-active .zoom-stage{
+    transform:translateX(-90px) scale(var(--zoom, 4));
+  }
   .zoom-stage .card72,
   .zoom-stage .id72{
     box-shadow:0 18px 50px rgba(0,0,0,.45);
@@ -1368,6 +1372,29 @@
     transform:scale(2);
     transform-origin:center;
   }
+
+  .david-select-preview{
+    position:fixed;
+    left:50%;
+    top:50%;
+    width:72px;
+    height:108px;
+    transform:translate(-50%,-50%) translateX(95px);
+    z-index:10003;
+    pointer-events:none;
+    opacity:0;
+    transition:transform .2s ease, opacity .2s ease;
+  }
+  .zoom-backdrop.david-select-active .david-select-preview{
+    opacity:1;
+  }
+  .david-select-preview.hidden{ display:none; }
+  .david-select-preview .card72,
+  .david-select-preview .id72{
+    box-shadow:0 18px 50px rgba(0,0,0,.45);
+    transform:scale(2);
+    transform-origin:center;
+  }
 </style>
 </head>
 <body>
@@ -1433,6 +1460,7 @@
     <div id="greenRevealLabel" class="green-reveal-label"></div>
     <div id="greenRevealCardWrap" class="green-reveal-card-wrap"></div>
   </div>
+  <div id="davidSelectPreview" class="david-select-preview hidden" aria-hidden="true"></div>
   <div id="greenShareDock" class="green-share-dock hidden" aria-label="緑カード共有">
     <p class="green-share-title">誰に渡しますか。</p>
     <p id="greenShareSubtitle" class="green-share-subtitle hidden"></p>
@@ -1854,6 +1882,7 @@
   const greenRevealPanel = document.getElementById("greenRevealPanel");
   const greenRevealLabel = document.getElementById("greenRevealLabel");
   const greenRevealCardWrap = document.getElementById("greenRevealCardWrap");
+  const davidSelectPreview = document.getElementById("davidSelectPreview");
   const greenShareDock = document.getElementById("greenShareDock");
   const greenShareList = document.getElementById("greenShareList");
   const greenShareSubtitle = document.getElementById("greenShareSubtitle");
@@ -1908,6 +1937,7 @@
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
   let pendingEquipAction = null;
+  let danielAutoRevealTimer = null;
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
   let zoomDismissHandler = null;
@@ -2057,12 +2087,30 @@
     turnHintPop.classList.toggle("hidden", !message);
   }
 
+  function hideDavidSelectPreview(){
+    zoomBackdrop?.classList.remove("david-select-active");
+    davidSelectPreview?.classList.add("hidden");
+    if (davidSelectPreview) davidSelectPreview.innerHTML = "";
+  }
+
+  function showDavidSelectPreviewFromCard(cardEl){
+    if (!davidSelectPreview || !cardEl) return;
+    const clone = cardEl.cloneNode(true);
+    clone.classList.remove("locked","blocked","equip-steal-pulse","equip-defeat-pulse","eliminated-dim");
+    clone.style.pointerEvents = "none";
+    davidSelectPreview.innerHTML = "";
+    davidSelectPreview.appendChild(clone);
+    davidSelectPreview.classList.remove("hidden");
+    zoomBackdrop?.classList.add("david-select-active");
+  }
+
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
     roomActionPop?.classList.remove("lower-mode", "room3-mode");
     if (btnRoomActionYes) btnRoomActionYes.textContent = "はい";
     if (btnRoomActionNo) btnRoomActionNo.textContent = "いいえ";
+    if (pendingEquipAction?.type === "david_select") hideDavidSelectPreview();
   }
 
   function showRoomActionPopAt(clientX, clientY, message, onYes, options = {}){
@@ -2581,10 +2629,10 @@
     clone.style.pointerEvents = "auto";
     openZoomContent(clone, options);
   }
-  function openZoomFromRole(role){
+  function openZoomFromRole(role, options){
     if (!role) return;
     const cardEl = createIdentityCard(role);
-    openZoomContent(cardEl);
+    openZoomContent(cardEl, options);
   }
   function openIdentityRevealZoom(role, revealerUid){
     if (!role) return;
@@ -2620,6 +2668,15 @@
     cardEl.dataset.cardType = theme || "";
     openZoomContent(cardEl, options);
   }
+
+  async function waitUntilZoomClosed({ maxWaitMs = 12000, pollMs = 60 } = {}){
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < Math.max(200, Number(maxWaitMs) || 12000)){
+      if (zoomBackdrop?.classList.contains("hidden")) return true;
+      await new Promise(resolve => setTimeout(resolve, Math.max(20, Number(pollMs) || 60)));
+    }
+    return !!zoomBackdrop?.classList.contains("hidden");
+  }
   function closeZoom(){
     zoomBackdrop.classList.add("hidden");
     zoomBackdrop.classList.remove("passthrough");
@@ -2634,6 +2691,9 @@
     hideGreenShareDock();
     hideRevealPop();
     hideRoomActionPop();
+    hideDavidSelectPreview();
+    zoomBackdrop?.classList.remove("david-select-active");
+    equipDock?.classList.remove("david-select-front");
   }
   zoomCloseBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -2803,12 +2863,18 @@
 
     const promotedUid = defeatLootQueue.find(uid => byId.has(uid)) || "";
     const promoted = promotedUid ? byId.get(promotedUid) : null;
+    const davidPromoted = (pendingEquipAction?.type === "david_select")
+      ? others.filter(p => pendingEquipAction.defeatedUids?.includes(p.id))
+      : [];
 
     const arr = [];
-    if (promoted) arr.push(promoted);
+    for (const p of davidPromoted){
+      arr.push(p);
+    }
+    if (promoted && !arr.some(p => p.id === promoted.id)) arr.push(promoted);
     if (me) arr.push(me);
     for (const p of others){
-      if (p.id === promotedUid) continue;
+      if (arr.some(row => row.id === p.id)) continue;
       arr.push(p);
     }
     return arr;
@@ -2832,6 +2898,7 @@
 
   function renderEquipmentDock(){
     syncRoomAbilityTurnState();
+    equipDock?.classList.toggle("david-select-front", pendingEquipAction?.type === "david_select");
     if (!state.roomCode) { equipDock.classList.remove("visible"); return; }
     if (!isMyTurn() && defeatLootQueue.length > 0){
       defeatLootQueue = [];
@@ -2880,10 +2947,15 @@
         const isGreenGivePulse = pendingEquipAction?.type === "green_give" && p.id === state.userId && !isIdentityEquipItem(it);
         const promotedUid = defeatLootQueue[0] || "";
         const isDefeatPulse = promotedUid && p.id === promotedUid && p.id !== state.userId && eliminated && !isIdentityEquipItem(it);
+        const isDavidPulse = pendingEquipAction?.type === "david_select"
+          && pendingEquipAction.defeatedUids?.includes(p.id)
+          && p.id !== state.userId
+          && eliminated
+          && !isIdentityEquipItem(it);
         if (isNormalStealPulse || isOliverPulse || isBananaPulse || isGreenGivePulse){
           cardEl.classList.add("equip-steal-pulse");
         }
-        if (isDefeatPulse){
+        if (isDefeatPulse || isDavidPulse){
           cardEl.classList.add("equip-defeat-pulse");
         }
         cards.appendChild(cardEl);
@@ -2909,18 +2981,71 @@
     });
   }
 
-  async function revealMyIdentityToEquipment(){
+  async function revealMyIdentityToEquipment(options = {}){
     if (!state.roomCode) return;
     const my = state.hands?.[state.userId];
     if (!my || !my.roleId) return;
 
+    const revealedBy = safeText(options.revealedBy || "");
     const eRef = ref(db, `rooms/${state.roomCode}/equipment/${state.userId}/identity`);
-    await set(eRef, {
-      kind: "identity",
-      roleId: String(my.roleId),
-      at: 0,
-      revealedAt: Date.now()
+    await runTransaction(eRef, (cur) => {
+      if (cur && cur.kind === "identity" && cur.roleId) return cur;
+      const next = {
+        kind: "identity",
+        roleId: String(my.roleId),
+        at: 0,
+        revealedAt: Date.now()
+      };
+      if (revealedBy) next.revealedBy = revealedBy;
+      return next;
     });
+  }
+
+  function hasNonIdentityEquipment(uid){
+    return listEquipForUid(uid).some(it => !isIdentityEquipItem(it));
+  }
+
+  function getDavidEligibleEliminatedUids(){
+    return latestPlayers
+      .filter(p => p.id !== state.userId)
+      .filter(p => isPlayerEliminated(p.id))
+      .filter(p => hasNonIdentityEquipment(p.id))
+      .map(p => p.id);
+  }
+
+  function isDavidAbilityPending(){
+    return pendingEquipAction?.type === "david_select";
+  }
+
+  function isDavidAbilityUsed(){
+    return !!state.room?.abilityUsage?.david?.[state.userId];
+  }
+
+  async function markDavidAbilityUsed(){
+    if (!state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/david/${state.userId}`), true);
+  }
+
+  function restoreDavidIdentityZoom(){
+    const my = state.hands?.[state.userId];
+    const role = my?.roleId ? ROLE_BY_ID[my.roleId] : null;
+    if (!role) return;
+    openZoomFromRole(role, { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(false);
+    hideDavidSelectPreview();
+    zoomDismissHandler = null;
+  }
+
+  async function startDavidAbilityFlow(){
+    const defeatedUids = getDavidEligibleEliminatedUids();
+    if (defeatedUids.length === 0){
+      showRevealPopAt(null, { mode:"notice", message:"今は公開できません。" });
+      return;
+    }
+    await revealMyIdentityToEquipment({ revealedBy:"david_ability" });
+    pendingEquipAction = { type:"david_select", defeatedUids };
+    restoreDavidIdentityZoom();
+    renderEquipmentDock();
   }
 
   async function revealIdentityByDamage(uid){
@@ -2959,6 +3084,24 @@
     if (isMyIdentityRevealed()) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if (myRoleId === "CIT_D1"){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
+      return;
+    }
+    if (myRoleId === "CIT_D2"){
+      if (isDavidAbilityUsed()){
+        e.stopPropagation();
+        showRevealPopAt(idCard, { mode: "notice", message: "この能力はすでに使用済みです。" });
+        return;
+      }
+      if (getDavidEligibleEliminatedUids().length === 0){
+        e.stopPropagation();
+        showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
+        return;
+      }
+    }
+
     const moved = !!turnState()?.moveDone;
     if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && moved){
       e.stopPropagation();
@@ -2995,7 +3138,18 @@
   });
   btnRevealYes.addEventListener("click", async (e) => {
     e.stopPropagation();
-    await revealMyIdentityToEquipment();
+    const myRoleId = safeText(state.hands?.[state.userId]?.roleId || "");
+    if (myRoleId === "CIT_D2"){
+      await startDavidAbilityFlow();
+      hideRevealPop();
+      return;
+    }
+    await revealMyIdentityToEquipment({ revealedBy:"manual" });
+    if (myRoleId === "CIT_A1"){
+      setTimeout(() => {
+        setDamageToPlayer(state.userId, 0);
+      }, 1500);
+    }
     hideRevealPop();
   });
 
@@ -3106,6 +3260,32 @@
   equipBody.addEventListener("click", (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
     if (!card) return;
+
+    if (pendingEquipAction?.type === "david_select"){
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      if (!pendingEquipAction.defeatedUids?.includes(ownerUid) || !sourceKey) return;
+      showDavidSelectPreviewFromCard(card);
+      zoomDismissHandler = null;
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードを獲得しますか。", async () => {
+        const action = pendingEquipAction;
+        if (!action || action.type !== "david_select") return;
+        const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
+        if (ok){
+          await markDavidAbilityUsed();
+          pendingEquipAction = null;
+          hideDavidSelectPreview();
+          closeZoom();
+        }
+      }, {
+        fixedLower:true,
+        closeZoomOnNo:false,
+        onNo: () => {
+          hideDavidSelectPreview();
+        }
+      });
+      return;
+    }
 
     if (pendingEquipAction?.type === "green_give"){
       const ownerUid = safeText(card.dataset.ownerUid || "");
@@ -3376,6 +3556,7 @@
 
   function canUseMoveDice(){
     if (!isMyTurn()) return false;
+    if (isDavidAbilityPending()) return false;
     return !turnState()?.moveDone;
   }
 
@@ -3790,6 +3971,20 @@
           }
         }
       }
+
+      const myRoleId = safeText(state.hands?.[state.userId]?.roleId || "");
+      if (myRoleId === "CIT_D1" && !isMyIdentityRevealed()){
+        const othersEliminatedNow = latestPlayers.some(p => p.id !== state.userId && !!eliminatedNow[p.id]);
+        const othersEliminatedBefore = latestPlayers.some(p => p.id !== state.userId && !!previousEliminatedMap[p.id]);
+        if (othersEliminatedNow && !othersEliminatedBefore && !danielAutoRevealTimer){
+          danielAutoRevealTimer = setTimeout(async () => {
+            danielAutoRevealTimer = null;
+            await waitUntilZoomClosed();
+            await revealMyIdentityToEquipment({ revealedBy:"daniel_forced" });
+          }, 2000);
+        }
+      }
+
       previousEliminatedMap = eliminatedNow;
 
       renderHpBoard();
