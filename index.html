@@ -627,12 +627,12 @@
   }
 
   .right-panel{
-    width:min(520px, 52vw);
+    width:fit-content;
     display:flex;
     flex-direction:column;
     align-items:center;
     gap:6px;
-        border:1px solid rgba(0,0,0,.35);
+    border:1px solid rgba(0,0,0,.35);
 
   }
 /* 自分のマーカーだけ、丸い点線リング */
@@ -752,7 +752,7 @@
      ★②右図形：図形外の背景を透明（パネルの白背景/枠/影を消す）
      ========================================================= */
   .map-panel{
-    width:110%;
+    width:calc(min(62vh, 340px) * var(--room-vb-ratio, 1.45));
     height:min(62vh, 340px);
     display:flex;
     justify-content:center;
@@ -5022,6 +5022,10 @@
     const w = bb.width + margin*2;
     const h = bb.height + margin*2;
     roomSvg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+    if (w > 0 && h > 0){
+      const ratio = w / h;
+      roomSvg.style.setProperty('--room-vb-ratio', String(ratio));
+    }
   }
 
   let markerLayer = null;
