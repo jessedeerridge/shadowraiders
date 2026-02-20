@@ -84,6 +84,8 @@
   .confirm-pop.bottom-fixed .caret{display:none;}
   .btn.pop-dark{background:#111;color:#fff;border-color:#111;}
   .btn.pop-disabled{background:#bcbcbc;color:#fff;border-color:#bcbcbc;cursor:not-allowed;}
+  .btn.pop-purple{background:#6d28d9;color:#fff;border-color:#6d28d9;}
+  .btn.pop-white{background:#fff;color:#111;border-color:#d1d5db;}
 
   .help-btn{
     position:fixed;left:16px;bottom:16px;width:44px;height:44px;border-radius:50%;
@@ -1946,6 +1948,7 @@
   let roomAbilityTurnKey = "";
   let room4StealUsed = false;
   let room3ActionUsed = false;
+  let walpurgisSwapUsed = false;
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
   let uranusMeteorResolved = false;
@@ -2123,8 +2126,14 @@
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
     roomActionPop?.classList.remove("lower-mode", "room3-mode");
-    if (btnRoomActionYes) btnRoomActionYes.textContent = "はい";
-    if (btnRoomActionNo) btnRoomActionNo.textContent = "いいえ";
+    if (btnRoomActionYes){
+      btnRoomActionYes.textContent = "はい";
+      btnRoomActionYes.classList.remove("pop-purple","pop-white");
+    }
+    if (btnRoomActionNo){
+      btnRoomActionNo.textContent = "いいえ";
+      btnRoomActionNo.classList.remove("pop-purple","pop-white");
+    }
     if (pendingEquipAction?.type === "david_select") hideDavidSelectPreview();
   }
 
@@ -2139,13 +2148,23 @@
       closeZoomOnNo: !!options.closeZoomOnNo,
       dismissOnOutside: options.dismissOnOutside !== false
     };
+    const yesBtnClass = safeText(options.yesBtnClass || "");
+    const noBtnClass = safeText(options.noBtnClass || "");
     if (options.messageHtml){
       roomActionMsg.innerHTML = String(options.messageHtml);
     } else {
       roomActionMsg.textContent = safeText(message || "");
     }
-    if (btnRoomActionYes) btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
-    if (btnRoomActionNo) btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
+    if (btnRoomActionYes){
+      btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
+      btnRoomActionYes.classList.remove("pop-purple","pop-white");
+      if (yesBtnClass) btnRoomActionYes.classList.add(yesBtnClass);
+    }
+    if (btnRoomActionNo){
+      btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
+      btnRoomActionNo.classList.remove("pop-purple","pop-white");
+      if (noBtnClass) btnRoomActionNo.classList.add(noBtnClass);
+    }
     roomActionPop.classList.remove("hidden");
     roomActionPop.classList.toggle("lower-mode", fixedLower);
     roomActionPop.classList.toggle("room3-mode", compactButtons);
@@ -3739,6 +3758,7 @@
     roomAbilityTurnKey = key;
     room4StealUsed = false;
     room3ActionUsed = false;
+    walpurgisSwapUsed = false;
     movedByDiceRoomId = null;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
@@ -3761,6 +3781,117 @@
     return movedByDiceRoomId === 3;
   }
 
+
+  function canUseWalpurgisSwap(){
+    if (!isMyTurn() || !canUseAttackDice()) return false;
+    if (!isMyRole("SHA_W2")) return false;
+    if (!isMyIdentityRevealed()) return false;
+    if (walpurgisSwapUsed) return false;
+    return true;
+  }
+
+  async function animateMarkerSwapVisual(uidA, uidB, durationMs = 560){
+    const markerA = markerCache?.[uidA] || null;
+    const markerB = markerCache?.[uidB] || null;
+    if (!markerA || !markerB) return;
+    const ax = Number(markerA.x), ay = Number(markerA.y);
+    const bx = Number(markerB.x), by = Number(markerB.y);
+    if (![ax, ay, bx, by].every(Number.isFinite)) return;
+
+    const ctm = roomSvg?.getScreenCTM();
+    if (!roomSvg || !ctm) return;
+    const aPt = roomSvg.createSVGPoint();
+    aPt.x = ax; aPt.y = ay;
+    const bPt = roomSvg.createSVGPoint();
+    bPt.x = bx; bPt.y = by;
+    const aScr = aPt.matrixTransform(ctm);
+    const bScr = bPt.matrixTransform(ctm);
+
+    const makeChip = (m) => {
+      const chip = document.createElement("div");
+      chip.className = "chip16";
+      chip.style.position = "fixed";
+      chip.style.left = "0";
+      chip.style.top = "0";
+      chip.style.zIndex = "11200";
+      chip.style.pointerEvents = "none";
+      chip.style.background = String(m.color || "#ddd");
+      chip.style.color = textColorFor(String(m.color || "#ddd"));
+      chip.style.transform = "translate(-50%,-50%)";
+      chip.style.transition = `transform ${durationMs}ms cubic-bezier(.22,.78,.24,1)`;
+      chip.textContent = String(m.initial || "").slice(0,1);
+      document.body.appendChild(chip);
+      return chip;
+    };
+
+    const chipA = makeChip(markerA);
+    const chipB = makeChip(markerB);
+    chipA.style.transform = `translate(${aScr.x}px, ${aScr.y}px) translate(-50%,-50%)`;
+    chipB.style.transform = `translate(${bScr.x}px, ${bScr.y}px) translate(-50%,-50%)`;
+
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    chipA.style.transform = `translate(${bScr.x}px, ${bScr.y}px) translate(-50%,-50%)`;
+    chipB.style.transform = `translate(${aScr.x}px, ${aScr.y}px) translate(-50%,-50%)`;
+
+    await new Promise(resolve => setTimeout(resolve, durationMs));
+    chipA.remove();
+    chipB.remove();
+  }
+
+  async function swapMarkerPositionWithPlayer(targetUid){
+    const myUid = safeText(state.userId || "");
+    const otherUid = safeText(targetUid || "");
+    if (!state.roomCode || !myUid || !otherUid || myUid === otherUid) return false;
+
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    const tx = await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      cur.markers = cur.markers || {};
+      const mine = cur.markers[myUid];
+      const other = cur.markers[otherUid];
+      if (!mine || !other) return cur;
+      const nextMine = { ...mine };
+      const nextOther = { ...other };
+
+      nextMine.x = Number(other.x);
+      nextMine.y = Number(other.y);
+      nextMine.roomId = Number(other.roomId || mine.roomId || 7);
+      nextMine.updatedAt = Date.now();
+
+      nextOther.x = Number(mine.x);
+      nextOther.y = Number(mine.y);
+      nextOther.roomId = Number(mine.roomId || other.roomId || 7);
+      nextOther.updatedAt = Date.now();
+
+      cur.markers[myUid] = nextMine;
+      cur.markers[otherUid] = nextOther;
+      return cur;
+    });
+    return !!tx?.committed;
+  }
+
+  function showWalpurgisSwapConfirm(clientX, clientY, targetUid){
+    const uid = safeText(targetUid || "");
+    if (!uid || !canUseWalpurgisSwap()) return;
+    const player = playerById(uid);
+    const name = safeText(player?.name || "このプレイヤー");
+    showRoomActionPopAt(clientX, clientY, "", async () => {
+      if (!canUseWalpurgisSwap()) return;
+      walpurgisSwapUsed = true;
+      await emitRoleFlashEvent("SHA_W2", "walpurgis_swap");
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      await animateMarkerSwapVisual(state.userId, uid, 560);
+      await swapMarkerPositionWithPlayer(uid);
+      renderMarkers();
+    }, {
+      messageHtml: `${escapeHtml(name)}と位置を交換しますか。`,
+      yesLabel: "はい",
+      noLabel: "いいえ",
+      yesBtnClass: "pop-purple",
+      noBtnClass: "pop-white"
+    });
+  }
+
   function refreshRoomAbilityHint(){
     if (canUseRoom4Steal()){
       showTurnHint("他プレイヤーの装備を奪うことができます。");
@@ -3771,6 +3902,10 @@
         text: "任意のプレイヤーへ2ダメージ/1回復できます。",
         showRoom3Skip: true
       });
+      return;
+    }
+    if (canUseWalpurgisSwap()){
+      showTurnHint("プレイヤーを長押しで位置を交換");
       return;
     }
     showTurnHint("");
@@ -5950,46 +6085,76 @@
       hideAttackPop();
       triggerMoveDiceForAll();
     });
-  } else if (!eliminated && uid && pulse){
-    g.style.cursor = 'pointer';
-    g.addEventListener('click', (e) => {
-      if (canUseRoom3Action()){
-        if (hasEquipmentByName(uid, "幸運のブローチ")) return;
-        e.stopPropagation();
-        const p = playerById(uid);
-        const nm = safeText(p?.name || "このプレイヤー");
-        showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
-          room3ActionUsed = true;
-          showTurnHint("");
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          await healDamageToPlayer(uid, 1);
-          renderMarkers();
-        }, {
-          yesLabel: "1回復する",
-          noLabel: "2ダメージ与える",
-          compactButtons: true,
-          yOffset: -14,
-          onNo: async () => {
+  } else if (!eliminated && uid){
+    if (pulse) g.style.cursor = 'pointer';
+    const longPressMs = 500;
+    let markerLongPressTimer = null;
+    let markerLongPressDone = false;
+    const clearMarkerLongPress = () => {
+      if (!markerLongPressTimer) return;
+      clearTimeout(markerLongPressTimer);
+      markerLongPressTimer = null;
+    };
+
+    g.addEventListener('pointerdown', (e) => {
+      markerLongPressDone = false;
+      clearMarkerLongPress();
+      if (!canUseWalpurgisSwap()) return;
+      if (uid === state.userId) return;
+      markerLongPressTimer = setTimeout(() => {
+        markerLongPressDone = true;
+        showWalpurgisSwapConfirm(e.clientX, e.clientY, uid);
+      }, longPressMs);
+    });
+    g.addEventListener('pointerup', clearMarkerLongPress);
+    g.addEventListener('pointerleave', clearMarkerLongPress);
+    g.addEventListener('pointercancel', clearMarkerLongPress);
+
+    if (pulse){
+      g.addEventListener('click', (e) => {
+        clearMarkerLongPress();
+        if (markerLongPressDone){
+          markerLongPressDone = false;
+          return;
+        }
+        if (canUseRoom3Action()){
+          if (hasEquipmentByName(uid, "幸運のブローチ")) return;
+          e.stopPropagation();
+          const p = playerById(uid);
+          const nm = safeText(p?.name || "このプレイヤー");
+          showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
             room3ActionUsed = true;
             showTurnHint("");
             await new Promise(resolve => setTimeout(resolve, 1000));
-            await addDamageToPlayer(uid, 2);
+            await healDamageToPlayer(uid, 1);
             renderMarkers();
-          }
-        });
-        return;
-      }
-      if (mustResolveUranusMeteorStrike()){
+          }, {
+            yesLabel: "1回復する",
+            noLabel: "2ダメージ与える",
+            compactButtons: true,
+            yOffset: -14,
+            onNo: async () => {
+              room3ActionUsed = true;
+              showTurnHint("");
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              await addDamageToPlayer(uid, 2);
+              renderMarkers();
+            }
+          });
+          return;
+        }
+        if (mustResolveUranusMeteorStrike()){
+          e.stopPropagation();
+          showUranusMeteorConfirmPop(e.clientX, e.clientY, uid);
+          return;
+        }
+        if (!canUseAttackDice()) return;
         e.stopPropagation();
-        showUranusMeteorConfirmPop(e.clientX, e.clientY, uid);
-        return;
-      }
-      if (!canUseAttackDice()) return;
-      e.stopPropagation();
-      const p = playerById(uid);
-      pendingAttackTargetUid = uid;
-      showAttackPopAt(e.clientX, e.clientY, p?.name || 'このプレイヤー');
-    });
+        const p = playerById(uid);
+        pendingAttackTargetUid = uid;
+        showAttackPopAt(e.clientX, e.clientY, p?.name || 'このプレイヤー');
+      });
+    }
   }
 
   // ★自分だけ丸い点線リング（四角マーカーの外側）
