@@ -627,7 +627,7 @@
     gap:10px;
   }
 /* 自分のマーカーだけ、丸い点線リング */
-.mark-me-ring{
+  .mark-me-ring{
   fill: transparent;
   stroke: rgba(17,17,17,.95);
   stroke-width: 2;
@@ -636,6 +636,10 @@
   vector-effect: non-scaling-stroke;
   cursor:pointer;
   pointer-events:all;
+}
+
+#markerLayer.swap-animating{
+  opacity:0;
 }
 
 .chip16.turn-pulse{
@@ -3824,18 +3828,62 @@
       return chip;
     };
 
+    const setChipPos = (chip, x, y) => {
+      chip.style.transform = `translate(${x}px, ${y}px) translate(-50%,-50%)`;
+    };
+
+    const bezierPoint = (p0, p1, p2, t) => {
+      const it = 1 - t;
+      return {
+        x: it * it * p0.x + 2 * it * t * p1.x + t * t * p2.x,
+        y: it * it * p0.y + 2 * it * t * p1.y + t * t * p2.y
+      };
+    };
+
     const chipA = makeChip(markerA);
     const chipB = makeChip(markerB);
-    chipA.style.transform = `translate(${aScr.x}px, ${aScr.y}px) translate(-50%,-50%)`;
-    chipB.style.transform = `translate(${bScr.x}px, ${bScr.y}px) translate(-50%,-50%)`;
+    setChipPos(chipA, aScr.x, aScr.y);
+    setChipPos(chipB, bScr.x, bScr.y);
 
-    await new Promise(resolve => requestAnimationFrame(resolve));
-    chipA.style.transform = `translate(${bScr.x}px, ${bScr.y}px) translate(-50%,-50%)`;
-    chipB.style.transform = `translate(${aScr.x}px, ${aScr.y}px) translate(-50%,-50%)`;
+    markerLayer?.classList.add("swap-animating");
 
-    await new Promise(resolve => setTimeout(resolve, durationMs));
+    const mid = { x: (aScr.x + bScr.x) / 2, y: (aScr.y + bScr.y) / 2 };
+    const dx = bScr.x - aScr.x;
+    const dy = bScr.y - aScr.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const nx = -dy / dist;
+    const ny = dx / dist;
+    const arc = Math.max(26, Math.min(96, dist * 0.34));
+
+    const pA0 = { x: aScr.x, y: aScr.y };
+    const pA1 = { x: mid.x + nx * arc, y: mid.y + ny * arc };
+    const pA2 = { x: bScr.x, y: bScr.y };
+    const pB0 = { x: bScr.x, y: bScr.y };
+    const pB1 = { x: mid.x - nx * arc, y: mid.y - ny * arc };
+    const pB2 = { x: aScr.x, y: aScr.y };
+
+    await new Promise(resolve => {
+      const startedAt = performance.now();
+      const step = (now) => {
+        const elapsed = now - startedAt;
+        const raw = Math.max(0, Math.min(1, elapsed / durationMs));
+        const eased = 1 - Math.pow(1 - raw, 3);
+        const pa = bezierPoint(pA0, pA1, pA2, eased);
+        const pb = bezierPoint(pB0, pB1, pB2, eased);
+        setChipPos(chipA, pa.x, pa.y);
+        setChipPos(chipB, pb.x, pb.y);
+        if (raw < 1){
+          requestAnimationFrame(step);
+          return;
+        }
+        resolve();
+      };
+      requestAnimationFrame(step);
+    });
+
     chipA.remove();
     chipB.remove();
+    markerLayer?.classList.remove("swap-animating");
   }
 
   async function swapMarkerPositionWithPlayer(targetUid){
@@ -3880,9 +3928,13 @@
       walpurgisSwapUsed = true;
       await emitRoleFlashEvent("SHA_W2", "walpurgis_swap");
       await new Promise(resolve => setTimeout(resolve, 1200));
-      await animateMarkerSwapVisual(state.userId, uid, 560);
-      await swapMarkerPositionWithPlayer(uid);
-      renderMarkers();
+      try {
+        await animateMarkerSwapVisual(state.userId, uid, 620);
+        await swapMarkerPositionWithPlayer(uid);
+      } finally {
+        markerLayer?.classList.remove("swap-animating");
+        renderMarkers();
+      }
     }, {
       messageHtml: `${escapeHtml(name)}と位置を交換しますか。`,
       yesLabel: "はい",
@@ -6110,51 +6162,50 @@
     g.addEventListener('pointerleave', clearMarkerLongPress);
     g.addEventListener('pointercancel', clearMarkerLongPress);
 
-    if (pulse){
-      g.addEventListener('click', (e) => {
-        clearMarkerLongPress();
-        if (markerLongPressDone){
-          markerLongPressDone = false;
-          return;
-        }
-        if (canUseRoom3Action()){
-          if (hasEquipmentByName(uid, "幸運のブローチ")) return;
-          e.stopPropagation();
-          const p = playerById(uid);
-          const nm = safeText(p?.name || "このプレイヤー");
-          showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
+    g.addEventListener('click', (e) => {
+      clearMarkerLongPress();
+      if (markerLongPressDone){
+        e.preventDefault();
+        e.stopPropagation();
+        markerLongPressDone = false;
+        return;
+      }
+      if (!pulse) return;
+      e.stopPropagation();
+      if (canUseRoom3Action()){
+        if (hasEquipmentByName(uid, "幸運のブローチ")) return;
+        const p = playerById(uid);
+        const nm = safeText(p?.name || "このプレイヤー");
+        showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
+          room3ActionUsed = true;
+          showTurnHint("");
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          await healDamageToPlayer(uid, 1);
+          renderMarkers();
+        }, {
+          yesLabel: "1回復する",
+          noLabel: "2ダメージ与える",
+          compactButtons: true,
+          yOffset: -14,
+          onNo: async () => {
             room3ActionUsed = true;
             showTurnHint("");
             await new Promise(resolve => setTimeout(resolve, 1000));
-            await healDamageToPlayer(uid, 1);
+            await addDamageToPlayer(uid, 2);
             renderMarkers();
-          }, {
-            yesLabel: "1回復する",
-            noLabel: "2ダメージ与える",
-            compactButtons: true,
-            yOffset: -14,
-            onNo: async () => {
-              room3ActionUsed = true;
-              showTurnHint("");
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              await addDamageToPlayer(uid, 2);
-              renderMarkers();
-            }
-          });
-          return;
-        }
-        if (mustResolveUranusMeteorStrike()){
-          e.stopPropagation();
-          showUranusMeteorConfirmPop(e.clientX, e.clientY, uid);
-          return;
-        }
-        if (!canUseAttackDice()) return;
-        e.stopPropagation();
-        const p = playerById(uid);
-        pendingAttackTargetUid = uid;
-        showAttackPopAt(e.clientX, e.clientY, p?.name || 'このプレイヤー');
-      });
-    }
+          }
+        });
+        return;
+      }
+      if (mustResolveUranusMeteorStrike()){
+        showUranusMeteorConfirmPop(e.clientX, e.clientY, uid);
+        return;
+      }
+      if (!canUseAttackDice()) return;
+      const p = playerById(uid);
+      pendingAttackTargetUid = uid;
+      showAttackPopAt(e.clientX, e.clientY, p?.name || 'このプレイヤー');
+    });
   }
 
   // ★自分だけ丸い点線リング（四角マーカーの外側）
