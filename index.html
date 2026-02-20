@@ -2091,10 +2091,10 @@
 
   function canUseWightAbilityNow(){
     if (!isMyRole("SHA_W1")) return { ok:false, message:"今は公開できません。" };
-    if (isWightAbilityUsed()) return { ok:false, message:"この能力はすでに使用済みです。" };
-    if (!turnState()?.moveDone) return { ok:false, message:"ワイトは移動が済んでいなければ正体公開できない。" };
+    if (isWightAbilityUsed()) return { ok:false, message:"今は公開できません。" };
+    if (!turnState()?.moveDone) return { ok:false, message:"今は公開できません。" };
     const eliminated = eliminatedPlayerCount();
-    if (eliminated <= 0) return { ok:false, message:"ワイトは脱落プレイヤーが0人なら正体公開できない。" };
+    if (eliminated <= 0) return { ok:false, message:"今は公開できません。" };
     return { ok:true, eliminated };
   }
 
@@ -7467,11 +7467,7 @@
     const cx = Number(e?.clientX || window.__lastPointerX);
     const cy = Number(e?.clientY || window.__lastPointerY);
     if (repeatTurnPending()){
-      showEndTurnConfirm({
-        message: "この手番を終了して、次の手番を開始しますか。",
-        clientX: cx,
-        clientY: cy
-      });
+      await doEndTurn();
       return;
     }
     if (!turnState()?.attackDone){
