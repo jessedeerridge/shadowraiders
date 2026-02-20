@@ -10,6 +10,7 @@
   header{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #eee; position:sticky; top:0; z-index:1200; background:#fff;}
   h1{margin:0;font-size:18px;}
   .small{font-size:12px;opacity:.75;}
+  .attack-roll-result-debug{font-weight:700;min-width:52px;text-align:left;}
   .join-box{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:12px; position:relative; z-index:2;}
   .join-box input{padding:8px;border:1px solid #ddd;border-radius:6px;font-size:16px;}
   .btn{padding:6px 10px;border:1px solid #ddd;border-radius:6px;background:#f8f8f8;cursor:pointer;}
@@ -1374,6 +1375,7 @@
   <h1>テンプレ</h1>
   <div style="display:flex;align-items:center;gap:6px;">
     <div class="small" id="roomInfo"></div>
+    <div class="small attack-roll-result-debug" id="attackRollResult" aria-live="polite"></div>
     <button class="btn ghost" id="copyLinkBtn">COPY</button>
   </div>
 </header>
@@ -4206,7 +4208,7 @@
       return Math.max(0, b);
     }
 
-    if (a === b) return 0;
+    if (!didAttackRollSucceed(a, b, options)) return 0;
 
     let damage = Math.abs(a - b);
     damage += countEquipmentByNames(uid, ["サーベル", "拳銃R", "拳銃L", "クロスボウガン"]);
@@ -5175,6 +5177,7 @@
 
       const damageTimer = setTimeout(async () => {
         if (!applyDamage) return;
+        setAttackRollResultLabel(didAttackRollSucceed(finalD6, finalD4, { masamuneMode }));
         const revealBoost = masamuneMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
         const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, excaliburRevealBoost: revealBoost });
         const gatlingTargets = Array.isArray(options.gatlingTargetUids)
@@ -5661,6 +5664,7 @@
   const btnJoin = document.getElementById('btnJoin');
   const lobby = document.getElementById('lobby');
   const roomInfo = document.getElementById('roomInfo');
+  const attackRollResult = document.getElementById('attackRollResult');
   const roomInfoLobby = document.getElementById('roomInfoLobby');
   const copyLinkBtn = document.getElementById('copyLinkBtn');
 
@@ -5831,6 +5835,17 @@
     const infoText = ` ${state.roomCode},  ${state.userName}${label}`;
     roomInfo.textContent = infoText;
     roomInfoLobby.textContent = infoText;
+  }
+
+  function didAttackRollSucceed(d6, d4, options = {}){
+    if (options.masamuneMode) return true;
+    return (Number(d6) || 0) !== (Number(d4) || 0);
+  }
+
+  // TODO: デバッグ用表示。後で消すときは #attackRollResult / .attack-roll-result-debug を非表示にする。
+  function setAttackRollResultLabel(isSuccess){
+    if (!attackRollResult) return;
+    attackRollResult.textContent = isSuccess ? '攻撃成功' : '攻撃失敗';
   }
 
   function updateHostUI(){
