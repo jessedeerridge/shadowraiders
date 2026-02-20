@@ -2080,6 +2080,7 @@
   let reactionTriggerTimer = null;
   let pendingVenomChoice = null;
   let persistentRoleOverlayEl = null;
+  let pendingReactivePrompt = null;
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -2514,19 +2515,64 @@
     });
   }
 
-  async function maybeShowReactiveAbilityPrompt(ev){
+  function getReactivePromptTypeForMe(){
+    if (isMyRole("SHA_W3")) return "werewolf";
+    if (isMyRole("SHA_V1")) return "venom";
+    return "";
+  }
+
+  function tryShowPendingReactivePrompt(expectedAt){
+    const pending = pendingReactivePrompt;
+    if (!pending) return;
+    if (Number(expectedAt || 0) !== Number(pending.attackAt || 0)) return;
+    if (Date.now() < Number(pending.earliestAt || 0)) return;
+    if (isPlayerEliminated(state.userId)){
+      pendingReactivePrompt = null;
+      return;
+    }
+    if (pending.requiresHpMove && !pending.hpMoved){
+      const current = clampDamage(damageCache?.[state.userId]);
+      if (current !== pending.beforeDamage){
+        pending.hpMoved = true;
+      } else if (Date.now() < Number(pending.waitUntil || 0)){
+        return;
+      }
+    }
+    const abilityType = safeText(pending.type || "");
+    const attackerUid = safeText(pending.attackerUid || "");
+    if (!abilityType || !attackerUid) return;
+    pendingReactivePrompt = null;
+    showReactionTriggerPop(abilityType, attackerUid, 5);
+  }
+
+  function scheduleReactivePromptFromAttackEvent(ev){
     if (!ev || !state.userId) return;
     const attackerUid = safeText(ev.uid || "");
     if (!attackerUid || attackerUid === state.userId) return;
     if (!isAttackEventTargetedToMe(ev)) return;
-    if (isPlayerEliminated(state.userId)) return;
-    if (isMyRole("SHA_W3")){
-      showReactionTriggerPop("werewolf", attackerUid, 5);
-      return;
-    }
-    if (isMyRole("SHA_V1")){
-      showReactionTriggerPop("venom", attackerUid, 5);
-    }
+    const type = getReactivePromptTypeForMe();
+    if (!type) return;
+
+    const success = didAttackRollSucceed(Number(ev.d6 || 0), Number(ev.d4 || 0), {
+      masamuneMode: !!ev.masamuneMode,
+      vendettaMode: !!ev.vendettaMode
+    });
+    const now = Date.now();
+    const attackAt = Number(ev.at || now);
+    pendingReactivePrompt = {
+      type,
+      attackerUid,
+      attackAt,
+      earliestAt: now + 4200,
+      requiresHpMove: !!success,
+      beforeDamage: clampDamage(damageCache?.[state.userId]),
+      hpMoved: !success,
+      waitUntil: now + 11000
+    };
+
+    setTimeout(() => {
+      tryShowPendingReactivePrompt(attackAt);
+    }, 4300);
   }
 
   function showIdentityPromptPop({ message, canReveal, onYes, onNo=null, cardObj=null, cardTheme="white", openZoom=false }){
@@ -4075,27 +4121,34 @@
     }
 
     if (pendingEquipAction?.type === "venom_give"){
+      if (!card.classList.contains("wb-front")) return;
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (ownerUid !== state.userId || !sourceKey) return;
       const action = { ...pendingEquipAction, sourceKey };
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードをわたしますか。", async () => {
         pendingEquipAction = null;
         zoomDismissHandler = null;
         const ok = await moveEquipmentCardBetweenPlayers(action.fromUid, action.toUid, sourceKey);
         if (ok){
+          closeZoom();
           renderEquipmentDock();
           showTurnHint("");
         }
       }, {
         fixedLower:true,
-        closeZoomOnNo:false,
+        closeZoomOnNo:true,
         onNo: () => {
           zoomDismissHandler = null;
           pendingEquipAction = { type:"venom_give", fromUid: action.fromUid, toUid: action.toUid };
           renderEquipmentDock();
         }
       });
+      zoomDismissHandler = async () => {
+        pendingEquipAction = { type:"venom_give", fromUid: action.fromUid, toUid: action.toUid };
+        renderEquipmentDock();
+      };
       return;
     }
 
@@ -4925,6 +4978,7 @@
 
       renderHpBoard();
       ensureCurrentTurnPlayerAlive();
+      tryShowPendingReactivePrompt(pendingReactivePrompt?.attackAt || 0);
 
       for (const [uid, dmgRaw] of Object.entries(damageCache)){
         const myHand = state.hands?.[uid];
@@ -4995,7 +5049,7 @@
         applyDamage: safeText(ev.uid || "") === state.userId,
         motion: ev.motion || null
       });
-      maybeShowReactiveAbilityPrompt(ev);
+      scheduleReactivePromptFromAttackEvent(ev);
     });
   }
 
