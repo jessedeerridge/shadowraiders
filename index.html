@@ -2671,6 +2671,10 @@
     ];
   }
 
+  function isRevealIdentityGreenCard(cardObj){
+    return safeText(cardObj?.effect || cardObj?.text || "").includes("正体カードを見せよ");
+  }
+
   function hideGreenRevealPanel(){
     if (greenRevealLabel) greenRevealLabel.textContent = "";
     if (greenRevealCardWrap) greenRevealCardWrap.innerHTML = "";
@@ -2932,7 +2936,7 @@
         };
         await set(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`), payload);
         await set(ref(db, `rooms/${state.roomCode}/greenInbox/${p.id}`), payload);
-        if (safeText(greenShareCard?.effect || "").includes("正体カードを見せよ")){
+        if (isRevealIdentityGreenCard(greenShareCard)){
           await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`), {
             from: state.userId,
             responderId: p.id,
@@ -2946,19 +2950,19 @@
 
         pendingGreenRequestId = requestId;
         renderGreenWaitingSelection(p.id, p.name, firstChar(p.name || ""), safeText(p.color || ""));
-        if (!safeText(greenShareCard?.effect || "").includes("正体カードを見せよ")){
+        if (!isRevealIdentityGreenCard(greenShareCard)){
           setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
           greenShareActions?.classList.add("hidden");
         }
         setGreenSessionState({
-          phase: safeText(greenShareCard?.effect || "").includes("正体カードを見せよ") ? "confirm" : "waiting",
+          phase: isRevealIdentityGreenCard(greenShareCard) ? "confirm" : "waiting",
           card: greenShareCard,
           requestId,
           toUid: p.id,
           toName: safeText(p.name || ""),
           toInitial: firstChar(p.name || ""),
           toColor: safeText(p.color || ""),
-          answerLabel: safeText(greenShareCard?.effect || "").includes("正体カードを見せよ") ? "私の正体です。" : ""
+          answerLabel: isRevealIdentityGreenCard(greenShareCard) ? "私の正体です。" : ""
         }).catch(() => {});
       });
 
@@ -2980,9 +2984,24 @@
       hideGreenRevealPanel();
     }
     const cardText = safeText(msg.card.effect || "");
-    setGreenDockMeta({ title:"回答を選んでください", subtitle:cardText });
+    const isRevealIdentity = isRevealIdentityGreenCard(msg.card);
+    setGreenDockMeta({
+      title: isRevealIdentity ? "質問が届きました" : "回答を選んでください",
+      subtitle:cardText
+    });
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
+
+    if (isRevealIdentity){
+      const requestId = safeText(msg.requestId || "");
+      const reveal = greenRevealByRequestId[requestId];
+      if (!reveal?.roleId){
+        applyGreenAnswerEffect(msg, { id:"reveal_identity", label:"私の正体です。" }).catch(() => {});
+      }
+      remove(ref(db, `rooms/${state.roomCode}/greenInbox/${state.userId}`)).catch(() => {});
+      greenShareDock.classList.remove("hidden");
+      return;
+    }
 
     const isUlrich = isMyRole("SHA_U1");
     for (const opt of greenAnswerOptions(msg.card)){
