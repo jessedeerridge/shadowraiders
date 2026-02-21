@@ -1122,6 +1122,7 @@
   transform:translateX(-50%);
 }
 #roomActionPop.lower-mode .caret{ display:none; }
+#roomActionPop.no-caret .caret{ display:none; }
 #roomActionPop.room3-mode .actions{
   flex-wrap:nowrap;
   justify-content:center;
@@ -1943,7 +1944,21 @@
     if (!hasRainbowParasolEquip(state.userId)) return false;
     const turn = turnState() || {};
     if (!turn.moveDone || turn.attackDone) return false;
-    return remainingCount(deckCache?.green) > 0;
+    if (remainingCount(deckCache?.green) <= 0) return false;
+
+    const targetsInRange = highlightedMarkerUids();
+    if (!(targetsInRange instanceof Set) || targetsInRange.size <= 0) return false;
+
+    const drawnTypes = turn?.drawnTypes || {};
+    const drewGreenThisTurn = !!drawnTypes.green;
+    const drewAnyThisTurn = !!(drawnTypes.green || drawnTypes.white || drawnTypes.black);
+
+    const roomId = Number(state.currentRoomId || 0);
+    const roomForRule = roomId === 7 ? 10 : roomId;
+    if ([1, 2, 3, 4, 10].includes(roomForRule)) return true;
+    if (roomForRule === 5) return drewGreenThisTurn;
+    if (roomForRule === 6) return drewAnyThisTurn;
+    return false;
   }
   function canDrawTypeNormally(type){
     const allowed = allowedTypesByRoom(state.currentRoomId);
@@ -1960,6 +1975,18 @@
     if (canDrawTypeNormally(type)) return true;
     if (type === "green" && canUseParasolGreenDraw()) return true;
     return false;
+  }
+
+  function parasolBlockedDrawWarningMessage(){
+    const roomId = Number(state.currentRoomId || 0);
+    const drawnTypes = turnState()?.drawnTypes || {};
+    if (roomId === 1 && !drawnTypes.white){
+      return "この後、白カードがひけません。";
+    }
+    if (roomId === 2 && !drawnTypes.black){
+      return "この後、白カードがひけません。";
+    }
+    return "";
   }
   function applyLocked(el, locked, {noDim=false} = {}){
     if (!el) return;
@@ -2385,7 +2412,7 @@
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
-    roomActionPop?.classList.remove("lower-mode", "room3-mode");
+    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret");
     if (btnRoomActionYes){
       btnRoomActionYes.textContent = "はい";
       btnRoomActionYes.classList.remove("pop-purple","pop-white");
@@ -2402,6 +2429,7 @@
     const fixedLower = !!options.fixedLower;
     const compactButtons = !!options.compactButtons;
     const yOffset = Number(options.yOffset) || 0;
+    const noCaret = !!options.noCaret;
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
       onNo: (typeof options.onNo === "function") ? options.onNo : null,
@@ -2428,6 +2456,7 @@
     roomActionPop.classList.remove("hidden");
     roomActionPop.classList.toggle("lower-mode", fixedLower);
     roomActionPop.classList.toggle("room3-mode", compactButtons);
+    roomActionPop.classList.toggle("no-caret", noCaret);
 
     if (fixedLower){
       roomActionPop.style.left = "";
@@ -2919,7 +2948,7 @@
     greenShareDock.classList.remove("hidden");
   }
 
-  function openGreenShareDock(cardObj){
+  function openGreenShareDock(cardObj, { attackRangeOnly=false } = {}){
     greenShareCard = cardObj || null;
     if (!greenShareCard || !greenShareDock || !greenShareList){
       greenShareDock?.classList.add("hidden");
@@ -2930,8 +2959,10 @@
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
     const mySeat = currentMySeatIndex();
+    const attackRangeTargetUids = attackRangeOnly ? attackRangeTargetUidsFor(state.userId) : null;
     const players = latestPlayers
       .filter(p => p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat)
+      .filter(p => !attackRangeOnly || (attackRangeTargetUids instanceof Set && attackRangeTargetUids.has(p.id)))
       .filter(p => !isPlayerEliminated(p.id))
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
 
@@ -2992,7 +3023,7 @@
       greenShareList.appendChild(btn);
     }
     greenShareDock.classList.remove("hidden");
-    setGreenSessionState({ phase:"selecting", card:greenShareCard }).catch(() => {});
+    setGreenSessionState({ phase:"selecting", card:greenShareCard, attackRangeOnly: !!attackRangeOnly }).catch(() => {});
   }
 
   function openGreenAnswerDock(msg){
@@ -3091,7 +3122,7 @@
       openZoomFromDeckCard(entry.card, "green", { closeOnBackdrop:false, showCloseButton:false });
       greenShareCard = entry.card;
       if (phase === "selecting"){
-        openGreenShareDock(entry.card);
+        openGreenShareDock(entry.card, { attackRangeOnly: !!entry.attackRangeOnly });
         return;
       }
 
@@ -5265,6 +5296,7 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        drawnTypes: { green:false, white:false, black:false },
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
@@ -5323,6 +5355,7 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        drawnTypes: { green:false, white:false, black:false },
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
@@ -5423,6 +5456,11 @@
       } else if (!allowUnlimitedDraw) {
         turn.deckDrawDone = true;
       }
+      turn.drawnTypes = {
+        green: !!(turn?.drawnTypes?.green || type === "green"),
+        white: !!(turn?.drawnTypes?.white || type === "white"),
+        black: !!(turn?.drawnTypes?.black || type === "black")
+      };
       turn.updatedAt = Date.now();
       ds.updatedAt = Date.now();
       return cur;
@@ -5433,7 +5471,7 @@
       await applyImmediateDeckCardEffect(drawn);
     } else if (drawn && type === "green"){
       openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false, showCloseButton:false });
-      openGreenShareDock(drawn);
+      openGreenShareDock(drawn, { attackRangeOnly: viaParasol });
     }
 
     scheduleDeckRebuildIfEmpty(type).catch(() => {});
@@ -5596,13 +5634,29 @@
         return;
       }
       if (!canUseParasolGreenDraw()) return;
+      const clickX = Number(e?.clientX || (window.innerWidth / 2));
+      const clickY = Number(e?.clientY || (window.innerHeight / 2));
       showRoomActionPopAt(
-        Number(e?.clientX || (window.innerWidth / 2)),
-        Number(e?.clientY || (window.innerHeight / 2)),
+        clickX,
+        clickY,
         "攻撃の代わりにカードを引きますか。（虹色のパラソル）",
         async () => {
-          await drawFromSharedDeck("green", { viaParasol:true });
-        }
+          const warningMessage = parasolBlockedDrawWarningMessage();
+          if (!warningMessage){
+            await drawFromSharedDeck("green", { viaParasol:true });
+            return;
+          }
+          showRoomActionPopAt(
+            clickX,
+            clickY,
+            warningMessage,
+            async () => {
+              await drawFromSharedDeck("green", { viaParasol:true });
+            },
+            { noCaret:true, yesLabel:"OK", noLabel:"やめる" }
+          );
+        },
+        { noCaret:true }
       );
     });
     slot2.addEventListener('click', async () => {
@@ -6091,6 +6145,26 @@
     return rooms;
   }
 
+  function attackRangeTargetUidsFor(uid = state.userId){
+    const attackerUid = safeText(uid);
+    if (!attackerUid) return new Set();
+    const myMarker = markerCache?.[attackerUid] || null;
+    const myRoomId = markerRoomId(myMarker);
+    if (!myRoomId) return new Set();
+
+    const deadScopeCount = countEquipmentByNames(attackerUid, ["死神スコープ"]);
+    const attackRooms = attackTargetRoomIdsFromRoom(myRoomId, deadScopeCount);
+    const targets = new Set();
+    for (const [targetUid, marker] of Object.entries(markerCache || {})){
+      if (!marker || targetUid === attackerUid) continue;
+      const rid = markerRoomId(marker);
+      if (!rid || !attackRooms.has(rid)) continue;
+      if (isAttackTargetProtected(targetUid)) continue;
+      targets.add(targetUid);
+    }
+    return targets;
+  }
+
   function inferRoomIdFromPoint(x, y){
     for (const [ridText, pts] of Object.entries(roomPolygons)){
       const rid = Number(ridText);
@@ -6127,25 +6201,7 @@
       );
     }
     if (!canUseAttackDice()) return new Set();
-    const myMarker = markerCache?.[state.userId] || null;
-    const myRoomId = markerRoomId(myMarker);
-    if (!myRoomId) return new Set();
-
-    const deadScopeCount = countEquipmentByNames(state.userId, ["死神スコープ"]);
-    const attackRooms = attackTargetRoomIdsFromRoom(myRoomId, deadScopeCount);
-
-    const targets = new Set();
-    for (const [uid, marker] of Object.entries(markerCache || {})){
-      if (!marker || uid === state.userId) continue;
-      const rid = markerRoomId(marker);
-      if (!rid) continue;
-
-      if (attackRooms.has(rid)){
-        if (isAttackTargetProtected(uid)) continue;
-        targets.add(uid);
-      }
-    }
-    return targets;
+    return attackRangeTargetUidsFor(state.userId);
   }
 
   function randomPointInRoom(roomId, padding = 12){
@@ -8891,6 +8947,7 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        drawnTypes: { green:false, white:false, black:false },
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
