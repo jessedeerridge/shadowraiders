@@ -1364,6 +1364,14 @@
     opacity:.45;
     cursor:pointer;
   }
+  .chip16.godwin-revive-pulse{
+    animation:godwinRevivePulse 1s ease-in-out infinite;
+    transform-origin:center center;
+  }
+  @keyframes godwinRevivePulse{
+    0%, 100%{ transform:scale(1); }
+    50%{ transform:scale(1.26); }
+  }
   .zoom-close{
     position:fixed;
     right:14px;
@@ -1914,7 +1922,7 @@
     if (!isMyTurn()) return false;
     if (!hasRainbowParasolEquip(state.userId)) return false;
     const turn = turnState() || {};
-    if (!turn.moveDone || turn.attackDone) return false;
+    if (!turn.moveDone || !canTakeMoreAttackActions(state.userId, turn)) return false;
     return remainingCount(deckCache?.green) > 0;
   }
   function canDrawTypeNormally(type){
@@ -3461,8 +3469,7 @@
   }
 
   function isMyIdentityRevealed(){
-    const v = equipCache?.[state.userId]?.identity;
-    return !!(v && v.kind === "identity" && v.roleId);
+    return isIdentityRevealed(state.userId);
   }
 
   function isMyRevealedVendetta(){
@@ -3694,9 +3701,13 @@
       at: Date.now()
     });
     if (state.roomCode && isMyTurn()){
-      await update(ref(db, `rooms/${state.roomCode}/turn`), {
-        attackDone: true,
-        attackAt: Date.now()
+      await runTransaction(ref(db, `rooms/${state.roomCode}/turn`), (turn) => {
+        if (!turn) return turn;
+        if (!turn.moveDone) return turn;
+        if (!canTakeMoreAttackActions(state.userId, turn)) return turn;
+        consumeAttackAction(turn, state.userId);
+        turn.updatedAt = Date.now();
+        return turn;
       });
     }
   });
@@ -4008,8 +4019,141 @@
     });
   }
 
+  function godwinUid(){
+    const row = latestPlayers.find(p => safeText(state.hands?.[p.id]?.roleId || "") === "RAI_G3");
+    return safeText(row?.id || "");
+  }
+
+  function godwinReviveCandidates(){
+    const gUid = godwinUid();
+    if (!gUid || !isPlayerEliminated(gUid)) return [];
+    return latestPlayers
+      .filter(p => p.id !== gUid && isPlayerEliminated(p.id))
+      .map(p => p.id);
+  }
+
+  function canUseGodwinRevive(){
+    const gUid = godwinUid();
+    if (!gUid || gUid !== state.userId) return false;
+    if (!!state.room?.godwinRevive?.usedAt) return false;
+    return godwinReviveCandidates().length > 0;
+  }
+
+  function bindGodwinReviveChip(chipEl, uid){
+    if (!chipEl || !uid) return;
+    const player = playerById(uid);
+    chipEl.classList.add("eliminated-clickable");
+    chipEl.title = `${safeText(player?.name || "このプレイヤー")}を復活`;
+    chipEl.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const rect = chipEl.getBoundingClientRect();
+      showRoomActionPopAt(
+        rect.left + rect.width / 2,
+        rect.top,
+        `${safeText(player?.name || "このプレイヤー")}を復活させますか。`,
+        async () => {
+          await revivePlayerByGodwin(uid);
+        }
+      );
+    });
+  }
+
+  async function revivePlayerByGodwin(targetUid){
+    const uid = safeText(targetUid);
+    if (!state.roomCode || !uid) return false;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    const result = await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      if (!!cur.godwinRevive?.usedAt) return cur;
+
+      const gUid = Object.keys(cur.hands || {}).find(id => safeText(cur.hands?.[id]?.roleId || "") === "RAI_G3") || "";
+      if (!gUid || gUid !== state.userId) return cur;
+
+      const roleOf = (pid) => {
+        const rid = safeText(cur.hands?.[pid]?.roleId || "");
+        return rid ? ROLE_BY_ID[rid] : null;
+      };
+      const hpOf = (pid) => Number(roleOf(pid)?.hp || 0);
+      const isOut = (pid) => {
+        const hp = hpOf(pid);
+        if (!hp) return false;
+        return clampDamage(cur.damage?.[pid]) >= hp;
+      };
+
+      if (!isOut(gUid) || uid === gUid || !isOut(uid)) return cur;
+
+      cur.equipment = cur.equipment || {};
+      cur.deckState = cur.deckState || {};
+      const targetEquip = cur.equipment[uid] || {};
+      const returnedWhite = [];
+      const returnedBlack = [];
+      for (const [key, item] of Object.entries(targetEquip)){
+        if (!item || item.kind === "identity") continue;
+        const copies = Math.max(1, Math.floor(Number(item.count ?? item.qty ?? item.quantity ?? 1) || 1));
+        const card = { name: safeText(item.name || ""), effect: safeText(item.effect || "") };
+        const theme = safeText(item.theme || "");
+        for (let i = 0; i < copies; i++){
+          if (theme === "black") returnedBlack.push(card);
+          else returnedWhite.push(card);
+        }
+        delete targetEquip[key];
+      }
+
+      const reshuffleRemaining = (deck, addCards) => {
+        if (!deck || !Array.isArray(deck.order)) return;
+        const idx = Math.max(0, Math.floor(Number(deck.idx || 0)));
+        const used = deck.order.slice(0, idx);
+        const rest = deck.order.slice(idx);
+        deck.order = used.concat(shuffle(rest.concat(addCards)));
+      };
+      reshuffleRemaining(cur.deckState.white, returnedWhite);
+      reshuffleRemaining(cur.deckState.black, returnedBlack);
+      cur.deckState.updatedAt = Date.now();
+
+      cur.damage = cur.damage || {};
+      cur.damage[uid] = clampDamage(7);
+      cur.godwinRevive = {
+        usedAt: Date.now(),
+        by: gUid,
+        targetUid: uid
+      };
+      return cur;
+    });
+    if (!result.committed) return false;
+    await placePlayerMarkerInRoom(uid, 7);
+    return true;
+  }
+
+
   function turnState(){
     return state.room?.turn || null;
+  }
+
+  function isIdentityRevealed(uid){
+    const v = equipCache?.[uid]?.identity;
+    return !!(v && v.kind === "identity" && v.roleId);
+  }
+
+  function maxAttackActionCount(uid = state.userId){
+    const roleId = safeText(state.hands?.[uid]?.roleId || "");
+    if (roleId === "SHA_U3" && isIdentityRevealed(uid)) return 2;
+    return 1;
+  }
+
+  function attackActionCount(turn = turnState()){
+    const c = Number(turn?.attackActionCount || 0);
+    return Number.isFinite(c) ? Math.max(0, c) : 0;
+  }
+
+  function canTakeMoreAttackActions(uid = state.userId, turn = turnState()){
+    return attackActionCount(turn) < maxAttackActionCount(uid);
+  }
+
+  function consumeAttackAction(turn, uid = state.userId){
+    const nextCount = attackActionCount(turn) + 1;
+    turn.attackActionCount = nextCount;
+    turn.attackDone = true;
+    turn.attackAt = Date.now();
   }
 
   function currentTurnPlayerId(){
@@ -4053,7 +4197,8 @@
 
   function canUseAttackDice(){
     if (!isMyTurn()) return false;
-    return !!turnState()?.moveDone && !turnState()?.attackDone;
+    const turn = turnState() || {};
+    return !!turn.moveDone && canTakeMoreAttackActions(state.userId, turn);
   }
 
   function syncRoomAbilityTurnState(){
@@ -4390,7 +4535,7 @@
   function mustAttackWithMasamune(){
     if (!isMyTurn()) return false;
     if (!hasMyEquipmentByName("妖刀マサムネ")) return false;
-    if (!!turnState()?.attackDone) return false;
+    if (!canTakeMoreAttackActions(state.userId, turnState() || {})) return false;
     return highlightedMarkerUids().size > 0;
   }
 
@@ -4560,6 +4705,10 @@
       return;
     }
 
+    const godwinReady = canUseGodwinRevive();
+    const gUid = godwinUid();
+    const godwinAnim = !state.room?.godwinRevive?.usedAt && godwinReviveCandidates().length > 0;
+
     players.forEach((p, idx) => {
       if (idx > 0){
         const arrow = document.createElement("span");
@@ -4577,7 +4726,14 @@
       if (started && p.id === turnPlayerId && !eliminated){
         chip.classList.add("turn-pulse");
       }
-      if (eliminated) bindEliminatedChipRoomUp(chip, p.id);
+      if (eliminated && godwinAnim){
+        chip.classList.add("godwin-revive-pulse");
+      }
+      if (eliminated && godwinReady && p.id !== gUid){
+        bindGodwinReviveChip(chip, p.id);
+      } else if (eliminated) {
+        bindEliminatedChipRoomUp(chip, p.id);
+      }
       chipWrap.appendChild(chip);
 
       const marker = document.createElement("div");
@@ -4809,6 +4965,7 @@
         currentPlayerId: startPlayerId,
         moveDone: false,
         attackDone: false,
+        attackActionCount: 0,
         deckDrawDone: false,
         movedByDiceRoomId: null,
         room3ActionUsed: false,
@@ -4866,6 +5023,7 @@
         currentPlayerId: nextPlayerId,
         moveDone: false,
         attackDone: false,
+        attackActionCount: 0,
         deckDrawDone: false,
         movedByDiceRoomId: null,
         room3ActionUsed: false,
@@ -4940,7 +5098,19 @@
 
       const turn = cur.turn;
       const allowUnlimitedDraw = isTestPlayer();
-      if (!turn.moveDone || turn.attackDone) return cur;
+      const maxActions = (() => {
+        const roleId = safeText(cur.hands?.[state.userId]?.roleId || "");
+        const identity = cur.equipment?.[state.userId]?.identity;
+        const revealed = !!(identity && identity.kind === "identity" && identity.roleId);
+        return (roleId === "SHA_U3" && revealed) ? 2 : 1;
+      })();
+      const usedActions = Math.max(0, Number(turn.attackActionCount || 0));
+      if (!turn.moveDone) return cur;
+      if (viaParasol){
+        if (usedActions >= maxActions) return cur;
+      } else {
+        if (turn.attackDone) return cur;
+      }
       if (!viaParasol && !allowUnlimitedDraw && turn.deckDrawDone) return cur;
 
       const ds = cur.deckState;
@@ -4961,6 +5131,7 @@
       }
 
       if (viaParasol){
+        turn.attackActionCount = usedActions + 1;
         turn.attackDone = true;
         turn.attackAt = Date.now();
       } else if (!allowUnlimitedDraw) {
@@ -8120,6 +8291,7 @@
         currentPlayerId: startPlayerId,
         moveDone: false,
         attackDone: false,
+        attackActionCount: 0,
         deckDrawDone: false,
         movedByDiceRoomId: null,
         room3ActionUsed: false,
