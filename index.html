@@ -5508,8 +5508,9 @@
       }
 
       if (attackDefeatedUids.length){
+        const shouldUseRosaryLoot = !!lastAttackWatch?.hasRosary;
         setTimeout(() => {
-          if (lastAttackWatch?.hasRosary){
+          if (shouldUseRosaryLoot){
             runRosaryAutoLootFlow(attackDefeatedUids).catch(() => {});
           } else {
             createOrMergeAttackLootPending(attackDefeatedUids).catch(() => {});
@@ -6536,6 +6537,7 @@
     const targets = new Set();
     for (const [targetUid, marker] of Object.entries(markerCache || {})){
       if (!marker || targetUid === attackerUid) continue;
+      if (isPlayerEliminated(targetUid)) continue;
       const rid = markerRoomId(marker);
       if (!rid || !attackRooms.has(rid)) continue;
       if (isAttackTargetProtected(targetUid)) continue;
