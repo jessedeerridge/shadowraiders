@@ -1032,6 +1032,11 @@
     transform-origin:center;
     animation:roomChoicePulse 1.2s ease-in-out infinite;
   }
+  .shape.room-choice-pulse,
+  .shape.room-choice-once{
+    stroke:#a855f7;
+    stroke-width:2;
+  }
   @keyframes roomChoicePulse{
     0%,100%{ transform:scale(1); }
     50%{ transform:scale(1.05); }
@@ -1633,8 +1638,8 @@
 <div id="attackResultPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="攻撃結果確認">
   <div id="attackResultRows" class="attack-result-pop-rows"></div>
   <div class="actions">
-    <button class="btn primary" id="btnAttackResultEnd">OK(おわる)</button>
-    <button class="btn ghost" id="btnAttackResultKeep">OK(おわらない)</button>
+    <button class="btn primary" id="btnAttackResultEnd">OKおわる</button>
+    <button class="btn ghost" id="btnAttackResultKeep">OKおわらない</button>
   </div>
 </div>
 
@@ -1938,6 +1943,13 @@
     if (!hasRainbowParasolEquip(state.userId)) return false;
     const turn = turnState() || {};
     if (!turn.moveDone || turn.attackDone) return false;
+    if (highlightedMarkerUids().size <= 0) return false;
+    const roomId = Number(state.currentRoomId || 0);
+    if ([1,2,5,6].includes(roomId)){
+      if (!turn.deckDrawDone) return false;
+    } else if (![3,4,7,10].includes(roomId)) {
+      return false;
+    }
     return remainingCount(deckCache?.green) > 0;
   }
   function canDrawTypeNormally(type){
@@ -2913,7 +2925,7 @@
     greenShareDock.classList.remove("hidden");
   }
 
-  function openGreenShareDock(cardObj){
+  function openGreenShareDock(cardObj, options = {}){
     greenShareCard = cardObj || null;
     if (!greenShareCard || !greenShareDock || !greenShareList){
       greenShareDock?.classList.add("hidden");
@@ -2924,9 +2936,15 @@
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
     const mySeat = currentMySeatIndex();
+    const allowedTargetUids = new Set(
+      Array.isArray(options?.targetUids)
+        ? options.targetUids.map(uid => safeText(uid)).filter(Boolean)
+        : []
+    );
     const players = latestPlayers
       .filter(p => p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat)
       .filter(p => !isPlayerEliminated(p.id))
+      .filter(p => allowedTargetUids.size === 0 || allowedTargetUids.has(p.id))
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
 
     for (const p of players){
@@ -4666,6 +4684,21 @@
     return `もう一度手番を行う(${rest}/${total})`;
   }
 
+  function renderAttackResultActionLabels(){
+    if (btnAttackResultEnd){
+      if (repeatTurnPending()) {
+        const rest = Math.max(0, Number(turnState()?.repeatTurnRemaining || 0));
+        const total = Math.max(0, Number(turnState()?.repeatTurnTotal || 0));
+        btnAttackResultEnd.textContent = `OKおわる${rest}/${total}`;
+      } else {
+        btnAttackResultEnd.textContent = "OKおわる";
+      }
+    }
+    if (btnAttackResultKeep){
+      btnAttackResultKeep.textContent = "OKおわらない";
+    }
+  }
+
   function renderTurnEndButton(){
     syncRoomAbilityTurnState();
     if (!turnEndWrap) return;
@@ -4674,6 +4707,7 @@
     if (btnEndTurn){
       btnEndTurn.textContent = repeatTurnPending() ? repeatTurnLabel() : "手番を終わる";
     }
+    renderAttackResultActionLabels();
     if (!visible) hideEndTurnConfirm();
   }
 
@@ -4862,6 +4896,7 @@
       attackResultRows.appendChild(row);
     }
     attackResultPop.classList.remove("hidden");
+    renderAttackResultActionLabels();
   }
 
   async function addResolvedDamageToPlayers(rows = []){
@@ -5424,7 +5459,8 @@
       await applyImmediateDeckCardEffect(drawn);
     } else if (drawn && type === "green"){
       openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false, showCloseButton:false });
-      openGreenShareDock(drawn);
+      const parasolTargetUids = viaParasol ? [...highlightedMarkerUids()] : [];
+      openGreenShareDock(drawn, { targetUids: parasolTargetUids });
     }
 
     scheduleDeckRebuildIfEmpty(type).catch(() => {});
@@ -5469,6 +5505,7 @@
   }
 
   async function scheduleDeckRebuildIfEmpty(type){
+    return;
     if (!state.roomCode || !["green","white","black"].includes(type)) return;
     if (deckRebuildTimers[type]) return;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
@@ -6294,8 +6331,8 @@
   async function enableRepeatTurnOnce(){
     if (!state.roomCode || !isMyTurn()) return;
     await update(ref(db, `rooms/${state.roomCode}/turn`), {
-      repeatTurnRemaining: 1,
-      repeatTurnTotal: 1,
+      repeatTurnRemaining: 2,
+      repeatTurnTotal: 2,
       updatedAt: Date.now()
     });
   }
