@@ -3038,18 +3038,24 @@
       }
       if (!entry?.card) return;
       openZoomFromDeckCard(entry.card, "green", { closeOnBackdrop:false, showCloseButton:false });
-      openGreenShareDock(entry.card);
-      if (phase === "waiting" || phase === "confirm"){
-        pendingGreenRequestId = safeText(entry.requestId || "");
-        renderGreenWaitingSelection(safeText(entry.toUid || ""), safeText(entry.toName || ""), safeText(entry.toInitial || ""), safeText(entry.toColor || ""));
-        if (phase === "confirm"){
-          setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(entry.answerLabel || "") });
-          greenShareActions?.classList.remove("hidden");
-        } else {
-          setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
-          greenShareActions?.classList.add("hidden");
-          syncGreenResponseForPendingRequest(pendingGreenRequestId).catch(() => {});
-        }
+      greenShareCard = entry.card;
+      if (phase === "selecting"){
+        openGreenShareDock(entry.card);
+        return;
+      }
+
+      if (!greenShareDock || !greenShareList) return;
+      greenShareDock.classList.remove("hidden");
+      greenShareActions?.classList.add("hidden");
+      pendingGreenRequestId = safeText(entry.requestId || "");
+      renderGreenWaitingSelection(safeText(entry.toUid || ""), safeText(entry.toName || ""), safeText(entry.toInitial || ""), safeText(entry.toColor || ""));
+      if (phase === "confirm"){
+        setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(entry.answerLabel || "") });
+        greenShareActions?.classList.remove("hidden");
+      } else {
+        setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
+        greenShareActions?.classList.add("hidden");
+        syncGreenResponseForPendingRequest(pendingGreenRequestId).catch(() => {});
       }
     } finally {
       greenSessionRestoring = false;
