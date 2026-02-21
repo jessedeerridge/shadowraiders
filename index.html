@@ -8019,7 +8019,9 @@
 
       if (!data){
         pendingGreenSessionEntry = null;
-        if (pendingGreenAnswerMsg || pendingGreenRequestId || (greenShareCard && !greenShareDock?.classList.contains("hidden"))){
+        const pendingRequestId = safeText(pendingGreenRequestId || pendingGreenAnswerMsg?.requestId || "");
+        const hasVisibleReveal = !!(pendingRequestId && greenRevealByRequestId[pendingRequestId]?.roleId);
+        if (!hasVisibleReveal && (pendingGreenAnswerMsg || pendingGreenRequestId || (greenShareCard && !greenShareDock?.classList.contains("hidden")))){
           hideGreenShareDock();
           closeZoom();
         }
