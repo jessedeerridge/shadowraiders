@@ -1335,6 +1335,12 @@
     will-change:transform;
     transition:transform .35s ease;
   }
+  .zoom-stage.zoom-stage-multi{
+    width:min(96vw, 1100px);
+    height:auto;
+    transform:none;
+    transition:none;
+  }
   .zoom-backdrop.green-reveal-active .zoom-stage{
     transform:translateX(-90px) scale(var(--zoom, 4));
   }
@@ -3231,8 +3237,10 @@
     closeZoom();
   });
 
-  function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true, closeOnAnyClick=false } = {}){
+  function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true, closeOnAnyClick=false, stageClass="" } = {}){
     zoomStage.innerHTML = "";
+    zoomStage.classList.remove("zoom-stage-multi");
+    if (stageClass) zoomStage.classList.add(stageClass);
     hideGreenRevealPanel();
     zoomCloseOnBackdrop = !!closeOnBackdrop;
     zoomCloseOnAnyClick = !!closeOnAnyClick;
@@ -3318,7 +3326,7 @@
       row.appendChild(cell);
     }
 
-    openZoomContent(row, { closeOnBackdrop:false, showCloseButton:false });
+    openZoomContent(row, { closeOnBackdrop:false, showCloseButton:false, stageClass:"zoom-stage-multi" });
     setTimeout(() => {
       if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
     }, 2000);
