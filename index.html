@@ -8280,17 +8280,25 @@
     state.spectating = true;
   }
 
-  function replaceUidInGreenPayload(value, fromUid, toUid){
-    const prev = safeText(fromUid || "");
-    const next = safeText(toUid || "");
-    if (!prev || !next || prev === next) return value;
-    if (typeof value === "string") return (safeText(value) === prev) ? next : value;
-    if (Array.isArray(value)) return value.map(v => replaceUidInGreenPayload(v, prev, next));
-    if (!value || typeof value !== "object") return value;
+  function migrateGreenUidRefs(value, previousPlayerId, nextPlayerId, parentKey = ""){
+    const prevUid = safeText(previousPlayerId || "");
+    const nextUid = safeText(nextPlayerId || "");
+    if (!prevUid || !nextUid || prevUid === nextUid) return value;
+
+    const uidRefKeys = new Set(["uid", "from", "to", "toUid", "responderId", "playerId"]);
+    if (Array.isArray(value)){
+      return value.map(v => migrateGreenUidRefs(v, prevUid, nextUid, ""));
+    }
+    if (!value || typeof value !== "object"){
+      if (typeof value === "string" && uidRefKeys.has(parentKey) && safeText(value) === prevUid){
+        return nextUid;
+      }
+      return value;
+    }
 
     const out = {};
     for (const [k, v] of Object.entries(value)){
-      out[k] = replaceUidInGreenPayload(v, prev, next);
+      out[k] = migrateGreenUidRefs(v, prevUid, nextUid, k);
     }
     return out;
   }
@@ -8298,45 +8306,45 @@
   function migrateGreenStateForSeatSteal(roomData, previousPlayerId, nextPlayerId, updates){
     const prevUid = safeText(previousPlayerId || "");
     const nextUid = safeText(nextPlayerId || "");
-    if (!prevUid || !nextUid || prevUid === nextUid) return { previousGreenSession:null };
-
-    const moveUidKeyedMap = (path) => {
-      const src = roomData?.[path] || {};
-      if (Object.prototype.hasOwnProperty.call(src, prevUid)){
-        const moved = replaceUidInGreenPayload(src[prevUid], prevUid, nextUid);
-        updates[`${path}/${nextUid}`] = moved;
-        updates[`${path}/${prevUid}`] = null;
-      }
-      for (const [key, entry] of Object.entries(src)){
-        if (safeText(key || "") === prevUid) continue;
-        const migrated = replaceUidInGreenPayload(entry, prevUid, nextUid);
-        if (JSON.stringify(migrated) !== JSON.stringify(entry)){
-          updates[`${path}/${key}`] = migrated;
-        }
-      }
-    };
-
-    moveUidKeyedMap("greenInbox");
-    moveUidKeyedMap("greenResponses");
-    moveUidKeyedMap("greenCloseSignals");
-    moveUidKeyedMap("greenSessions");
-
-    const moveRequestKeyedMap = (path) => {
-      const src = roomData?.[path] || {};
-      for (const [key, entry] of Object.entries(src)){
-        const migrated = replaceUidInGreenPayload(entry, prevUid, nextUid);
-        if (JSON.stringify(migrated) !== JSON.stringify(entry)){
-          updates[`${path}/${key}`] = migrated;
-        }
-      }
-    };
-
-    moveRequestKeyedMap("greenReplyBubbles");
-    moveRequestKeyedMap("greenRequests");
-    moveRequestKeyedMap("greenReveals");
-
     const previousGreenSession = roomData?.greenSessions?.[prevUid] || null;
-    return { previousGreenSession };
+    if (!prevUid || !nextUid || prevUid === nextUid) return { previousGreenSession };
+
+    const rebuildUidKeyedMap = (path) => {
+      const src = roomData?.[path] || {};
+      const nextMap = {};
+
+      for (const [key, entry] of Object.entries(src)){
+        const uidKey = safeText(key || "");
+        if (uidKey === prevUid) continue;
+        nextMap[uidKey] = migrateGreenUidRefs(entry, prevUid, nextUid);
+      }
+
+      if (Object.prototype.hasOwnProperty.call(src, prevUid)){
+        nextMap[nextUid] = migrateGreenUidRefs(src[prevUid], prevUid, nextUid);
+      }
+
+      updates[path] = nextMap;
+    };
+
+    rebuildUidKeyedMap("greenInbox");
+    rebuildUidKeyedMap("greenResponses");
+    rebuildUidKeyedMap("greenCloseSignals");
+    rebuildUidKeyedMap("greenSessions");
+
+    const rebuildRequestKeyedMap = (path) => {
+      const src = roomData?.[path] || {};
+      const nextMap = {};
+      for (const [key, entry] of Object.entries(src)){
+        nextMap[key] = migrateGreenUidRefs(entry, prevUid, nextUid);
+      }
+      updates[path] = nextMap;
+    };
+
+    rebuildRequestKeyedMap("greenReplyBubbles");
+    rebuildRequestKeyedMap("greenRequests");
+    rebuildRequestKeyedMap("greenReveals");
+
+    return { previousGreenSession: migrateGreenUidRefs(previousGreenSession, prevUid, nextUid) };
   }
 
   async function stealSeatStarted(seatIndex, previousPlayerId){
