@@ -7927,7 +7927,14 @@
         } else {
           roleCard.addEventListener('click', (e) => {
             e.stopPropagation();
+            const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
             openZoomFromCard(roleCard, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+            if (action){
+              setZoomPassthrough(false);
+              zoomDismissHandler = async () => {
+                restorePendingEquipSelection(action);
+              };
+            }
           });
         }
         cardWrap.appendChild(roleCard);
@@ -7951,7 +7958,14 @@
         card.style.cursor = 'pointer';
         card.addEventListener('click', (e) => {
           e.stopPropagation();
+          const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
           openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+          if (action){
+            setZoomPassthrough(false);
+            zoomDismissHandler = async () => {
+              restorePendingEquipSelection(action);
+            };
+          }
         });
         grid.appendChild(card);
       });
@@ -7989,6 +8003,27 @@
     if (!equipExpandBody || !equipBody) return;
     equipExpandBody.innerHTML = equipBody.innerHTML;
   }
+  function findEquipBodyCardFromDataset(cardEl){
+    if (!cardEl || !equipBody) return null;
+    const ownerUid = safeText(cardEl.dataset.ownerUid || "");
+    const sourceKey = safeText(cardEl.dataset.sourceKey || "");
+    const roleId = safeText(cardEl.dataset.roleId || "");
+    if (ownerUid && sourceKey){
+      return equipBody.querySelector(`.card72.wb-front[data-owner-uid="${ownerUid}"][data-source-key="${sourceKey}"], .id72[data-owner-uid="${ownerUid}"][data-source-key="${sourceKey}"]`);
+    }
+    if (ownerUid && roleId){
+      return equipBody.querySelector(`.id72[data-owner-uid="${ownerUid}"][data-role-id="${roleId}"]`);
+    }
+    return null;
+  }
+  function openEquipSelectionTempZoom(cardEl, action){
+    if (!cardEl || !action) return;
+    openZoomFromCard(cardEl, { closeOnBackdrop:true, showCloseButton:false });
+    setZoomPassthrough(false);
+    zoomDismissHandler = async () => {
+      restorePendingEquipSelection(action);
+    };
+  }
   function openEquipExpand(){
     if (!equipDock?.classList.contains('visible')) return;
     renderEquipExpandBody();
@@ -7996,6 +8031,9 @@
   }
   function closeEquipExpand(){
     equipExpandBackdrop?.classList.add('hidden');
+    if (isEquipSelectionLockActive() && zoomBackdrop?.classList.contains('hidden')){
+      restorePendingEquipSelection();
+    }
   }
   function toggleRoomGuideOverlay(){
     roomGuideVisible = !roomGuideVisible;
@@ -8015,6 +8053,38 @@
   });
   equipExpandBackdrop?.addEventListener('click', (e) => {
     if (!equipExpandBackdrop.classList.contains('hidden') && !e.target.closest('.equip-expand-pop')) closeEquipExpand();
+  });
+  equipExpandBody?.addEventListener('click', (e) => {
+    const card = e.target.closest('.card72.wb-front, .id72');
+    if (!card) return;
+    e.stopPropagation();
+
+    const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
+    const ownerUid = safeText(card.dataset.ownerUid || "");
+    const sourceKey = safeText(card.dataset.sourceKey || "");
+
+    if (action?.type === 'oliver_target' && (!card.classList.contains('equip-steal-pulse') || !ownerUid || ownerUid === state.userId || !sourceKey)){
+      closeEquipExpand();
+      openEquipSelectionTempZoom(card, action);
+      return;
+    }
+    if (action?.type === 'banana_give' && (ownerUid !== state.userId || !sourceKey)){
+      closeEquipExpand();
+      openEquipSelectionTempZoom(card, action);
+      return;
+    }
+
+    const linked = findEquipBodyCardFromDataset(card);
+    closeEquipExpand();
+    if (linked){
+      linked.click();
+      return;
+    }
+    if (action){
+      openEquipSelectionTempZoom(card, action);
+      return;
+    }
+    openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
   });
 
   const SEAT_COLORS = [
@@ -8861,14 +8931,8 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
-        const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
+        if (isEquipSelectionLockActive()) return;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
-        if (action){
-          setZoomPassthrough(false);
-          zoomDismissHandler = async () => {
-            restorePendingEquipSelection(action);
-          };
-        }
       });
       myRoleCard.appendChild(face);
     } else {
@@ -8880,14 +8944,8 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
-        const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
+        if (isEquipSelectionLockActive()) return;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
-        if (action){
-          setZoomPassthrough(false);
-          zoomDismissHandler = async () => {
-            restorePendingEquipSelection(action);
-          };
-        }
       });
 
       myRoleCard.appendChild(back);
