@@ -2138,6 +2138,97 @@
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+  let uiSelectionRestored = false;
+
+  const uiSelectionKey = (room)=>`bbUiSelection_${room}_${state.userId}`;
+  function saveUiSelectionState(){
+    if (!state.roomCode || !state.userId) return;
+    let payload = null;
+
+    if (greenShareDock && !greenShareDock.classList.contains("hidden")){
+      if (pendingGreenAnswerMsg?.card){
+        payload = {
+          mode: "green_answer",
+          requestId: safeText(pendingGreenAnswerMsg.requestId || ""),
+          from: safeText(pendingGreenAnswerMsg.from || "")
+        };
+      } else if (greenShareCard){
+        payload = {
+          mode: "green_send",
+          card: greenShareCard
+        };
+      }
+    } else if (revealPop && !revealPop.classList.contains("hidden")){
+      payload = {
+        mode: "reveal",
+        action: safeText(pendingRevealAction || ""),
+        messageHtml: safeText(revealMsg?.innerHTML || ""),
+        noLabel: safeText(btnRevealNo?.textContent || "いいえ"),
+        hideYes: !!btnRevealYes?.classList.contains("hidden")
+      };
+    } else if (attackPop && !attackPop.classList.contains("hidden") && pendingAttackTargetUid){
+      payload = {
+        mode: "attack",
+        targetUid: safeText(pendingAttackTargetUid || "")
+      };
+    }
+
+    const key = uiSelectionKey(state.roomCode);
+    if (!payload){
+      sessionStorage.removeItem(key);
+      return;
+    }
+    payload.savedAt = Date.now();
+    sessionStorage.setItem(key, JSON.stringify(payload));
+  }
+
+  function restoreUiSelectionState(){
+    if (uiSelectionRestored || !state.roomCode || !state.userId) return;
+    const raw = sessionStorage.getItem(uiSelectionKey(state.roomCode));
+    if (!raw) return;
+
+    let data = null;
+    try { data = JSON.parse(raw); } catch { data = null; }
+    if (!data?.mode) return;
+
+    if (data.mode === "green_send" && data.card){
+      openZoomFromDeckCard(data.card, "green", { closeOnBackdrop:false, showCloseButton:false });
+      openGreenShareDock(data.card);
+      uiSelectionRestored = true;
+      return;
+    }
+
+    if (data.mode === "green_answer"){
+      const msg = state.room?.greenInbox?.[state.userId] || null;
+      const msgRequestId = safeText(msg?.requestId || "");
+      if (msg?.card && msgRequestId && msgRequestId === safeText(data.requestId || "")){
+        openZoomFromDeckCard(msg.card, "green", { closeOnBackdrop:false, showCloseButton:false });
+        openGreenAnswerDock(msg);
+        uiSelectionRestored = true;
+      }
+      return;
+    }
+
+    if (data.mode === "reveal"){
+      showRevealPopAt(null, {
+        mode: data.hideYes ? "notice" : "confirm",
+        messageHtml: safeText(data.messageHtml || ""),
+        action: safeText(data.action || "")
+      });
+      if (btnRevealNo) btnRevealNo.textContent = safeText(data.noLabel || (data.hideYes ? "OK" : "いいえ"));
+      uiSelectionRestored = true;
+      return;
+    }
+
+    if (data.mode === "attack"){
+      const uid = safeText(data.targetUid || "");
+      const p = latestPlayers.find(v => v.id === uid);
+      if (!uid || !p) return;
+      pendingAttackTargetUid = uid;
+      showAttackPopAt(window.innerWidth / 2, window.innerHeight / 2, p.name || "このプレイヤー");
+      uiSelectionRestored = true;
+    }
+  }
 
   function turnRoomActionState(){
     const t = turnState() || {};
@@ -2233,6 +2324,7 @@
     revealPop.classList.remove("hidden");
     if (!anchorEl){
       placeFloatingPop(revealPop, window.innerWidth / 2, window.innerHeight / 2);
+      saveUiSelectionState();
       return;
     }
     const pad = 10;
@@ -2252,10 +2344,12 @@
     top = Math.max(pad, Math.min(top, vh - pad - popRect.height));
     revealPop.style.left = `${x}px`;
     revealPop.style.top = `${top}px`;
+    saveUiSelectionState();
   }
   function hideRevealPop(){
     revealPop.classList.add("hidden");
     pendingRevealAction = "";
+    saveUiSelectionState();
   }
 
   function eliminatedPlayerCount(){
@@ -2303,10 +2397,12 @@
     }
     attackPop.classList.remove("hidden");
     placeFloatingPop(attackPop, clientX, clientY);
+    saveUiSelectionState();
   }
   function hideAttackPop(){
     pendingAttackTargetUid = "";
     attackPop?.classList.add("hidden");
+    saveUiSelectionState();
   }
 
   function showTurnHint(message){
@@ -2870,11 +2966,13 @@
           setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
           greenShareActions?.classList.add("hidden");
         }
+        saveUiSelectionState();
       });
 
       greenShareList.appendChild(btn);
     }
     greenShareDock.classList.remove("hidden");
+    saveUiSelectionState();
   }
 
   function openGreenAnswerDock(msg){
@@ -2899,6 +2997,7 @@
         await sendGreenResponse(msg, opt, "私の正体です。");
         await applyGreenAnswerEffect(msg, opt);
       })();
+      saveUiSelectionState();
       return;
     }
 
@@ -2934,6 +3033,7 @@
       greenShareList.appendChild(btn);
     }
     greenShareDock.classList.remove("hidden");
+    saveUiSelectionState();
   }
 
   function hideGreenShareDock(){
@@ -2947,6 +3047,7 @@
     greenShareDock?.classList.add("hidden");
     cardPlayerSelectActive = false;
     renderTurnEndButton();
+    saveUiSelectionState();
   }
 
   async function clearPendingGreenBubble(){
@@ -7625,6 +7726,7 @@
       renderMarkers();
       updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
+      restoreUiSelectionState();
     });
   }
 
@@ -7771,6 +7873,7 @@
       renderHpBoard();
       renderPositionLine();
       renderLastAttackToMeHeader();
+      restoreUiSelectionState();
     });
   }
 
@@ -8374,6 +8477,7 @@
     state.roomCode = inputCode.value.trim() || generateRoomCode();
     state.spectating = false;
     state.currentRoomId = 0;
+    uiSelectionRestored = false;
 
     await set(ref(db, `rooms/${state.roomCode}/users/${state.userId}`), {
       name: state.userName,
@@ -8437,6 +8541,7 @@
     updateCardInteractivity();
     renderEquipmentDock();
     renderHpBoard();
+    restoreUiSelectionState();
 
     requestAnimationFrame(() => {
       updateEquipDockTop();
