@@ -2195,6 +2195,7 @@
     updateTurnRoomActionState({ room3ActionUsed:true });
     hideRoomActionPop();
     hideAttackResultPop();
+    clearAttackResultDice();
     pendingAttackResolution = null;
     attackTurnEndChoicePending = false;
     showTurnHint("");
@@ -4590,6 +4591,7 @@
     attackTurnEndChoicePending = false;
     renderTurnEndButton();
     hideAttackResultPop();
+    clearAttackResultDice();
     if (!pending || pending.applied) return;
     pending.applied = true;
     await addResolvedDamageToPlayers(pending.rows || []);
@@ -6355,8 +6357,6 @@
     const launchDelayMs = 30;
     const moveDurationMs = 950;
     const settleBufferMs = 80;
-    const damageDelayAfterStopMs = 3000;
-    const hideAttackDiceAfterDamageMs = 1000;
 
     const moveTimer = setTimeout(() => {
       if (!d4OnlyMode){
@@ -6391,41 +6391,33 @@
       }
       d4Wrap.classList.add('attack-result-pin');
 
-      const damageTimer = setTimeout(async () => {
+      Promise.resolve().then(async () => {
         const attackSucceeded = didAttackRollSucceed(finalD6, finalD4, { masamuneMode, vendettaMode });
         setAttackRollResultLabel(attackSucceeded);
-        try {
-          if (!applyDamage) return;
-          const revealBoost = d4OnlyMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
-          const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, vendettaMode, excaliburRevealBoost: revealBoost });
-          const gatlingTargets = Array.isArray(options.gatlingTargetUids)
-            ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
-            : [];
-          const targetUids = (gatlingTargets.length > 0) ? gatlingTargets : [targetUid];
-          const resolvedRows = targetUids.map(uid => ({
-            uid,
-            damage: (attackSucceeded && damage > 0)
-              ? applyIncomingDamageModifiers(uid, damage, { source:"attack" })
-              : 0
-          }));
-          const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
-          pendingAttackResolution = { rows: resolvedRows, applied:false };
-          showAttackResultPop(resolvedRows);
-          if (dealtDamage && isMyRole("SHA_V2")){
-            if (isMyIdentityRevealed()){
-              scheduleVampireHeal();
-            } else {
-              vampireHiddenAttackSuccess = true;
-            }
+        if (!applyDamage) return;
+        const revealBoost = d4OnlyMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
+        const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, vendettaMode, excaliburRevealBoost: revealBoost });
+        const gatlingTargets = Array.isArray(options.gatlingTargetUids)
+          ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
+          : [];
+        const targetUids = (gatlingTargets.length > 0) ? gatlingTargets : [targetUid];
+        const resolvedRows = targetUids.map(uid => ({
+          uid,
+          damage: (attackSucceeded && damage > 0)
+            ? applyIncomingDamageModifiers(uid, damage, { source:"attack" })
+            : 0
+        }));
+        const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
+        pendingAttackResolution = { rows: resolvedRows, applied:false };
+        showAttackResultPop(resolvedRows);
+        if (dealtDamage && isMyRole("SHA_V2")){
+          if (isMyIdentityRevealed()){
+            scheduleVampireHeal();
+          } else {
+            vampireHiddenAttackSuccess = true;
           }
-        } finally {
-          const hideDiceTimer = setTimeout(() => {
-            clearAttackResultDice();
-          }, hideAttackDiceAfterDamageMs);
-          diceRollTimers.push(hideDiceTimer);
         }
-      }, damageDelayAfterStopMs);
-      diceRollTimers.push(damageTimer);
+      });
     }, stopDelayMs);
     diceRollTimers.push(stopTimer);
   }
@@ -8325,6 +8317,7 @@
     await advanceTurnToNextPlayer();
     hideAttackPop();
     hideAttackResultPop();
+    clearAttackResultDice();
     hideEndTurnConfirm();
     renderTurnEndButton();
   }
