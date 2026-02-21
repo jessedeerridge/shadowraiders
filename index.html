@@ -4055,6 +4055,7 @@
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードをわたしますか。", async () => {
         pendingEquipAction = null;
+        renderTurnEndButton();
         zoomDismissHandler = null;
         const ok = await moveEquipmentCardBetweenPlayers(action.fromUid, action.toUid, sourceKey);
         if (ok){
@@ -4106,6 +4107,7 @@
         onSelect: async (uid) => {
           const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
           pendingEquipAction = null;
+          renderTurnEndButton();
           greenShareDock?.classList.add("hidden");
           const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
           if (ok){
@@ -4135,12 +4137,15 @@
       const cardObj = pendingEquipAction?.cardObj || null;
       pendingEquipAction = { type:"oliver_confirm", ownerUid, sourceKey, cardObj };
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
+      renderTurnEndButton();
       zoomDismissHandler = async () => {
         restoreOliverZoomSelection();
       };
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "これを奪いますか。", async () => {
         const action = pendingEquipAction;
         pendingEquipAction = null;
+        renderTurnEndButton();
         zoomDismissHandler = null;
         const ok = await stealEquipmentFromPlayer(action.ownerUid, action.sourceKey);
         if (ok){
@@ -4683,6 +4688,7 @@
     setZoomPassthrough(true);
     pendingEquipAction = { type:"oliver_target", cardObj };
     renderEquipmentDock();
+    renderTurnEndButton();
   }
 
   function isEquipSelectionLockActive(){
@@ -4703,6 +4709,7 @@
       pendingEquipAction = { type:"oliver_target", cardObj };
     }
     renderEquipmentDock();
+    renderTurnEndButton();
   }
 
   function canShowEndTurnButton(){
@@ -6806,6 +6813,7 @@
       setZoomPassthrough(true);
       pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
       renderEquipmentDock();
+      renderTurnEndButton();
       return;
     }
 
@@ -6820,6 +6828,7 @@
       setZoomPassthrough(true);
       pendingEquipAction = { type:"oliver_target", cardObj };
       renderEquipmentDock();
+      renderTurnEndButton();
       return;
     }
 
