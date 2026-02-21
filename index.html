@@ -2610,13 +2610,15 @@
 
   function greenCardConditionMatched(cardObj){
     const text = safeText(cardObj?.effect || cardObj?.text || "");
+    const compactText = text.replace(/[\s　]+/g, "");
     const role = myRoleInfo();
     if (!role) return null;
 
     if (text.includes("A / B / C / E / U")) return ["A","B","C","E","U"].includes(role.initial) && Number(role.hp) <= 11;
     if (text.includes("D / F / G / V / W")) return ["D","F","G","V","W"].includes(role.initial) && Number(role.hp) >= 12;
-    if (text.includes("シチズン か シャドウ")) return role.faction === "シチズン" || role.faction === "シャドウ";
-    if (text.includes("シチズン か レイダー")) return role.faction === "シチズン" || role.faction === "レイダー";
+    if (compactText.includes("シチズンかシャドウ")) return role.faction === "シチズン" || role.faction === "シャドウ";
+    if (compactText.includes("シチズンかレイダー")) return role.faction === "シチズン" || role.faction === "レイダー";
+    if (compactText.includes("レイダーかシャドウ")) return role.faction === "レイダー" || role.faction === "シャドウ";
     if (text.includes("シャドウ？")) return role.faction === "シャドウ";
     if (text.includes("レイダー？")) return role.faction === "レイダー";
     if (text.includes("シチズン？")) return role.faction === "シチズン";
@@ -2795,7 +2797,17 @@
     });
   }
 
-  function renderGreenWaitingSelection(toUid, toName=""){
+  function currentMySeatIndex(){
+    const fromPlayers = latestPlayers.find(p => p.id === state.userId);
+    if (fromPlayers?.seatIndex) return Number(fromPlayers.seatIndex || 0);
+    const tables = state.room?.tables || {};
+    for (const [seatIndex, t] of Object.entries(tables)){
+      if (t && safeText(t.playerId || "") === safeText(state.userId || "")) return Number(seatIndex || 0);
+    }
+    return Number(state.seatedTable || 0);
+  }
+
+  function renderGreenWaitingSelection(toUid, toName="", toInitial="", toColor=""){
     if (!greenShareList) return;
     greenShareList.innerHTML = "";
     const selected = document.createElement("button");
@@ -2803,11 +2815,23 @@
     selected.className = "green-share-btn waiting-selected";
     selected.setAttribute("aria-disabled", "true");
     selected.style.pointerEvents = "none";
-    if (toUid) selected.appendChild(buildChipFor(toUid));
+    const targetPlayer = toUid ? playerById(toUid) : null;
+    if (targetPlayer){
+      selected.appendChild(buildChipFor(toUid));
+    } else if (toUid || toName){
+      const fallback = document.createElement("div");
+      fallback.className = "chip16";
+      const chipColor = safeText(toColor || "") || "#ddd";
+      const chipInitial = firstChar(safeText(toInitial || "") || safeText(toName || ""));
+      fallback.style.background = chipColor;
+      fallback.style.color = textColorFor(chipColor);
+      fallback.textContent = chipInitial || "";
+      fallback.title = safeText(toName || "");
+      selected.appendChild(fallback);
+    }
     const name = document.createElement("span");
     if (toUid){
-      const p = playerById(toUid);
-      name.textContent = p ? nameFromSecondChar(p.name) : safeText(toName || "");
+      name.textContent = targetPlayer ? nameFromSecondChar(targetPlayer.name) : safeText(toName || "");
     } else {
       name.textContent = safeText(toName || "");
     }
@@ -2817,7 +2841,7 @@
 
   function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onlyAlive=false, onSelect=null, nameSuffixForUid=null } = {}){
     if (!greenShareDock || !greenShareList) return;
-    const mySeat = Number(state.seatedTable || 0);
+    const mySeat = currentMySeatIndex();
     const players = latestPlayers
       .filter(p => includeSelf || (p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat))
       .filter(p => !isPlayerEliminated(p.id))
@@ -2870,7 +2894,7 @@
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
-    const mySeat = Number(state.seatedTable || 0);
+    const mySeat = currentMySeatIndex();
     const players = latestPlayers
       .filter(p => p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat)
       .filter(p => !isPlayerEliminated(p.id))
@@ -2912,7 +2936,7 @@
         }
 
         pendingGreenRequestId = requestId;
-        renderGreenWaitingSelection(p.id, p.name);
+        renderGreenWaitingSelection(p.id, p.name, firstChar(p.name || ""), safeText(p.color || ""));
         if (!safeText(greenShareCard?.effect || "").includes("正体カードを見せよ")){
           setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
           greenShareActions?.classList.add("hidden");
@@ -2923,6 +2947,8 @@
           requestId,
           toUid: p.id,
           toName: safeText(p.name || ""),
+          toInitial: firstChar(p.name || ""),
+          toColor: safeText(p.color || ""),
           answerLabel: safeText(greenShareCard?.effect || "").includes("正体カードを見せよ") ? "私の正体です。" : ""
         }).catch(() => {});
       });
@@ -3025,7 +3051,7 @@
       openGreenShareDock(entry.card);
       if (phase === "waiting" || phase === "confirm"){
         pendingGreenRequestId = safeText(entry.requestId || "");
-        renderGreenWaitingSelection(safeText(entry.toUid || ""), safeText(entry.toName || ""));
+        renderGreenWaitingSelection(safeText(entry.toUid || ""), safeText(entry.toName || ""), safeText(entry.toInitial || ""), safeText(entry.toColor || ""));
         if (phase === "confirm"){
           setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(entry.answerLabel || "") });
           greenShareActions?.classList.remove("hidden");
@@ -7840,6 +7866,7 @@
     onValue(handsRef, snap => {
       state.hands = snap.val() || {};
       renderHands();
+      tryRestorePendingGreenSession();
     });
   }
 
@@ -7886,12 +7913,15 @@
         showGreenRevealPanel(reveal.roleId, reveal.responderId);
       }
       greenShareActions?.classList.remove("hidden");
+      const responder = playerById(safeText(msg.to || ""));
       setGreenSessionState({
         phase:"confirm",
         card: greenShareCard,
         requestId: pendingGreenRequestId,
         toUid: safeText(msg.to || ""),
-        toName: safeText(playerById(safeText(msg.to || ""))?.name || ""),
+        toName: safeText(responder?.name || ""),
+        toInitial: firstChar(responder?.name || ""),
+        toColor: safeText(responder?.color || ""),
         answerLabel: safeText(msg.answerLabel || "")
       }).catch(() => {});
     });
@@ -7906,7 +7936,12 @@
       return;
     }
     const needsPlayers = phase !== "answering";
-    if (needsPlayers && latestPlayers.length === 0) return;
+    if (phase === "answering" && !myRoleInfo()) return;
+    if (needsPlayers){
+      if (latestPlayers.length === 0) return;
+      const mySeatReady = latestPlayers.some(p => p.id === state.userId);
+      if (!mySeatReady) return;
+    }
     restoreGreenSessionUI(entry);
     pendingGreenSessionEntry = null;
   }
@@ -7927,7 +7962,15 @@
         return;
       }
 
-      if (!data || !at) return;
+      if (!data){
+        pendingGreenSessionEntry = null;
+        if (pendingGreenAnswerMsg || pendingGreenRequestId || (greenShareCard && !greenShareDock?.classList.contains("hidden"))){
+          hideGreenShareDock();
+          closeZoom();
+        }
+        return;
+      }
+      if (!at) return;
       if (at <= greenSessionSeenAt) return;
       greenSessionSeenAt = at;
       pendingGreenSessionEntry = data;
@@ -7971,8 +8014,10 @@
       pendingGreenCloseSeenAt = at;
 
       const requestId = safeText(msg.requestId || "");
-      const pendingRequest = safeText(pendingGreenAnswerMsg?.requestId || "");
-      if (!requestId || !pendingRequest || requestId !== pendingRequest) return;
+      if (!requestId) return;
+      const pendingAnswerRequest = safeText(pendingGreenAnswerMsg?.requestId || "");
+      const pendingShareRequest = safeText(pendingGreenRequestId || "");
+      if (requestId !== pendingAnswerRequest && requestId !== pendingShareRequest) return;
 
       pendingGreenAnswerMsg = null;
       hideGreenShareDock();
@@ -8295,29 +8340,40 @@
       updates[`guardianAngelShield/${previousPlayerId}`] = null;
     }
 
+    const greenSessions = roomData.greenSessions || {};
+    const previousGreenSession = greenSessions[previousPlayerId] || null;
+
     const greenInbox = roomData.greenInbox || {};
+    for (const [uid, entry] of Object.entries(greenInbox)){
+      if (!entry || safeText(entry.from || "") !== safeText(previousPlayerId || "")) continue;
+      updates[`greenInbox/${uid}/from`] = state.userId;
+    }
     if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId)){
-      const hasMine = Object.prototype.hasOwnProperty.call(greenInbox, state.userId);
-      if (!hasMine) updates[`greenInbox/${state.userId}`] = greenInbox[previousPlayerId];
+      updates[`greenInbox/${state.userId}`] = greenInbox[previousPlayerId];
       updates[`greenInbox/${previousPlayerId}`] = null;
     }
     const greenResponses = roomData.greenResponses || {};
     if (Object.prototype.hasOwnProperty.call(greenResponses, previousPlayerId)){
-      const hasMine = Object.prototype.hasOwnProperty.call(greenResponses, state.userId);
-      if (!hasMine) updates[`greenResponses/${state.userId}`] = greenResponses[previousPlayerId];
+      updates[`greenResponses/${state.userId}`] = greenResponses[previousPlayerId];
       updates[`greenResponses/${previousPlayerId}`] = null;
     }
     const greenCloseSignals = roomData.greenCloseSignals || {};
     if (Object.prototype.hasOwnProperty.call(greenCloseSignals, previousPlayerId)){
-      const hasMine = Object.prototype.hasOwnProperty.call(greenCloseSignals, state.userId);
-      if (!hasMine) updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
+      updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
       updates[`greenCloseSignals/${previousPlayerId}`] = null;
     }
-    const greenSessions = roomData.greenSessions || {};
     if (Object.prototype.hasOwnProperty.call(greenSessions, previousPlayerId)){
-      const hasMine = Object.prototype.hasOwnProperty.call(greenSessions, state.userId);
-      if (!hasMine) updates[`greenSessions/${state.userId}`] = greenSessions[previousPlayerId];
+      updates[`greenSessions/${state.userId}`] = previousGreenSession;
       updates[`greenSessions/${previousPlayerId}`] = null;
+    }
+
+    const shouldForceCloseGreenUi = ["selecting","answering","waiting","confirm"].includes(safeText(previousGreenSession?.phase || ""));
+    if (shouldForceCloseGreenUi){
+      updates[`greenCloseSignals/${previousPlayerId}`] = {
+        requestId: safeText(previousGreenSession?.msg?.requestId || previousGreenSession?.requestId || ""),
+        from: state.userId,
+        at: Date.now()
+      };
     }
 
     const attackResolutionPending = roomData.attackResolutionPending || {};
