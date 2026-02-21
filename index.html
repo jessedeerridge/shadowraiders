@@ -36,7 +36,7 @@
   .dialog-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.35);
     display:flex;align-items:center;justify-content:center;
-    z-index:700;
+    z-index:1100;
   }
   .dialog-backdrop.hidden{display:none;}
   .dialog-box{
@@ -2079,6 +2079,32 @@
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
 
+  function turnRoomActionState(){
+    const t = turnState() || {};
+    return {
+      movedByDiceRoomId: Number(t.movedByDiceRoomId || 0) || null,
+      room3ActionUsed: !!t.room3ActionUsed,
+      room4StealUsed: !!t.room4StealUsed
+    };
+  }
+
+  async function updateTurnRoomActionState(patch = {}){
+    if (!state.roomCode) return;
+    const next = {};
+    if (Object.prototype.hasOwnProperty.call(patch, "movedByDiceRoomId")){
+      const rid = Number(patch.movedByDiceRoomId || 0) || null;
+      next.movedByDiceRoomId = rid;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "room3ActionUsed")){
+      next.room3ActionUsed = !!patch.room3ActionUsed;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "room4StealUsed")){
+      next.room4StealUsed = !!patch.room4StealUsed;
+    }
+    if (!Object.keys(next).length) return;
+    await update(ref(db, `rooms/${state.roomCode}/turn`), next);
+  }
+
   function placeFloatingPop(popEl, clientX, clientY, { yOffset = 0 } = {}){
     if (!popEl) return;
     const pad = 10;
@@ -2106,6 +2132,7 @@
   function skipRoom3ActionAndStartAttack(){
     if (!canUseRoom3Action()) return;
     room3ActionUsed = true;
+    updateTurnRoomActionState({ room3ActionUsed:true });
     hideRoomActionPop();
     showTurnHint("");
     renderMarkers();
@@ -3060,6 +3087,10 @@
         for (const [uid, row] of Object.entries(next)){
           const at = Number(row?.identity?.revealedAt || 0);
           if (!at) continue;
+          if (Number(row?.identity?.inheritedAt || 0) > 0){
+            identityRevealSeenByUid[uid] = at;
+            continue;
+          }
           const seen = Number(identityRevealSeenByUid[uid] || 0);
           if (at <= seen) continue;
           identityRevealSeenByUid[uid] = at;
@@ -3075,6 +3106,13 @@
   function isIdentityEquipItem(v){
     return v && (v.kind === "identity") && !!v.roleId;
   }
+  function isPlayableEquipItem(v){
+    if (!v || typeof v !== "object") return false;
+    if (isIdentityEquipItem(v)) return true;
+    const name = safeText(v.name || "").trim();
+    const effect = safeText(v.effect || "").trim();
+    return !!name && !!effect;
+  }
   function equipItemCopies(item){
     if (!item || isIdentityEquipItem(item)) return 1;
     const raw = Number(item.count ?? item.qty ?? item.quantity ?? 1);
@@ -3085,6 +3123,7 @@
     const obj = equipCache?.[uid] || {};
     const expanded = [];
     for (const [key, value] of Object.entries(obj)){
+      if (!isPlayableEquipItem(value)) continue;
       const item = { key, ...(value || {}) };
       const copies = equipItemCopies(item);
       for (let i = 0; i < copies; i++){
@@ -3795,6 +3834,7 @@
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
         room4StealUsed = true;
+        await updateTurnRoomActionState({ room4StealUsed:true });
         const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
         if (ok){
           renderEquipmentDock();
@@ -3966,12 +4006,13 @@
 
   function syncRoomAbilityTurnState(){
     const key = turnCycleKey();
+    const roomActionState = turnRoomActionState();
+    room4StealUsed = roomActionState.room4StealUsed;
+    room3ActionUsed = roomActionState.room3ActionUsed;
+    movedByDiceRoomId = roomActionState.movedByDiceRoomId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
-    room4StealUsed = false;
-    room3ActionUsed = false;
     walpurgisSwapUsed = false;
-    movedByDiceRoomId = null;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
     vampireHealScheduled = false;
@@ -3981,16 +4022,18 @@
 
   function canUseRoom4Steal(){
     if (!isMyTurn() || !canUseAttackDice()) return false;
-    if (room4StealUsed) return false;
-    if (movedByDiceRoomId !== 4) return false;
+    const roomActionState = turnRoomActionState();
+    if (roomActionState.room4StealUsed) return false;
+    if (roomActionState.movedByDiceRoomId !== 4) return false;
     const others = latestPlayers.filter(p => p.id !== state.userId && !isPlayerEliminated(p.id));
     return others.some(p => hasAnyEquipment(p.id));
   }
 
   function canUseRoom3Action(){
     if (!isMyTurn() || !canUseAttackDice()) return false;
-    if (room3ActionUsed) return false;
-    return movedByDiceRoomId === 3;
+    const roomActionState = turnRoomActionState();
+    if (roomActionState.room3ActionUsed) return false;
+    return roomActionState.movedByDiceRoomId === 3;
   }
 
 
@@ -4715,6 +4758,9 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        movedByDiceRoomId: null,
+        room3ActionUsed: false,
+        room4StealUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         updatedAt: Date.now()
@@ -4769,6 +4815,9 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        movedByDiceRoomId: null,
+        room3ActionUsed: false,
+        room4StealUsed: false,
         repeatTurnRemaining: nextRepeatRemaining,
         repeatTurnTotal: nextRepeatTotal,
         updatedAt: Date.now()
@@ -5504,6 +5553,7 @@
     if (!roomId || !state.roomCode || !state.userId) return;
 
     movedByDiceRoomId = roomId;
+    updateTurnRoomActionState({ movedByDiceRoomId:roomId, room3ActionUsed:false, room4StealUsed:false });
 
     let target = null;
     for (let i = 0; i < 120; i++){
@@ -6539,6 +6589,7 @@
         const nm = safeText(p?.name || "このプレイヤー");
         showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
           room3ActionUsed = true;
+          await updateTurnRoomActionState({ room3ActionUsed:true });
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
           await healDamageToPlayer(uid, 1);
@@ -6550,6 +6601,7 @@
           yOffset: -14,
           onNo: async () => {
             room3ActionUsed = true;
+            await updateTurnRoomActionState({ room3ActionUsed:true });
             showTurnHint("");
             await new Promise(resolve => setTimeout(resolve, 1000));
             await addDamageToPlayer(uid, 2);
@@ -6610,6 +6662,7 @@
         const nm = safeText(p?.name || "このプレイヤー");
         showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
           room3ActionUsed = true;
+          await updateTurnRoomActionState({ room3ActionUsed:true });
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
           await healDamageToPlayer(uid, 1);
@@ -6621,6 +6674,7 @@
           yOffset: -14,
           onNo: async () => {
             room3ActionUsed = true;
+            await updateTurnRoomActionState({ room3ActionUsed:true });
             showTurnHint("");
             await new Promise(resolve => setTimeout(resolve, 1000));
             await addDamageToPlayer(uid, 2);
@@ -6704,11 +6758,14 @@
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
       const eliminated = isPlayerEliminated(uid);
       if (eliminated) continue;
+      const player = playerById(uid);
+      const markerColor = safeText(player?.color || "") || String(m.color || "#ddd");
+      const markerInitial = firstChar(player?.name || "") || String(m.initial || "");
       drawMarker({
         uid,
         x, y,
-        color: String(m.color || "#ddd"),
-        initial: String(m.initial || ""),
+        color: markerColor,
+        initial: markerInitial,
         pulse: pulseTargets.has(uid),
         eliminated
       });
@@ -7254,6 +7311,17 @@
       color: nextColor,
       renamedAt: Date.now()
     });
+
+    const markerRef = ref(db, `rooms/${state.roomCode}/markers/${state.userId}`);
+    const markerSnap = await get(markerRef);
+    const marker = markerSnap.val() || null;
+    if (marker){
+      await update(markerRef, {
+        initial: firstChar(nextName || "") || safeText(marker.initial || ""),
+        color: nextColor || safeText(marker.color || "#ddd"),
+        updatedAt: Date.now()
+      });
+    }
   }
   function isSeated(){ return state.seatedTable != null; }
 
@@ -7502,7 +7570,7 @@
         sessionStorage.setItem(seatKey(state.roomCode), String(mySeat.seatIndex));
       } else {
         state.seatedTable = null;
-        if (wasSeated && !isGameStarted()) state.spectating = false;
+        if (wasSeated) state.spectating = false;
         sessionStorage.removeItem(seatKey(state.roomCode));
       }
 
@@ -7669,7 +7737,13 @@
     const markers = roomData.markers || {};
     const prevMarker = previousPlayerId ? markers[previousPlayerId] : null;
     if (prevMarker){
-      updates[`markers/${state.userId}`] = { ...prevMarker, updatedAt: Date.now(), inheritedFrom: previousPlayerId };
+      updates[`markers/${state.userId}`] = {
+        ...prevMarker,
+        color: SEAT_COLORS[seatIndex-1] || null,
+        initial: firstChar(state.userName || "") || safeText(prevMarker.initial || ""),
+        updatedAt: Date.now(),
+        inheritedFrom: previousPlayerId
+      };
       updates[`markers/${previousPlayerId}`] = null;
     }
 
@@ -7720,15 +7794,32 @@
     const markers = roomData.markers || {};
     const prevMarker = markers[previousPlayerId] || null;
     if (prevMarker){
-      updates[`markers/${state.userId}`] = { ...prevMarker, updatedAt: Date.now(), inheritedFrom: previousPlayerId };
+      updates[`markers/${state.userId}`] = {
+        ...prevMarker,
+        color: SEAT_COLORS[seatIndex-1] || null,
+        initial: firstChar(state.userName || "") || safeText(prevMarker.initial || ""),
+        updatedAt: Date.now(),
+        inheritedFrom: previousPlayerId
+      };
       updates[`markers/${previousPlayerId}`] = null;
     }
 
     const equipment = roomData.equipment || {};
     const prevEquipment = equipment[previousPlayerId] || null;
     if (prevEquipment){
-      updates[`equipment/${state.userId}`] = { ...prevEquipment, inheritedAt: Date.now(), inheritedFrom: previousPlayerId };
+      const nextEquipment = JSON.parse(JSON.stringify(prevEquipment));
+      if (nextEquipment.identity && nextEquipment.identity.kind === "identity" && nextEquipment.identity.roleId){
+        nextEquipment.identity.inheritedAt = Date.now();
+        nextEquipment.identity.inheritedFrom = previousPlayerId;
+      }
+      updates[`equipment/${state.userId}`] = nextEquipment;
       updates[`equipment/${previousPlayerId}`] = null;
+    }
+
+    const turn = roomData.turn || null;
+    if (turn && safeText(turn.currentPlayerId || "") === safeText(previousPlayerId || "")) {
+      updates[`turn/currentPlayerId`] = state.userId;
+      updates[`turn/updatedAt`] = Date.now();
     }
 
     const damage = roomData.damage || {};
@@ -7944,6 +8035,9 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        movedByDiceRoomId: null,
+        room3ActionUsed: false,
+        room4StealUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         updatedAt: Date.now()
