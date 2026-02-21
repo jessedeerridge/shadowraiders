@@ -1094,7 +1094,10 @@
   padding:12px;
 }
 .defeat-loot-title{font-weight:1000;font-size:14px;margin:0 0 10px;}
-.defeat-loot-grid{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;}
+.defeat-loot-grid{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;}
+.defeat-loot-player{display:flex;flex-direction:column;gap:8px;align-items:center;}
+.defeat-loot-identity-wrap{position:relative;display:inline-flex;}
+.defeat-loot-identity-wrap .equip-tag{position:absolute;top:4px;left:4px;z-index:2;box-shadow:0 2px 6px rgba(0,0,0,.35);}
 .defeat-loot-empty-card{
   width:72px;height:108px;border:2px solid #111;border-radius:8px;background:#fff;
   display:flex;align-items:center;justify-content:center;text-align:center;font-weight:900;font-size:12px;line-height:1.45;
@@ -3613,15 +3616,17 @@
     const lootState = currentDefeatLootState();
     const targetUids = Array.isArray(lootState?.eliminatedUids) ? lootState.eliminatedUids.map(v => safeText(v)).filter(Boolean) : [];
     const byId = new Map(latestPlayers.map(p => [p.id, p]));
-    const cards = [];
+    const players = [];
     for (const uid of targetUids){
       if (!byId.has(uid) || !isPlayerEliminated(uid)) continue;
       const p = byId.get(uid);
-      for (const item of listEquipForUid(uid)){
-        cards.push({ uid, player:p, item });
-      }
+      const allItems = listEquipForUid(uid);
+      const identity = allItems.find(isIdentityEquipItem) || null;
+      const equips = allItems.filter(it => !isIdentityEquipItem(it));
+      if (equips.length === 0) continue;
+      players.push({ uid, player:p, identity, equips });
     }
-    return cards;
+    return players;
   }
 
   async function updateDefeatLootSelection({ ownerUid='', sourceKey='', noSteal=false } = {}){
@@ -3747,7 +3752,7 @@
   function renderDefeatLootModal(){
     if (!defeatLootBackdrop || !defeatLootGrid) return;
     const lootState = currentDefeatLootState();
-    const cards = defeatLootCandidates();
+    const candidates = defeatLootCandidates();
     const busy = !zoomBackdrop.classList.contains("hidden") || !identityPromptPop.classList.contains("hidden");
     if (!lootState || busy){
       defeatLootBackdrop.classList.add("hidden");
@@ -3755,39 +3760,48 @@
     }
 
     defeatLootGrid.innerHTML = "";
-    for (const entry of cards){
-      const wrap = document.createElement("div");
-      wrap.style.display = "flex";
-      wrap.style.flexDirection = "column";
-      wrap.style.gap = "6px";
-      wrap.style.alignItems = "center";
-      wrap.appendChild(buildEquipTag(entry.player.color || "#ddd", firstChar(entry.player.name)));
-      const cardEl = buildEquipCard(entry.item);
-      cardEl.classList.add("equip-defeat-pulse");
-      cardEl.dataset.ownerUid = entry.uid;
-      cardEl.dataset.sourceKey = safeText(entry.item.sourceKey || "");
-      cardEl.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const ownerUid = safeText(cardEl.dataset.ownerUid || "");
-        const sourceKey = safeText(cardEl.dataset.sourceKey || "");
-        if (!ownerUid || !sourceKey) return;
-        await updateDefeatLootSelection({ ownerUid, sourceKey, noSteal:false });
-        openZoomFromCard(cardEl, { closeOnBackdrop:true, showCloseButton:false });
-        showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
-          const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
-          if (ok){
-            await clearDefeatLootState();
-            closeZoom();
-          }
-        }, { fixedLower:true, closeZoomOnNo:true });
-      });
-      wrap.appendChild(cardEl);
-      defeatLootGrid.appendChild(wrap);
+    for (const entry of candidates){
+      const playerWrap = document.createElement("div");
+      playerWrap.className = "defeat-loot-player";
+
+      if (entry.identity){
+        const identityWrap = document.createElement("div");
+        identityWrap.className = "defeat-loot-identity-wrap";
+        const idCard = buildEquipCard(entry.identity);
+        idCard.classList.remove("equip-defeat-pulse", "equip-steal-pulse");
+        identityWrap.appendChild(idCard);
+        identityWrap.appendChild(buildEquipTag(entry.player.color || "#ddd", firstChar(entry.player.name)));
+        playerWrap.appendChild(identityWrap);
+      }
+
+      for (const it of entry.equips){
+        const cardEl = buildEquipCard(it);
+        cardEl.classList.add("equip-defeat-pulse");
+        cardEl.dataset.ownerUid = entry.uid;
+        cardEl.dataset.sourceKey = safeText(it.sourceKey || "");
+        cardEl.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const ownerUid = safeText(cardEl.dataset.ownerUid || "");
+          const sourceKey = safeText(cardEl.dataset.sourceKey || "");
+          if (!ownerUid || !sourceKey) return;
+          await updateDefeatLootSelection({ ownerUid, sourceKey, noSteal:false });
+          openZoomFromCard(cardEl, { closeOnBackdrop:true, showCloseButton:false });
+          showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
+            const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
+            if (ok){
+              await clearDefeatLootState();
+              closeZoom();
+            }
+          }, { fixedLower:true, closeZoomOnNo:true });
+        });
+        playerWrap.appendChild(cardEl);
+      }
+      defeatLootGrid.appendChild(playerWrap);
     }
 
     const noStealBtn = document.createElement("button");
     noStealBtn.type = "button";
-    noStealBtn.className = "defeat-loot-empty-card equip-defeat-pulse";
+    noStealBtn.className = "defeat-loot-empty-card";
     noStealBtn.textContent = "奪わない";
     noStealBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
