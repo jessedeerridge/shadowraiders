@@ -7888,6 +7888,8 @@
         phase:"confirm",
         card: greenShareCard,
         requestId: pendingGreenRequestId,
+        toUid: safeText(msg.to || ""),
+        toName: safeText(playerById(safeText(msg.to || ""))?.name || ""),
         answerLabel: safeText(msg.answerLabel || "")
       }).catch(() => {});
     });
@@ -8289,22 +8291,26 @@
 
     const greenInbox = roomData.greenInbox || {};
     if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId)){
-      updates[`greenInbox/${state.userId}`] = greenInbox[previousPlayerId];
+      const hasMine = Object.prototype.hasOwnProperty.call(greenInbox, state.userId);
+      if (!hasMine) updates[`greenInbox/${state.userId}`] = greenInbox[previousPlayerId];
       updates[`greenInbox/${previousPlayerId}`] = null;
     }
     const greenResponses = roomData.greenResponses || {};
     if (Object.prototype.hasOwnProperty.call(greenResponses, previousPlayerId)){
-      updates[`greenResponses/${state.userId}`] = greenResponses[previousPlayerId];
+      const hasMine = Object.prototype.hasOwnProperty.call(greenResponses, state.userId);
+      if (!hasMine) updates[`greenResponses/${state.userId}`] = greenResponses[previousPlayerId];
       updates[`greenResponses/${previousPlayerId}`] = null;
     }
     const greenCloseSignals = roomData.greenCloseSignals || {};
     if (Object.prototype.hasOwnProperty.call(greenCloseSignals, previousPlayerId)){
-      updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
+      const hasMine = Object.prototype.hasOwnProperty.call(greenCloseSignals, state.userId);
+      if (!hasMine) updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
       updates[`greenCloseSignals/${previousPlayerId}`] = null;
     }
     const greenSessions = roomData.greenSessions || {};
     if (Object.prototype.hasOwnProperty.call(greenSessions, previousPlayerId)){
-      updates[`greenSessions/${state.userId}`] = greenSessions[previousPlayerId];
+      const hasMine = Object.prototype.hasOwnProperty.call(greenSessions, state.userId);
+      if (!hasMine) updates[`greenSessions/${state.userId}`] = greenSessions[previousPlayerId];
       updates[`greenSessions/${previousPlayerId}`] = null;
     }
 
