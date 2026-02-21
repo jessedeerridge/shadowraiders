@@ -4103,6 +4103,9 @@
     room4StealUsed = roomActionState.room4StealUsed;
     room3ActionUsed = roomActionState.room3ActionUsed;
     movedByDiceRoomId = roomActionState.movedByDiceRoomId;
+    const hasMatchingPending = !!pendingAttackResolution
+      && safeText(pendingAttackResolution.turnKey || "") === key
+      && currentTurnPlayerId() === state.userId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
     walpurgisSwapUsed = false;
@@ -4110,10 +4113,12 @@
     vampireHiddenAttackSuccess = false;
     vampireHealScheduled = false;
     hideRoomActionPop();
-    hideAttackResultPop();
-    pendingAttackResolution = null;
-    attackTurnEndChoicePending = false;
-    cachePendingAttackResolution(null);
+    if (!hasMatchingPending){
+      hideAttackResultPop();
+      pendingAttackResolution = null;
+      attackTurnEndChoicePending = false;
+      cachePendingAttackResolution(null);
+    }
     showTurnHint("");
   }
 
@@ -4547,19 +4552,21 @@
       sessionStorage.removeItem(key);
       return;
     }
-    sessionStorage.setItem(key, JSON.stringify({ rows }));
+    sessionStorage.setItem(key, JSON.stringify({ rows, turnKey: safeText(pending.turnKey || "") }));
   }
 
-  async function upsertPendingAttackResolution(rows = []){
+  async function upsertPendingAttackResolution(rows = [], turnKey = ""){
     const uid = safeText(state.userId || "");
     const roomCode = safeText(state.roomCode || "");
     if (!uid || !roomCode) return;
     const normalizedRows = (rows || [])
       .map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) }))
       .filter(item => item.uid);
+    const normalizedTurnKey = safeText(turnKey || "");
     const payload = normalizedRows.length ? {
       uid,
       rows: normalizedRows,
+      turnKey: normalizedTurnKey,
       at: Date.now()
     } : null;
     await set(ref(db, `rooms/${roomCode}/attackResolutionPending/${uid}`), payload);
@@ -4571,7 +4578,8 @@
     const rows = Array.isArray(mine?.rows)
       ? mine.rows.map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
       : [];
-    const canRestore = !!rows.length && currentTurnPlayerId() === state.userId;
+    const pendingTurnKey = safeText(mine?.turnKey || "");
+    const canRestore = !!rows.length && currentTurnPlayerId() === state.userId && pendingTurnKey === turnCycleKey();
     if (!canRestore){
       pendingAttackResolution = null;
       attackTurnEndChoicePending = false;
@@ -4580,7 +4588,7 @@
       renderTurnEndButton();
       return false;
     }
-    pendingAttackResolution = { rows, applied:false };
+    pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey };
     cachePendingAttackResolution(pendingAttackResolution);
     showAttackResultPop(rows);
     attackTurnEndChoicePending = true;
@@ -4602,11 +4610,12 @@
     const rows = Array.isArray(parsed?.rows)
       ? parsed.rows.map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
       : [];
-    if (!rows.length){
+    const pendingTurnKey = safeText(parsed?.turnKey || "");
+    if (!rows.length || !pendingTurnKey){
       sessionStorage.removeItem(attackResolutionKey(state.roomCode));
       return false;
     }
-    pendingAttackResolution = { rows, applied:false };
+    pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey };
     showAttackResultPop(rows);
     attackTurnEndChoicePending = true;
     renderTurnEndButton();
@@ -4676,7 +4685,7 @@
     pendingAttackResolution = null;
     attackTurnEndChoicePending = false;
     cachePendingAttackResolution(null);
-    await upsertPendingAttackResolution([]);
+    await upsertPendingAttackResolution([], "");
     renderTurnEndButton();
     hideAttackResultPop();
     clearAttackResultDice();
@@ -6509,9 +6518,10 @@
             : 0
         }));
         const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
-        pendingAttackResolution = { rows: resolvedRows, applied:false };
+        const pendingTurnKey = turnCycleKey();
+        pendingAttackResolution = { rows: resolvedRows, applied:false, turnKey: pendingTurnKey };
         cachePendingAttackResolution(pendingAttackResolution);
-        await upsertPendingAttackResolution(resolvedRows);
+        await upsertPendingAttackResolution(resolvedRows, pendingTurnKey);
         showAttackResultPop(resolvedRows);
         if (dealtDamage && isMyRole("SHA_V2")){
           if (isMyIdentityRevealed()){
