@@ -3567,6 +3567,8 @@
 
   let latestPlayers = [];
   let lastAttackWatch = null;
+  let attackExpectedEliminationUids = new Set();
+  let attackExpectedEliminationAt = 0;
   let previousEliminatedMap = {};
   let pendingAttackLoot = null;
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
@@ -5227,6 +5229,21 @@
       .map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) }))
       .filter(item => item.uid && item.damage > 0);
     if (!state.roomCode || !entries.length) return;
+
+    const expected = new Set();
+    for (const item of entries){
+      const roleId = safeText(state.hands?.[item.uid]?.roleId || "");
+      const hp = Number(ROLE_BY_ID?.[roleId]?.hp || 0);
+      if (hp <= 0) continue;
+      const before = clampDamage(damageCache?.[item.uid]);
+      const after = clampDamage(before + item.damage);
+      if (before < hp && after >= hp){
+        expected.add(item.uid);
+      }
+    }
+    attackExpectedEliminationUids = expected;
+    attackExpectedEliminationAt = Date.now();
+
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     await runTransaction(roomRef, (cur) => {
       if (!cur) return cur;
@@ -5409,13 +5426,15 @@
       const watchActive = lastAttackWatch
         && lastAttackWatch.uid === state.userId
         && (Date.now() - Number(lastAttackWatch.at || 0) < 12000);
+      const expectedAttackWindowActive = (Date.now() - Number(attackExpectedEliminationAt || 0) < 12000);
       const attackDefeatedUids = [];
-      if (watchActive){
+      if (watchActive && expectedAttackWindowActive){
         for (const uid of (lastAttackWatch.targetUids || [])){
-          if (!uid) continue;
+          if (!uid || !attackExpectedEliminationUids.has(uid)) continue;
           const becameEliminated = !!eliminatedNow[uid] && !previousEliminatedMap[uid];
           if (!becameEliminated) continue;
           attackDefeatedUids.push(uid);
+          attackExpectedEliminationUids.delete(uid);
         }
       }
 
