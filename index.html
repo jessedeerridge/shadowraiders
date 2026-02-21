@@ -2079,6 +2079,32 @@
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
 
+  function turnRoomActionState(){
+    const t = turnState() || {};
+    return {
+      movedByDiceRoomId: Number(t.movedByDiceRoomId || 0) || null,
+      room3ActionUsed: !!t.room3ActionUsed,
+      room4StealUsed: !!t.room4StealUsed
+    };
+  }
+
+  async function updateTurnRoomActionState(patch = {}){
+    if (!state.roomCode) return;
+    const next = {};
+    if (Object.prototype.hasOwnProperty.call(patch, "movedByDiceRoomId")){
+      const rid = Number(patch.movedByDiceRoomId || 0) || null;
+      next.movedByDiceRoomId = rid;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "room3ActionUsed")){
+      next.room3ActionUsed = !!patch.room3ActionUsed;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "room4StealUsed")){
+      next.room4StealUsed = !!patch.room4StealUsed;
+    }
+    if (!Object.keys(next).length) return;
+    await update(ref(db, `rooms/${state.roomCode}/turn`), next);
+  }
+
   function placeFloatingPop(popEl, clientX, clientY, { yOffset = 0 } = {}){
     if (!popEl) return;
     const pad = 10;
@@ -2106,6 +2132,7 @@
   function skipRoom3ActionAndStartAttack(){
     if (!canUseRoom3Action()) return;
     room3ActionUsed = true;
+    updateTurnRoomActionState({ room3ActionUsed:true });
     hideRoomActionPop();
     showTurnHint("");
     renderMarkers();
@@ -3795,6 +3822,7 @@
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
         room4StealUsed = true;
+        await updateTurnRoomActionState({ room4StealUsed:true });
         const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
         if (ok){
           renderEquipmentDock();
@@ -3966,12 +3994,13 @@
 
   function syncRoomAbilityTurnState(){
     const key = turnCycleKey();
+    const roomActionState = turnRoomActionState();
+    room4StealUsed = roomActionState.room4StealUsed;
+    room3ActionUsed = roomActionState.room3ActionUsed;
+    movedByDiceRoomId = roomActionState.movedByDiceRoomId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
-    room4StealUsed = false;
-    room3ActionUsed = false;
     walpurgisSwapUsed = false;
-    movedByDiceRoomId = null;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
     vampireHealScheduled = false;
@@ -3981,16 +4010,18 @@
 
   function canUseRoom4Steal(){
     if (!isMyTurn() || !canUseAttackDice()) return false;
-    if (room4StealUsed) return false;
-    if (movedByDiceRoomId !== 4) return false;
+    const roomActionState = turnRoomActionState();
+    if (roomActionState.room4StealUsed) return false;
+    if (roomActionState.movedByDiceRoomId !== 4) return false;
     const others = latestPlayers.filter(p => p.id !== state.userId && !isPlayerEliminated(p.id));
     return others.some(p => hasAnyEquipment(p.id));
   }
 
   function canUseRoom3Action(){
     if (!isMyTurn() || !canUseAttackDice()) return false;
-    if (room3ActionUsed) return false;
-    return movedByDiceRoomId === 3;
+    const roomActionState = turnRoomActionState();
+    if (roomActionState.room3ActionUsed) return false;
+    return roomActionState.movedByDiceRoomId === 3;
   }
 
 
@@ -4715,6 +4746,9 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        movedByDiceRoomId: null,
+        room3ActionUsed: false,
+        room4StealUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         updatedAt: Date.now()
@@ -4769,6 +4803,9 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        movedByDiceRoomId: null,
+        room3ActionUsed: false,
+        room4StealUsed: false,
         repeatTurnRemaining: nextRepeatRemaining,
         repeatTurnTotal: nextRepeatTotal,
         updatedAt: Date.now()
@@ -5504,6 +5541,7 @@
     if (!roomId || !state.roomCode || !state.userId) return;
 
     movedByDiceRoomId = roomId;
+    updateTurnRoomActionState({ movedByDiceRoomId:roomId, room3ActionUsed:false, room4StealUsed:false });
 
     let target = null;
     for (let i = 0; i < 120; i++){
@@ -6539,6 +6577,7 @@
         const nm = safeText(p?.name || "このプレイヤー");
         showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
           room3ActionUsed = true;
+          await updateTurnRoomActionState({ room3ActionUsed:true });
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
           await healDamageToPlayer(uid, 1);
@@ -6550,6 +6589,7 @@
           yOffset: -14,
           onNo: async () => {
             room3ActionUsed = true;
+            await updateTurnRoomActionState({ room3ActionUsed:true });
             showTurnHint("");
             await new Promise(resolve => setTimeout(resolve, 1000));
             await addDamageToPlayer(uid, 2);
@@ -6610,6 +6650,7 @@
         const nm = safeText(p?.name || "このプレイヤー");
         showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
           room3ActionUsed = true;
+          await updateTurnRoomActionState({ room3ActionUsed:true });
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
           await healDamageToPlayer(uid, 1);
@@ -6621,6 +6662,7 @@
           yOffset: -14,
           onNo: async () => {
             room3ActionUsed = true;
+            await updateTurnRoomActionState({ room3ActionUsed:true });
             showTurnHint("");
             await new Promise(resolve => setTimeout(resolve, 1000));
             await addDamageToPlayer(uid, 2);
@@ -7731,6 +7773,12 @@
       updates[`equipment/${previousPlayerId}`] = null;
     }
 
+    const turn = roomData.turn || null;
+    if (turn && safeText(turn.currentPlayerId || "") === safeText(previousPlayerId || "")) {
+      updates[`turn/currentPlayerId`] = state.userId;
+      updates[`turn/updatedAt`] = Date.now();
+    }
+
     const damage = roomData.damage || {};
     if (Object.prototype.hasOwnProperty.call(damage, previousPlayerId)){
       updates[`damage/${state.userId}`] = clampDamage(Number(damage[previousPlayerId] || 0));
@@ -7944,6 +7992,9 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        movedByDiceRoomId: null,
+        room3ActionUsed: false,
+        room4StealUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         updatedAt: Date.now()
