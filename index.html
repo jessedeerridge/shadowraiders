@@ -1344,28 +1344,23 @@
   .zoom-identity-owner{
     position:absolute;
     left:50%;
-    top:-22px;
+    top:-24px;
     transform:translateX(-50%);
-    display:flex;
-    align-items:center;
-    gap:6px;
-    background:#fff;
-    border:1px solid rgba(0,0,0,.15);
-    border-radius:999px;
-    padding:4px 8px;
-    font-size:12px;
-    font-weight:700;
-    color:#111;
-    white-space:nowrap;
-    line-height:1;
+    margin:0;
+    pointer-events:none;
+    width:62px;
+    max-width:62px;
+    min-height:20px;
+    gap:4px;
+    padding:2px 5px;
+    font-size:11px;
   }
-  .zoom-identity-owner .equip-tag{
-    width:8px;
-    height:8px;
-    min-width:8px;
-    min-height:8px;
-    font-size:8px;
-    border-width:1px;
+  .zoom-identity-owner .chip16{
+    width:12px;
+    height:12px;
+    min-width:12px;
+    min-height:12px;
+    font-size:9px;
   }
   .eliminated-dim{
     opacity:.7;
@@ -3033,9 +3028,11 @@
       if (owner){
         const chip = buildChipFor(revealerUid);
         const label = document.createElement("div");
-        label.className = "zoom-identity-owner";
+        label.className = "green-share-btn attack-result-pop-name zoom-identity-owner";
         const name = document.createElement("span");
-        name.textContent = nameFromSecondChar(owner.name || "");
+        name.className = "attack-result-pop-name-text";
+        const rest = nameFromSecondChar(owner.name || "");
+        name.textContent = rest || safeText(owner.name || "-");
         label.appendChild(chip);
         label.appendChild(name);
         wrap.appendChild(label);
