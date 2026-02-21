@@ -203,7 +203,7 @@
   .attack-loot-body{padding:12px;overflow:auto;display:flex;flex-direction:column;gap:10px;background:url('gear.jpg') center/cover no-repeat;}
   .attack-loot-row{display:flex;gap:8px;align-items:flex-start;}
   .attack-loot-cards{display:flex;gap:8px;flex-wrap:wrap;}
-  .attack-loot-no-steal{border:2px solid #111 !important;color:#111 !important;background:#fff !important;display:flex;align-items:center;justify-content:center;font-weight:1000;}
+  .attack-loot-no-steal{border:2px solid #111 !important;color:#111 !important;background:#fff !important;display:flex;align-items:center;justify-content:center;font-weight:1000;flex:0 0 auto;}
 
   .help-section{padding:6px 0 10px;}
   .help-section + .help-section{border-top:1px solid rgba(0,0,0,.16);}
@@ -3744,17 +3744,21 @@
     attackLootBody.innerHTML = "";
     const byId = new Map(latestPlayers.map(p => [p.id, p]));
     const selected = payload.selected || null;
+    let lastCardsWrap = null;
 
     for (const uid of payload.defeatedUids){
       const p = byId.get(uid);
       if (!p) continue;
+      const list = listEquipForUid(uid);
+      const hasLootableEquip = list.some(it => !isIdentityEquipItem(it));
+      if (!hasLootableEquip) continue;
+
       const row = document.createElement("div");
       row.className = "attack-loot-row";
       row.appendChild(buildEquipTag(p.color || "#ddd", firstChar(p.name)));
 
       const cardsWrap = document.createElement("div");
       cardsWrap.className = "attack-loot-cards";
-      const list = listEquipForUid(uid);
       for (const it of list){
         const cardEl = buildEquipCard(it);
         cardEl.dataset.ownerUid = uid;
@@ -3772,6 +3776,7 @@
       }
       row.appendChild(cardsWrap);
       attackLootBody.appendChild(row);
+      lastCardsWrap = cardsWrap;
     }
 
     const noStealCard = document.createElement("div");
@@ -3782,7 +3787,17 @@
       noStealCard.classList.remove("equip-defeat-pulse");
       noStealCard.classList.add("equip-steal-pulse");
     }
-    attackLootBody.appendChild(noStealCard);
+    if (lastCardsWrap){
+      lastCardsWrap.appendChild(noStealCard);
+    } else {
+      const row = document.createElement("div");
+      row.className = "attack-loot-row";
+      const cardsWrap = document.createElement("div");
+      cardsWrap.className = "attack-loot-cards";
+      cardsWrap.appendChild(noStealCard);
+      row.appendChild(cardsWrap);
+      attackLootBody.appendChild(row);
+    }
     attackLootBackdrop.classList.remove("hidden");
   }
 
