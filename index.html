@@ -127,7 +127,7 @@
   .help-pop-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.35);
     display:flex;align-items:flex-end;justify-content:center;
-    z-index:2010;
+    z-index:12010;
     padding:16px 16px 64px;
   }
   .help-pop-backdrop.hidden{display:none;}
@@ -148,7 +148,7 @@
   .equip-expand-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.35);
     display:flex;align-items:flex-end;justify-content:center;
-    z-index:2012;
+    z-index:12012;
     padding:16px 16px 64px;
   }
   .equip-expand-backdrop.hidden{display:none;}
@@ -5513,6 +5513,9 @@
         const recycled = collectEliminatedEquipCardsForDeck(cur, type);
         deck.order = shuffle([...base, ...recycled]);
         deck.idx = 0;
+        cur.deckState.reveal = cur.deckState.reveal || { slot3:null, slot5:null };
+        if (type === "white") cur.deckState.reveal.slot3 = null;
+        if (type === "black") cur.deckState.reveal.slot5 = null;
         delete deck.rebuildPendingAt;
         cur.deckState.updatedAt = Date.now();
         return cur;
@@ -8876,6 +8879,7 @@
     await update(roomRef, {
       hands,
       deckState: freshDeckState,
+      guardianAngelShield: null,
       gameStarted: true,
       startedAt: Date.now(),
       playerCountAtStart: n,
@@ -8936,6 +8940,7 @@
       remove(ref(db, `${base}/markers`)),
       remove(ref(db, `${base}/deckState`)),
       remove(ref(db, `${base}/equipment`)),
+      remove(ref(db, `${base}/guardianAngelShield`)),
       remove(ref(db, `${base}/damage`)),
       remove(ref(db, `${base}/positionOrder`)),
       remove(ref(db, `${base}/startPlayerId`)),
