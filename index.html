@@ -2721,6 +2721,7 @@
       answerLabel,
       at: Date.now()
     });
+    await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${state.userId}`)).catch(() => {});
   }
 
   async function applyGreenAnswerEffect(msg, opt){
@@ -8376,101 +8377,87 @@
       updates[`guardianAngelShield/${previousPlayerId}`] = null;
     }
 
-    const greenSessions = roomData.greenSessions || {};
-    const previousGreenSession = greenSessions[previousPlayerId] || null;
+    const migrateGreenStateBySeatSteal = (room, fromUid, toUid, outUpdates) => {
+      const prevUid = safeText(fromUid || "");
+      const nextUid = safeText(toUid || "");
+      if (!prevUid || !nextUid || prevUid === nextUid) return;
 
-    const migrateUidInGreenSession = (entry) => {
-      if (!entry || typeof entry !== "object") return entry;
-      const next = JSON.parse(JSON.stringify(entry));
-      const prevUid = safeText(previousPlayerId || "");
-      const myUid = safeText(state.userId || "");
-      const replaceUid = (uid) => safeText(uid || "") === prevUid ? myUid : safeText(uid || "");
-      if (next.msg && typeof next.msg === "object"){
-        next.msg.from = replaceUid(next.msg.from);
-        next.msg.to = replaceUid(next.msg.to);
-      }
-      if (Object.prototype.hasOwnProperty.call(next, "toUid")) next.toUid = replaceUid(next.toUid);
-      return next;
+      const migratedAt = Date.now();
+      const copy = (v) => JSON.parse(JSON.stringify(v));
+      const deepReplaceUid = (value) => {
+        if (value == null) return value;
+        if (typeof value === "string"){
+          return safeText(value) === prevUid ? nextUid : value;
+        }
+        if (Array.isArray(value)) return value.map(deepReplaceUid);
+        if (typeof value === "object"){
+          const next = {};
+          for (const [k, v] of Object.entries(value)){
+            next[k] = deepReplaceUid(v);
+          }
+          return next;
+        }
+        return value;
+      };
+
+      const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      const touchAt = (entry) => {
+        if (!entry || typeof entry !== "object") return entry;
+        return { ...entry, at: migratedAt };
+      };
+      const answeredRequestIds = new Set(
+        Object.values(room.greenResponses || {})
+          .map((row) => safeText(row?.requestId || ""))
+          .filter(Boolean)
+      );
+
+      const migrateUidNode = (nodeName, shouldTouchAt = false) => {
+        const node = room[nodeName] || {};
+        if (!node || typeof node !== "object") return;
+
+        if (Object.prototype.hasOwnProperty.call(node, prevUid)){
+          const original = node[prevUid];
+          const requestId = safeText(original?.requestId || "");
+          const skipAnsweredInbox = nodeName === "greenInbox" && requestId && answeredRequestIds.has(requestId);
+          if (skipAnsweredInbox){
+            outUpdates[`${nodeName}/${prevUid}`] = null;
+          } else {
+            const migrated = deepReplaceUid(copy(original));
+            outUpdates[`${nodeName}/${nextUid}`] = shouldTouchAt ? touchAt(migrated) : migrated;
+            outUpdates[`${nodeName}/${prevUid}`] = null;
+          }
+        }
+
+        for (const [key, value] of Object.entries(node)){
+          if (value == null || safeText(key || "") === prevUid) continue;
+          const rewritten = deepReplaceUid(copy(value));
+          if (sameJson(rewritten, value)) continue;
+          outUpdates[`${nodeName}/${key}`] = shouldTouchAt ? touchAt(rewritten) : rewritten;
+        }
+      };
+
+      migrateUidNode("greenInbox", true);
+      migrateUidNode("greenResponses", true);
+      migrateUidNode("greenCloseSignals", true);
+      migrateUidNode("greenSessions", true);
+
+      const migrateRequestNode = (nodeName, shouldTouchAt = false) => {
+        const node = room[nodeName] || {};
+        if (!node || typeof node !== "object") return;
+        for (const [rowId, row] of Object.entries(node)){
+          if (!row || typeof row !== "object") continue;
+          const rewritten = deepReplaceUid(copy(row));
+          if (sameJson(rewritten, row)) continue;
+          outUpdates[`${nodeName}/${rowId}`] = shouldTouchAt ? touchAt(rewritten) : rewritten;
+        }
+      };
+
+      migrateRequestNode("greenRequests", true);
+      migrateRequestNode("greenReplyBubbles", true);
+      migrateRequestNode("greenReveals", true);
     };
 
-    const greenInbox = roomData.greenInbox || {};
-    for (const [uid, entry] of Object.entries(greenInbox)){
-      if (!entry || safeText(entry.from || "") !== safeText(previousPlayerId || "")) continue;
-      updates[`greenInbox/${uid}/from`] = state.userId;
-    }
-    if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId) && !previousGreenSession){
-      updates[`greenInbox/${state.userId}`] = greenInbox[previousPlayerId];
-      updates[`greenInbox/${previousPlayerId}`] = null;
-    } else if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId)){
-      updates[`greenInbox/${previousPlayerId}`] = null;
-    }
-    const greenResponses = roomData.greenResponses || {};
-    if (Object.prototype.hasOwnProperty.call(greenResponses, previousPlayerId)){
-      updates[`greenResponses/${state.userId}`] = greenResponses[previousPlayerId];
-      updates[`greenResponses/${previousPlayerId}`] = null;
-    }
-    const greenCloseSignals = roomData.greenCloseSignals || {};
-    if (Object.prototype.hasOwnProperty.call(greenCloseSignals, previousPlayerId)){
-      updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
-      updates[`greenCloseSignals/${previousPlayerId}`] = null;
-    }
-    if (Object.prototype.hasOwnProperty.call(greenSessions, previousPlayerId)){
-      updates[`greenSessions/${state.userId}`] = migrateUidInGreenSession(previousGreenSession);
-      updates[`greenSessions/${previousPlayerId}`] = null;
-    }
-    for (const [uid, entry] of Object.entries(greenSessions)){
-      if (safeText(uid || "") === safeText(previousPlayerId || "")) continue;
-      if (!entry || typeof entry !== "object") continue;
-      const migrated = migrateUidInGreenSession(entry);
-      if (JSON.stringify(migrated) !== JSON.stringify(entry)){
-        updates[`greenSessions/${uid}`] = migrated;
-      }
-    }
-
-    const greenReplyBubbles = roomData.greenReplyBubbles || {};
-    for (const [bubbleId, bubble] of Object.entries(greenReplyBubbles)){
-      if (!bubble || typeof bubble !== "object") continue;
-      const nextBubble = { ...bubble };
-      let changed = false;
-      if (safeText(nextBubble.from || "") === safeText(previousPlayerId || "")){
-        nextBubble.from = state.userId;
-        changed = true;
-      }
-      if (safeText(nextBubble.responderId || "") === safeText(previousPlayerId || "")){
-        nextBubble.responderId = state.userId;
-        changed = true;
-      }
-      if (changed){
-        updates[`greenReplyBubbles/${bubbleId}`] = nextBubble;
-      }
-    }
-
-    const greenRequests = roomData.greenRequests || {};
-    for (const [requestId, req] of Object.entries(greenRequests)){
-      if (!req || typeof req !== "object") continue;
-      let changed = false;
-      const nextReq = { ...req };
-      if (safeText(nextReq.from || "") === previousPlayerId){
-        nextReq.from = state.userId;
-        changed = true;
-      }
-      if (safeText(nextReq.to || "") === previousPlayerId){
-        nextReq.to = state.userId;
-        changed = true;
-      }
-      if (changed){
-        updates[`greenRequests/${requestId}`] = nextReq;
-      }
-    }
-
-    const shouldForceCloseGreenUi = ["selecting","answering","waiting","confirm"].includes(safeText(previousGreenSession?.phase || ""));
-    if (shouldForceCloseGreenUi){
-      updates[`greenCloseSignals/${previousPlayerId}`] = {
-        requestId: safeText(previousGreenSession?.msg?.requestId || previousGreenSession?.requestId || ""),
-        from: state.userId,
-        at: Date.now()
-      };
-    }
+    migrateGreenStateBySeatSteal(roomData, previousPlayerId, state.userId, updates);
 
     const attackResolutionPending = roomData.attackResolutionPending || {};
     if (Object.prototype.hasOwnProperty.call(attackResolutionPending, previousPlayerId)){
