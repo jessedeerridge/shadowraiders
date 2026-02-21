@@ -1494,6 +1494,7 @@
   <h1>テンプレ</h1>
   <div style="display:flex;align-items:center;gap:6px;">
     <div class="small" id="roomInfo"></div>
+    <div class="small" id="lastAttackToMeHeader" aria-live="polite"></div>
     <div class="small attack-roll-result-debug" id="attackRollResult" aria-live="polite"></div>
     <button class="btn ghost" id="copyLinkBtn">COPY</button>
   </div>
@@ -3575,6 +3576,7 @@
     const gatlingMode = hasMyEquipmentByName("ガトリング");
     const gatlingTargetUids = gatlingMode ? [...highlightedMarkerUids()] : [];
     const attackTargetUids = gatlingMode ? gatlingTargetUids : [uid];
+    await recordLastAttackToMe(attackTargetUids);
     lastAttackWatch = {
       uid: state.userId,
       targetUids: attackTargetUids,
@@ -6970,6 +6972,7 @@
   const btnJoin = document.getElementById('btnJoin');
   const lobby = document.getElementById('lobby');
   const roomInfo = document.getElementById('roomInfo');
+  const lastAttackToMeHeader = document.getElementById('lastAttackToMeHeader');
   const attackRollResult = document.getElementById('attackRollResult');
   const roomInfoLobby = document.getElementById('roomInfoLobby');
   const copyLinkBtn = document.getElementById('copyLinkBtn');
@@ -7269,6 +7272,36 @@
     attackRollResult.textContent = isSuccess ? '攻撃成功' : '攻撃失敗';
   }
 
+  function renderLastAttackToMeHeader(){
+    if (!lastAttackToMeHeader) return;
+    const me = latestPlayers.find(p => p.id === state.userId);
+    const seat = Number(me?.lastattacktome || 0);
+    if (!seat){
+      lastAttackToMeHeader.textContent = '';
+      return;
+    }
+    const names = latestPlayers
+      .filter(p => p.seatIndex === seat)
+      .map(p => safeText(p.name || ''))
+      .filter(Boolean);
+    const nameLabel = names.length ? names.join(' / ') : '（空席）';
+    lastAttackToMeHeader.textContent = `lastattacktome: ${nameLabel}`;
+  }
+
+  async function recordLastAttackToMe(targetUids){
+    if (!state.roomCode) return;
+    const attackerSeat = Number(latestPlayers.find(p => p.id === state.userId)?.seatIndex || state.seatedTable || 0);
+    if (!attackerSeat) return;
+    const updates = {};
+    for (const uid of [...new Set(targetUids || [])]){
+      const targetSeat = Number(latestPlayers.find(p => p.id === safeText(uid))?.seatIndex || 0);
+      if (!targetSeat) continue;
+      updates[`tables/${targetSeat}/lastattacktome`] = attackerSeat;
+    }
+    if (!Object.keys(updates).length) return;
+    await update(ref(db, `rooms/${state.roomCode}`), updates);
+  }
+
   function updateHostUI(){
     refreshRoomLabels();
     if (state.isHost){
@@ -7422,7 +7455,8 @@
           id: t.playerId,
           name: t.playerName || '名無し',
           seatIndex: Number(seatIndex),
-          color: t.color || null
+          color: t.color || null,
+          lastattacktome: Number(t.lastattacktome || 0)
         } : null))
         .filter(Boolean)
         .sort((a,b) => a.seatIndex - b.seatIndex);
@@ -7445,6 +7479,7 @@
       renderEquipmentDock();
       renderHpBoard();
       renderPositionLine();
+      renderLastAttackToMeHeader();
     });
   }
 
