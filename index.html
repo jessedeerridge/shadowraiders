@@ -1032,6 +1032,10 @@
     transform-origin:center;
     animation:roomChoicePulse 1.2s ease-in-out infinite;
   }
+  .room-pulse-border{
+    stroke:#a855f7 !important;
+    stroke-width:2px !important;
+  }
   @keyframes roomChoicePulse{
     0%,100%{ transform:scale(1); }
     50%{ transform:scale(1.05); }
@@ -1633,8 +1637,8 @@
 <div id="attackResultPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="攻撃結果確認">
   <div id="attackResultRows" class="attack-result-pop-rows"></div>
   <div class="actions">
-    <button class="btn primary" id="btnAttackResultEnd">OK(おわる)</button>
-    <button class="btn ghost" id="btnAttackResultKeep">OK(おわらない)</button>
+    <button class="btn primary" id="btnAttackResultEnd">OKおわる</button>
+    <button class="btn ghost" id="btnAttackResultKeep">OKおわらない</button>
   </div>
 </div>
 
@@ -4659,6 +4663,10 @@
     return Number(turnState()?.repeatTurnRemaining || 0) > 0;
   }
 
+  function drewSealedWisdomThisTurn(){
+    return safeText(turnState()?.repeatTurnSource || "") === "seal_wisdom";
+  }
+
   function repeatTurnLabel(){
     const rest = Math.max(0, Number(turnState()?.repeatTurnRemaining || 0));
     const total = Math.max(0, Number(turnState()?.repeatTurnTotal || 0));
@@ -4672,7 +4680,11 @@
     const visible = isGameStarted() && canShowEndTurnButton();
     turnEndWrap.classList.toggle("hidden", !visible);
     if (btnEndTurn){
-      btnEndTurn.textContent = repeatTurnPending() ? repeatTurnLabel() : "手番を終わる";
+      if (drewSealedWisdomThisTurn()){
+        btnEndTurn.textContent = "手番を終わる(+1)";
+      } else {
+        btnEndTurn.textContent = repeatTurnPending() ? repeatTurnLabel() : "手番を終わる";
+      }
     }
     if (!visible) hideEndTurnConfirm();
   }
@@ -4860,6 +4872,12 @@
       row.appendChild(amount);
       row.appendChild(makeAttackResultNameNode(uid));
       attackResultRows.appendChild(row);
+    }
+    if (btnAttackResultEnd){
+      btnAttackResultEnd.textContent = drewSealedWisdomThisTurn() ? "OKおわる(+1)" : "OKおわる";
+    }
+    if (btnAttackResultKeep){
+      btnAttackResultKeep.textContent = "OKおわらない";
     }
     attackResultPop.classList.remove("hidden");
   }
@@ -5263,6 +5281,7 @@
         room4StealUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
+        repeatTurnSource: "",
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[startPlayerId]){
@@ -5320,6 +5339,7 @@
         room4StealUsed: false,
         repeatTurnRemaining: nextRepeatRemaining,
         repeatTurnTotal: nextRepeatTotal,
+        repeatTurnSource: "",
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
@@ -5427,7 +5447,6 @@
       openGreenShareDock(drawn);
     }
 
-    scheduleDeckRebuildIfEmpty(type).catch(() => {});
   }
 
   function baseOrderWithoutEquip(type){
@@ -6296,6 +6315,7 @@
     await update(ref(db, `rooms/${state.roomCode}/turn`), {
       repeatTurnRemaining: 1,
       repeatTurnTotal: 1,
+      repeatTurnSource: "seal_wisdom",
       updatedAt: Date.now()
     });
   }
@@ -7341,18 +7361,39 @@
 
   function updateRoomChoiceUi(){
     const choiceMode = canChooseOuterRoomDirectly();
+    const canShowPulseBorderOnOuter = choiceMode && roomActionState.movedByDiceRoomId !== 7;
+    const pulseRoomIds = new Set();
     for (let roomId = 1; roomId <= 6; roomId++){
       const pending = !!pendingMoveChoice && !pendingMoveChoice.consumed && pendingMoveChoice.roomIds.includes(roomId);
       roomShapeEls[roomId]?.classList.toggle('room-choice-pulse', choiceMode);
       roomHitEls[roomId]?.classList.toggle('room-choice-pulse', choiceMode);
+      const pulseActive = pending || canShowPulseBorderOnOuter;
+      roomShapeEls[roomId]?.classList.toggle('room-pulse-border', pulseActive);
+      if (pulseActive) pulseRoomIds.add(roomId);
       if (roomHitEls[roomId]){
         roomHitEls[roomId].style.cursor = (choiceMode || pending) ? 'pointer' : (isGameStarted() ? 'default' : 'pointer');
       }
     }
 
     const centerPending = !!pendingMoveChoice && !pendingMoveChoice.consumed && pendingMoveChoice.roomIds.includes(7);
+    roomShapeEls[7]?.classList.toggle('room-pulse-border', centerPending);
+    if (centerPending) pulseRoomIds.add(7);
     if (roomHitEls[7]){
       roomHitEls[7].style.cursor = centerPending ? 'pointer' : (isGameStarted() ? 'default' : 'pointer');
+    }
+
+    for (const rid of pulseRoomIds){
+      const shape = roomShapeEls[rid];
+      const hit = roomHitEls[rid];
+      if (shape && shape.parentNode === roomG) roomG.appendChild(shape);
+      if (hit && hit.parentNode === roomG) roomG.appendChild(hit);
+    }
+    if (markerLayer && markerLayer.parentNode === roomG) roomG.appendChild(markerLayer);
+    if (attackRangeLayer && attackRangeLayer.parentNode === roomG && markerLayer && markerLayer.parentNode === roomG){
+      roomG.insertBefore(attackRangeLayer, markerLayer);
+    }
+    if (roomGuideVisible && roomGuideLayer && roomGuideLayer.parentNode === roomG){
+      roomG.appendChild(roomGuideLayer);
     }
   }
 
@@ -8859,6 +8900,7 @@
         room4StealUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
+        repeatTurnSource: "",
         updatedAt: Date.now()
       }
     });
