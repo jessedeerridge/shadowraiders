@@ -2698,8 +2698,15 @@
   async function sendGreenResponse(msg, opt, overrideLabel=""){
     if (!state.roomCode || !msg?.from || !msg?.requestId || !opt?.id) return;
     const answerLabel = safeText(overrideLabel || opt.label || "");
-    await set(ref(db, `rooms/${state.roomCode}/greenResponses/${msg.from}`), {
-      from: msg.from,
+    let requesterUid = safeText(msg.from || "");
+    try {
+      const reqSnap = await get(ref(db, `rooms/${state.roomCode}/greenRequests/${msg.requestId}`));
+      const req = reqSnap.val() || null;
+      if (req?.from) requesterUid = safeText(req.from || requesterUid);
+    } catch (_) {}
+    if (!requesterUid) return;
+    await set(ref(db, `rooms/${state.roomCode}/greenResponses/${requesterUid}`), {
+      from: requesterUid,
       to: state.userId,
       requestId: msg.requestId,
       answerId: opt.id,
@@ -2922,6 +2929,7 @@
           card: greenShareCard,
           at: Date.now()
         };
+        await set(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`), payload);
         await set(ref(db, `rooms/${state.roomCode}/greenInbox/${p.id}`), payload);
         if (safeText(greenShareCard?.effect || "").includes("正体カードを見せよ")){
           await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`), {
@@ -2975,24 +2983,14 @@
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
 
-    if (cardText.includes("正体カードを見せよ")){
-      const opt = { id:"reveal_identity", label:"私の正体です。", enabled:true };
-      greenShareDock.classList.add("hidden");
-      (async () => {
-        await sendGreenResponse(msg, opt, "私の正体です。");
-        await applyGreenAnswerEffect(msg, opt);
-        await setGreenSessionState(null);
-      })();
-      return;
-    }
-
     const isUlrich = isMyRole("SHA_U1");
     for (const opt of greenAnswerOptions(msg.card)){
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "green-share-btn answer";
       btn.textContent = opt.label;
-      btn.disabled = isUlrich ? (opt.id === "give_equip" && !hasAnyEquipment(state.userId)) : !opt.enabled;
+      const canUlrichGiveEquip = (opt.id !== "give_equip") || hasAnyEquipment(state.userId);
+      btn.disabled = !opt.enabled || (isUlrich && !canUlrichGiveEquip);
       btn.addEventListener("click", async () => {
         if (!state.roomCode || !msg?.from || !msg?.requestId) return;
 
@@ -3048,32 +3046,60 @@
       }
       if (!entry?.card) return;
       openZoomFromDeckCard(entry.card, "green", { closeOnBackdrop:false, showCloseButton:false });
-      openGreenShareDock(entry.card);
-      if (phase === "waiting" || phase === "confirm"){
-        pendingGreenRequestId = safeText(entry.requestId || "");
-        renderGreenWaitingSelection(safeText(entry.toUid || ""), safeText(entry.toName || ""), safeText(entry.toInitial || ""), safeText(entry.toColor || ""));
-        if (phase === "confirm"){
-          setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(entry.answerLabel || "") });
-          greenShareActions?.classList.remove("hidden");
-        } else {
-          setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
-          greenShareActions?.classList.add("hidden");
-        }
+      greenShareCard = entry.card;
+      if (phase === "selecting"){
+        openGreenShareDock(entry.card);
+        return;
+      }
+
+      if (!greenShareDock || !greenShareList) return;
+      greenShareDock.classList.remove("hidden");
+      greenShareActions?.classList.add("hidden");
+      pendingGreenRequestId = safeText(entry.requestId || "");
+      renderGreenWaitingSelection(safeText(entry.toUid || ""), safeText(entry.toName || ""), safeText(entry.toInitial || ""), safeText(entry.toColor || ""));
+      if (phase === "confirm"){
+        setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(entry.answerLabel || "") });
+        greenShareActions?.classList.remove("hidden");
+      } else {
+        setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
+        greenShareActions?.classList.add("hidden");
+        syncGreenResponseForPendingRequest(pendingGreenRequestId).catch(() => {});
       }
     } finally {
       greenSessionRestoring = false;
     }
   }
 
+  async function syncGreenResponseForPendingRequest(requestId){
+    const rid = safeText(requestId || "");
+    if (!state.roomCode || !state.userId || !rid) return;
+    const snap = await get(ref(db, `rooms/${state.roomCode}/greenResponses/${state.userId}`));
+    const msg = snap.val() || null;
+    if (!msg || safeText(msg.requestId || "") !== rid) return;
+    setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
+    const reveal = greenRevealByRequestId[rid];
+    if (reveal?.roleId){
+      showGreenRevealPanel(reveal.roleId, reveal.responderId);
+    }
+    greenShareActions?.classList.remove("hidden");
+    const responder = playerById(safeText(msg.to || ""));
+    await setGreenSessionState({
+      phase:"confirm",
+      card: greenShareCard || msg.card || null,
+      requestId: rid,
+      toUid: safeText(msg.to || ""),
+      toName: safeText(responder?.name || ""),
+      toInitial: firstChar(responder?.name || ""),
+      toColor: safeText(responder?.color || ""),
+      answerLabel: safeText(msg.answerLabel || "")
+    });
+  }
+
   async function clearPendingGreenBubble(){
     if (!state.roomCode || !pendingGreenRequestId) return;
     const bubbleId = pendingGreenRequestId;
     const bRef = ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${bubbleId}`);
-    const snap = await get(bRef);
-    const val = snap.val();
-    if (val?.from === state.userId){
-      await remove(bRef);
-    }
+    await remove(bRef).catch(() => {});
     pendingGreenRequestId = "";
   }
 
@@ -7891,6 +7917,32 @@
     });
   }
 
+  function applyGreenResponseToWaitingSession(msg){
+    const at = Number(msg?.at || 0);
+    if (!msg || !at) return false;
+    const requestId = safeText(msg.requestId || "");
+    if (!pendingGreenRequestId || requestId !== pendingGreenRequestId) return false;
+    greenReplySeenAt = Math.max(greenReplySeenAt, at);
+    setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
+    const reveal = greenRevealByRequestId[requestId];
+    if (reveal?.roleId){
+      showGreenRevealPanel(reveal.roleId, reveal.responderId);
+    }
+    greenShareActions?.classList.remove("hidden");
+    const responder = playerById(safeText(msg.to || ""));
+    setGreenSessionState({
+      phase:"confirm",
+      card: greenShareCard || msg.card || null,
+      requestId,
+      toUid: safeText(msg.to || ""),
+      toName: safeText(responder?.name || ""),
+      toInitial: firstChar(responder?.name || ""),
+      toColor: safeText(responder?.color || ""),
+      answerLabel: safeText(msg.answerLabel || "")
+    }).catch(() => {});
+    return true;
+  }
+
   function subscribeGreenResponses(){
     const resRef = ref(db, `rooms/${state.roomCode}/greenResponses/${state.userId}`);
     onValue(resRef, snap => {
@@ -7899,31 +7951,14 @@
 
       if (!greenReplyInitialized){
         greenReplyInitialized = true;
-        greenReplySeenAt = at || 0;
+        const handledOnInit = applyGreenResponseToWaitingSession(msg);
+        greenReplySeenAt = handledOnInit ? Math.max(greenReplySeenAt, at || 0) : (at || 0);
         return;
       }
 
       if (!msg || !at) return;
       if (at <= greenReplySeenAt) return;
-      if (!pendingGreenRequestId || safeText(msg.requestId || "") !== pendingGreenRequestId) return;
-      greenReplySeenAt = at;
-      setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
-      const reveal = greenRevealByRequestId[safeText(msg.requestId || "")];
-      if (reveal?.roleId){
-        showGreenRevealPanel(reveal.roleId, reveal.responderId);
-      }
-      greenShareActions?.classList.remove("hidden");
-      const responder = playerById(safeText(msg.to || ""));
-      setGreenSessionState({
-        phase:"confirm",
-        card: greenShareCard,
-        requestId: pendingGreenRequestId,
-        toUid: safeText(msg.to || ""),
-        toName: safeText(responder?.name || ""),
-        toInitial: firstChar(responder?.name || ""),
-        toColor: safeText(responder?.color || ""),
-        answerLabel: safeText(msg.answerLabel || "")
-      }).catch(() => {});
+      applyGreenResponseToWaitingSession(msg);
     });
   }
 
@@ -8020,6 +8055,7 @@
       if (requestId !== pendingAnswerRequest && requestId !== pendingShareRequest) return;
 
       pendingGreenAnswerMsg = null;
+      remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`)).catch(() => {});
       hideGreenShareDock();
       closeZoom();
       setGreenSessionState(null).catch(() => {});
@@ -8343,13 +8379,29 @@
     const greenSessions = roomData.greenSessions || {};
     const previousGreenSession = greenSessions[previousPlayerId] || null;
 
+    const migrateUidInGreenSession = (entry) => {
+      if (!entry || typeof entry !== "object") return entry;
+      const next = JSON.parse(JSON.stringify(entry));
+      const prevUid = safeText(previousPlayerId || "");
+      const myUid = safeText(state.userId || "");
+      const replaceUid = (uid) => safeText(uid || "") === prevUid ? myUid : safeText(uid || "");
+      if (next.msg && typeof next.msg === "object"){
+        next.msg.from = replaceUid(next.msg.from);
+        next.msg.to = replaceUid(next.msg.to);
+      }
+      if (Object.prototype.hasOwnProperty.call(next, "toUid")) next.toUid = replaceUid(next.toUid);
+      return next;
+    };
+
     const greenInbox = roomData.greenInbox || {};
     for (const [uid, entry] of Object.entries(greenInbox)){
       if (!entry || safeText(entry.from || "") !== safeText(previousPlayerId || "")) continue;
       updates[`greenInbox/${uid}/from`] = state.userId;
     }
-    if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId)){
+    if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId) && !previousGreenSession){
       updates[`greenInbox/${state.userId}`] = greenInbox[previousPlayerId];
+      updates[`greenInbox/${previousPlayerId}`] = null;
+    } else if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId)){
       updates[`greenInbox/${previousPlayerId}`] = null;
     }
     const greenResponses = roomData.greenResponses || {};
@@ -8363,8 +8415,52 @@
       updates[`greenCloseSignals/${previousPlayerId}`] = null;
     }
     if (Object.prototype.hasOwnProperty.call(greenSessions, previousPlayerId)){
-      updates[`greenSessions/${state.userId}`] = previousGreenSession;
+      updates[`greenSessions/${state.userId}`] = migrateUidInGreenSession(previousGreenSession);
       updates[`greenSessions/${previousPlayerId}`] = null;
+    }
+    for (const [uid, entry] of Object.entries(greenSessions)){
+      if (safeText(uid || "") === safeText(previousPlayerId || "")) continue;
+      if (!entry || typeof entry !== "object") continue;
+      const migrated = migrateUidInGreenSession(entry);
+      if (JSON.stringify(migrated) !== JSON.stringify(entry)){
+        updates[`greenSessions/${uid}`] = migrated;
+      }
+    }
+
+    const greenReplyBubbles = roomData.greenReplyBubbles || {};
+    for (const [bubbleId, bubble] of Object.entries(greenReplyBubbles)){
+      if (!bubble || typeof bubble !== "object") continue;
+      const nextBubble = { ...bubble };
+      let changed = false;
+      if (safeText(nextBubble.from || "") === safeText(previousPlayerId || "")){
+        nextBubble.from = state.userId;
+        changed = true;
+      }
+      if (safeText(nextBubble.responderId || "") === safeText(previousPlayerId || "")){
+        nextBubble.responderId = state.userId;
+        changed = true;
+      }
+      if (changed){
+        updates[`greenReplyBubbles/${bubbleId}`] = nextBubble;
+      }
+    }
+
+    const greenRequests = roomData.greenRequests || {};
+    for (const [requestId, req] of Object.entries(greenRequests)){
+      if (!req || typeof req !== "object") continue;
+      let changed = false;
+      const nextReq = { ...req };
+      if (safeText(nextReq.from || "") === previousPlayerId){
+        nextReq.from = state.userId;
+        changed = true;
+      }
+      if (safeText(nextReq.to || "") === previousPlayerId){
+        nextReq.to = state.userId;
+        changed = true;
+      }
+      if (changed){
+        updates[`greenRequests/${requestId}`] = nextReq;
+      }
     }
 
     const shouldForceCloseGreenUi = ["selecting","answering","waiting","confirm"].includes(safeText(previousGreenSession?.phase || ""));
@@ -8632,6 +8728,7 @@
       remove(ref(db, `${base}/greenResponses`)),
       remove(ref(db, `${base}/greenReplyBubbles`)),
       remove(ref(db, `${base}/greenReveals`)),
+      remove(ref(db, `${base}/greenRequests`)),
       remove(ref(db, `${base}/turn`)),
       remove(ref(db, `${base}/attackResolutionPending`)),
     ]);
