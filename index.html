@@ -2121,6 +2121,7 @@
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
   let pendingAttackResolution = null;
+  let suppressEndTurnButton = false;
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -4442,6 +4443,7 @@
     if (cardPlayerSelectActive) return false;
     if (mustAttackWithMasamune()) return false;
     if (attackTurnEndChoicePending) return false;
+    if (suppressEndTurnButton) return false;
     return !!turnState()?.moveDone;
   }
 
@@ -4663,7 +4665,8 @@
       const row = document.createElement("div");
       row.className = "attack-result-pop-row";
       const amount = document.createElement("span");
-      amount.textContent = `${Math.max(0, Number(item?.damage || 0))} >`;
+      const damageValue = Math.max(0, Number(item?.damage || 0));
+      amount.textContent = damageValue > 0 ? `${damageValue} Damege >` : "攻撃失敗 >";
       row.appendChild(amount);
       row.appendChild(makeAttackResultNameNode(uid));
       attackResultRows.appendChild(row);
@@ -4691,17 +4694,23 @@
     const pending = pendingAttackResolution;
     pendingAttackResolution = null;
     attackTurnEndChoicePending = false;
+    suppressEndTurnButton = !!endTurnAfterApply;
     cachePendingAttackResolution(null);
     await upsertPendingAttackResolution([], "");
     renderTurnEndButton();
     hideAttackResultPop();
     clearAttackResultDice();
-    if (!pending || pending.applied) return;
+    if (!pending || pending.applied){
+      if (!endTurnAfterApply) suppressEndTurnButton = false;
+      return;
+    }
     pending.applied = true;
     await addResolvedDamageToPlayers(pending.rows || []);
     if (endTurnAfterApply){
       await new Promise(resolve => setTimeout(resolve, 2000));
       await doEndTurn();
+      suppressEndTurnButton = false;
+      renderTurnEndButton();
     }
   }
 
@@ -8456,6 +8465,7 @@
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
+    suppressEndTurnButton = false;
     cachePendingAttackResolution(null);
     await advanceTurnToNextPlayer();
     hideAttackPop();
