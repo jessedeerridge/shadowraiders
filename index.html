@@ -4437,6 +4437,7 @@
     await setAttackLootPending(pendingAttackLoot);
     renderAttackLootPanel();
     openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+    await new Promise(resolve => setTimeout(resolve, 180));
     showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
       await commitAttackLootSelection({ ownerUid, sourceKey });
     }, { fixedLower:true, closeZoomOnNo:true });
