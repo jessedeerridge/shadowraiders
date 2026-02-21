@@ -8021,7 +8021,8 @@
         pendingGreenSessionEntry = null;
         const pendingRequestId = safeText(pendingGreenRequestId || pendingGreenAnswerMsg?.requestId || "");
         const hasVisibleReveal = !!(pendingRequestId && greenRevealByRequestId[pendingRequestId]?.roleId);
-        if (!hasVisibleReveal && (pendingGreenAnswerMsg || pendingGreenRequestId || (greenShareCard && !greenShareDock?.classList.contains("hidden")))){
+        const revealPanelOpen = !!(greenRevealPanel && !greenRevealPanel.classList.contains("hidden"));
+        if (!hasVisibleReveal && !revealPanelOpen && (pendingGreenAnswerMsg || pendingGreenRequestId || (greenShareCard && !greenShareDock?.classList.contains("hidden")))){
           hideGreenShareDock();
           closeZoom();
         }
