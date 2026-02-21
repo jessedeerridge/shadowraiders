@@ -7222,6 +7222,39 @@
       return cur;
     });
   }
+
+  function moveAbilityUsageUid(cur, fromUid, toUid){
+    if (!cur || typeof cur !== 'object') return;
+    for (const value of Object.values(cur)){
+      if (!value || typeof value !== 'object') continue;
+      if (Object.prototype.hasOwnProperty.call(value, fromUid)){
+        value[toUid] = value[fromUid];
+        delete value[fromUid];
+      }
+      moveAbilityUsageUid(value, fromUid, toUid);
+    }
+  }
+
+  async function syncMySeatNameIfNeeded(){
+    if (!state.roomCode || !state.userId || !state.userName) return;
+    const seat = Number(state.seatedTable || 0);
+    if (!seat) return;
+
+    const seatRef = ref(db, `rooms/${state.roomCode}/tables/${seat}`);
+    const snap = await get(seatRef);
+    const row = snap.val() || null;
+    if (!row || row.playerId !== state.userId) return;
+
+    const nextName = safeText(state.userName || '名無し') || '名無し';
+    const nextColor = SEAT_COLORS[seat - 1] || null;
+    if (safeText(row.playerName || '') === nextName && (row.color || null) === nextColor) return;
+
+    await update(seatRef, {
+      playerName: nextName,
+      color: nextColor,
+      renamedAt: Date.now()
+    });
+  }
   function isSeated(){ return state.seatedTable != null; }
 
   function showSeatPop(){ seatPopBackdrop.classList.remove('hidden'); }
@@ -7691,8 +7724,48 @@
       updates[`markers/${previousPlayerId}`] = null;
     }
 
+    const equipment = roomData.equipment || {};
+    const prevEquipment = equipment[previousPlayerId] || null;
+    if (prevEquipment){
+      updates[`equipment/${state.userId}`] = { ...prevEquipment, inheritedAt: Date.now(), inheritedFrom: previousPlayerId };
+      updates[`equipment/${previousPlayerId}`] = null;
+    }
+
+    const damage = roomData.damage || {};
+    if (Object.prototype.hasOwnProperty.call(damage, previousPlayerId)){
+      updates[`damage/${state.userId}`] = clampDamage(Number(damage[previousPlayerId] || 0));
+      updates[`damage/${previousPlayerId}`] = null;
+    }
+
+    const guardShields = roomData.guardianAngelShield || {};
+    if (Object.prototype.hasOwnProperty.call(guardShields, previousPlayerId)){
+      updates[`guardianAngelShield/${state.userId}`] = !!guardShields[previousPlayerId];
+      updates[`guardianAngelShield/${previousPlayerId}`] = null;
+    }
+
+    const greenInbox = roomData.greenInbox || {};
+    if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId)){
+      updates[`greenInbox/${state.userId}`] = greenInbox[previousPlayerId];
+      updates[`greenInbox/${previousPlayerId}`] = null;
+    }
+    const greenResponses = roomData.greenResponses || {};
+    if (Object.prototype.hasOwnProperty.call(greenResponses, previousPlayerId)){
+      updates[`greenResponses/${state.userId}`] = greenResponses[previousPlayerId];
+      updates[`greenResponses/${previousPlayerId}`] = null;
+    }
+    const greenCloseSignals = roomData.greenCloseSignals || {};
+    if (Object.prototype.hasOwnProperty.call(greenCloseSignals, previousPlayerId)){
+      updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
+      updates[`greenCloseSignals/${previousPlayerId}`] = null;
+    }
+
+    if (roomData.abilityUsage){
+      const abilityUsageCopy = JSON.parse(JSON.stringify(roomData.abilityUsage));
+      moveAbilityUsageUid(abilityUsageCopy, previousPlayerId, state.userId);
+      updates[`abilityUsage`] = abilityUsageCopy;
+    }
+
     await update(roomRef, updates);
-    await resetAllAbilityUsageForUids([state.userId, previousPlayerId]);
 
     state.seatedTable = seatIndex;
     sessionStorage.setItem(seatKey(state.roomCode), String(seatIndex));
@@ -8031,6 +8104,7 @@
 
     const cachedSeat = sessionStorage.getItem(seatKey(state.roomCode));
     if (cachedSeat) state.seatedTable = Number(cachedSeat) || null;
+    await syncMySeatNameIfNeeded();
 
     subscribeRoom();
     subscribeHostState();
