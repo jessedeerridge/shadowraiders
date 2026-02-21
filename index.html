@@ -7822,6 +7822,24 @@
       updates[`turn/updatedAt`] = Date.now();
     }
 
+    const positionOrder = Array.isArray(roomData.positionOrder) ? roomData.positionOrder.slice() : null;
+    if (positionOrder){
+      let changed = false;
+      for (let i = 0; i < positionOrder.length; i += 1){
+        if (safeText(positionOrder[i] || "") === safeText(previousPlayerId || "")){
+          positionOrder[i] = state.userId;
+          changed = true;
+        }
+      }
+      if (changed){
+        updates[`positionOrder`] = positionOrder;
+      }
+    }
+
+    if (safeText(roomData.startPlayerId || "") === safeText(previousPlayerId || "")){
+      updates[`startPlayerId`] = state.userId;
+    }
+
     const damage = roomData.damage || {};
     if (Object.prototype.hasOwnProperty.call(damage, previousPlayerId)){
       updates[`damage/${state.userId}`] = clampDamage(Number(damage[previousPlayerId] || 0));
