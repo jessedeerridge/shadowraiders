@@ -3087,6 +3087,10 @@
         for (const [uid, row] of Object.entries(next)){
           const at = Number(row?.identity?.revealedAt || 0);
           if (!at) continue;
+          if (Number(row?.identity?.inheritedAt || 0) > 0){
+            identityRevealSeenByUid[uid] = at;
+            continue;
+          }
           const seen = Number(identityRevealSeenByUid[uid] || 0);
           if (at <= seen) continue;
           identityRevealSeenByUid[uid] = at;
@@ -3102,6 +3106,13 @@
   function isIdentityEquipItem(v){
     return v && (v.kind === "identity") && !!v.roleId;
   }
+  function isPlayableEquipItem(v){
+    if (!v || typeof v !== "object") return false;
+    if (isIdentityEquipItem(v)) return true;
+    const name = safeText(v.name || "").trim();
+    const effect = safeText(v.effect || "").trim();
+    return !!name && !!effect;
+  }
   function equipItemCopies(item){
     if (!item || isIdentityEquipItem(item)) return 1;
     const raw = Number(item.count ?? item.qty ?? item.quantity ?? 1);
@@ -3112,6 +3123,7 @@
     const obj = equipCache?.[uid] || {};
     const expanded = [];
     for (const [key, value] of Object.entries(obj)){
+      if (!isPlayableEquipItem(value)) continue;
       const item = { key, ...(value || {}) };
       const copies = equipItemCopies(item);
       for (let i = 0; i < copies; i++){
@@ -7795,7 +7807,12 @@
     const equipment = roomData.equipment || {};
     const prevEquipment = equipment[previousPlayerId] || null;
     if (prevEquipment){
-      updates[`equipment/${state.userId}`] = { ...prevEquipment, inheritedAt: Date.now(), inheritedFrom: previousPlayerId };
+      const nextEquipment = JSON.parse(JSON.stringify(prevEquipment));
+      if (nextEquipment.identity && nextEquipment.identity.kind === "identity" && nextEquipment.identity.roleId){
+        nextEquipment.identity.inheritedAt = Date.now();
+        nextEquipment.identity.inheritedFrom = previousPlayerId;
+      }
+      updates[`equipment/${state.userId}`] = nextEquipment;
       updates[`equipment/${previousPlayerId}`] = null;
     }
 
