@@ -1389,40 +1389,24 @@
     display:flex;
     align-items:flex-start;
     justify-content:center;
-    gap:24px;
+    gap:18px;
     flex-wrap:nowrap;
-    max-width:min(96vw, 1280px);
+    max-width:min(98vw, 1500px);
     overflow-x:auto;
-    padding:10px 12px;
+    padding:26px 16px 16px;
   }
   .zoom-identity-multi-item{
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    gap:10px;
+    position:relative;
     flex:0 0 auto;
-  }
-  .zoom-identity-multi-item .id72{
     width:144px;
     height:216px;
   }
-  .zoom-identity-multi-item .zoom-identity-owner{
-    position:static;
-    left:auto;
-    top:auto;
-    transform:none;
-    margin:0;
-    padding:5px 9px;
-    font-size:12px;
-    gap:6px;
-  }
-  .zoom-identity-multi-item .zoom-identity-owner .chip16{
-    width:16px;
-    height:16px;
-    min-width:16px;
-    min-height:16px;
-    font-size:10px;
-    border-radius:50%;
+  .zoom-identity-multi-item-inner{
+    position:relative;
+    width:72px;
+    height:108px;
+    transform:scale(2);
+    transform-origin:top left;
   }
   .eliminated-dim{
     opacity:.7;
@@ -3326,8 +3310,11 @@
       const owner = playerById(item.uid);
       const cell = document.createElement("div");
       cell.className = "zoom-identity-multi-item";
+
+      const inner = document.createElement("div");
+      inner.className = "zoom-identity-multi-item-inner";
       const cardEl = createIdentityCard(item.role);
-      cell.appendChild(cardEl);
+      inner.appendChild(cardEl);
 
       if (owner){
         const chip = buildChipFor(item.uid);
@@ -3337,8 +3324,10 @@
         name.textContent = nameFromSecondChar(owner.name || "");
         label.appendChild(chip);
         label.appendChild(name);
-        cell.appendChild(label);
+        inner.appendChild(label);
       }
+
+      cell.appendChild(inner);
       row.appendChild(cell);
     }
 
