@@ -3926,7 +3926,6 @@
     showPersistentRoleOverlay("SHA_V1", action.venomUid);
     await emitVenomGiveSelectEvent(action.venomUid, state.userId, true);
     renderEquipmentDock();
-    showTurnHint("渡す装備を選択してください。");
   });
   btnRoomActionNo?.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -4143,12 +4142,28 @@
     }
 
     if (pendingEquipAction?.type === "venom_give"){
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      const actionBase = { ...pendingEquipAction };
+      if (card.classList.contains("id72")){
+        if (ownerUid === state.userId){
+          hidePersistentRoleOverlay();
+          openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+          zoomDismissHandler = async () => {
+            closeZoom();
+            pendingEquipAction = { type:"venom_give", fromUid: actionBase.fromUid, toUid: actionBase.toUid };
+            showPersistentRoleOverlay("SHA_V1", actionBase.toUid);
+            renderEquipmentDock();
+          };
+          return;
+        }
+        showPersistentRoleOverlay("SHA_V1", safeText(pendingEquipAction?.toUid || ""));
+        return;
+      }
       if (!card.classList.contains("wb-front")){
         showPersistentRoleOverlay("SHA_V1", safeText(pendingEquipAction?.toUid || ""));
         return;
       }
-      const ownerUid = safeText(card.dataset.ownerUid || "");
-      const sourceKey = safeText(card.dataset.sourceKey || "");
       if (ownerUid !== state.userId || !sourceKey) return;
       const action = { ...pendingEquipAction, sourceKey };
       hidePersistentRoleOverlay();
