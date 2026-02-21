@@ -8108,9 +8108,11 @@
     }
 
     const turn = roomData.turn || null;
-    if (turn && safeText(turn.currentPlayerId || "") === safeText(previousPlayerId || "")) {
+    const isTurnOwnerStolen = !!turn && safeText(turn.currentPlayerId || "") === safeText(previousPlayerId || "");
+    const nextTurnUpdatedAt = isTurnOwnerStolen ? Date.now() : Number(turn?.updatedAt || 0);
+    if (isTurnOwnerStolen) {
       updates[`turn/currentPlayerId`] = state.userId;
-      updates[`turn/updatedAt`] = Date.now();
+      updates[`turn/updatedAt`] = nextTurnUpdatedAt;
     }
 
     const positionOrder = Array.isArray(roomData.positionOrder) ? roomData.positionOrder : null;
@@ -8162,8 +8164,17 @@
 
     const attackResolutionPending = roomData.attackResolutionPending || {};
     if (Object.prototype.hasOwnProperty.call(attackResolutionPending, previousPlayerId)){
-      updates[`attackResolutionPending/${state.userId}`] = attackResolutionPending[previousPlayerId];
-      updates[`attackResolutionPending/${state.userId}/uid`] = state.userId;
+      const pending = attackResolutionPending[previousPlayerId] || {};
+      const prevTurnKey = safeText(pending.turnKey || "");
+      const expectedOldTurnKey = turn ? `${safeText(previousPlayerId || "")}:${Number(turn.updatedAt || 0)}` : "";
+      const nextTurnKey = (isTurnOwnerStolen && prevTurnKey === expectedOldTurnKey)
+        ? `${safeText(state.userId || "")}:${nextTurnUpdatedAt}`
+        : prevTurnKey;
+      updates[`attackResolutionPending/${state.userId}`] = {
+        ...pending,
+        uid: state.userId,
+        turnKey: nextTurnKey
+      };
       updates[`attackResolutionPending/${previousPlayerId}`] = null;
     }
 
