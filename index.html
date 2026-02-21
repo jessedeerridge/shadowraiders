@@ -2308,6 +2308,7 @@
   function clearSeatCardSelectionUiState(){
     pendingSeatCardSelectionEntry = null;
     hideIdentityPrompt();
+    hideRoomActionPop();
     pendingEquipAction = null;
     cardPlayerSelectActive = false;
     greenShareDock?.classList.add("hidden");
@@ -8869,7 +8870,10 @@
     const seat = Number(currentMySeatIndex() || 0);
     if (!seat) return;
     const seatChanged = seatCardSelectionActiveSeat !== seat;
-    if (seatChanged) seatCardSelectionActiveSeat = seat;
+    if (seatChanged){
+      seatCardSelectionActiveSeat = seat;
+      clearSeatCardSelectionUiState();
+    }
 
     const raw = state.room?.seatCardSelections?.[seat] || null;
     const entry = normalizeSeatCardSelection(raw);
@@ -8882,7 +8886,8 @@
     }
 
     const seenAt = Number(seatCardSelectionSeenAtBySeat[seat] || 0);
-    if (!seatChanged && entry.at && entry.at <= seenAt) return;
+    const hasNoUiState = !pendingSeatCardSelectionEntry;
+    if (!seatChanged && !hasNoUiState && entry.at && entry.at <= seenAt) return;
 
     seatCardSelectionSeenAtBySeat[seat] = entry.at || Date.now();
     pendingSeatCardSelectionEntry = entry;
