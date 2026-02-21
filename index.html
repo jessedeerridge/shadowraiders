@@ -1943,7 +1943,67 @@
     if (!hasRainbowParasolEquip(state.userId)) return false;
     const turn = turnState() || {};
     if (!turn.moveDone || turn.attackDone) return false;
+    if (highlightedMarkerUids().size <= 0) return false;
+
+    const roomId = Number(state.currentRoomId || 0);
+    const drawnTypes = turn?.drawnTypes || {};
+    const greenDrawn = Math.max(0, Number(drawnTypes.green || 0));
+    const whiteDrawn = Math.max(0, Number(drawnTypes.white || 0));
+    const blackDrawn = Math.max(0, Number(drawnTypes.black || 0));
+
+    let roomAllowed = false;
+    if (roomId === 1 || roomId === 2){
+      roomAllowed = true;
+    } else if (roomId === 5){
+      roomAllowed = greenDrawn >= 1;
+    } else if (roomId === 6){
+      roomAllowed = greenDrawn >= 1 || whiteDrawn >= 1 || blackDrawn >= 1;
+    } else if (roomId === 3 || roomId === 4 || roomId === 10){
+      roomAllowed = true;
+    }
+    if (!roomAllowed) return false;
+
     return remainingCount(deckCache?.green) > 0;
+  }
+
+  function shouldShowParasolDrawRestrictionNotice(){
+    const roomId = Number(state.currentRoomId || 0);
+    if (roomId !== 1 && roomId !== 2) return false;
+    const drawnTypes = turnState()?.drawnTypes || {};
+    const whiteDrawn = Math.max(0, Number(drawnTypes.white || 0));
+    const blackDrawn = Math.max(0, Number(drawnTypes.black || 0));
+    return whiteDrawn <= 0 && blackDrawn <= 0;
+  }
+
+  function runParasolGreenDrawFlow(clientX, clientY){
+    showRoomActionPopAt(
+      clientX,
+      clientY,
+      "攻撃の代わりにカードを引きますか。（虹色のパラソル）",
+      async () => {
+        if (!shouldShowParasolDrawRestrictionNotice()){
+          await drawFromSharedDeck("green", { viaParasol:true });
+          return;
+        }
+        const roomId = Number(state.currentRoomId || 0);
+        const message = roomId === 1
+          ? "この後、白カードがひけません。"
+          : "この後、黒カードがひけません。";
+        showRoomActionPopAt(
+          Number(window.innerWidth / 2),
+          Number(window.innerHeight / 2),
+          message,
+          async () => {
+            await drawFromSharedDeck("green", { viaParasol:true });
+          },
+          {
+            yesLabel: "OK",
+            noLabel: "やめる",
+            dismissOnOutside: true,
+          }
+        );
+      }
+    );
   }
   function canDrawTypeNormally(type){
     const allowed = allowedTypesByRoom(state.currentRoomId);
@@ -2919,7 +2979,7 @@
     greenShareDock.classList.remove("hidden");
   }
 
-  function openGreenShareDock(cardObj){
+  function openGreenShareDock(cardObj, { onlyTargetUids=null } = {}){
     greenShareCard = cardObj || null;
     if (!greenShareCard || !greenShareDock || !greenShareList){
       greenShareDock?.classList.add("hidden");
@@ -2933,6 +2993,10 @@
     const players = latestPlayers
       .filter(p => p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat)
       .filter(p => !isPlayerEliminated(p.id))
+      .filter(p => {
+        if (!onlyTargetUids) return true;
+        return onlyTargetUids.has(p.id);
+      })
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
 
     for (const p of players){
@@ -5271,6 +5335,7 @@
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         sealWisdomBonus: false,
+        drawnTypes: {},
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[startPlayerId]){
@@ -5329,6 +5394,7 @@
         repeatTurnRemaining: nextRepeatRemaining,
         repeatTurnTotal: nextRepeatTotal,
         sealWisdomBonus: false,
+        drawnTypes: {},
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
@@ -5417,6 +5483,9 @@
         ds.reveal.slot3 = { theme:"white", card: drawn, at: Date.now() };
       }
 
+      turn.drawnTypes = turn.drawnTypes || {};
+      turn.drawnTypes[type] = Math.max(0, Number(turn.drawnTypes[type] || 0)) + 1;
+
       if (viaParasol){
         turn.attackDone = true;
         turn.attackAt = Date.now();
@@ -5433,7 +5502,8 @@
       await applyImmediateDeckCardEffect(drawn);
     } else if (drawn && type === "green"){
       openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false, showCloseButton:false });
-      openGreenShareDock(drawn);
+      const onlyTargetUids = viaParasol ? highlightedMarkerUids() : null;
+      openGreenShareDock(drawn, { onlyTargetUids });
     }
 
     scheduleDeckRebuildIfEmpty(type).catch(() => {});
@@ -5593,13 +5663,9 @@
         return;
       }
       if (!canUseParasolGreenDraw()) return;
-      showRoomActionPopAt(
+      runParasolGreenDrawFlow(
         Number(e?.clientX || (window.innerWidth / 2)),
-        Number(e?.clientY || (window.innerHeight / 2)),
-        "攻撃の代わりにカードを引きますか。（虹色のパラソル）",
-        async () => {
-          await drawFromSharedDeck("green", { viaParasol:true });
-        }
+        Number(e?.clientY || (window.innerHeight / 2))
       );
     });
     slot2.addEventListener('click', async () => {
@@ -8893,6 +8959,7 @@
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         sealWisdomBonus: false,
+        drawnTypes: {},
         updatedAt: Date.now()
       }
     });
