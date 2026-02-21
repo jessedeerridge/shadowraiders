@@ -2052,6 +2052,8 @@
   let reactionAbilityEventInitialized = false;
   let venomChoiceEventSeenAt = 0;
   let venomChoiceEventInitialized = false;
+  let venomGiveSelectEventSeenAt = 0;
+  let venomGiveSelectEventInitialized = false;
   let walpurgisSwapEventSeenAt = 0;
   let walpurgisSwapEventInitialized = false;
   let roleFlashTimer = null;
@@ -2468,6 +2470,18 @@
     await set(ref(db, `rooms/${state.roomCode}/effectEvents/venomChoice`), {
       venomUid: vUid,
       attackerUid: aUid,
+      at: Date.now()
+    });
+  }
+
+  async function emitVenomGiveSelectEvent(venomUid, attackerUid, active){
+    const vUid = safeText(venomUid || "");
+    const aUid = safeText(attackerUid || "");
+    if (!state.roomCode || !vUid || !aUid || vUid === aUid) return;
+    await set(ref(db, `rooms/${state.roomCode}/effectEvents/venomGiveSelect`), {
+      venomUid: vUid,
+      attackerUid: aUid,
+      active: !!active,
       at: Date.now()
     });
   }
@@ -3896,7 +3910,7 @@
     hideVenomChoicePop();
     await addDamageToPlayer(state.userId, 1, { source:"venom" });
   });
-  btnVenomGiveEquip?.addEventListener("click", (e) => {
+  btnVenomGiveEquip?.addEventListener("click", async (e) => {
     e.stopPropagation();
     const action = pendingVenomChoice;
     hideVenomChoicePop();
@@ -3906,6 +3920,8 @@
       return;
     }
     pendingEquipAction = { type:"venom_give", fromUid: state.userId, toUid: action.venomUid };
+    showPersistentRoleOverlay("SHA_V1", action.venomUid);
+    await emitVenomGiveSelectEvent(action.venomUid, state.userId, true);
     renderEquipmentDock();
     showTurnHint("渡す装備を選択してください。");
   });
@@ -4136,6 +4152,8 @@
         zoomDismissHandler = null;
         const ok = await moveEquipmentCardBetweenPlayers(action.fromUid, action.toUid, sourceKey);
         if (ok){
+          await emitVenomGiveSelectEvent(action.toUid, action.fromUid, false);
+          hidePersistentRoleOverlay();
           closeZoom();
           renderEquipmentDock();
           showTurnHint("");
@@ -4146,11 +4164,13 @@
         onNo: () => {
           zoomDismissHandler = null;
           pendingEquipAction = { type:"venom_give", fromUid: action.fromUid, toUid: action.toUid };
+          showPersistentRoleOverlay("SHA_V1", action.toUid);
           renderEquipmentDock();
         }
       });
       zoomDismissHandler = async () => {
         pendingEquipAction = { type:"venom_give", fromUid: action.fromUid, toUid: action.toUid };
+        showPersistentRoleOverlay("SHA_V1", action.toUid);
         renderEquipmentDock();
       };
       return;
@@ -5127,6 +5147,31 @@
       if (!attackerUid || !venomUid) return;
       if (attackerUid !== state.userId) return;
       showVenomChoicePop(venomUid, at);
+    });
+  }
+
+  function subscribeVenomGiveSelectEvents(){
+    const venomSelectRef = ref(db, `rooms/${state.roomCode}/effectEvents/venomGiveSelect`);
+    onValue(venomSelectRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!venomGiveSelectEventInitialized){
+        venomGiveSelectEventInitialized = true;
+        venomGiveSelectEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= venomGiveSelectEventSeenAt) return;
+      venomGiveSelectEventSeenAt = at;
+      const attackerUid = safeText(ev.attackerUid || "");
+      const venomUid = safeText(ev.venomUid || "");
+      const active = !!ev.active;
+      if (!attackerUid || !venomUid || attackerUid === venomUid) return;
+      if (attackerUid === state.userId) return;
+      if (active){
+        showPersistentRoleOverlay("SHA_V1", venomUid);
+      }else{
+        hidePersistentRoleOverlay();
+      }
     });
   }
 
@@ -8489,6 +8534,7 @@
     subscribeRoleFlashEvents();
     subscribeReactionAbilityEvents();
     subscribeVenomChoiceEvents();
+    subscribeVenomGiveSelectEvents();
     subscribeWalpurgisSwapEvents();
 
     renderSeatTiles();
