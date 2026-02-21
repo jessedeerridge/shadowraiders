@@ -2701,7 +2701,7 @@
     wrap.style.gap = "10px";
 
     const card = createIdentityCard(role);
-    card.style.transform = "scale(2.1)";
+    card.style.transform = "scale(2)";
     card.style.transformOrigin = "center center";
     card.style.boxShadow = "0 14px 32px rgba(0,0,0,.35)";
     wrap.appendChild(card);
@@ -2757,7 +2757,7 @@
     wrap.style.gap = "10px";
 
     const card = createIdentityCard(role);
-    card.style.transform = "scale(2.1)";
+    card.style.transform = "scale(2)";
     card.style.transformOrigin = "center center";
     card.style.boxShadow = "0 14px 32px rgba(0,0,0,.35)";
     wrap.appendChild(card);
@@ -3200,14 +3200,14 @@
     closeZoom();
   });
 
-  function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true, closeOnAnyClick=false } = {}){
+  function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true, closeOnAnyClick=false, passthrough=false } = {}){
     zoomStage.innerHTML = "";
     hideGreenRevealPanel();
     zoomCloseOnBackdrop = !!closeOnBackdrop;
     zoomCloseOnAnyClick = !!closeOnAnyClick;
-    zoomPassthroughMode = false;
+    zoomPassthroughMode = !!passthrough;
     zoomDismissHandler = null;
-    zoomBackdrop.classList.remove("passthrough");
+    zoomBackdrop.classList.toggle("passthrough", zoomPassthroughMode);
     greenZoomLocked = !showCloseButton;
     zoomCloseBtn.classList.toggle("hidden", !showCloseButton);
     zoomStage.appendChild(contentEl);
@@ -4121,12 +4121,16 @@
     }
 
     if (pendingEquipAction?.type === "venom_give"){
-      if (!card.classList.contains("wb-front")) return;
+      if (!card.classList.contains("wb-front")){
+        showPersistentRoleOverlay("SHA_V1", safeText(pendingEquipAction?.toUid || ""));
+        return;
+      }
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (ownerUid !== state.userId || !sourceKey) return;
       const action = { ...pendingEquipAction, sourceKey };
-      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      hidePersistentRoleOverlay();
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, passthrough:true });
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードをわたしますか。", async () => {
         pendingEquipAction = null;
         zoomDismissHandler = null;
