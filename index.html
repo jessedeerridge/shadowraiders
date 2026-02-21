@@ -8399,6 +8399,14 @@
       updates[`greenSessions/${state.userId}`] = migrateUidInGreenSession(previousGreenSession);
       updates[`greenSessions/${previousPlayerId}`] = null;
     }
+    for (const [uid, entry] of Object.entries(greenSessions)){
+      if (safeText(uid || "") === safeText(previousPlayerId || "")) continue;
+      if (!entry || typeof entry !== "object") continue;
+      const migrated = migrateUidInGreenSession(entry);
+      if (JSON.stringify(migrated) !== JSON.stringify(entry)){
+        updates[`greenSessions/${uid}`] = migrated;
+      }
+    }
 
     const greenReplyBubbles = roomData.greenReplyBubbles || {};
     for (const [bubbleId, bubble] of Object.entries(greenReplyBubbles)){
