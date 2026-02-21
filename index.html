@@ -2071,6 +2071,8 @@
   let pendingGreenCloseSeenAt = 0;
   let pendingGreenCloseInitialized = false;
   let greenRevealByRequestId = {};
+  let greenSessionInitialized = false;
+  let greenSessionRestoring = false;
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
     "CIT_D3", // デボラ
@@ -2776,6 +2778,41 @@
     }
   }
 
+  async function setGreenSessionState(payload){
+    if (greenSessionRestoring) return;
+    if (!state.roomCode || !state.userId) return;
+    const gsRef = ref(db, `rooms/${state.roomCode}/greenSessions/${state.userId}`);
+    if (!payload){
+      await remove(gsRef);
+      return;
+    }
+    await set(gsRef, {
+      ...payload,
+      uid: state.userId,
+      at: Date.now()
+    });
+  }
+
+  function renderGreenWaitingSelection(toUid, toName=""){
+    if (!greenShareList) return;
+    greenShareList.innerHTML = "";
+    const selected = document.createElement("button");
+    selected.type = "button";
+    selected.className = "green-share-btn waiting-selected";
+    selected.setAttribute("aria-disabled", "true");
+    selected.style.pointerEvents = "none";
+    if (toUid) selected.appendChild(buildChipFor(toUid));
+    const name = document.createElement("span");
+    if (toUid){
+      const p = playerById(toUid);
+      name.textContent = p ? nameFromSecondChar(p.name) : safeText(toName || "");
+    } else {
+      name.textContent = safeText(toName || "");
+    }
+    selected.appendChild(name);
+    greenShareList.appendChild(selected);
+  }
+
   function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onlyAlive=false, onSelect=null, nameSuffixForUid=null } = {}){
     if (!greenShareDock || !greenShareList) return;
     const players = latestPlayers
@@ -2871,27 +2908,32 @@
         }
 
         pendingGreenRequestId = requestId;
-        greenShareList.innerHTML = "";
-        const selected = btn.cloneNode(true);
-        selected.classList.add("waiting-selected");
-        selected.setAttribute("aria-disabled", "true");
-        selected.style.pointerEvents = "none";
-        greenShareList.appendChild(selected);
+        renderGreenWaitingSelection(p.id, p.name);
         if (!safeText(greenShareCard?.effect || "").includes("正体カードを見せよ")){
           setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
           greenShareActions?.classList.add("hidden");
         }
+        setGreenSessionState({
+          phase: safeText(greenShareCard?.effect || "").includes("正体カードを見せよ") ? "confirm" : "waiting",
+          card: greenShareCard,
+          requestId,
+          toUid: p.id,
+          toName: safeText(p.name || ""),
+          answerLabel: safeText(greenShareCard?.effect || "").includes("正体カードを見せよ") ? "私の正体です。" : ""
+        }).catch(() => {});
       });
 
       greenShareList.appendChild(btn);
     }
     greenShareDock.classList.remove("hidden");
+    setGreenSessionState({ phase:"selecting", card:greenShareCard }).catch(() => {});
   }
 
   function openGreenAnswerDock(msg){
     if (!greenShareDock || !greenShareList || !msg?.card) return;
     greenShareCard = msg.card;
     pendingGreenAnswerMsg = msg;
+    setGreenSessionState({ phase:"answering", msg }).catch(() => {});
     const reveal = greenRevealByRequestId[safeText(msg.requestId || "")];
     if (reveal?.roleId){
       showGreenRevealPanel(reveal.roleId, reveal.responderId);
@@ -2909,6 +2951,7 @@
       (async () => {
         await sendGreenResponse(msg, opt, "私の正体です。");
         await applyGreenAnswerEffect(msg, opt);
+        await setGreenSessionState(null);
       })();
       return;
     }
@@ -2940,6 +2983,7 @@
 
         await applyGreenAnswerEffect(msg, opt);
         await sendGreenResponse(msg, opt);
+        await setGreenSessionState(null);
         closeZoom();
       });
       greenShareList.appendChild(btn);
@@ -2958,6 +3002,36 @@
     greenShareDock?.classList.add("hidden");
     cardPlayerSelectActive = false;
     renderTurnEndButton();
+    setGreenSessionState(null).catch(() => {});
+  }
+
+  function restoreGreenSessionUI(entry){
+    const phase = safeText(entry?.phase || "");
+    if (!phase) return;
+    greenSessionRestoring = true;
+    try {
+      if (phase === "answering" && entry?.msg?.card){
+        openZoomFromDeckCard(entry.msg.card, "green", { closeOnBackdrop:false, showCloseButton:false });
+        openGreenAnswerDock(entry.msg);
+        return;
+      }
+      if (!entry?.card) return;
+      openZoomFromDeckCard(entry.card, "green", { closeOnBackdrop:false, showCloseButton:false });
+      openGreenShareDock(entry.card);
+      if (phase === "waiting" || phase === "confirm"){
+        pendingGreenRequestId = safeText(entry.requestId || "");
+        renderGreenWaitingSelection(safeText(entry.toUid || ""), safeText(entry.toName || ""));
+        if (phase === "confirm"){
+          setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(entry.answerLabel || "") });
+          greenShareActions?.classList.remove("hidden");
+        } else {
+          setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
+          greenShareActions?.classList.add("hidden");
+        }
+      }
+    } finally {
+      greenSessionRestoring = false;
+    }
   }
 
   async function clearPendingGreenBubble(){
@@ -7807,6 +7881,23 @@
         showGreenRevealPanel(reveal.roleId, reveal.responderId);
       }
       greenShareActions?.classList.remove("hidden");
+      setGreenSessionState({
+        phase:"confirm",
+        card: greenShareCard,
+        requestId: pendingGreenRequestId,
+        answerLabel: safeText(msg.answerLabel || "")
+      }).catch(() => {});
+    });
+  }
+
+  function subscribeGreenSessionState(){
+    const gsRef = ref(db, `rooms/${state.roomCode}/greenSessions/${state.userId}`);
+    onValue(gsRef, snap => {
+      const data = snap.val() || null;
+      if (!greenSessionInitialized){
+        greenSessionInitialized = true;
+        if (data) restoreGreenSessionUI(data);
+      }
     });
   }
 
@@ -7852,6 +7943,7 @@
       pendingGreenAnswerMsg = null;
       hideGreenShareDock();
       closeZoom();
+      setGreenSessionState(null).catch(() => {});
     });
   }
 
@@ -8178,6 +8270,11 @@
     if (Object.prototype.hasOwnProperty.call(greenCloseSignals, previousPlayerId)){
       updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
       updates[`greenCloseSignals/${previousPlayerId}`] = null;
+    }
+    const greenSessions = roomData.greenSessions || {};
+    if (Object.prototype.hasOwnProperty.call(greenSessions, previousPlayerId)){
+      updates[`greenSessions/${state.userId}`] = greenSessions[previousPlayerId];
+      updates[`greenSessions/${previousPlayerId}`] = null;
     }
 
     const attackResolutionPending = roomData.attackResolutionPending || {};
@@ -8561,6 +8658,7 @@
     subscribeHands();
     subscribeGreenInbox();
     subscribeGreenResponses();
+    subscribeGreenSessionState();
     subscribeGreenReveals();
     subscribeGreenCloseSignals();
     subscribeGreenReplyBubbles();
