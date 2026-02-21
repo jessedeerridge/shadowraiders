@@ -8447,11 +8447,15 @@
 
     const shouldForceCloseGreenUi = ["selecting","answering","waiting","confirm"].includes(safeText(previousGreenSession?.phase || ""));
     if (shouldForceCloseGreenUi){
-      updates[`greenCloseSignals/${previousPlayerId}`] = {
+      const nextCloseSignals = (updates.greenCloseSignals && typeof updates.greenCloseSignals === "object")
+        ? { ...updates.greenCloseSignals }
+        : {};
+      nextCloseSignals[previousPlayerId] = {
         requestId: safeText(previousGreenSession?.msg?.requestId || previousGreenSession?.requestId || ""),
         from: state.userId,
         at: Date.now()
       };
+      updates.greenCloseSignals = nextCloseSignals;
     }
 
     const attackResolutionPending = roomData.attackResolutionPending || {};
