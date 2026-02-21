@@ -1943,7 +1943,21 @@
     if (!hasRainbowParasolEquip(state.userId)) return false;
     const turn = turnState() || {};
     if (!turn.moveDone || turn.attackDone) return false;
-    return remainingCount(deckCache?.green) > 0;
+    if (remainingCount(deckCache?.green) <= 0) return false;
+
+    const targetsInRange = highlightedMarkerUids();
+    if (!(targetsInRange instanceof Set) || targetsInRange.size <= 0) return false;
+
+    const drawnTypes = turn?.drawnTypes || {};
+    const drewGreenThisTurn = !!drawnTypes.green;
+    const drewAnyThisTurn = !!(drawnTypes.green || drawnTypes.white || drawnTypes.black);
+
+    const roomId = Number(state.currentRoomId || 0);
+    const roomForRule = roomId === 7 ? 10 : roomId;
+    if ([1, 2, 3, 4, 10].includes(roomForRule)) return true;
+    if (roomForRule === 5) return drewGreenThisTurn;
+    if (roomForRule === 6) return drewAnyThisTurn;
+    return false;
   }
   function canDrawTypeNormally(type){
     const allowed = allowedTypesByRoom(state.currentRoomId);
@@ -2919,7 +2933,7 @@
     greenShareDock.classList.remove("hidden");
   }
 
-  function openGreenShareDock(cardObj){
+  function openGreenShareDock(cardObj, { attackRangeOnly=false } = {}){
     greenShareCard = cardObj || null;
     if (!greenShareCard || !greenShareDock || !greenShareList){
       greenShareDock?.classList.add("hidden");
@@ -2930,8 +2944,10 @@
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
     const mySeat = currentMySeatIndex();
+    const attackRangeTargetUids = attackRangeOnly ? highlightedMarkerUids() : null;
     const players = latestPlayers
       .filter(p => p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat)
+      .filter(p => !attackRangeOnly || (attackRangeTargetUids instanceof Set && attackRangeTargetUids.has(p.id)))
       .filter(p => !isPlayerEliminated(p.id))
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
 
@@ -5265,6 +5281,7 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        drawnTypes: { green:false, white:false, black:false },
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
@@ -5323,6 +5340,7 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        drawnTypes: { green:false, white:false, black:false },
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
@@ -5423,6 +5441,11 @@
       } else if (!allowUnlimitedDraw) {
         turn.deckDrawDone = true;
       }
+      turn.drawnTypes = {
+        green: !!(turn?.drawnTypes?.green || type === "green"),
+        white: !!(turn?.drawnTypes?.white || type === "white"),
+        black: !!(turn?.drawnTypes?.black || type === "black")
+      };
       turn.updatedAt = Date.now();
       ds.updatedAt = Date.now();
       return cur;
@@ -5433,7 +5456,7 @@
       await applyImmediateDeckCardEffect(drawn);
     } else if (drawn && type === "green"){
       openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false, showCloseButton:false });
-      openGreenShareDock(drawn);
+      openGreenShareDock(drawn, { attackRangeOnly: viaParasol });
     }
 
     scheduleDeckRebuildIfEmpty(type).catch(() => {});
@@ -8891,6 +8914,7 @@
         moveDone: false,
         attackDone: false,
         deckDrawDone: false,
+        drawnTypes: { green:false, white:false, black:false },
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
