@@ -1980,6 +1980,7 @@
     const hideImage = left <= 0;
     slotEl.className = 'card72 deck' + (disabled ? ' disabled' : '');
     slotEl.classList.remove("noframe");
+    slotEl.classList.toggle("hidden", hideImage);
     slotEl.style.backgroundImage = hideImage ? 'none' : `url('${imgUrl}')`;
     slotEl.style.backgroundColor = hideImage ? '#f3f4f6' : '';
     slotEl.innerHTML = '';
@@ -4035,13 +4036,19 @@
     if (pendingEquipAction?.type === "banana_give"){
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
-      if (ownerUid !== state.userId || !sourceKey) return;
+      const isIdentity = card.classList.contains("id72");
+      if (isIdentity && ownerUid === state.userId){
+        openZoomFromCard(card);
+        return;
+      }
+      if (ownerUid !== state.userId || !sourceKey || isIdentity) return;
       const cardName = safeText(card.dataset.cardName || "この装備");
       pendingEquipAction.selectedSourceKey = sourceKey;
       openTargetSelectDock({
         title: `「${cardName}」を誰かに渡しますか。`,
         includeSelf: false,
         onlyAlive: true,
+        lockEndTurnUntilResolved: true,
         onSelect: async (uid) => {
           const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
           pendingEquipAction = null;
@@ -4057,9 +4064,14 @@
     }
 
     if (pendingEquipAction?.type === "oliver_target"){
-      if (!card.classList.contains("equip-steal-pulse")) return;
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
+      const isIdentity = card.classList.contains("id72");
+      if (isIdentity && ownerUid === state.userId){
+        openZoomFromCard(card);
+        return;
+      }
+      if (!card.classList.contains("equip-steal-pulse")) return;
       if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
       const cardObj = pendingEquipAction?.cardObj || null;
       pendingEquipAction = { type:"oliver_confirm", ownerUid, sourceKey, cardObj };
@@ -4619,6 +4631,9 @@
     if (mustAttackWithMasamune()) return false;
     if (attackTurnEndChoicePending) return false;
     if (suppressEndTurnButton) return false;
+    if (pendingEquipAction?.type === "banana_give") return false;
+    if (pendingEquipAction?.type === "oliver_target") return false;
+    if (pendingEquipAction?.type === "oliver_confirm") return false;
     return !!turnState()?.moveDone;
   }
 
@@ -5157,6 +5172,8 @@
       const kind = safeText(ev.kind || "");
       if (kind === "curse_doll"){
         runCornerD6Roll(Number(ev.d6 || 1));
+      } else if (kind === "blessing"){
+        runCornerD6Roll(Number(ev.d6 || 1));
       } else if (kind === "riot"){
         runCornerD6D4Roll({
           d6: Number(ev.d6 || 1),
@@ -5487,6 +5504,9 @@
         const recycled = collectEliminatedEquipCardsForDeck(cur, type);
         deck.order = shuffle([...base, ...recycled]);
         deck.idx = 0;
+        cur.deckState.reveal = cur.deckState.reveal || { slot3:null, slot5:null };
+        if (type === "white") cur.deckState.reveal.slot3 = null;
+        if (type === "black") cur.deckState.reveal.slot5 = null;
         delete deck.rebuildPendingAt;
         cur.deckState.updatedAt = Date.now();
         return cur;
@@ -6516,6 +6536,7 @@
         onYes: async () => {
           await revealMyIdentityToEquipment();
           await fullRecoverPlayer(state.userId);
+          openIdentityRevealZoom(role, state.userId);
         }
       });
       return;
@@ -6532,6 +6553,7 @@
         onYes: async () => {
           await revealMyIdentityToEquipment();
           await fullRecoverPlayer(state.userId);
+          openIdentityRevealZoom(role, state.userId);
         }
       });
       return;
@@ -6580,7 +6602,8 @@
         includeSelf: false,
         nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
         onSelect: async (uid) => {
-          const eye = await runCornerD6Roll();
+          const eye = 1 + Math.floor(Math.random() * 6);
+          await emitCardDiceEvent({ kind:"blessing", uid: state.userId, d6: eye });
           await waitMs(1000);
           await healDamageToPlayer(uid, eye);
           closeZoom();
