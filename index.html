@@ -1494,6 +1494,7 @@
   <h1>テンプレ</h1>
   <div style="display:flex;align-items:center;gap:6px;">
     <div class="small" id="roomInfo"></div>
+    <div class="small" id="lastAttackToMeInfo"></div>
     <div class="small attack-roll-result-debug" id="attackRollResult" aria-live="polite"></div>
     <button class="btn ghost" id="copyLinkBtn">COPY</button>
   </div>
@@ -3575,6 +3576,7 @@
     const gatlingMode = hasMyEquipmentByName("ガトリング");
     const gatlingTargetUids = gatlingMode ? [...highlightedMarkerUids()] : [];
     const attackTargetUids = gatlingMode ? gatlingTargetUids : [uid];
+    await recordLastAttackToMe(state.userId, attackTargetUids);
     lastAttackWatch = {
       uid: state.userId,
       targetUids: attackTargetUids,
@@ -6970,6 +6972,7 @@
   const btnJoin = document.getElementById('btnJoin');
   const lobby = document.getElementById('lobby');
   const roomInfo = document.getElementById('roomInfo');
+  const lastAttackToMeInfo = document.getElementById('lastAttackToMeInfo');
   const attackRollResult = document.getElementById('attackRollResult');
   const roomInfoLobby = document.getElementById('roomInfoLobby');
   const copyLinkBtn = document.getElementById('copyLinkBtn');
@@ -7256,6 +7259,23 @@
     const infoText = ` ${state.roomCode},  ${state.userName}${label}`;
     roomInfo.textContent = infoText;
     roomInfoLobby.textContent = infoText;
+
+    if (!lastAttackToMeInfo) return;
+    const attackerUid = safeText(state.room?.lastattacktome?.[state.userId] || "");
+    const attackerName = safeText(playerById(attackerUid)?.name || "");
+    lastAttackToMeInfo.textContent = attackerName ? `被攻撃:${attackerName}` : "";
+  }
+
+  async function recordLastAttackToMe(attackerUid, targetUids){
+    if (!state.roomCode) return;
+    const uid = safeText(attackerUid);
+    const targets = [...new Set((targetUids || []).map(v => safeText(v)).filter(Boolean))];
+    if (!uid || !targets.length) return;
+    const updates = {};
+    for (const targetUid of targets){
+      updates[`lastattacktome/${targetUid}`] = uid;
+    }
+    await update(ref(db, `rooms/${state.roomCode}`), updates);
   }
 
   function didAttackRollSucceed(d6, d4, options = {}){
@@ -7287,6 +7307,7 @@
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     onValue(roomRef, snap => {
       state.room = snap.val() || {};
+      refreshRoomLabels();
       if (isGameStarted() && !currentTurnPlayerId() && state.isHost){
         ensureTurnInitialized();
       }
@@ -7428,6 +7449,7 @@
         .sort((a,b) => a.seatIndex - b.seatIndex);
 
       latestPlayers = players;
+      refreshRoomLabels();
 
       const mySeat = players.find(p => p.id === state.userId);
       if (mySeat) {
