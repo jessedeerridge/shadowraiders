@@ -8344,6 +8344,10 @@
     const previousGreenSession = greenSessions[previousPlayerId] || null;
 
     const greenInbox = roomData.greenInbox || {};
+    for (const [uid, entry] of Object.entries(greenInbox)){
+      if (!entry || safeText(entry.from || "") !== safeText(previousPlayerId || "")) continue;
+      updates[`greenInbox/${uid}/from`] = state.userId;
+    }
     if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId)){
       updates[`greenInbox/${state.userId}`] = greenInbox[previousPlayerId];
       updates[`greenInbox/${previousPlayerId}`] = null;
