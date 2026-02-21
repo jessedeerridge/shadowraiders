@@ -2071,6 +2071,7 @@
   let pendingGreenCloseSeenAt = 0;
   let pendingGreenCloseInitialized = false;
   let greenRevealByRequestId = {};
+  const greenAutoRevealHandled = {};
   let greenSessionInitialized = false;
   let greenSessionRestoring = false;
   let greenSessionSeenAt = 0;
@@ -2750,7 +2751,11 @@
     }
 
     if (text.includes("正体カードを見せよ")){
-      const roleId = safeText(state.hands?.[state.userId]?.roleId || "");
+      let roleId = safeText(state.hands?.[state.userId]?.roleId || "");
+      if (!roleId && state.roomCode && state.userId){
+        const roleSnap = await get(ref(db, `rooms/${state.roomCode}/hands/${state.userId}/roleId`));
+        roleId = safeText(roleSnap.val() || "");
+      }
       if (roleId){
         await set(ref(db, `rooms/${state.roomCode}/greenReveals/${msg.requestId}`), {
           requestId: msg.requestId,
@@ -2977,12 +2982,15 @@
 
     if (cardText.includes("正体カードを見せよ")){
       const opt = { id:"reveal_identity", label:"私の正体です。", enabled:true };
+      const requestId = safeText(msg.requestId || "");
       greenShareDock.classList.add("hidden");
-      (async () => {
-        await sendGreenResponse(msg, opt, "私の正体です。");
-        await applyGreenAnswerEffect(msg, opt);
-        await setGreenSessionState(null);
-      })();
+      if (!greenAutoRevealHandled[requestId]){
+        greenAutoRevealHandled[requestId] = true;
+        (async () => {
+          await sendGreenResponse(msg, opt, "私の正体です。");
+          await applyGreenAnswerEffect(msg, opt);
+        })();
+      }
       return;
     }
 
@@ -3069,11 +3077,7 @@
     if (!state.roomCode || !pendingGreenRequestId) return;
     const bubbleId = pendingGreenRequestId;
     const bRef = ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${bubbleId}`);
-    const snap = await get(bRef);
-    const val = snap.val();
-    if (val?.from === state.userId){
-      await remove(bRef);
-    }
+    await remove(bRef);
     pendingGreenRequestId = "";
   }
 
@@ -8356,6 +8360,26 @@
     if (Object.prototype.hasOwnProperty.call(greenResponses, previousPlayerId)){
       updates[`greenResponses/${state.userId}`] = greenResponses[previousPlayerId];
       updates[`greenResponses/${previousPlayerId}`] = null;
+    }
+    const greenReplyBubbles = roomData.greenReplyBubbles || {};
+    for (const [requestId, entry] of Object.entries(greenReplyBubbles)){
+      if (!entry) continue;
+      if (safeText(entry.from || "") === safeText(previousPlayerId || "")){
+        updates[`greenReplyBubbles/${requestId}/from`] = state.userId;
+      }
+      if (safeText(entry.responderId || "") === safeText(previousPlayerId || "")){
+        updates[`greenReplyBubbles/${requestId}/responderId`] = state.userId;
+      }
+    }
+    const greenReveals = roomData.greenReveals || {};
+    for (const [requestId, entry] of Object.entries(greenReveals)){
+      if (!entry) continue;
+      if (safeText(entry.from || "") === safeText(previousPlayerId || "")){
+        updates[`greenReveals/${requestId}/from`] = state.userId;
+      }
+      if (safeText(entry.responderId || "") === safeText(previousPlayerId || "")){
+        updates[`greenReveals/${requestId}/responderId`] = state.userId;
+      }
     }
     const greenCloseSignals = roomData.greenCloseSignals || {};
     if (Object.prototype.hasOwnProperty.call(greenCloseSignals, previousPlayerId)){
