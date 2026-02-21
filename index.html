@@ -4099,6 +4099,7 @@
       pendingEquipAction.selectedSourceKey = sourceKey;
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
       setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
+      setZoomPassthrough(true);
       greenShareDock?.classList.add("hidden");
       openTargetSelectDock({
         title: `「${cardName}」を誰かに渡しますか。`,
@@ -4138,6 +4139,7 @@
       pendingEquipAction = { type:"oliver_confirm", ownerUid, sourceKey, cardObj };
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
+      setZoomPassthrough(true);
       renderTurnEndButton();
       zoomDismissHandler = async () => {
         restoreOliverZoomSelection();
