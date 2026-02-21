@@ -1976,6 +1976,18 @@
     if (type === "green" && canUseParasolGreenDraw()) return true;
     return false;
   }
+
+  function parasolBlockedDrawWarningMessage(){
+    const roomId = Number(state.currentRoomId || 0);
+    const drawnTypes = turnState()?.drawnTypes || {};
+    if (roomId === 1 && !drawnTypes.white){
+      return "この後、白カードがひけません。";
+    }
+    if (roomId === 2 && !drawnTypes.black){
+      return "この後、白カードがひけません。";
+    }
+    return "";
+  }
   function applyLocked(el, locked, {noDim=false} = {}){
     if (!el) return;
     el.classList.toggle("locked", !!locked && !noDim);
@@ -5622,12 +5634,27 @@
         return;
       }
       if (!canUseParasolGreenDraw()) return;
+      const clickX = Number(e?.clientX || (window.innerWidth / 2));
+      const clickY = Number(e?.clientY || (window.innerHeight / 2));
       showRoomActionPopAt(
-        Number(e?.clientX || (window.innerWidth / 2)),
-        Number(e?.clientY || (window.innerHeight / 2)),
+        clickX,
+        clickY,
         "攻撃の代わりにカードを引きますか。（虹色のパラソル）",
         async () => {
-          await drawFromSharedDeck("green", { viaParasol:true });
+          const warningMessage = parasolBlockedDrawWarningMessage();
+          if (!warningMessage){
+            await drawFromSharedDeck("green", { viaParasol:true });
+            return;
+          }
+          showRoomActionPopAt(
+            clickX,
+            clickY,
+            warningMessage,
+            async () => {
+              await drawFromSharedDeck("green", { viaParasol:true });
+            },
+            { noCaret:true, yesLabel:"OK", noLabel:"やめる" }
+          );
         },
         { noCaret:true }
       );
