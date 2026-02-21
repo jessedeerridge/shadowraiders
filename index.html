@@ -3077,6 +3077,12 @@
       greenShareActions?.classList.add("hidden");
       pendingGreenRequestId = safeText(entry.requestId || "");
       renderGreenWaitingSelection(safeText(entry.toUid || ""), safeText(entry.toName || ""), safeText(entry.toInitial || ""), safeText(entry.toColor || ""));
+      const restoreReveal = greenRevealByRequestId[pendingGreenRequestId];
+      if (restoreReveal?.roleId){
+        showGreenRevealPanel(restoreReveal.roleId, restoreReveal.responderId);
+      } else {
+        hideGreenRevealPanel();
+      }
       if (phase === "confirm"){
         setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(entry.answerLabel || "") });
         greenShareActions?.classList.remove("hidden");
