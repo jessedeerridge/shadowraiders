@@ -8381,93 +8381,67 @@
       const nextUid = safeText(toUid || "");
       if (!prevUid || !nextUid || prevUid === nextUid) return;
 
-      const replaceUid = (uid) => (safeText(uid || "") === prevUid ? nextUid : safeText(uid || ""));
+      const migratedAt = Date.now();
       const copy = (v) => JSON.parse(JSON.stringify(v));
+      const deepReplaceUid = (value) => {
+        if (value == null) return value;
+        if (typeof value === "string"){
+          return safeText(value) === prevUid ? nextUid : value;
+        }
+        if (Array.isArray(value)) return value.map(deepReplaceUid);
+        if (typeof value === "object"){
+          const next = {};
+          for (const [k, v] of Object.entries(value)){
+            next[k] = deepReplaceUid(v);
+          }
+          return next;
+        }
+        return value;
+      };
 
-      const migrateByKey = (nodeName, valueRewriter = null) => {
+      const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      const touchAt = (entry) => {
+        if (!entry || typeof entry !== "object") return entry;
+        return { ...entry, at: migratedAt };
+      };
+
+      const migrateUidNode = (nodeName, shouldTouchAt = false) => {
         const node = room[nodeName] || {};
         if (!node || typeof node !== "object") return;
+
+        if (Object.prototype.hasOwnProperty.call(node, prevUid)){
+          const migrated = deepReplaceUid(copy(node[prevUid]));
+          outUpdates[`${nodeName}/${nextUid}`] = shouldTouchAt ? touchAt(migrated) : migrated;
+          outUpdates[`${nodeName}/${prevUid}`] = null;
+        }
+
         for (const [key, value] of Object.entries(node)){
-          if (value == null) continue;
-          const rewritten = valueRewriter ? valueRewriter(value, key) : copy(value);
-          if (safeText(key || "") === prevUid){
-            outUpdates[`${nodeName}/${nextUid}`] = rewritten;
-            outUpdates[`${nodeName}/${prevUid}`] = null;
-          } else if (valueRewriter){
-            if (JSON.stringify(rewritten) !== JSON.stringify(value)){
-              outUpdates[`${nodeName}/${key}`] = rewritten;
-            }
-          }
+          if (value == null || safeText(key || "") === prevUid) continue;
+          const rewritten = deepReplaceUid(copy(value));
+          if (sameJson(rewritten, value)) continue;
+          outUpdates[`${nodeName}/${key}`] = shouldTouchAt ? touchAt(rewritten) : rewritten;
         }
       };
 
-      migrateByKey("greenInbox", (entry) => {
-        if (!entry || typeof entry !== "object") return entry;
-        const next = copy(entry);
-        next.from = replaceUid(next.from);
-        next.to = replaceUid(next.to);
-        return next;
-      });
+      migrateUidNode("greenInbox", true);
+      migrateUidNode("greenResponses", true);
+      migrateUidNode("greenCloseSignals", true);
+      migrateUidNode("greenSessions", true);
 
-      migrateByKey("greenResponses", (entry) => {
-        if (!entry || typeof entry !== "object") return entry;
-        const next = copy(entry);
-        next.from = replaceUid(next.from);
-        next.to = replaceUid(next.to);
-        return next;
-      });
-
-      migrateByKey("greenCloseSignals", (entry) => {
-        if (!entry || typeof entry !== "object") return entry;
-        const next = copy(entry);
-        next.from = replaceUid(next.from);
-        return next;
-      });
-
-      migrateByKey("greenSessions", (entry) => {
-        if (!entry || typeof entry !== "object") return entry;
-        const next = copy(entry);
-        next.uid = replaceUid(next.uid);
-        next.toUid = replaceUid(next.toUid);
-        if (next.msg && typeof next.msg === "object"){
-          next.msg.from = replaceUid(next.msg.from);
-          next.msg.to = replaceUid(next.msg.to);
+      const migrateRequestNode = (nodeName, shouldTouchAt = false) => {
+        const node = room[nodeName] || {};
+        if (!node || typeof node !== "object") return;
+        for (const [rowId, row] of Object.entries(node)){
+          if (!row || typeof row !== "object") continue;
+          const rewritten = deepReplaceUid(copy(row));
+          if (sameJson(rewritten, row)) continue;
+          outUpdates[`${nodeName}/${rowId}`] = shouldTouchAt ? touchAt(rewritten) : rewritten;
         }
-        return next;
-      });
+      };
 
-      const greenRequests = room.greenRequests || {};
-      for (const [requestId, req] of Object.entries(greenRequests)){
-        if (!req || typeof req !== "object") continue;
-        const nextReq = copy(req);
-        nextReq.from = replaceUid(nextReq.from);
-        nextReq.to = replaceUid(nextReq.to);
-        if (JSON.stringify(nextReq) !== JSON.stringify(req)){
-          outUpdates[`greenRequests/${requestId}`] = nextReq;
-        }
-      }
-
-      const greenReplyBubbles = room.greenReplyBubbles || {};
-      for (const [bubbleId, bubble] of Object.entries(greenReplyBubbles)){
-        if (!bubble || typeof bubble !== "object") continue;
-        const nextBubble = copy(bubble);
-        nextBubble.from = replaceUid(nextBubble.from);
-        nextBubble.responderId = replaceUid(nextBubble.responderId);
-        if (JSON.stringify(nextBubble) !== JSON.stringify(bubble)){
-          outUpdates[`greenReplyBubbles/${bubbleId}`] = nextBubble;
-        }
-      }
-
-      const greenReveals = room.greenReveals || {};
-      for (const [revealId, reveal] of Object.entries(greenReveals)){
-        if (!reveal || typeof reveal !== "object") continue;
-        const nextReveal = copy(reveal);
-        nextReveal.from = replaceUid(nextReveal.from);
-        nextReveal.responderId = replaceUid(nextReveal.responderId);
-        if (JSON.stringify(nextReveal) !== JSON.stringify(reveal)){
-          outUpdates[`greenReveals/${revealId}`] = nextReveal;
-        }
-      }
+      migrateRequestNode("greenRequests", true);
+      migrateRequestNode("greenReplyBubbles", true);
+      migrateRequestNode("greenReveals", true);
     };
 
     migrateGreenStateBySeatSteal(roomData, previousPlayerId, state.userId, updates);
