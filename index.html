@@ -2138,6 +2138,97 @@
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+  let uiCarrySelectionApplied = false;
+  let uiCarrySelectionStamp = 0;
+
+  function uiCarryPath(uid = state.userId){
+    return `rooms/${state.roomCode}/uiCarrySelection/${uid}`;
+  }
+
+  async function setUiCarrySelection(payload){
+    if (!state.roomCode || !state.userId) return;
+    await set(ref(db, uiCarryPath()), {
+      ...(payload || {}),
+      uid: state.userId,
+      at: Date.now()
+    });
+  }
+
+  async function clearUiCarrySelection(){
+    if (!state.roomCode || !state.userId) return;
+    await remove(ref(db, uiCarryPath()));
+  }
+
+  function renderGreenSendWaitingState(selectedUid, selectedName){
+    if (!greenShareList || !selectedUid) return;
+    greenShareList.innerHTML = "";
+    const selected = document.createElement("button");
+    selected.type = "button";
+    selected.className = "green-share-btn waiting-selected";
+    selected.setAttribute("aria-disabled", "true");
+    selected.style.pointerEvents = "none";
+    selected.appendChild(buildChipFor(selectedUid));
+    const name = document.createElement("span");
+    name.textContent = safeText(selectedName || playerById(selectedUid)?.name || "");
+    selected.appendChild(name);
+    greenShareList.appendChild(selected);
+  }
+
+  function restoreUiCarrySelection(payload){
+    if (!payload || !payload.type) return;
+    const roleReady = !!state.hands?.[state.userId]?.roleId;
+    const at = Number(payload.at || 0);
+    if (!roleReady || (at && at <= uiCarrySelectionStamp)) return;
+
+    if (payload.type === "green_send_select" && payload.card){
+      openZoomFromDeckCard(payload.card, "green", { closeOnBackdrop:false, showCloseButton:false });
+      openGreenShareDock(payload.card);
+      uiCarrySelectionStamp = at;
+      uiCarrySelectionApplied = true;
+      return;
+    }
+
+    if (payload.type === "green_send_wait" && payload.card && payload.requestId){
+      openZoomFromDeckCard(payload.card, "green", { closeOnBackdrop:false, showCloseButton:false });
+      openGreenShareDock(payload.card);
+      pendingGreenRequestId = safeText(payload.requestId || "");
+      renderGreenSendWaitingState(payload.selectedUid, payload.selectedName);
+      setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
+      greenShareActions?.classList.add("hidden");
+      uiCarrySelectionStamp = at;
+      uiCarrySelectionApplied = true;
+      return;
+    }
+
+    if (payload.type === "green_answer_select" && payload.msg?.card){
+      openZoomFromDeckCard(payload.msg.card, "green", { closeOnBackdrop:false, showCloseButton:false });
+      openGreenAnswerDock(payload.msg);
+      uiCarrySelectionStamp = at;
+      uiCarrySelectionApplied = true;
+      return;
+    }
+
+    if (payload.type === "ability_select" && payload.action){
+      pendingEquipAction = payload.action;
+      if (pendingEquipAction?.type === "david_select"){
+        restoreDavidAbilitySelection();
+      } else if (pendingEquipAction?.type === "green_give"){
+        restoreGreenGiveZoomSelection(pendingEquipAction);
+      }
+      renderEquipmentDock();
+      uiCarrySelectionStamp = at;
+      uiCarrySelectionApplied = true;
+      return;
+    }
+
+    if (payload.type === "attack_pop" && payload.targetUid){
+      pendingAttackTargetUid = safeText(payload.targetUid || "");
+      const target = playerById(pendingAttackTargetUid);
+      showAttackPopAt(window.innerWidth / 2, window.innerHeight / 2, target?.name || "このプレイヤー");
+      uiCarrySelectionStamp = at;
+      uiCarrySelectionApplied = true;
+    }
+  }
 
   function turnRoomActionState(){
     const t = turnState() || {};
@@ -2303,10 +2394,12 @@
     }
     attackPop.classList.remove("hidden");
     placeFloatingPop(attackPop, clientX, clientY);
+    setUiCarrySelection({ type:"attack_pop", targetUid: pendingAttackTargetUid });
   }
   function hideAttackPop(){
     pendingAttackTargetUid = "";
     attackPop?.classList.add("hidden");
+    clearUiCarrySelection();
   }
 
   function showTurnHint(message){
@@ -2753,6 +2846,7 @@
     greenShareDock?.classList.add("hidden");
     setZoomPassthrough(true);
     pendingEquipAction = action;
+    setUiCarrySelection({ type:"ability_select", action: pendingEquipAction });
     renderEquipmentDock();
   }
 
@@ -2816,6 +2910,8 @@
       return;
     }
 
+    setUiCarrySelection({ type:"green_send_select", card: greenShareCard });
+
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
@@ -2870,6 +2966,13 @@
           setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
           greenShareActions?.classList.add("hidden");
         }
+        await setUiCarrySelection({
+          type:"green_send_wait",
+          card: greenShareCard,
+          requestId,
+          selectedUid: p.id,
+          selectedName: nameFromSecondChar(p.name)
+        });
       });
 
       greenShareList.appendChild(btn);
@@ -2881,6 +2984,7 @@
     if (!greenShareDock || !greenShareList || !msg?.card) return;
     greenShareCard = msg.card;
     pendingGreenAnswerMsg = msg;
+    setUiCarrySelection({ type:"green_answer_select", msg });
     const reveal = greenRevealByRequestId[safeText(msg.requestId || "")];
     if (reveal?.roleId){
       showGreenRevealPanel(reveal.roleId, reveal.responderId);
@@ -2947,6 +3051,7 @@
     greenShareDock?.classList.add("hidden");
     cardPlayerSelectActive = false;
     renderTurnEndButton();
+    clearUiCarrySelection();
   }
 
   async function clearPendingGreenBubble(){
@@ -3458,6 +3563,7 @@
     }
     await revealMyIdentityToEquipment({ revealedBy:"david_ability" });
     pendingEquipAction = { type:"david_select", defeatedUids };
+    await setUiCarrySelection({ type:"ability_select", action: pendingEquipAction });
     restoreDavidIdentityZoom();
     renderEquipmentDock();
   }
@@ -3801,6 +3907,7 @@
         if (ok){
           await markDavidAbilityUsed();
           pendingEquipAction = null;
+          await clearUiCarrySelection();
           hideDavidSelectPreview();
           closeZoom();
           renderEquipmentDock();
@@ -3823,6 +3930,7 @@
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードをわたしますか。", async () => {
         pendingEquipAction = null;
+        await clearUiCarrySelection();
         zoomDismissHandler = null;
         const ok = await moveEquipmentCardBetweenPlayers(action.fromUid, action.toUid, sourceKey);
         if (ok){
@@ -3861,6 +3969,7 @@
         onSelect: async (uid) => {
           const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
           pendingEquipAction = null;
+          await clearUiCarrySelection();
           greenShareDock?.classList.add("hidden");
           const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
           if (ok){
@@ -3886,6 +3995,7 @@
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "これを奪いますか。", async () => {
         const action = pendingEquipAction;
         pendingEquipAction = null;
+        await clearUiCarrySelection();
         zoomDismissHandler = null;
         const ok = await stealEquipmentFromPlayer(action.ownerUid, action.sourceKey);
         if (ok){
@@ -7736,6 +7846,19 @@
     });
   }
 
+  function subscribeUiCarrySelection(){
+    const carryRef = ref(db, uiCarryPath());
+    onValue(carryRef, snap => {
+      const payload = snap.val() || null;
+      if (!payload){
+        uiCarrySelectionApplied = false;
+        return;
+      }
+      if (uiCarrySelectionApplied && Number(payload.at || 0) <= uiCarrySelectionStamp) return;
+      restoreUiCarrySelection(payload);
+    });
+  }
+
   function subscribePlayers(){
     const tablesRef = ref(db, `rooms/${state.roomCode}/tables`);
     onValue(tablesRef, snap => {
@@ -8059,6 +8182,12 @@
       updates[`greenCloseSignals/${previousPlayerId}`] = null;
     }
 
+    const uiCarrySelection = roomData.uiCarrySelection || {};
+    if (Object.prototype.hasOwnProperty.call(uiCarrySelection, previousPlayerId)){
+      updates[`uiCarrySelection/${state.userId}`] = uiCarrySelection[previousPlayerId];
+      updates[`uiCarrySelection/${previousPlayerId}`] = null;
+    }
+
     if (roomData.abilityUsage){
       const abilityUsageCopy = JSON.parse(JSON.stringify(roomData.abilityUsage));
       moveAbilityUsageUid(abilityUsageCopy, previousPlayerId, state.userId);
@@ -8300,6 +8429,7 @@
       remove(ref(db, `${base}/greenReplyBubbles`)),
       remove(ref(db, `${base}/greenReveals`)),
       remove(ref(db, `${base}/turn`)),
+      remove(ref(db, `${base}/uiCarrySelection`)),
     ]);
 
     deckCache = null;
@@ -8374,6 +8504,8 @@
     state.roomCode = inputCode.value.trim() || generateRoomCode();
     state.spectating = false;
     state.currentRoomId = 0;
+    uiCarrySelectionApplied = false;
+    uiCarrySelectionStamp = 0;
 
     await set(ref(db, `rooms/${state.roomCode}/users/${state.userId}`), {
       name: state.userName,
@@ -8421,6 +8553,7 @@
     subscribeGreenResponses();
     subscribeGreenReveals();
     subscribeGreenCloseSignals();
+    subscribeUiCarrySelection();
     subscribeGreenReplyBubbles();
     subscribeMarkers();
     subscribeEquipment();
