@@ -1073,6 +1073,32 @@
   animation:equipDefeatPulse .9s ease-in-out infinite;
   cursor:pointer;
 }
+.defeat-loot-backdrop{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.45);
+  z-index:12020;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+}
+.defeat-loot-backdrop.hidden{display:none;}
+.defeat-loot-pop{
+  width:min(820px, 96vw);
+  max-height:min(84vh, 900px);
+  overflow:auto;
+  background:#fff;
+  border:1px solid rgba(0,0,0,.2);
+  border-radius:14px;
+  box-shadow:0 18px 40px rgba(0,0,0,.35);
+  padding:12px;
+}
+.defeat-loot-title{font-weight:1000;font-size:14px;margin:0 0 10px;}
+.defeat-loot-grid{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;}
+.defeat-loot-empty-card{
+  width:72px;height:108px;border:2px solid #111;border-radius:8px;background:#fff;
+  display:flex;align-items:center;justify-content:center;text-align:center;font-weight:900;font-size:12px;line-height:1.45;
+}
 @keyframes equipStealPulse{
   0%,100%{ transform:scale(1); }
   50%{ transform:scale(1.06); }
@@ -1697,6 +1723,13 @@
 
 <div id="turnHintPop" class="turn-hint-pop hidden" aria-live="polite"></div>
 
+<div id="defeatLootBackdrop" class="defeat-loot-backdrop hidden" role="dialog" aria-label="脱落時の装備選択">
+  <div class="defeat-loot-pop">
+    <p class="defeat-loot-title">攻撃で脱落したプレイヤーの装備を選択してください。</p>
+    <div id="defeatLootGrid" class="defeat-loot-grid"></div>
+  </div>
+</div>
+
 <div id="endTurnConfirm" class="endturn-confirm hidden" role="dialog" aria-label="手番終了確認">
   <p class="msg" id="endTurnConfirmMsg">本当に終了しますか。</p>
   <div class="actions">
@@ -2221,12 +2254,18 @@
   const btnRoomActionYes = document.getElementById("btnRoomActionYes");
   const btnRoomActionNo = document.getElementById("btnRoomActionNo");
   const turnHintPop = document.getElementById("turnHintPop");
+  const defeatLootBackdrop = document.getElementById("defeatLootBackdrop");
+  const defeatLootGrid = document.getElementById("defeatLootGrid");
   const identityPromptPop = document.getElementById("identityPromptPop");
   const identityPromptMsg = document.getElementById("identityPromptMsg");
   const btnIdentityPromptYes = document.getElementById("btnIdentityPromptYes");
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+
+  defeatLootBackdrop?.addEventListener("click", (e) => {
+    e.stopPropagation();
+  });
 
   function turnRoomActionState(){
     const t = turnState() || {};
@@ -2518,6 +2557,7 @@
   function hideIdentityPrompt(){
     pendingIdentityPrompt = null;
     identityPromptPop?.classList.add("hidden");
+    renderDefeatLootModal();
   }
 
   function showIdentityPromptPop({ message, canReveal, onYes, onNo=null, cardObj=null, cardTheme="white", openZoom=false }){
@@ -3372,6 +3412,7 @@
     hideDavidSelectPreview();
     zoomBackdrop?.classList.remove("david-select-active");
     equipDock?.classList.remove("david-select-front");
+    renderDefeatLootModal();
   }
   zoomCloseBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -3531,20 +3572,68 @@
   }
 
   let latestPlayers = [];
-  let defeatLootQueue = [];
   let lastAttackWatch = null;
   let previousEliminatedMap = {};
 
-  function clearDefeatLootState(){
-    defeatLootQueue = [];
-    renderEquipmentDock();
+  function currentDefeatLootState(){
+    const all = state.room?.defeatLootPending || {};
+    return all?.[state.userId] || null;
   }
 
-  function enqueueDefeatLoot(uid){
+  async function putDefeatLootState(next){
+    if (!state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/defeatLootPending/${state.userId}`), next || null);
+  }
+
+  async function clearDefeatLootState(){
+    await putDefeatLootState(null);
+  }
+
+  async function enqueueDefeatLoot(uid){
     const targetUid = safeText(uid);
-    if (!targetUid || targetUid === state.userId) return;
-    if (defeatLootQueue.includes(targetUid)) return;
-    defeatLootQueue.push(targetUid);
+    if (!targetUid || targetUid === state.userId || !state.roomCode) return;
+    const path = `rooms/${state.roomCode}/defeatLootPending/${state.userId}`;
+    await runTransaction(ref(db, path), (cur) => {
+      const base = (cur && typeof cur === 'object') ? cur : {};
+      const uids = Array.isArray(base.eliminatedUids) ? [...base.eliminatedUids.map(v => safeText(v)).filter(Boolean)] : [];
+      if (!uids.includes(targetUid)) uids.push(targetUid);
+      return {
+        ...base,
+        uid: state.userId,
+        eliminatedUids: uids,
+        selectedOwnerUid: safeText(base.selectedOwnerUid || ''),
+        selectedSourceKey: safeText(base.selectedSourceKey || ''),
+        selectedNoSteal: !!base.selectedNoSteal,
+        at: Date.now()
+      };
+    });
+  }
+
+  function defeatLootCandidates(){
+    const lootState = currentDefeatLootState();
+    const targetUids = Array.isArray(lootState?.eliminatedUids) ? lootState.eliminatedUids.map(v => safeText(v)).filter(Boolean) : [];
+    const byId = new Map(latestPlayers.map(p => [p.id, p]));
+    const cards = [];
+    for (const uid of targetUids){
+      if (!byId.has(uid) || !isPlayerEliminated(uid)) continue;
+      const p = byId.get(uid);
+      for (const item of listEquipForUid(uid)){
+        cards.push({ uid, player:p, item });
+      }
+    }
+    return cards;
+  }
+
+  async function updateDefeatLootSelection({ ownerUid='', sourceKey='', noSteal=false } = {}){
+    const cur = currentDefeatLootState();
+    if (!cur) return;
+    await putDefeatLootState({
+      ...cur,
+      selectedOwnerUid: safeText(ownerUid || ''),
+      selectedSourceKey: safeText(sourceKey || ''),
+      selectedNoSteal: !!noSteal,
+      at: Date.now()
+    });
   }
 
   function orderedPlayersForEquip(){
@@ -3552,8 +3641,6 @@
     const me = byId.get(state.userId) || null;
     const others = latestPlayers.filter(p => p.id !== state.userId).sort((a,b) => a.seatIndex - b.seatIndex);
 
-    const promotedUid = defeatLootQueue.find(uid => byId.has(uid)) || "";
-    const promoted = promotedUid ? byId.get(promotedUid) : null;
     const davidPromoted = (pendingEquipAction?.type === "david_select")
       ? others.filter(p => pendingEquipAction.defeatedUids?.includes(p.id))
       : [];
@@ -3562,7 +3649,6 @@
     for (const p of davidPromoted){
       arr.push(p);
     }
-    if (promoted && !arr.some(p => p.id === promoted.id)) arr.push(promoted);
     if (me) arr.push(me);
     for (const p of others){
       if (arr.some(row => row.id === p.id)) continue;
@@ -3591,10 +3677,6 @@
     syncRoomAbilityTurnState();
     equipDock?.classList.toggle("david-select-front", pendingEquipAction?.type === "david_select");
     if (!state.roomCode) { equipDock.classList.remove("visible"); closeEquipExpand(); return; }
-    if (!isMyTurn() && defeatLootQueue.length > 0){
-      defeatLootQueue = [];
-    }
-
     updateEquipDockTop();
 
     const players = orderedPlayersForEquip();
@@ -3610,6 +3692,7 @@
     if (rows.length === 0){
       equipDock.classList.remove("visible");
       closeEquipExpand();
+      renderDefeatLootModal();
       return;
     }
 
@@ -3637,8 +3720,6 @@
         const isOliverPulse = pendingEquipAction?.type === "oliver_target" && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
         const isBananaPulse = pendingEquipAction?.type === "banana_give" && p.id === state.userId && !isIdentityEquipItem(it);
         const isGreenGivePulse = pendingEquipAction?.type === "green_give" && p.id === state.userId && !isIdentityEquipItem(it);
-        const promotedUid = defeatLootQueue[0] || "";
-        const isDefeatPulse = promotedUid && p.id === promotedUid && p.id !== state.userId && eliminated && !isIdentityEquipItem(it);
         const isDavidPulse = pendingEquipAction?.type === "david_select"
           && pendingEquipAction.defeatedUids?.includes(p.id)
           && p.id !== state.userId
@@ -3647,7 +3728,7 @@
         if (isNormalStealPulse || isOliverPulse || isBananaPulse || isGreenGivePulse){
           cardEl.classList.add("equip-steal-pulse");
         }
-        if (isDefeatPulse || isDavidPulse){
+        if (isDavidPulse){
           cardEl.classList.add("equip-defeat-pulse");
         }
         cards.appendChild(cardEl);
@@ -3660,6 +3741,63 @@
     if (equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden')){
       renderEquipExpandBody();
     }
+    renderDefeatLootModal();
+  }
+
+  function renderDefeatLootModal(){
+    if (!defeatLootBackdrop || !defeatLootGrid) return;
+    const lootState = currentDefeatLootState();
+    const cards = defeatLootCandidates();
+    const busy = !zoomBackdrop.classList.contains("hidden") || !identityPromptPop.classList.contains("hidden");
+    if (!lootState || busy){
+      defeatLootBackdrop.classList.add("hidden");
+      return;
+    }
+
+    defeatLootGrid.innerHTML = "";
+    for (const entry of cards){
+      const wrap = document.createElement("div");
+      wrap.style.display = "flex";
+      wrap.style.flexDirection = "column";
+      wrap.style.gap = "6px";
+      wrap.style.alignItems = "center";
+      wrap.appendChild(buildEquipTag(entry.player.color || "#ddd", firstChar(entry.player.name)));
+      const cardEl = buildEquipCard(entry.item);
+      cardEl.classList.add("equip-defeat-pulse");
+      cardEl.dataset.ownerUid = entry.uid;
+      cardEl.dataset.sourceKey = safeText(entry.item.sourceKey || "");
+      cardEl.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const ownerUid = safeText(cardEl.dataset.ownerUid || "");
+        const sourceKey = safeText(cardEl.dataset.sourceKey || "");
+        if (!ownerUid || !sourceKey) return;
+        await updateDefeatLootSelection({ ownerUid, sourceKey, noSteal:false });
+        openZoomFromCard(cardEl, { closeOnBackdrop:true, showCloseButton:false });
+        showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
+          const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
+          if (ok){
+            await clearDefeatLootState();
+            closeZoom();
+          }
+        }, { fixedLower:true, closeZoomOnNo:true });
+      });
+      wrap.appendChild(cardEl);
+      defeatLootGrid.appendChild(wrap);
+    }
+
+    const noStealBtn = document.createElement("button");
+    noStealBtn.type = "button";
+    noStealBtn.className = "defeat-loot-empty-card equip-defeat-pulse";
+    noStealBtn.textContent = "奪わない";
+    noStealBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await updateDefeatLootSelection({ noSteal:true });
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "奪わないで本当にいいですか。", async () => {
+        await clearDefeatLootState();
+      }, { fixedLower:true, closeZoomOnNo:true });
+    });
+    defeatLootGrid.appendChild(noStealBtn);
+    defeatLootBackdrop.classList.remove("hidden");
   }
 
   async function grantEquipmentToMe(cardObj, theme){
@@ -4238,22 +4376,6 @@
           restoreOliverZoomSelection();
         }
       });
-      return;
-    }
-
-    if (card.classList.contains("equip-defeat-pulse")){
-      const ownerUid = safeText(card.dataset.ownerUid || "");
-      const sourceKey = safeText(card.dataset.sourceKey || "");
-      if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
-      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
-      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
-        const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
-        if (ok){
-          clearDefeatLootState();
-          lastAttackWatch = null;
-          closeZoom();
-        }
-      }, { fixedLower:true, closeZoomOnNo:true });
       return;
     }
 
@@ -5234,16 +5356,7 @@
           if (!uid) continue;
           const becameEliminated = !!eliminatedNow[uid] && !previousEliminatedMap[uid];
           if (!becameEliminated) continue;
-          enqueueDefeatLoot(uid);
-          if (lastAttackWatch.hasRosary){
-            setTimeout(async () => {
-              const ok = await stealAllEquipmentFromPlayer(uid);
-              if (ok){
-                defeatLootQueue = defeatLootQueue.filter(v => v !== uid);
-                renderEquipmentDock();
-              }
-            }, 2000);
-          }
+          enqueueDefeatLoot(uid).catch(() => {});
         }
       }
 
@@ -8963,6 +9076,7 @@
       migrateUidNode("greenResponses", true);
       migrateUidNode("greenCloseSignals", true);
       migrateUidNode("greenSessions", true);
+      migrateUidNode("defeatLootPending", true);
 
       const migrateRequestNode = (nodeName, shouldTouchAt = false) => {
         const node = room[nodeName] || {};
@@ -9284,7 +9398,6 @@
   });
 
   async function doEndTurn(){
-    clearDefeatLootState();
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
