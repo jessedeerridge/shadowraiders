@@ -36,7 +36,7 @@
   .dialog-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.35);
     display:flex;align-items:center;justify-content:center;
-    z-index:700;
+    z-index:1100;
   }
   .dialog-backdrop.hidden{display:none;}
   .dialog-box{
@@ -7299,6 +7299,17 @@
       color: nextColor,
       renamedAt: Date.now()
     });
+
+    const markerRef = ref(db, `rooms/${state.roomCode}/markers/${state.userId}`);
+    const markerSnap = await get(markerRef);
+    const marker = markerSnap.val() || null;
+    if (marker){
+      await update(markerRef, {
+        initial: firstChar(nextName || "") || safeText(marker.initial || ""),
+        color: nextColor || safeText(marker.color || "#ddd"),
+        updatedAt: Date.now()
+      });
+    }
   }
   function isSeated(){ return state.seatedTable != null; }
 
@@ -7547,7 +7558,7 @@
         sessionStorage.setItem(seatKey(state.roomCode), String(mySeat.seatIndex));
       } else {
         state.seatedTable = null;
-        if (wasSeated && !isGameStarted()) state.spectating = false;
+        if (wasSeated) state.spectating = false;
         sessionStorage.removeItem(seatKey(state.roomCode));
       }
 
@@ -7714,7 +7725,13 @@
     const markers = roomData.markers || {};
     const prevMarker = previousPlayerId ? markers[previousPlayerId] : null;
     if (prevMarker){
-      updates[`markers/${state.userId}`] = { ...prevMarker, updatedAt: Date.now(), inheritedFrom: previousPlayerId };
+      updates[`markers/${state.userId}`] = {
+        ...prevMarker,
+        color: SEAT_COLORS[seatIndex-1] || null,
+        initial: firstChar(state.userName || "") || safeText(prevMarker.initial || ""),
+        updatedAt: Date.now(),
+        inheritedFrom: previousPlayerId
+      };
       updates[`markers/${previousPlayerId}`] = null;
     }
 
@@ -7765,7 +7782,13 @@
     const markers = roomData.markers || {};
     const prevMarker = markers[previousPlayerId] || null;
     if (prevMarker){
-      updates[`markers/${state.userId}`] = { ...prevMarker, updatedAt: Date.now(), inheritedFrom: previousPlayerId };
+      updates[`markers/${state.userId}`] = {
+        ...prevMarker,
+        color: SEAT_COLORS[seatIndex-1] || null,
+        initial: firstChar(state.userName || "") || safeText(prevMarker.initial || ""),
+        updatedAt: Date.now(),
+        inheritedFrom: previousPlayerId
+      };
       updates[`markers/${previousPlayerId}`] = null;
     }
 
