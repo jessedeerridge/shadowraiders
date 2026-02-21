@@ -3837,6 +3837,17 @@
     return latestPlayers.find(p => p.id === uid) || null;
   }
 
+  function seatIndexByPlayerUid(uid){
+    const seat = Number(playerById(safeText(uid))?.seatIndex || 0);
+    return Number.isFinite(seat) && seat > 0 ? seat : 0;
+  }
+
+  function playerBySeatIndex(seatIndex){
+    const seat = Number(seatIndex || 0);
+    if (!Number.isFinite(seat) || seat <= 0) return null;
+    return latestPlayers.find(p => Number(p.seatIndex) === seat) || null;
+  }
+
   function isPlayerEliminated(uid){
     if (!uid) return false;
     const hand = state.hands?.[uid];
@@ -7261,20 +7272,24 @@
     roomInfoLobby.textContent = infoText;
 
     if (!lastAttackToMeInfo) return;
-    const attackerUid = safeText(state.room?.lastattacktome?.[state.userId] || "");
-    const attackerName = safeText(playerById(attackerUid)?.name || "");
+    const mySeatIndex = seatIndexByPlayerUid(state.userId);
+    const attackerSeatIndex = Number(state.room?.lastattacktome?.[String(mySeatIndex)] || 0);
+    const attackerName = safeText(playerBySeatIndex(attackerSeatIndex)?.name || "");
     lastAttackToMeInfo.textContent = attackerName ? `被攻撃:${attackerName}` : "";
   }
 
   async function recordLastAttackToMe(attackerUid, targetUids){
     if (!state.roomCode) return;
-    const uid = safeText(attackerUid);
+    const attackerSeatIndex = seatIndexByPlayerUid(attackerUid);
     const targets = [...new Set((targetUids || []).map(v => safeText(v)).filter(Boolean))];
-    if (!uid || !targets.length) return;
+    if (!attackerSeatIndex || !targets.length) return;
     const updates = {};
     for (const targetUid of targets){
-      updates[`lastattacktome/${targetUid}`] = uid;
+      const targetSeatIndex = seatIndexByPlayerUid(targetUid);
+      if (!targetSeatIndex) continue;
+      updates[`lastattacktome/${targetSeatIndex}`] = attackerSeatIndex;
     }
+    if (!Object.keys(updates).length) return;
     await update(ref(db, `rooms/${state.roomCode}`), updates);
   }
 
