@@ -2263,7 +2263,8 @@
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
   let pendingSeatCardSelectionEntry = null;
-  let seatCardSelectionSeenAt = 0;
+  let seatCardSelectionSeenAtBySeat = {};
+  let seatCardSelectionActiveSeat = 0;
 
   function normalizeSeatCardSelection(entry){
     if (!entry || typeof entry !== "object") return null;
@@ -2302,6 +2303,23 @@
       ...payload,
       at: Date.now()
     });
+  }
+
+  function clearSeatCardSelectionUiState(){
+    pendingSeatCardSelectionEntry = null;
+    hideIdentityPrompt();
+    pendingEquipAction = null;
+    cardPlayerSelectActive = false;
+    greenShareDock?.classList.add("hidden");
+    if (pendingMoveChoice){
+      clearPendingMoveChoiceUi();
+      pendingMoveChoice = null;
+      updateRoomChoiceUi();
+      updateAttackRangeUi();
+      refreshRoomAbilityHint();
+    }
+    closeZoom();
+    renderTurnEndButton();
   }
 
   function turnRoomActionState(){
@@ -8850,14 +8868,23 @@
     if (!state.roomCode || !state.userId) return;
     const seat = Number(currentMySeatIndex() || 0);
     if (!seat) return;
+    const seatChanged = seatCardSelectionActiveSeat !== seat;
+    if (seatChanged) seatCardSelectionActiveSeat = seat;
+
     const raw = state.room?.seatCardSelections?.[seat] || null;
     const entry = normalizeSeatCardSelection(raw);
     if (!entry){
+      if (seatChanged || pendingSeatCardSelectionEntry){
+        clearSeatCardSelectionUiState();
+      }
       pendingSeatCardSelectionEntry = null;
       return;
     }
-    if (entry.at && entry.at <= seatCardSelectionSeenAt) return;
-    seatCardSelectionSeenAt = entry.at || Date.now();
+
+    const seenAt = Number(seatCardSelectionSeenAtBySeat[seat] || 0);
+    if (!seatChanged && entry.at && entry.at <= seenAt) return;
+
+    seatCardSelectionSeenAtBySeat[seat] = entry.at || Date.now();
     pendingSeatCardSelectionEntry = entry;
     restoreSeatCardSelectionUi(entry);
   }
