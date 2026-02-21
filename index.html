@@ -1122,6 +1122,7 @@
   transform:translateX(-50%);
 }
 #roomActionPop.lower-mode .caret{ display:none; }
+#roomActionPop.no-caret .caret{ display:none; }
 #roomActionPop.room3-mode .actions{
   flex-wrap:nowrap;
   justify-content:center;
@@ -2399,7 +2400,7 @@
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
-    roomActionPop?.classList.remove("lower-mode", "room3-mode");
+    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret");
     if (btnRoomActionYes){
       btnRoomActionYes.textContent = "はい";
       btnRoomActionYes.classList.remove("pop-purple","pop-white");
@@ -2416,6 +2417,7 @@
     const fixedLower = !!options.fixedLower;
     const compactButtons = !!options.compactButtons;
     const yOffset = Number(options.yOffset) || 0;
+    const noCaret = !!options.noCaret;
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
       onNo: (typeof options.onNo === "function") ? options.onNo : null,
@@ -2442,6 +2444,7 @@
     roomActionPop.classList.remove("hidden");
     roomActionPop.classList.toggle("lower-mode", fixedLower);
     roomActionPop.classList.toggle("room3-mode", compactButtons);
+    roomActionPop.classList.toggle("no-caret", noCaret);
 
     if (fixedLower){
       roomActionPop.style.left = "";
@@ -2944,7 +2947,7 @@
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
     const mySeat = currentMySeatIndex();
-    const attackRangeTargetUids = attackRangeOnly ? highlightedMarkerUids() : null;
+    const attackRangeTargetUids = attackRangeOnly ? attackRangeTargetUidsFor(state.userId) : null;
     const players = latestPlayers
       .filter(p => p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat)
       .filter(p => !attackRangeOnly || (attackRangeTargetUids instanceof Set && attackRangeTargetUids.has(p.id)))
@@ -3008,7 +3011,7 @@
       greenShareList.appendChild(btn);
     }
     greenShareDock.classList.remove("hidden");
-    setGreenSessionState({ phase:"selecting", card:greenShareCard }).catch(() => {});
+    setGreenSessionState({ phase:"selecting", card:greenShareCard, attackRangeOnly: !!attackRangeOnly }).catch(() => {});
   }
 
   function openGreenAnswerDock(msg){
@@ -3107,7 +3110,7 @@
       openZoomFromDeckCard(entry.card, "green", { closeOnBackdrop:false, showCloseButton:false });
       greenShareCard = entry.card;
       if (phase === "selecting"){
-        openGreenShareDock(entry.card);
+        openGreenShareDock(entry.card, { attackRangeOnly: !!entry.attackRangeOnly });
         return;
       }
 
@@ -5625,7 +5628,8 @@
         "攻撃の代わりにカードを引きますか。（虹色のパラソル）",
         async () => {
           await drawFromSharedDeck("green", { viaParasol:true });
-        }
+        },
+        { noCaret:true }
       );
     });
     slot2.addEventListener('click', async () => {
@@ -6114,6 +6118,26 @@
     return rooms;
   }
 
+  function attackRangeTargetUidsFor(uid = state.userId){
+    const attackerUid = safeText(uid);
+    if (!attackerUid) return new Set();
+    const myMarker = markerCache?.[attackerUid] || null;
+    const myRoomId = markerRoomId(myMarker);
+    if (!myRoomId) return new Set();
+
+    const deadScopeCount = countEquipmentByNames(attackerUid, ["死神スコープ"]);
+    const attackRooms = attackTargetRoomIdsFromRoom(myRoomId, deadScopeCount);
+    const targets = new Set();
+    for (const [targetUid, marker] of Object.entries(markerCache || {})){
+      if (!marker || targetUid === attackerUid) continue;
+      const rid = markerRoomId(marker);
+      if (!rid || !attackRooms.has(rid)) continue;
+      if (isAttackTargetProtected(targetUid)) continue;
+      targets.add(targetUid);
+    }
+    return targets;
+  }
+
   function inferRoomIdFromPoint(x, y){
     for (const [ridText, pts] of Object.entries(roomPolygons)){
       const rid = Number(ridText);
@@ -6150,25 +6174,7 @@
       );
     }
     if (!canUseAttackDice()) return new Set();
-    const myMarker = markerCache?.[state.userId] || null;
-    const myRoomId = markerRoomId(myMarker);
-    if (!myRoomId) return new Set();
-
-    const deadScopeCount = countEquipmentByNames(state.userId, ["死神スコープ"]);
-    const attackRooms = attackTargetRoomIdsFromRoom(myRoomId, deadScopeCount);
-
-    const targets = new Set();
-    for (const [uid, marker] of Object.entries(markerCache || {})){
-      if (!marker || uid === state.userId) continue;
-      const rid = markerRoomId(marker);
-      if (!rid) continue;
-
-      if (attackRooms.has(rid)){
-        if (isAttackTargetProtected(uid)) continue;
-        targets.add(uid);
-      }
-    }
-    return targets;
+    return attackRangeTargetUidsFor(state.userId);
   }
 
   function randomPointInRoom(roomId, padding = 12){
