@@ -1315,6 +1315,7 @@
     padding:18px;
   }
   .zoom-backdrop.hidden{ display:none; }
+  .zoom-backdrop.over-panel{ z-index:12030; }
   .zoom-backdrop.passthrough{
     pointer-events:none;
     background:transparent;
@@ -3212,10 +3213,15 @@
     zoomPassthroughMode = false;
     zoomDismissHandler = null;
     zoomBackdrop.classList.remove("passthrough");
+    zoomBackdrop.classList.remove("over-panel");
     greenZoomLocked = !showCloseButton;
     zoomCloseBtn.classList.toggle("hidden", !showCloseButton);
     zoomStage.appendChild(contentEl);
     zoomBackdrop.classList.remove("hidden");
+    const overPanelVisible =
+      (!!helpBackdrop && !helpBackdrop.classList.contains("hidden")) ||
+      (!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains("hidden"));
+    setZoomOverPanel(overPanelVisible);
   }
 
   function setZoomPassthrough(enabled){
@@ -3228,6 +3234,9 @@
     clone.classList.remove("equip-steal-pulse","equip-defeat-pulse","eliminated-dim");
     clone.style.pointerEvents = "auto";
     openZoomContent(clone, options);
+  }
+  function setZoomOverPanel(enabled){
+    zoomBackdrop?.classList.toggle("over-panel", !!enabled);
   }
   function openZoomFromRole(role, options){
     if (!role) return;
@@ -3720,6 +3729,10 @@
     const idCard = e.target.closest(".id72");
     if (!idCard) return;
     if (idCard.dataset.revealInteractive !== "1") return;
+    if (isEquipSelectionLockActive()){
+      e.stopPropagation();
+      return;
+    }
 
     const my = state.hands?.[state.userId];
     if (!my || !my.roleId) return;
@@ -4085,6 +4098,7 @@
       }
       const cardName = safeText(card.dataset.cardName || "この装備");
       pendingEquipAction.selectedSourceKey = sourceKey;
+      greenShareDock?.classList.add("hidden");
       openTargetSelectDock({
         title: `「${cardName}」を誰かに渡しますか。`,
         includeSelf: false,
@@ -7960,6 +7974,7 @@
           e.stopPropagation();
           const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
           openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+          setZoomOverPanel(true);
           if (action){
             setZoomPassthrough(false);
             zoomDismissHandler = async () => {
@@ -8018,8 +8033,8 @@
   }
   function openEquipSelectionTempZoom(cardEl, action){
     if (!cardEl || !action) return;
-    openZoomFromCard(cardEl, { closeOnBackdrop:true, showCloseButton:false });
-    setZoomPassthrough(false);
+    openZoomFromCard(cardEl, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+    setZoomPassthrough(true);
     zoomDismissHandler = async () => {
       restorePendingEquipSelection(action);
     };
@@ -8064,18 +8079,15 @@
     const sourceKey = safeText(card.dataset.sourceKey || "");
 
     if (action?.type === 'oliver_target' && (!card.classList.contains('equip-steal-pulse') || !ownerUid || ownerUid === state.userId || !sourceKey)){
-      closeEquipExpand();
       openEquipSelectionTempZoom(card, action);
       return;
     }
     if (action?.type === 'banana_give' && (ownerUid !== state.userId || !sourceKey)){
-      closeEquipExpand();
       openEquipSelectionTempZoom(card, action);
       return;
     }
 
     const linked = findEquipBodyCardFromDataset(card);
-    closeEquipExpand();
     if (linked){
       linked.click();
       return;
@@ -8084,7 +8096,8 @@
       openEquipSelectionTempZoom(card, action);
       return;
     }
-    openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+    openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+    setZoomPassthrough(true);
   });
 
   const SEAT_COLORS = [
@@ -8931,8 +8944,14 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (isEquipSelectionLockActive()) return;
+        const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
+        if (action){
+          setZoomPassthrough(false);
+          zoomDismissHandler = async () => {
+            restorePendingEquipSelection(action);
+          };
+        }
       });
       myRoleCard.appendChild(face);
     } else {
@@ -8944,8 +8963,14 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (isEquipSelectionLockActive()) return;
+        const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
+        if (action){
+          setZoomPassthrough(false);
+          zoomDismissHandler = async () => {
+            restorePendingEquipSelection(action);
+          };
+        }
       });
 
       myRoleCard.appendChild(back);
