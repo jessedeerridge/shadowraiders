@@ -1335,6 +1335,12 @@
     will-change:transform;
     transition:transform .35s ease;
   }
+  .zoom-stage.zoom-stage-multi{
+    width:min(98vw, 1400px);
+    height:auto;
+    transform:none;
+    transition:none;
+  }
   .zoom-backdrop.green-reveal-active .zoom-stage{
     transform:translateX(-90px) scale(var(--zoom, 4));
   }
@@ -1378,6 +1384,30 @@
     border-width:1px;
     border-radius:3px;
     box-shadow:none;
+  }
+  .zoom-identity-multi{
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    gap:18px;
+    flex-wrap:nowrap;
+    max-width:min(98vw, 1500px);
+    overflow-x:auto;
+    padding:14px 16px 14px;
+  }
+  .zoom-identity-multi-item{
+    position:relative;
+    flex:0 0 auto;
+    width:144px;
+    height:286px;
+  }
+  .zoom-identity-multi-item-inner{
+    position:relative;
+    width:72px;
+    height:108px;
+    margin-top:44px;
+    transform:scale(2);
+    transform-origin:top left;
   }
   .eliminated-dim{
     opacity:.7;
@@ -3208,8 +3238,10 @@
     closeZoom();
   });
 
-  function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true, closeOnAnyClick=false } = {}){
+  function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true, closeOnAnyClick=false, stageClass="" } = {}){
     zoomStage.innerHTML = "";
+    zoomStage.classList.remove("zoom-stage-multi");
+    if (stageClass) zoomStage.classList.add(stageClass);
     hideGreenRevealPanel();
     zoomCloseOnBackdrop = !!closeOnBackdrop;
     zoomCloseOnAnyClick = !!closeOnAnyClick;
@@ -3265,6 +3297,42 @@
     }
 
     openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
+    setTimeout(() => {
+      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
+    }, 2000);
+  }
+  function openMultiIdentityRevealZoom(entries = []){
+    const targets = (entries || []).filter(v => v?.role && v?.uid);
+    if (!targets.length) return;
+    const row = document.createElement("div");
+    row.className = "zoom-identity-multi";
+
+    for (const item of targets){
+      const owner = playerById(item.uid);
+      const cell = document.createElement("div");
+      cell.className = "zoom-identity-multi-item";
+
+      const inner = document.createElement("div");
+      inner.className = "zoom-identity-multi-item-inner";
+      const cardEl = createIdentityCard(item.role);
+      inner.appendChild(cardEl);
+
+      if (owner){
+        const chip = buildChipFor(item.uid);
+        const label = document.createElement("div");
+        label.className = "zoom-identity-owner";
+        const name = document.createElement("span");
+        name.textContent = nameFromSecondChar(owner.name || "");
+        label.appendChild(chip);
+        label.appendChild(name);
+        inner.appendChild(label);
+      }
+
+      cell.appendChild(inner);
+      row.appendChild(cell);
+    }
+
+    openZoomContent(row, { closeOnBackdrop:false, showCloseButton:false, stageClass:"zoom-stage-multi" });
     setTimeout(() => {
       if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
     }, 2000);
@@ -3717,6 +3785,13 @@
 
   function isMyIdentityRevealed(){
     const v = equipCache?.[state.userId]?.identity;
+    return !!(v && v.kind === "identity" && v.roleId);
+  }
+
+  function isIdentityRevealedFor(uid){
+    const targetUid = safeText(uid);
+    if (!targetUid) return false;
+    const v = equipCache?.[targetUid]?.identity;
     return !!(v && v.kind === "identity" && v.roleId);
   }
 
@@ -5185,10 +5260,16 @@
         }
       }
 
+      const justEliminatedUids = latestPlayers
+        .map(p => p.id)
+        .filter(uid => !!eliminatedNow[uid] && !previousEliminatedMap[uid]);
+
       previousEliminatedMap = eliminatedNow;
 
       renderHpBoard();
       ensureCurrentTurnPlayerAlive();
+
+      const justEliminatedUnrevealed = [];
 
       for (const [uid, dmgRaw] of Object.entries(damageCache)){
         const myHand = state.hands?.[uid];
@@ -5201,8 +5282,18 @@
         }
         if (autoDamageRevealLock[uid]) continue;
         autoDamageRevealLock[uid] = true;
-        openIdentityRevealZoom(role, uid);
-        revealIdentityByDamage(uid);
+        const alreadyRevealed = isIdentityRevealedFor(uid);
+        if (!alreadyRevealed && justEliminatedUids.includes(uid)){
+          justEliminatedUnrevealed.push({ uid, role });
+        }
+        revealIdentityByDamage(uid).catch(() => {});
+      }
+
+      if (justEliminatedUnrevealed.length >= 2){
+        openMultiIdentityRevealZoom(justEliminatedUnrevealed);
+      } else if (justEliminatedUnrevealed.length === 1){
+        const entry = justEliminatedUnrevealed[0];
+        openIdentityRevealZoom(entry.role, entry.uid);
       }
 
       renderEquipmentDock();
