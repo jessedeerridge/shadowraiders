@@ -148,7 +148,7 @@
   .equip-expand-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.35);
     display:flex;align-items:flex-end;justify-content:center;
-    z-index:12012;
+    z-index:10000;
     padding:16px 16px 64px;
   }
   .equip-expand-backdrop.hidden{display:none;}
@@ -3218,10 +3218,6 @@
     zoomCloseBtn.classList.toggle("hidden", !showCloseButton);
     zoomStage.appendChild(contentEl);
     zoomBackdrop.classList.remove("hidden");
-    const overPanelVisible =
-      (!!helpBackdrop && !helpBackdrop.classList.contains("hidden")) ||
-      (!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains("hidden"));
-    setZoomOverPanel(overPanelVisible);
   }
 
   function setZoomPassthrough(enabled){
@@ -4089,7 +4085,9 @@
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (ownerUid !== state.userId || !sourceKey){
-        openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+        greenShareDock?.classList.add("hidden");
+        openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+        setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
         setZoomPassthrough(false);
         zoomDismissHandler = async () => {
           restorePendingEquipSelection(action);
@@ -4098,6 +4096,8 @@
       }
       const cardName = safeText(card.dataset.cardName || "この装備");
       pendingEquipAction.selectedSourceKey = sourceKey;
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+      setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
       greenShareDock?.classList.add("hidden");
       openTargetSelectDock({
         title: `「${cardName}」を誰かに渡しますか。`,
@@ -4120,7 +4120,9 @@
     if (pendingEquipAction?.type === "oliver_target"){
       const action = { ...pendingEquipAction };
       if (!card.classList.contains("equip-steal-pulse")){
-        openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+        greenShareDock?.classList.add("hidden");
+        openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+        setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
         setZoomPassthrough(false);
         zoomDismissHandler = async () => {
           restorePendingEquipSelection(action);
@@ -4677,6 +4679,7 @@
     const cardObj = pendingEquipAction?.cardObj || null;
     if (!cardObj) return;
     openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+    setZoomOverPanel(false);
     setZoomPassthrough(true);
     pendingEquipAction = { type:"oliver_target", cardObj };
     renderEquipmentDock();
@@ -7943,6 +7946,7 @@
             e.stopPropagation();
             const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
             openZoomFromCard(roleCard, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+            setZoomOverPanel(true);
             if (action){
               setZoomPassthrough(false);
               zoomDismissHandler = async () => {
@@ -8033,8 +8037,10 @@
   }
   function openEquipSelectionTempZoom(cardEl, action){
     if (!cardEl || !action) return;
+    greenShareDock?.classList.add("hidden");
     openZoomFromCard(cardEl, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
-    setZoomPassthrough(true);
+    setZoomOverPanel(true);
+    setZoomPassthrough(false);
     zoomDismissHandler = async () => {
       restorePendingEquipSelection(action);
     };
@@ -8097,7 +8103,8 @@
       return;
     }
     openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
-    setZoomPassthrough(true);
+    setZoomOverPanel(true);
+    setZoomPassthrough(false);
   });
 
   const SEAT_COLORS = [
