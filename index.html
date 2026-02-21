@@ -1343,28 +1343,31 @@
   }
   .zoom-identity-owner{
     position:absolute;
-    left:50%;
-    top:-22px;
-    transform:translateX(-50%);
+    left:5px;
+    right:5px;
+    top:5px;
     display:flex;
     align-items:center;
-    gap:6px;
-    background:#fff;
-    border:1px solid rgba(0,0,0,.15);
-    border-radius:999px;
-    padding:4px 8px;
-    font-size:12px;
+    justify-content:center;
+    gap:4px;
+    background:rgba(255,255,255,.96);
+    border:1px solid rgba(17,17,17,.55);
+    border-radius:6px;
+    padding:1px 4px;
+    font-size:8px;
     font-weight:700;
     color:#111;
     white-space:nowrap;
     line-height:1;
+    box-sizing:border-box;
+    z-index:10;
   }
   .zoom-identity-owner .equip-tag{
-    width:8px;
-    height:8px;
-    min-width:8px;
-    min-height:8px;
-    font-size:8px;
+    width:7px;
+    height:7px;
+    min-width:7px;
+    min-height:7px;
+    font-size:7px;
     border-width:1px;
   }
   .eliminated-dim{
