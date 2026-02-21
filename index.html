@@ -7907,6 +7907,32 @@
     });
   }
 
+  function applyGreenResponseToWaitingSession(msg){
+    const at = Number(msg?.at || 0);
+    if (!msg || !at) return false;
+    const requestId = safeText(msg.requestId || "");
+    if (!pendingGreenRequestId || requestId !== pendingGreenRequestId) return false;
+    greenReplySeenAt = Math.max(greenReplySeenAt, at);
+    setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
+    const reveal = greenRevealByRequestId[requestId];
+    if (reveal?.roleId){
+      showGreenRevealPanel(reveal.roleId, reveal.responderId);
+    }
+    greenShareActions?.classList.remove("hidden");
+    const responder = playerById(safeText(msg.to || ""));
+    setGreenSessionState({
+      phase:"confirm",
+      card: greenShareCard || msg.card || null,
+      requestId,
+      toUid: safeText(msg.to || ""),
+      toName: safeText(responder?.name || ""),
+      toInitial: firstChar(responder?.name || ""),
+      toColor: safeText(responder?.color || ""),
+      answerLabel: safeText(msg.answerLabel || "")
+    }).catch(() => {});
+    return true;
+  }
+
   function subscribeGreenResponses(){
     const resRef = ref(db, `rooms/${state.roomCode}/greenResponses/${state.userId}`);
     onValue(resRef, snap => {
@@ -7915,31 +7941,14 @@
 
       if (!greenReplyInitialized){
         greenReplyInitialized = true;
-        greenReplySeenAt = at || 0;
+        const handledOnInit = applyGreenResponseToWaitingSession(msg);
+        greenReplySeenAt = handledOnInit ? Math.max(greenReplySeenAt, at || 0) : (at || 0);
         return;
       }
 
       if (!msg || !at) return;
       if (at <= greenReplySeenAt) return;
-      if (!pendingGreenRequestId || safeText(msg.requestId || "") !== pendingGreenRequestId) return;
-      greenReplySeenAt = at;
-      setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
-      const reveal = greenRevealByRequestId[safeText(msg.requestId || "")];
-      if (reveal?.roleId){
-        showGreenRevealPanel(reveal.roleId, reveal.responderId);
-      }
-      greenShareActions?.classList.remove("hidden");
-      const responder = playerById(safeText(msg.to || ""));
-      setGreenSessionState({
-        phase:"confirm",
-        card: greenShareCard || msg.card || null,
-        requestId: pendingGreenRequestId,
-        toUid: safeText(msg.to || ""),
-        toName: safeText(responder?.name || ""),
-        toInitial: firstChar(responder?.name || ""),
-        toColor: safeText(responder?.color || ""),
-        answerLabel: safeText(msg.answerLabel || "")
-      }).catch(() => {});
+      applyGreenResponseToWaitingSession(msg);
     });
   }
 
