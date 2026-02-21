@@ -8368,6 +8368,14 @@
     const nextTurnUpdatedAt = isTurnOwnerStolen ? Date.now() : Number(turn?.updatedAt || 0);
     if (isTurnOwnerStolen) {
       updates[`turn/currentPlayerId`] = state.userId;
+      updates[`turn/moveDone`] = !!turn?.moveDone;
+      updates[`turn/attackDone`] = !!turn?.attackDone;
+      updates[`turn/deckDrawDone`] = !!turn?.deckDrawDone;
+      updates[`turn/movedByDiceRoomId`] = Number(turn?.movedByDiceRoomId || 0) || null;
+      updates[`turn/room3ActionUsed`] = !!turn?.room3ActionUsed;
+      updates[`turn/room4StealUsed`] = !!turn?.room4StealUsed;
+      updates[`turn/repeatTurnRemaining`] = Math.max(0, Number(turn?.repeatTurnRemaining || 0));
+      updates[`turn/repeatTurnTotal`] = Math.max(0, Number(turn?.repeatTurnTotal || 0));
       updates[`turn/updatedAt`] = nextTurnUpdatedAt;
     }
 
