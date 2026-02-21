@@ -1690,6 +1690,7 @@
   <div class="help-pop" role="dialog" aria-modal="true" aria-label="正体カード一覧">
     <div class="help-pop-header">
       <div class="help-pop-title">正体カード（一覧）</div>
+      <button id="btnHelpClose" class="btn ghost" style="padding:2px 6px;font-size:12px;">×</button>
     </div>
     <div class="help-pop-body" id="helpBody"></div>
   </div>
@@ -1699,6 +1700,7 @@
   <div class="equip-expand-pop" role="dialog" aria-modal="true" aria-label="装備欄（拡大表示）">
     <div class="equip-expand-header">
       <div class="equip-expand-title">装備欄（拡大表示）</div>
+      <button id="equipExpandClose" class="btn">閉じる</button>
     </div>
     <div class="equip-expand-body" id="equipExpandBody"></div>
   </div>
@@ -3473,12 +3475,6 @@
     const idCard = e.target.closest(".id72");
     if (!idCard) return;
     if (idCard.dataset.revealInteractive !== "1") return;
-
-    if (isMyTurn()){
-      e.stopPropagation();
-      showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
-      return;
-    }
 
     const my = state.hands?.[state.userId];
     if (!my || !my.roleId) return;
@@ -7114,6 +7110,8 @@
   const helpBackdrop = document.getElementById('helpBackdrop');
   const equipExpandBackdrop = document.getElementById('equipExpandBackdrop');
   const equipExpandBody = document.getElementById('equipExpandBody');
+  const equipExpandClose = document.getElementById('equipExpandClose');
+  const btnHelpClose = document.getElementById('btnHelpClose');
   const helpBody = document.getElementById('helpBody');
 
   function teamColor(f){
@@ -7308,9 +7306,11 @@
   roomGuideBtn.addEventListener('click', () => {
     if (joinBox.classList.contains('hidden')) toggleRoomGuideOverlay();
   });
+  btnHelpClose.addEventListener('click', closeHelp);
   helpBackdrop.addEventListener('click', (e) => {
     if (!helpBackdrop.classList.contains('hidden') && !e.target.closest('.help-pop')) closeHelp();
   });
+  equipExpandClose?.addEventListener('click', closeEquipExpand);
   equipExpandBackdrop?.addEventListener('click', (e) => {
     if (!equipExpandBackdrop.classList.contains('hidden') && !e.target.closest('.equip-expand-pop')) closeEquipExpand();
   });
@@ -7992,7 +7992,7 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
+        openZoomFromRole(role, { enableRevealPop:true });
       });
       myRoleCard.appendChild(face);
     } else {
@@ -8004,7 +8004,7 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
+        openZoomFromRole(role, { enableRevealPop:true }); // 拡大はオモテ（id72）
       });
 
       myRoleCard.appendChild(back);
