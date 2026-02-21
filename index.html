@@ -177,6 +177,34 @@
     background-repeat:no-repeat;
   }
 
+  .attack-loot-backdrop{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.48);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:12020;
+    padding:16px;
+  }
+  .attack-loot-backdrop.hidden{display:none;}
+  .attack-loot-pop{
+    width:min(760px, calc(100% - 20px));
+    max-height:min(86vh, 820px);
+    background:#fff;
+    border-radius:16px;
+    border:1px solid rgba(0,0,0,.14);
+    box-shadow:0 22px 44px rgba(0,0,0,.4);
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+  .attack-loot-header{padding:10px 12px;border-bottom:1px solid #eee;font-weight:1000;font-size:14px;}
+  .attack-loot-body{padding:12px;overflow:auto;display:flex;flex-direction:column;gap:10px;background:url('gear.jpg') center/cover no-repeat;}
+  .attack-loot-row{display:flex;gap:8px;align-items:flex-start;}
+  .attack-loot-cards{display:flex;gap:8px;flex-wrap:wrap;}
+  .attack-loot-no-steal{border:2px solid #111 !important;color:#111 !important;background:#fff !important;display:flex;align-items:center;justify-content:center;font-weight:1000;}
+
   .help-section{padding:6px 0 10px;}
   .help-section + .help-section{border-top:1px solid rgba(0,0,0,.16);}
   .help-section-title{font-weight:900;font-size:13px;margin:0 0 8px;}
@@ -1764,6 +1792,13 @@
       <div class="equip-expand-title">装備欄（拡大表示）</div>
     </div>
     <div class="equip-expand-body" id="equipExpandBody"></div>
+  </div>
+</div>
+
+<div id="attackLootBackdrop" class="attack-loot-backdrop hidden">
+  <div class="attack-loot-pop" role="dialog" aria-modal="true" aria-label="攻撃脱落後の装備奪取">
+    <div class="attack-loot-header">脱落者の装備</div>
+    <div class="attack-loot-body" id="attackLootBody"></div>
   </div>
 </div>
 
@@ -3531,20 +3566,62 @@
   }
 
   let latestPlayers = [];
-  let defeatLootQueue = [];
   let lastAttackWatch = null;
   let previousEliminatedMap = {};
+  let pendingAttackLoot = null;
+  const attackLootBackdrop = document.getElementById("attackLootBackdrop");
+  const attackLootBody = document.getElementById("attackLootBody");
 
-  function clearDefeatLootState(){
-    defeatLootQueue = [];
-    renderEquipmentDock();
+  function normalizeAttackLootPayload(raw){
+    if (!raw || typeof raw !== "object") return null;
+    const uid = safeText(raw.uid || "");
+    const defeatedUids = Array.isArray(raw.defeatedUids)
+      ? raw.defeatedUids.map(v => safeText(v || "")).filter(v => v && v !== uid)
+      : [];
+    const selected = raw.selected && typeof raw.selected === "object"
+      ? {
+          ownerUid: safeText(raw.selected.ownerUid || ""),
+          sourceKey: safeText(raw.selected.sourceKey || ""),
+          noSteal: !!raw.selected.noSteal
+        }
+      : null;
+    if (!uid || !defeatedUids.length) return null;
+    return { uid, defeatedUids:[...new Set(defeatedUids)], selected, at:Number(raw.at || Date.now()) };
   }
 
-  function enqueueDefeatLoot(uid){
-    const targetUid = safeText(uid);
-    if (!targetUid || targetUid === state.userId) return;
-    if (defeatLootQueue.includes(targetUid)) return;
-    defeatLootQueue.push(targetUid);
+  async function setAttackLootPending(payload){
+    const roomCode = safeText(state.roomCode || "");
+    const uid = safeText(state.userId || "");
+    if (!roomCode || !uid) return;
+    const normalized = normalizeAttackLootPayload(payload);
+    await set(ref(db, `rooms/${roomCode}/attackLootPending/${uid}`), normalized);
+  }
+
+  function closeAttackLootPanel(){
+    attackLootBackdrop?.classList.add("hidden");
+    if (attackLootBody) attackLootBody.innerHTML = "";
+  }
+
+  async function clearAttackLootPending(){
+    pendingAttackLoot = null;
+    closeAttackLootPanel();
+    await setAttackLootPending(null);
+  }
+
+  async function createOrMergeAttackLootPending(defeatedUids = []){
+    const uid = safeText(state.userId || "");
+    if (!uid) return;
+    const list = (defeatedUids || []).map(v => safeText(v || "")).filter(v => v && v !== uid);
+    if (!list.length) return;
+    const merged = new Set([...(pendingAttackLoot?.defeatedUids || []), ...list]);
+    pendingAttackLoot = {
+      uid,
+      defeatedUids:[...merged],
+      selected: pendingAttackLoot?.selected || null,
+      at: Date.now()
+    };
+    await setAttackLootPending(pendingAttackLoot);
+    renderAttackLootPanel();
   }
 
   function orderedPlayersForEquip(){
@@ -3552,8 +3629,6 @@
     const me = byId.get(state.userId) || null;
     const others = latestPlayers.filter(p => p.id !== state.userId).sort((a,b) => a.seatIndex - b.seatIndex);
 
-    const promotedUid = defeatLootQueue.find(uid => byId.has(uid)) || "";
-    const promoted = promotedUid ? byId.get(promotedUid) : null;
     const davidPromoted = (pendingEquipAction?.type === "david_select")
       ? others.filter(p => pendingEquipAction.defeatedUids?.includes(p.id))
       : [];
@@ -3562,7 +3637,6 @@
     for (const p of davidPromoted){
       arr.push(p);
     }
-    if (promoted && !arr.some(p => p.id === promoted.id)) arr.push(promoted);
     if (me) arr.push(me);
     for (const p of others){
       if (arr.some(row => row.id === p.id)) continue;
@@ -3591,9 +3665,6 @@
     syncRoomAbilityTurnState();
     equipDock?.classList.toggle("david-select-front", pendingEquipAction?.type === "david_select");
     if (!state.roomCode) { equipDock.classList.remove("visible"); closeEquipExpand(); return; }
-    if (!isMyTurn() && defeatLootQueue.length > 0){
-      defeatLootQueue = [];
-    }
 
     updateEquipDockTop();
 
@@ -3637,8 +3708,6 @@
         const isOliverPulse = pendingEquipAction?.type === "oliver_target" && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
         const isBananaPulse = pendingEquipAction?.type === "banana_give" && p.id === state.userId && !isIdentityEquipItem(it);
         const isGreenGivePulse = pendingEquipAction?.type === "green_give" && p.id === state.userId && !isIdentityEquipItem(it);
-        const promotedUid = defeatLootQueue[0] || "";
-        const isDefeatPulse = promotedUid && p.id === promotedUid && p.id !== state.userId && eliminated && !isIdentityEquipItem(it);
         const isDavidPulse = pendingEquipAction?.type === "david_select"
           && pendingEquipAction.defeatedUids?.includes(p.id)
           && p.id !== state.userId
@@ -3647,7 +3716,7 @@
         if (isNormalStealPulse || isOliverPulse || isBananaPulse || isGreenGivePulse){
           cardEl.classList.add("equip-steal-pulse");
         }
-        if (isDefeatPulse || isDavidPulse){
+        if (isDavidPulse){
           cardEl.classList.add("equip-defeat-pulse");
         }
         cards.appendChild(cardEl);
@@ -3659,6 +3728,80 @@
     ensureDavidIdentityZoomVisible();
     if (equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden')){
       renderEquipExpandBody();
+    }
+  }
+
+  function renderAttackLootPanel(){
+    const payload = pendingAttackLoot;
+    if (!attackLootBackdrop || !attackLootBody){
+      return;
+    }
+    if (!payload || !Array.isArray(payload.defeatedUids) || !payload.defeatedUids.length){
+      closeAttackLootPanel();
+      return;
+    }
+
+    attackLootBody.innerHTML = "";
+    const byId = new Map(latestPlayers.map(p => [p.id, p]));
+    const selected = payload.selected || null;
+
+    for (const uid of payload.defeatedUids){
+      const p = byId.get(uid);
+      if (!p) continue;
+      const row = document.createElement("div");
+      row.className = "attack-loot-row";
+      row.appendChild(buildEquipTag(p.color || "#ddd", firstChar(p.name)));
+
+      const cardsWrap = document.createElement("div");
+      cardsWrap.className = "attack-loot-cards";
+      const list = listEquipForUid(uid);
+      for (const it of list){
+        const cardEl = buildEquipCard(it);
+        cardEl.dataset.ownerUid = uid;
+        cardEl.dataset.sourceKey = safeText(it.sourceKey || "");
+        cardEl.dataset.cardName = safeText(it.name || "");
+        cardEl.dataset.itemKind = isIdentityEquipItem(it) ? "identity" : "equip";
+        if (!isIdentityEquipItem(it)){
+          cardEl.classList.add("equip-defeat-pulse");
+        }
+        if (selected && !selected.noSteal && selected.ownerUid === uid && selected.sourceKey === safeText(it.sourceKey || "") && !isIdentityEquipItem(it)){
+          cardEl.classList.remove("equip-defeat-pulse");
+          cardEl.classList.add("equip-steal-pulse");
+        }
+        cardsWrap.appendChild(cardEl);
+      }
+      row.appendChild(cardsWrap);
+      attackLootBody.appendChild(row);
+    }
+
+    const noStealCard = document.createElement("div");
+    noStealCard.className = "card72 wb-front wb-white attack-loot-no-steal equip-defeat-pulse";
+    noStealCard.dataset.noSteal = "1";
+    noStealCard.textContent = "奪わない";
+    if (selected?.noSteal){
+      noStealCard.classList.remove("equip-defeat-pulse");
+      noStealCard.classList.add("equip-steal-pulse");
+    }
+    attackLootBody.appendChild(noStealCard);
+    attackLootBackdrop.classList.remove("hidden");
+  }
+
+  async function commitAttackLootSelection(selection){
+    if (!pendingAttackLoot) return;
+    if (selection?.noSteal){
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "奪わなくて本当にいいですか。", async () => {
+        await clearAttackLootPending();
+      }, { fixedLower:true, closeZoomOnNo:true });
+      return;
+    }
+    const ownerUid = safeText(selection?.ownerUid || "");
+    const sourceKey = safeText(selection?.sourceKey || "");
+    if (!ownerUid || !sourceKey) return;
+    const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
+    if (ok){
+      await clearAttackLootPending();
+      closeZoom();
+      renderEquipmentDock();
     }
   }
 
@@ -4241,22 +4384,6 @@
       return;
     }
 
-    if (card.classList.contains("equip-defeat-pulse")){
-      const ownerUid = safeText(card.dataset.ownerUid || "");
-      const sourceKey = safeText(card.dataset.sourceKey || "");
-      if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
-      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
-      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
-        const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
-        if (ok){
-          clearDefeatLootState();
-          lastAttackWatch = null;
-          closeZoom();
-        }
-      }, { fixedLower:true, closeZoomOnNo:true });
-      return;
-    }
-
     if (canUseRoom4Steal() && card.classList.contains("equip-steal-pulse")){
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
@@ -4275,6 +4402,35 @@
     }
 
     openZoomFromCard(card);
+  });
+
+  attackLootBody?.addEventListener("click", async (e) => {
+    const card = e.target.closest(".card72.wb-front, .id72");
+    if (!card || !pendingAttackLoot) return;
+    if (card.dataset.noSteal === "1"){
+      pendingAttackLoot = { ...pendingAttackLoot, selected:{ noSteal:true, ownerUid:"", sourceKey:"" } };
+      await setAttackLootPending(pendingAttackLoot);
+      renderAttackLootPanel();
+      await commitAttackLootSelection({ noSteal:true });
+      return;
+    }
+
+    const ownerUid = safeText(card.dataset.ownerUid || "");
+    const sourceKey = safeText(card.dataset.sourceKey || "");
+    if (!ownerUid || !sourceKey || card.dataset.itemKind === "identity") return;
+    pendingAttackLoot = { ...pendingAttackLoot, selected:{ ownerUid, sourceKey, noSteal:false } };
+    await setAttackLootPending(pendingAttackLoot);
+    renderAttackLootPanel();
+    openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+    showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
+      await commitAttackLootSelection({ ownerUid, sourceKey });
+    }, { fixedLower:true, closeZoomOnNo:true });
+  });
+
+  attackLootBackdrop?.addEventListener("click", (e) => {
+    if (e.target === attackLootBackdrop){
+      e.stopPropagation();
+    }
   });
 
   const hpBoard = document.getElementById("hpBoard");
@@ -4967,6 +5123,13 @@
     return true;
   }
 
+  function restoreAttackLootPendingFromRoom(){
+    const roomPending = state.room?.attackLootPending || {};
+    const mine = normalizeAttackLootPayload(roomPending?.[state.userId] || null);
+    pendingAttackLoot = mine;
+    renderAttackLootPanel();
+  }
+
   function restorePendingAttackResolutionFromSession(){
     if (!state.roomCode || !state.userId) return false;
     const raw = sessionStorage.getItem(attackResolutionKey(state.roomCode));
@@ -5229,21 +5392,13 @@
       const watchActive = lastAttackWatch
         && lastAttackWatch.uid === state.userId
         && (Date.now() - Number(lastAttackWatch.at || 0) < 12000);
+      const attackDefeatedUids = [];
       if (watchActive){
         for (const uid of (lastAttackWatch.targetUids || [])){
           if (!uid) continue;
           const becameEliminated = !!eliminatedNow[uid] && !previousEliminatedMap[uid];
           if (!becameEliminated) continue;
-          enqueueDefeatLoot(uid);
-          if (lastAttackWatch.hasRosary){
-            setTimeout(async () => {
-              const ok = await stealAllEquipmentFromPlayer(uid);
-              if (ok){
-                defeatLootQueue = defeatLootQueue.filter(v => v !== uid);
-                renderEquipmentDock();
-              }
-            }, 2000);
-          }
+          attackDefeatedUids.push(uid);
         }
       }
 
@@ -5294,6 +5449,12 @@
       } else if (justEliminatedUnrevealed.length === 1){
         const entry = justEliminatedUnrevealed[0];
         openIdentityRevealZoom(entry.role, entry.uid);
+      }
+
+      if (attackDefeatedUids.length){
+        setTimeout(() => {
+          createOrMergeAttackLootPending(attackDefeatedUids).catch(() => {});
+        }, 2200);
       }
 
       renderEquipmentDock();
@@ -8385,6 +8546,7 @@
     onValue(roomRef, snap => {
       state.room = snap.val() || {};
       restorePendingAttackResolutionFromRoom();
+      restoreAttackLootPendingFromRoom();
       if (isGameStarted() && !currentTurnPlayerId() && state.isHost){
         ensureTurnInitialized();
       }
@@ -8998,6 +9160,17 @@
       updates[`attackResolutionPending/${previousPlayerId}`] = null;
     }
 
+    const attackLootPending = roomData.attackLootPending || {};
+    if (Object.prototype.hasOwnProperty.call(attackLootPending, previousPlayerId)){
+      const pending = attackLootPending[previousPlayerId] || {};
+      updates[`attackLootPending/${state.userId}`] = {
+        ...pending,
+        uid: state.userId,
+        at: Date.now()
+      };
+      updates[`attackLootPending/${previousPlayerId}`] = null;
+    }
+
     if (roomData.abilityUsage){
       const abilityUsageCopy = JSON.parse(JSON.stringify(roomData.abilityUsage));
       moveAbilityUsageUid(abilityUsageCopy, previousPlayerId, state.userId);
@@ -9259,6 +9432,7 @@
       remove(ref(db, `${base}/greenRequests`)),
       remove(ref(db, `${base}/turn`)),
       remove(ref(db, `${base}/attackResolutionPending`)),
+      remove(ref(db, `${base}/attackLootPending`)),
     ]);
 
     deckCache = null;
@@ -9284,7 +9458,6 @@
   });
 
   async function doEndTurn(){
-    clearDefeatLootState();
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
