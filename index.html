@@ -88,8 +88,8 @@
   .btn.pop-white{background:#fff;color:#111;border-color:#d1d5db;}
 
   .attack-result-pop-rows{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;max-height:220px;overflow:auto;}
-  .attack-result-pop-row{display:flex;align-items:center;gap:6px;font-size:14px;line-height:1.4;}
-  .attack-result-pop-name{display:inline-flex;align-items:center;gap:6px;min-width:0;}
+  .attack-result-pop-row{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;line-height:1.4;text-align:center;}
+  .attack-result-pop-name{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:0;width:auto;cursor:default;padding:4px 8px;}
   .attack-result-pop-name-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .attack-result-pop-row .chip16{flex:0 0 auto;}
 
@@ -3706,8 +3706,9 @@
     const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const endX = point?.x || width/2;
-    const endY = point?.y || height/2;
+    const landing = randomCenterLandingPoint(width, height);
+    const endX = Number(landing.x || (point?.x || width/2));
+    const endY = Number(landing.y || (point?.y || height/2));
     const motion = createDiceMotion(width, height, endX, endY);
     await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
       uid: state.userId,
@@ -4529,7 +4530,7 @@
 
   function makeAttackResultNameNode(uid){
     const wrap = document.createElement("span");
-    wrap.className = "attack-result-pop-name";
+    wrap.className = "green-share-btn attack-result-pop-name";
     const p = playerById(uid);
     const chip = document.createElement("span");
     chip.className = "chip16";
@@ -5573,6 +5574,19 @@
       b = { x:a.x + 64, y:a.y + 10 };
     }
     return [a,b];
+  }
+
+  function randomCenterLandingPoint(width, height){
+    const cx = width / 2;
+    const cy = height / 2;
+    const rangeX = Math.max(40, width * 0.12);
+    const rangeY = Math.max(36, height * 0.10);
+    const x = cx + (Math.random() * 2 - 1) * rangeX;
+    const y = cy + (Math.random() * 2 - 1) * rangeY;
+    return {
+      x: Math.max(50, Math.min(width - 50, x)),
+      y: Math.max(50, Math.min(height - 50, y))
+    };
   }
 
   function createDiceMotion(width, height, endX, endY){
