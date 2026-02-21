@@ -3099,11 +3099,7 @@
     if (!state.roomCode || !pendingGreenRequestId) return;
     const bubbleId = pendingGreenRequestId;
     const bRef = ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${bubbleId}`);
-    const snap = await get(bRef);
-    const val = snap.val();
-    if (val?.from === state.userId){
-      await remove(bRef);
-    }
+    await remove(bRef).catch(() => {});
     pendingGreenRequestId = "";
   }
 
