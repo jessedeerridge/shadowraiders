@@ -2229,6 +2229,9 @@
   let vampireHiddenAttackSuccess = false;
   let vampireHealScheduled = false;
   let pendingEquipAction = null;
+  let pendingSeatCardSelection = null;
+  let latestTableRows = {};
+  let lastSeatSelectionStateJson = "";
   let danielAutoRevealTimer = null;
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
@@ -2262,6 +2265,62 @@
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+
+  function buildSeatSelectionState(){
+    const out = { v:1 };
+    if (pendingSeatCardSelection && pendingSeatCardSelection.name){
+      out.cardSelection = {
+        kind: safeText(pendingSeatCardSelection.kind || ""),
+        name: safeText(pendingSeatCardSelection.name || "")
+      };
+    }
+    if (pendingEquipAction && (pendingEquipAction.type === "banana_give" || pendingEquipAction.type === "oliver_target")){
+      out.pendingEquipAction = {
+        type: pendingEquipAction.type,
+        selectedSourceKey: safeText(pendingEquipAction.selectedSourceKey || ""),
+        cardObj: pendingEquipAction.cardObj ? {
+          name: safeText(pendingEquipAction.cardObj.name || ""),
+          effect: safeText(pendingEquipAction.cardObj.effect || "")
+        } : null
+      };
+    }
+    if (pendingMoveChoice && !pendingMoveChoice.consumed && Array.isArray(pendingMoveChoice.roomIds)){
+      out.pendingMoveChoice = {
+        roomIds: [...new Set(pendingMoveChoice.roomIds.map(v => Number(v)).filter(v => Number.isFinite(v) && v >= 1 && v <= 7))]
+      };
+    }
+    return out;
+  }
+
+  async function syncSeatSelectionState(){
+    const seat = Number(state.seatedTable || 0);
+    if (!state.roomCode || !seat) return;
+    const next = buildSeatSelectionState();
+    const nextJson = JSON.stringify(next);
+    if (nextJson === lastSeatSelectionStateJson) return;
+    lastSeatSelectionStateJson = nextJson;
+    await update(ref(db, `rooms/${state.roomCode}/tables/${seat}`), { selectionState: next });
+  }
+
+  function normalizeSeatSelectionState(raw){
+    const row = raw && typeof raw === "object" ? raw : {};
+    const moveIds = Array.isArray(row?.pendingMoveChoice?.roomIds)
+      ? [...new Set(row.pendingMoveChoice.roomIds.map(v => Number(v)).filter(v => Number.isFinite(v) && v >= 1 && v <= 7))]
+      : [];
+    return {
+      cardSelection: row.cardSelection && typeof row.cardSelection === "object"
+        ? { kind: safeText(row.cardSelection.kind || ""), name: safeText(row.cardSelection.name || "") }
+        : null,
+      pendingEquipAction: row.pendingEquipAction && typeof row.pendingEquipAction === "object"
+        ? {
+          type: safeText(row.pendingEquipAction.type || ""),
+          selectedSourceKey: safeText(row.pendingEquipAction.selectedSourceKey || ""),
+          cardObj: row.pendingEquipAction.cardObj || null
+        }
+        : null,
+      pendingMoveChoice: moveIds.length ? { roomIds: moveIds } : null
+    };
+  }
 
   function turnRoomActionState(){
     const t = turnState() || {};
@@ -4335,6 +4394,7 @@
       }
       const cardName = safeText(card.dataset.cardName || "この装備");
       pendingEquipAction.selectedSourceKey = sourceKey;
+      syncSeatSelectionState().catch(() => {});
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
       setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
       greenShareDock?.classList.add("hidden");
@@ -4345,6 +4405,7 @@
         onSelect: async (uid) => {
           const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
           pendingEquipAction = null;
+          await syncSeatSelectionState();
           renderTurnEndButton();
           greenShareDock?.classList.add("hidden");
           const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
@@ -4374,6 +4435,7 @@
       if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
       const cardObj = pendingEquipAction?.cardObj || null;
       pendingEquipAction = { type:"oliver_confirm", ownerUid, sourceKey, cardObj };
+      syncSeatSelectionState().catch(() => {});
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
       renderTurnEndButton();
@@ -4383,6 +4445,7 @@
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "これを奪いますか。", async () => {
         const action = pendingEquipAction;
         pendingEquipAction = null;
+        await syncSeatSelectionState();
         renderTurnEndButton();
         zoomDismissHandler = null;
         const ok = await stealEquipmentFromPlayer(action.ownerUid, action.sourceKey);
@@ -4960,6 +5023,7 @@
     setZoomOverPanel(false);
     setZoomPassthrough(true);
     pendingEquipAction = { type:"oliver_target", cardObj };
+    syncSeatSelectionState().catch(() => {});
     renderEquipmentDock();
     renderTurnEndButton();
   }
@@ -4981,6 +5045,7 @@
     } else {
       pendingEquipAction = { type:"oliver_target", cardObj };
     }
+    syncSeatSelectionState().catch(() => {});
     renderEquipmentDock();
     renderTurnEndButton();
   }
@@ -6365,6 +6430,7 @@
     updateRoomChoiceUi();
     updateAttackRangeUi();
     refreshRoomAbilityHint();
+    syncSeatSelectionState().catch(() => {});
   }
 
   async function resolvePendingMoveChoice(roomId){
@@ -6373,6 +6439,7 @@
     pendingMoveChoice.consumed = true;
     clearPendingMoveChoiceUi();
     pendingMoveChoice = null;
+    await syncSeatSelectionState();
     await placeMarkerInRoom(roomId);
     if (state.roomCode && isMyTurn()){
       await update(ref(db, `rooms/${state.roomCode}/turn`), {
@@ -6963,6 +7030,91 @@
     });
   }
 
+  async function openSeatSyncedTargetCardSelection(name, cardObj, waitMs){
+    const theme = (name === "応急手当" || name === "恩恵") ? "white" : "black";
+    const titleMap = {
+      "応急手当": "応急手当：対象プレイヤーを選択してください。",
+      "恩恵": "恩恵：回復させるプレイヤーを選択してください。",
+      "吸血コウモリ": "吸血コウモリ：対象プレイヤーを選択してください。",
+      "三つ目の黒犬": "三つ目の黒犬：対象プレイヤーを選択してください。",
+      "呪いの人形": "呪いの人形：対象プレイヤーを選択してください。"
+    };
+    const includeSelf = name === "応急手当";
+    const onlyAlive = name === "三つ目の黒犬" || name === "呪いの人形";
+    openZoomFromDeckCard(cardObj, theme, { closeOnBackdrop:false, showCloseButton:false });
+    pendingSeatCardSelection = { kind:"target", name };
+    await syncSeatSelectionState();
+    openTargetSelectDock({
+      title: titleMap[name] || "対象プレイヤーを選択してください。",
+      lockEndTurnUntilResolved: true,
+      includeSelf,
+      onlyAlive,
+      nameSuffixForUid: includeSelf ? null : (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
+      onSelect: async (uid) => {
+        if (name === "応急手当"){
+          await waitMs(1000);
+          await setDamageToPlayer(uid, 7);
+        } else if (name === "恩恵"){
+          const eye = 1 + Math.floor(Math.random() * 6);
+          await emitCardDiceEvent({ kind:"blessing", uid:state.userId, d6:eye });
+          await runCornerD6Roll(eye);
+          await waitMs(1000);
+          await healDamageToPlayer(uid, eye);
+        } else if (name === "吸血コウモリ"){
+          await waitMs(1000);
+          if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 2);
+          await healDamageToPlayer(state.userId, 1);
+        } else if (name === "三つ目の黒犬"){
+          await waitMs(1000);
+          if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 2);
+          if (!hasEquipmentByName(state.userId, "いにしえの聖杯")) await addDamageToPlayer(state.userId, 2);
+        } else if (name === "呪いの人形"){
+          const eye = 1 + Math.floor(Math.random() * 6);
+          await emitCardDiceEvent({ kind:"curse_doll", uid: state.userId, d6: eye });
+          await waitMs(1000);
+          if (eye <= 4){
+            if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 3);
+          } else if (!hasEquipmentByName(state.userId, "いにしえの聖杯")){
+            await addDamageToPlayer(state.userId, 3);
+          }
+        }
+        pendingSeatCardSelection = null;
+        await syncSeatSelectionState();
+        closeZoom();
+      }
+    });
+  }
+
+  async function openSeatSyncedIdentityPrompt(name, role, cardObj){
+    if (!role) return;
+    const canReveal = (name === "幸せのクッキー")
+      ? (role.initial === "A" || role.initial === "U")
+      : (role.faction === ((name === "戦慄の闇儀式") ? "シャドウ" : "レイダー"));
+    const message = (name === "幸せのクッキー")
+      ? "AまたはUとして正体を公開しますか。"
+      : (name === "戦慄の闇儀式" ? "シャドウとして正体を公開しますか。" : "レイダーとして正体を公開しますか。");
+    pendingSeatCardSelection = { kind:"identity", name };
+    await syncSeatSelectionState();
+    showIdentityPromptPop({
+      message,
+      canReveal,
+      cardObj,
+      cardTheme: name === "戦慄の闇儀式" ? "black" : "white",
+      openZoom: true,
+      onYes: async () => {
+        await revealMyIdentityToEquipment();
+        openIdentityRevealZoom(role, state.userId);
+        await fullRecoverPlayer(state.userId);
+        pendingSeatCardSelection = null;
+        await syncSeatSelectionState();
+      },
+      onNo: async () => {
+        pendingSeatCardSelection = null;
+        await syncSeatSelectionState();
+      }
+    });
+  }
+
   async function applyImmediateDeckCardEffect(cardObj){
     const name = safeText(cardObj?.name || "");
     if (!name || !state.userId) return;
@@ -6987,40 +7139,12 @@
     }
 
     if (name === "戦慄の闇儀式" || name === "光臨"){
-      const targetFaction = (name === "戦慄の闇儀式") ? "シャドウ" : "レイダー";
-      const message = (name === "戦慄の闇儀式")
-        ? "シャドウとして正体を公開しますか。"
-        : "レイダーとして正体を公開しますか。";
-      const canReveal = role.faction === targetFaction;
-      showIdentityPromptPop({
-        message,
-        canReveal,
-        cardObj,
-        cardTheme: name === "戦慄の闇儀式" ? "black" : "white",
-        openZoom: true,
-        onYes: async () => {
-          await revealMyIdentityToEquipment();
-          openIdentityRevealZoom(role, state.userId);
-          await fullRecoverPlayer(state.userId);
-        }
-      });
+      await openSeatSyncedIdentityPrompt(name, role, cardObj);
       return;
     }
 
     if (name === "幸せのクッキー"){
-      const canReveal = role.initial === "A" || role.initial === "U";
-      showIdentityPromptPop({
-        message: "AまたはUとして正体を公開しますか。",
-        canReveal,
-        cardObj,
-        cardTheme: "white",
-        openZoom: true,
-        onYes: async () => {
-          await revealMyIdentityToEquipment();
-          openIdentityRevealZoom(role, state.userId);
-          await fullRecoverPlayer(state.userId);
-        }
-      });
+      await openSeatSyncedIdentityPrompt(name, role, cardObj);
       return;
     }
 
@@ -7043,79 +7167,22 @@
     }
 
     if (name === "応急手当"){
-      openZoomFromDeckCard(cardObj, "white", { closeOnBackdrop:false, showCloseButton:false });
-      openTargetSelectDock({
-        title: "応急手当：対象プレイヤーを選択してください。",
-        lockEndTurnUntilResolved: true,
-        includeSelf: true,
-        onSelect: async (uid) => {
-          await waitMs(1000);
-          await setDamageToPlayer(uid, 7);
-          closeZoom();
-        }
-      });
+      await openSeatSyncedTargetCardSelection(name, cardObj, waitMs);
       return;
     }
 
     if (name === "恩恵"){
-      openZoomFromDeckCard(cardObj, "white", { closeOnBackdrop:false, showCloseButton:false });
-      openTargetSelectDock({
-        title: "恩恵：回復させるプレイヤーを選択してください。",
-        lockEndTurnUntilResolved: true,
-        includeSelf: false,
-        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
-        onSelect: async (uid) => {
-          const eye = 1 + Math.floor(Math.random() * 6);
-          await emitCardDiceEvent({ kind:"blessing", uid:state.userId, d6:eye });
-          await runCornerD6Roll(eye);
-          await waitMs(1000);
-          await healDamageToPlayer(uid, eye);
-          closeZoom();
-        }
-      });
+      await openSeatSyncedTargetCardSelection(name, cardObj, waitMs);
       return;
     }
 
     if (name === "吸血コウモリ"){
-      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
-      openTargetSelectDock({
-        title: "吸血コウモリ：対象プレイヤーを選択してください。",
-        lockEndTurnUntilResolved: true,
-        includeSelf: false,
-        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
-        onSelect: async (uid) => {
-          await waitMs(1000);
-          if (!hasEquipmentByName(uid, "いにしえの聖杯")){
-            await addDamageToPlayer(uid, 2);
-          }
-          await healDamageToPlayer(state.userId, 1);
-          closeZoom();
-        }
-      });
+      await openSeatSyncedTargetCardSelection(name, cardObj, waitMs);
       return;
     }
 
     if (name === "三つ目の黒犬"){
-      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
-      openTargetSelectDock({
-        title: "三つ目の黒犬：対象プレイヤーを選択してください。",
-        lockEndTurnUntilResolved: true,
-        includeSelf: false,
-        onlyAlive: true,
-        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
-        onSelect: async (uid) => {
-          await waitMs(1000);
-          const targetHasChalice = hasEquipmentByName(uid, "いにしえの聖杯");
-          const myHasChalice = hasEquipmentByName(state.userId, "いにしえの聖杯");
-          if (!targetHasChalice){
-            await addDamageToPlayer(uid, 2);
-          }
-          if (!myHasChalice){
-            await addDamageToPlayer(state.userId, 2);
-          }
-          closeZoom();
-        }
-      });
+      await openSeatSyncedTargetCardSelection(name, cardObj, waitMs);
       return;
     }
 
@@ -7129,6 +7196,7 @@
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       setZoomPassthrough(true);
       pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
+      syncSeatSelectionState().catch(() => {});
       renderEquipmentDock();
       renderTurnEndButton();
       return;
@@ -7144,6 +7212,7 @@
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       setZoomPassthrough(true);
       pendingEquipAction = { type:"oliver_target", cardObj };
+      await syncSeatSelectionState();
       renderEquipmentDock();
       renderTurnEndButton();
       return;
@@ -7159,27 +7228,7 @@
     }
 
     if (name === "呪いの人形"){
-      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
-      openTargetSelectDock({
-        title: "呪いの人形：対象プレイヤーを選択してください。",
-        lockEndTurnUntilResolved: true,
-        includeSelf: false,
-        onlyAlive: true,
-        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
-        onSelect: async (uid) => {
-          const eye = 1 + Math.floor(Math.random() * 6);
-          await emitCardDiceEvent({ kind:"curse_doll", uid: state.userId, d6: eye });
-          await waitMs(1000);
-          if (eye <= 4){
-            if (!hasEquipmentByName(uid, "いにしえの聖杯")){
-              await addDamageToPlayer(uid, 3);
-            }
-          } else if (!hasEquipmentByName(state.userId, "いにしえの聖杯")){
-            await addDamageToPlayer(state.userId, 3);
-          }
-          closeZoom();
-        }
-      });
+      await openSeatSyncedTargetCardSelection(name, cardObj, waitMs);
       return;
     }
 
@@ -7350,6 +7399,7 @@
     pendingMoveChoice = null;
     clearPendingMoveChoiceUi();
     updateRoomChoiceUi();
+    syncSeatSelectionState().catch(() => {});
     clearDiceRollTimers();
     diceRollOverlay.innerHTML = '';
 
@@ -8815,6 +8865,7 @@
     onValue(tablesRef, snap => {
       const wasSeated = state.seatedTable != null;
       const data = snap.val() || {};
+      latestTableRows = data || {};
       const players = Object.entries(data)
         .map(([seatIndex, t]) => (t && t.playerId ? {
           id: t.playerId,
@@ -8833,6 +8884,26 @@
       if (mySeat) {
         state.seatedTable = mySeat.seatIndex;
         sessionStorage.setItem(seatKey(state.roomCode), String(mySeat.seatIndex));
+        const seatRow = latestTableRows[String(mySeat.seatIndex)] || {};
+        const normalized = normalizeSeatSelectionState(seatRow.selectionState || {});
+        const normalizedJson = JSON.stringify({ v:1, ...normalized });
+        if (normalizedJson !== lastSeatSelectionStateJson){
+          lastSeatSelectionStateJson = normalizedJson;
+          if (!pendingMoveChoice && normalized.pendingMoveChoice){
+            setPendingMoveChoice(normalized.pendingMoveChoice.roomIds);
+          }
+          if (!pendingEquipAction && (normalized.pendingEquipAction?.type === "banana_give" || normalized.pendingEquipAction?.type === "oliver_target")){
+            restorePendingEquipSelection(normalized.pendingEquipAction);
+          }
+          if (!pendingSeatCardSelection && normalized.cardSelection?.name){
+            const restoreCardObj = { name: normalized.cardSelection.name, effect:"" };
+            if (normalized.cardSelection.kind === "identity"){
+              openSeatSyncedIdentityPrompt(normalized.cardSelection.name, myRoleInfo(), restoreCardObj).catch(() => {});
+            } else if (normalized.cardSelection.kind === "target"){
+              openSeatSyncedTargetCardSelection(normalized.cardSelection.name, restoreCardObj, (ms) => new Promise(resolve => setTimeout(resolve, ms))).catch(() => {});
+            }
+          }
+        }
       } else {
         state.seatedTable = null;
         if (wasSeated){
@@ -8950,11 +9021,14 @@
 
   async function sitToSeat(seatIndex){
     const tRef = ref(db, `rooms/${state.roomCode}/tables/${seatIndex}`);
+    const curSnap = await get(tRef);
+    const curSeat = curSnap.val() || {};
     await set(tRef, {
       playerId: state.userId,
       playerName: state.userName || '名無し',
       color: SEAT_COLORS[seatIndex-1] || null,
-      seatedAt: Date.now()
+      seatedAt: Date.now(),
+      selectionState: curSeat.selectionState || { v:1 }
     });
     state.seatedTable = seatIndex;
     sessionStorage.setItem(seatKey(state.roomCode), String(seatIndex));
@@ -8985,7 +9059,8 @@
       color: SEAT_COLORS[newSeatIndex-1] || null,
       seatedAt: Date.now(),
       movedFrom: oldSeatIndex,
-      movedAt: Date.now()
+      movedAt: Date.now(),
+      selectionState: oldSeat?.selectionState || { v:1 }
     };
 
     await update(roomRef, updates);
@@ -9050,7 +9125,8 @@
       color: SEAT_COLORS[seatIndex-1] || null,
       seatedAt: Date.now(),
       stolenFrom: previousPlayerId,
-      stolenAt: Date.now()
+      stolenAt: Date.now(),
+      selectionState: cur?.selectionState || { v:1 }
     };
 
     const hands = roomData.hands || {};
