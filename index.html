@@ -7251,6 +7251,11 @@
     const mRef = ref(db, `rooms/${state.roomCode}/markers`);
     onValue(mRef, snap => {
       markerCache = snap.val() || {};
+      const myMarker = markerCache?.[state.userId] || null;
+      const myRoomId = markerRoomId(myMarker);
+      if (myRoomId && state.currentRoomId !== myRoomId){
+        setCurrentRoom(myRoomId);
+      }
       renderMarkers();
       maybeAutoRollMoveDiceOnTurnStart();
     });
