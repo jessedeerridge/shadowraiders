@@ -1379,6 +1379,29 @@
     border-radius:3px;
     box-shadow:none;
   }
+  .zoom-identity-multi{
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    gap:16px;
+    flex-wrap:nowrap;
+    max-width:min(96vw, 900px);
+    overflow-x:auto;
+    padding:8px 4px;
+  }
+  .zoom-identity-multi-item{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6px;
+  }
+  .zoom-identity-multi-item .zoom-identity-owner{
+    position:static;
+    left:auto;
+    top:auto;
+    transform:none;
+    margin:0;
+  }
   .eliminated-dim{
     opacity:.7;
   }
@@ -3269,6 +3292,37 @@
       if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
     }, 2000);
   }
+  function openMultiIdentityRevealZoom(entries = []){
+    const targets = (entries || []).filter(v => v?.role && v?.uid);
+    if (!targets.length) return;
+    const row = document.createElement("div");
+    row.className = "zoom-identity-multi";
+
+    for (const item of targets){
+      const owner = playerById(item.uid);
+      const cell = document.createElement("div");
+      cell.className = "zoom-identity-multi-item";
+      const cardEl = createIdentityCard(item.role);
+      cell.appendChild(cardEl);
+
+      if (owner){
+        const chip = buildChipFor(item.uid);
+        const label = document.createElement("div");
+        label.className = "zoom-identity-owner";
+        const name = document.createElement("span");
+        name.textContent = nameFromSecondChar(owner.name || "");
+        label.appendChild(chip);
+        label.appendChild(name);
+        cell.appendChild(label);
+      }
+      row.appendChild(cell);
+    }
+
+    openZoomContent(row, { closeOnBackdrop:false, showCloseButton:false });
+    setTimeout(() => {
+      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
+    }, 2000);
+  }
   function openZoomFromDeckCard(cardObj, theme, options){
     if (!cardObj) return;
     const cardEl = document.createElement("div");
@@ -3717,6 +3771,13 @@
 
   function isMyIdentityRevealed(){
     const v = equipCache?.[state.userId]?.identity;
+    return !!(v && v.kind === "identity" && v.roleId);
+  }
+
+  function isIdentityRevealedFor(uid){
+    const targetUid = safeText(uid);
+    if (!targetUid) return false;
+    const v = equipCache?.[targetUid]?.identity;
     return !!(v && v.kind === "identity" && v.roleId);
   }
 
@@ -5185,10 +5246,16 @@
         }
       }
 
+      const justEliminatedUids = latestPlayers
+        .map(p => p.id)
+        .filter(uid => !!eliminatedNow[uid] && !previousEliminatedMap[uid]);
+
       previousEliminatedMap = eliminatedNow;
 
       renderHpBoard();
       ensureCurrentTurnPlayerAlive();
+
+      const justEliminatedUnrevealed = [];
 
       for (const [uid, dmgRaw] of Object.entries(damageCache)){
         const myHand = state.hands?.[uid];
@@ -5201,8 +5268,18 @@
         }
         if (autoDamageRevealLock[uid]) continue;
         autoDamageRevealLock[uid] = true;
-        openIdentityRevealZoom(role, uid);
-        revealIdentityByDamage(uid);
+        const alreadyRevealed = isIdentityRevealedFor(uid);
+        if (!alreadyRevealed && justEliminatedUids.includes(uid)){
+          justEliminatedUnrevealed.push({ uid, role });
+        }
+        revealIdentityByDamage(uid).catch(() => {});
+      }
+
+      if (justEliminatedUnrevealed.length >= 2){
+        openMultiIdentityRevealZoom(justEliminatedUnrevealed);
+      } else if (justEliminatedUnrevealed.length === 1){
+        const entry = justEliminatedUnrevealed[0];
+        openIdentityRevealZoom(entry.role, entry.uid);
       }
 
       renderEquipmentDock();
