@@ -1032,6 +1032,11 @@
     transform-origin:center;
     animation:roomChoicePulse 1.2s ease-in-out infinite;
   }
+  .shape.room-choice-pulse,
+  .shape.room-choice-once{
+    stroke:#a855f7;
+    stroke-width:2;
+  }
   @keyframes roomChoicePulse{
     0%,100%{ transform:scale(1); }
     50%{ transform:scale(1.05); }
@@ -1633,8 +1638,8 @@
 <div id="attackResultPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="攻撃結果確認">
   <div id="attackResultRows" class="attack-result-pop-rows"></div>
   <div class="actions">
-    <button class="btn primary" id="btnAttackResultEnd">OK(おわる)</button>
-    <button class="btn ghost" id="btnAttackResultKeep">OK(おわらない)</button>
+    <button class="btn primary" id="btnAttackResultEnd">OKおわる</button>
+    <button class="btn ghost" id="btnAttackResultKeep">OKおわらない</button>
   </div>
 </div>
 
@@ -1979,12 +1984,14 @@
     const left = Math.max(0, Number(count) || 0);
     const hideImage = left <= 0;
     slotEl.className = 'card72 deck' + (disabled ? ' disabled' : '');
-    slotEl.classList.remove("noframe");
+    slotEl.classList.toggle("noframe", hideImage);
     slotEl.style.backgroundImage = hideImage ? 'none' : `url('${imgUrl}')`;
-    slotEl.style.backgroundColor = hideImage ? '#f3f4f6' : '';
+    slotEl.style.backgroundColor = hideImage ? 'transparent' : '';
     slotEl.innerHTML = '';
-    const tag = ensureCountTag(slotEl);
-    tag.textContent = String(left);
+    if (!hideImage){
+      const tag = ensureCountTag(slotEl);
+      tag.textContent = String(left);
+    }
     slotEl.dataset.cardType = type || "";
   }
 
@@ -4651,13 +4658,21 @@
     return `もう一度手番を行う(${rest}/${total})`;
   }
 
+  function hasSealWisdomBonusThisTurn(){
+    return !!turnState()?.sealWisdomBonus;
+  }
+
   function renderTurnEndButton(){
     syncRoomAbilityTurnState();
     if (!turnEndWrap) return;
     const visible = isGameStarted() && canShowEndTurnButton();
     turnEndWrap.classList.toggle("hidden", !visible);
     if (btnEndTurn){
-      btnEndTurn.textContent = repeatTurnPending() ? repeatTurnLabel() : "手番を終わる";
+      if (hasSealWisdomBonusThisTurn()){
+        btnEndTurn.textContent = "手番を終わる(+1)";
+      } else {
+        btnEndTurn.textContent = repeatTurnPending() ? repeatTurnLabel() : "手番を終わる";
+      }
     }
     if (!visible) hideEndTurnConfirm();
   }
@@ -4845,6 +4860,12 @@
       row.appendChild(amount);
       row.appendChild(makeAttackResultNameNode(uid));
       attackResultRows.appendChild(row);
+    }
+    if (btnAttackResultEnd){
+      btnAttackResultEnd.textContent = hasSealWisdomBonusThisTurn() ? "OKおわる(+1)" : "OKおわる";
+    }
+    if (btnAttackResultKeep){
+      btnAttackResultKeep.textContent = "OKおわらない";
     }
     attackResultPop.classList.remove("hidden");
   }
@@ -5157,6 +5178,9 @@
       const kind = safeText(ev.kind || "");
       if (kind === "curse_doll"){
         runCornerD6Roll(Number(ev.d6 || 1));
+      } else if (kind === "blessing"){
+        if (safeText(ev.uid || "") === state.userId) return;
+        runCornerD6Roll(Number(ev.d6 || 1));
       } else if (kind === "riot"){
         runCornerD6D4Roll({
           d6: Number(ev.d6 || 1),
@@ -5246,6 +5270,7 @@
         room4StealUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
+        sealWisdomBonus: false,
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[startPlayerId]){
@@ -5303,6 +5328,7 @@
         room4StealUsed: false,
         repeatTurnRemaining: nextRepeatRemaining,
         repeatTurnTotal: nextRepeatTotal,
+        sealWisdomBonus: false,
         updatedAt: Date.now()
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
@@ -5873,6 +5899,24 @@
     }
   }
 
+  function bringRoomPulseToFront(roomId){
+    const shape = roomShapeEls[roomId];
+    const hit = roomHitEls[roomId];
+    if (!shape || !roomG) return;
+    const anchor =
+      (attackRangeLayer && attackRangeLayer.parentNode === roomG && attackRangeLayer) ||
+      (markerLayer && markerLayer.parentNode === roomG && markerLayer) ||
+      (roomGuideLayer && roomGuideLayer.parentNode === roomG && roomGuideLayer) ||
+      null;
+    if (anchor){
+      roomG.insertBefore(shape, anchor);
+      if (hit) roomG.insertBefore(hit, anchor);
+      return;
+    }
+    roomG.appendChild(shape);
+    if (hit) roomG.appendChild(hit);
+  }
+
   function setPendingMoveChoice(roomIds){
     clearPendingMoveChoiceUi();
     const unique = [...new Set((roomIds || []).filter(v => Number.isFinite(v) && v >= 1 && v <= 7))];
@@ -6276,6 +6320,7 @@
     await update(ref(db, `rooms/${state.roomCode}/turn`), {
       repeatTurnRemaining: 1,
       repeatTurnTotal: 1,
+      sealWisdomBonus: true,
       updatedAt: Date.now()
     });
   }
@@ -6515,6 +6560,7 @@
         openZoom: true,
         onYes: async () => {
           await revealMyIdentityToEquipment();
+          openIdentityRevealZoom(role, state.userId);
           await fullRecoverPlayer(state.userId);
         }
       });
@@ -6531,6 +6577,7 @@
         openZoom: true,
         onYes: async () => {
           await revealMyIdentityToEquipment();
+          openIdentityRevealZoom(role, state.userId);
           await fullRecoverPlayer(state.userId);
         }
       });
@@ -6541,9 +6588,7 @@
       const shouldReveal = role.faction === "シャドウ" && role.name !== "ウルリッヒ" && !isMyIdentityRevealed();
       if (!shouldReveal) return;
       await revealMyIdentityToEquipment();
-      showTemporaryRoleTag(state.userId, safeText(role.name || ""), 2000);
       openIdentityRevealZoom(role, state.userId);
-      setTimeout(() => closeZoom(), 2000);
       return;
     }
 
@@ -6580,7 +6625,9 @@
         includeSelf: false,
         nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
         onSelect: async (uid) => {
-          const eye = await runCornerD6Roll();
+          const eye = 1 + Math.floor(Math.random() * 6);
+          await emitCardDiceEvent({ kind:"blessing", uid:state.userId, d6:eye });
+          await runCornerD6Roll(eye);
           await waitMs(1000);
           await healDamageToPlayer(uid, eye);
           closeZoom();
@@ -7328,8 +7375,17 @@
     }
 
     const centerPending = !!pendingMoveChoice && !pendingMoveChoice.consumed && pendingMoveChoice.roomIds.includes(7);
+    roomShapeEls[7]?.classList.toggle('room-choice-once', centerPending);
+    roomHitEls[7]?.classList.toggle('room-choice-once', centerPending);
     if (roomHitEls[7]){
       roomHitEls[7].style.cursor = centerPending ? 'pointer' : (isGameStarted() ? 'default' : 'pointer');
+    }
+
+    for (let roomId = 1; roomId <= 7; roomId++){
+      const pulsing =
+        roomShapeEls[roomId]?.classList.contains('room-choice-pulse') ||
+        roomShapeEls[roomId]?.classList.contains('room-choice-once');
+      if (pulsing) bringRoomPulseToFront(roomId);
     }
   }
 
@@ -8836,6 +8892,7 @@
         room4StealUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
+        sealWisdomBonus: false,
         updatedAt: Date.now()
       }
     });
