@@ -89,9 +89,16 @@
 
   .attack-result-pop-rows{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;max-height:220px;overflow:auto;}
   .attack-result-pop-row{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;line-height:1.4;text-align:center;}
-  .attack-result-pop-name{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:0;width:auto;cursor:default;padding:4px 8px;}
-  .attack-result-pop-name-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .attack-result-pop-name{display:inline-flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;width:96px;max-width:96px;cursor:default;padding:4px 6px;}
+  .attack-result-pop-name-text{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;}
   .attack-result-pop-row .chip16{flex:0 0 auto;}
+
+  #attackResultPop{
+    min-width:unset;
+    width:fit-content;
+    max-width:min(92vw, 320px);
+  }
+  #attackResultPop .actions{justify-content:center;flex-wrap:nowrap;}
 
   .help-btn{
     position:fixed;left:16px;bottom:24px;width:44px;height:44px;border-radius:50%;
