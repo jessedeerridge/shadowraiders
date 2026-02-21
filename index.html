@@ -5454,6 +5454,7 @@
       return;
     }
 
+    const parasolTargetUids = viaParasol ? new Set(highlightedMarkerUids()) : null;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     let drawn = null;
 
@@ -5502,8 +5503,7 @@
       await applyImmediateDeckCardEffect(drawn);
     } else if (drawn && type === "green"){
       openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false, showCloseButton:false });
-      const onlyTargetUids = viaParasol ? highlightedMarkerUids() : null;
-      openGreenShareDock(drawn, { onlyTargetUids });
+      openGreenShareDock(drawn, { onlyTargetUids:parasolTargetUids });
     }
 
     scheduleDeckRebuildIfEmpty(type).catch(() => {});
