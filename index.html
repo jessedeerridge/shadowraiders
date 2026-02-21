@@ -2797,7 +2797,7 @@
     });
   }
 
-  function renderGreenWaitingSelection(toUid, toName=""){
+  function renderGreenWaitingSelection(toUid, toName="", toInitial="", toColor=""){
     if (!greenShareList) return;
     greenShareList.innerHTML = "";
     const selected = document.createElement("button");
@@ -2805,11 +2805,23 @@
     selected.className = "green-share-btn waiting-selected";
     selected.setAttribute("aria-disabled", "true");
     selected.style.pointerEvents = "none";
-    if (toUid) selected.appendChild(buildChipFor(toUid));
+    const targetPlayer = toUid ? playerById(toUid) : null;
+    if (targetPlayer){
+      selected.appendChild(buildChipFor(toUid));
+    } else if (toUid || toName){
+      const fallback = document.createElement("div");
+      fallback.className = "chip16";
+      const chipColor = safeText(toColor || "") || "#ddd";
+      const chipInitial = firstChar(safeText(toInitial || "") || safeText(toName || ""));
+      fallback.style.background = chipColor;
+      fallback.style.color = textColorFor(chipColor);
+      fallback.textContent = chipInitial || "";
+      fallback.title = safeText(toName || "");
+      selected.appendChild(fallback);
+    }
     const name = document.createElement("span");
     if (toUid){
-      const p = playerById(toUid);
-      name.textContent = p ? nameFromSecondChar(p.name) : safeText(toName || "");
+      name.textContent = targetPlayer ? nameFromSecondChar(targetPlayer.name) : safeText(toName || "");
     } else {
       name.textContent = safeText(toName || "");
     }
@@ -2914,7 +2926,7 @@
         }
 
         pendingGreenRequestId = requestId;
-        renderGreenWaitingSelection(p.id, p.name);
+        renderGreenWaitingSelection(p.id, p.name, firstChar(p.name || ""), safeText(p.color || ""));
         if (!safeText(greenShareCard?.effect || "").includes("正体カードを見せよ")){
           setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
           greenShareActions?.classList.add("hidden");
@@ -2925,6 +2937,8 @@
           requestId,
           toUid: p.id,
           toName: safeText(p.name || ""),
+          toInitial: firstChar(p.name || ""),
+          toColor: safeText(p.color || ""),
           answerLabel: safeText(greenShareCard?.effect || "").includes("正体カードを見せよ") ? "私の正体です。" : ""
         }).catch(() => {});
       });
@@ -3027,7 +3041,7 @@
       openGreenShareDock(entry.card);
       if (phase === "waiting" || phase === "confirm"){
         pendingGreenRequestId = safeText(entry.requestId || "");
-        renderGreenWaitingSelection(safeText(entry.toUid || ""), safeText(entry.toName || ""));
+        renderGreenWaitingSelection(safeText(entry.toUid || ""), safeText(entry.toName || ""), safeText(entry.toInitial || ""), safeText(entry.toColor || ""));
         if (phase === "confirm"){
           setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(entry.answerLabel || "") });
           greenShareActions?.classList.remove("hidden");
@@ -7888,12 +7902,15 @@
         showGreenRevealPanel(reveal.roleId, reveal.responderId);
       }
       greenShareActions?.classList.remove("hidden");
+      const responder = playerById(safeText(msg.to || ""));
       setGreenSessionState({
         phase:"confirm",
         card: greenShareCard,
         requestId: pendingGreenRequestId,
         toUid: safeText(msg.to || ""),
-        toName: safeText(playerById(safeText(msg.to || ""))?.name || ""),
+        toName: safeText(responder?.name || ""),
+        toInitial: firstChar(responder?.name || ""),
+        toColor: safeText(responder?.color || ""),
         answerLabel: safeText(msg.answerLabel || "")
       }).catch(() => {});
     });
@@ -7973,8 +7990,10 @@
       pendingGreenCloseSeenAt = at;
 
       const requestId = safeText(msg.requestId || "");
-      const pendingRequest = safeText(pendingGreenAnswerMsg?.requestId || "");
-      if (!requestId || !pendingRequest || requestId !== pendingRequest) return;
+      if (!requestId) return;
+      const pendingAnswerRequest = safeText(pendingGreenAnswerMsg?.requestId || "");
+      const pendingShareRequest = safeText(pendingGreenRequestId || "");
+      if (requestId !== pendingAnswerRequest && requestId !== pendingShareRequest) return;
 
       pendingGreenAnswerMsg = null;
       hideGreenShareDock();
@@ -8325,8 +8344,9 @@
       updates[`greenSessions/${previousPlayerId}`] = null;
     }
 
-    if (isAnsweringGreenSession){
-      const requestId = safeText(previousGreenSession?.msg?.requestId || "");
+    const shouldForceCloseGreenUi = ["answering","waiting","confirm"].includes(safeText(previousGreenSession?.phase || ""));
+    if (shouldForceCloseGreenUi){
+      const requestId = safeText(previousGreenSession?.msg?.requestId || previousGreenSession?.requestId || "");
       if (requestId){
         updates[`greenCloseSignals/${previousPlayerId}`] = {
           requestId,
