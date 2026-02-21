@@ -2817,8 +2817,9 @@
 
   function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onlyAlive=false, onSelect=null, nameSuffixForUid=null } = {}){
     if (!greenShareDock || !greenShareList) return;
+    const mySeat = Number(state.seatedTable || 0);
     const players = latestPlayers
-      .filter(p => includeSelf || p.id !== state.userId)
+      .filter(p => includeSelf || (p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat))
       .filter(p => !isPlayerEliminated(p.id))
       .filter(p => !onlyAlive || !isPlayerEliminated(p.id))
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
@@ -2869,8 +2870,9 @@
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
+    const mySeat = Number(state.seatedTable || 0);
     const players = latestPlayers
-      .filter(p => p.id !== state.userId)
+      .filter(p => p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat)
       .filter(p => !isPlayerEliminated(p.id))
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
 
@@ -8004,7 +8006,11 @@
         sessionStorage.setItem(seatKey(state.roomCode), String(mySeat.seatIndex));
       } else {
         state.seatedTable = null;
-        if (wasSeated) state.spectating = false;
+        if (wasSeated){
+          state.spectating = false;
+          hideGreenShareDock();
+          closeZoom();
+        }
         sessionStorage.removeItem(seatKey(state.roomCode));
       }
 
