@@ -3848,6 +3848,9 @@
         }
       }
     }
+    if (pendingEquipAction?.type === "venom_give" && !e.target.closest("#equipBody")){
+      showPersistentRoleOverlay("SHA_V1", safeText(pendingEquipAction?.toUid || ""));
+    }
   }, true);
 
   btnRevealNo.addEventListener("click", (e) => {
@@ -4726,6 +4729,8 @@
   function canShowEndTurnButton(){
     if (!isMyTurn()) return false;
     if (cardPlayerSelectActive) return false;
+    if (pendingVenomChoice) return false;
+    if (pendingEquipAction?.type === "venom_give") return false;
     if (mustAttackWithMasamune()) return false;
     return !!turnState()?.moveDone;
   }
