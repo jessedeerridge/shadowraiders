@@ -2698,8 +2698,15 @@
   async function sendGreenResponse(msg, opt, overrideLabel=""){
     if (!state.roomCode || !msg?.from || !msg?.requestId || !opt?.id) return;
     const answerLabel = safeText(overrideLabel || opt.label || "");
-    await set(ref(db, `rooms/${state.roomCode}/greenResponses/${msg.from}`), {
-      from: msg.from,
+    let requesterUid = safeText(msg.from || "");
+    try {
+      const reqSnap = await get(ref(db, `rooms/${state.roomCode}/greenRequests/${msg.requestId}`));
+      const req = reqSnap.val() || null;
+      if (req?.from) requesterUid = safeText(req.from || requesterUid);
+    } catch (_) {}
+    if (!requesterUid) return;
+    await set(ref(db, `rooms/${state.roomCode}/greenResponses/${requesterUid}`), {
+      from: requesterUid,
       to: state.userId,
       requestId: msg.requestId,
       answerId: opt.id,
@@ -2922,6 +2929,7 @@
           card: greenShareCard,
           at: Date.now()
         };
+        await set(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`), payload);
         await set(ref(db, `rooms/${state.roomCode}/greenInbox/${p.id}`), payload);
         if (safeText(greenShareCard?.effect || "").includes("正体カードを見せよ")){
           await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`), {
@@ -8441,6 +8449,24 @@
       }
     }
 
+    const greenRequests = roomData.greenRequests || {};
+    for (const [requestId, req] of Object.entries(greenRequests)){
+      if (!req || typeof req !== "object") continue;
+      let changed = false;
+      const nextReq = { ...req };
+      if (safeText(nextReq.from || "") === previousPlayerId){
+        nextReq.from = state.userId;
+        changed = true;
+      }
+      if (safeText(nextReq.to || "") === previousPlayerId){
+        nextReq.to = state.userId;
+        changed = true;
+      }
+      if (changed){
+        updates[`greenRequests/${requestId}`] = nextReq;
+      }
+    }
+
     const shouldForceCloseGreenUi = ["selecting","answering","waiting","confirm"].includes(safeText(previousGreenSession?.phase || ""));
     if (shouldForceCloseGreenUi){
       updates[`greenCloseSignals/${previousPlayerId}`] = {
@@ -8706,6 +8732,7 @@
       remove(ref(db, `${base}/greenResponses`)),
       remove(ref(db, `${base}/greenReplyBubbles`)),
       remove(ref(db, `${base}/greenReveals`)),
+      remove(ref(db, `${base}/greenRequests`)),
       remove(ref(db, `${base}/turn`)),
       remove(ref(db, `${base}/attackResolutionPending`)),
     ]);
