@@ -2198,6 +2198,7 @@
     clearAttackResultDice();
     pendingAttackResolution = null;
     attackTurnEndChoicePending = false;
+    cachePendingAttackResolution(null);
     showTurnHint("");
     renderMarkers();
   }
@@ -4102,6 +4103,9 @@
     room4StealUsed = roomActionState.room4StealUsed;
     room3ActionUsed = roomActionState.room3ActionUsed;
     movedByDiceRoomId = roomActionState.movedByDiceRoomId;
+    const hasMatchingPending = !!pendingAttackResolution
+      && safeText(pendingAttackResolution.turnKey || "") === key
+      && currentTurnPlayerId() === state.userId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
     walpurgisSwapUsed = false;
@@ -4109,9 +4113,12 @@
     vampireHiddenAttackSuccess = false;
     vampireHealScheduled = false;
     hideRoomActionPop();
-    hideAttackResultPop();
-    pendingAttackResolution = null;
-    attackTurnEndChoicePending = false;
+    if (!hasMatchingPending){
+      hideAttackResultPop();
+      pendingAttackResolution = null;
+      attackTurnEndChoicePending = false;
+      cachePendingAttackResolution(null);
+    }
     showTurnHint("");
   }
 
@@ -4528,6 +4535,93 @@
     attackResultPop?.classList.add("hidden");
   }
 
+  function cachePendingAttackResolution(pending){
+    if (!state.roomCode || !state.userId) return;
+    const key = attackResolutionKey(state.roomCode);
+    if (!pending || typeof pending !== "object"){
+      sessionStorage.removeItem(key);
+      return;
+    }
+    const rows = Array.isArray(pending.rows)
+      ? pending.rows.map(item => ({
+          uid: safeText(item?.uid || ""),
+          damage: Math.max(0, Number(item?.damage || 0))
+        })).filter(item => item.uid)
+      : [];
+    if (!rows.length){
+      sessionStorage.removeItem(key);
+      return;
+    }
+    sessionStorage.setItem(key, JSON.stringify({ rows, turnKey: safeText(pending.turnKey || "") }));
+  }
+
+  async function upsertPendingAttackResolution(rows = [], turnKey = ""){
+    const uid = safeText(state.userId || "");
+    const roomCode = safeText(state.roomCode || "");
+    if (!uid || !roomCode) return;
+    const normalizedRows = (rows || [])
+      .map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) }))
+      .filter(item => item.uid);
+    const normalizedTurnKey = safeText(turnKey || "");
+    const payload = normalizedRows.length ? {
+      uid,
+      rows: normalizedRows,
+      turnKey: normalizedTurnKey,
+      at: Date.now()
+    } : null;
+    await set(ref(db, `rooms/${roomCode}/attackResolutionPending/${uid}`), payload);
+  }
+
+  function restorePendingAttackResolutionFromRoom(){
+    const roomPending = state.room?.attackResolutionPending || {};
+    const mine = roomPending?.[state.userId] || null;
+    const rows = Array.isArray(mine?.rows)
+      ? mine.rows.map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
+      : [];
+    const pendingTurnKey = safeText(mine?.turnKey || "");
+    const canRestore = !!rows.length && currentTurnPlayerId() === state.userId && pendingTurnKey === turnCycleKey();
+    if (!canRestore){
+      pendingAttackResolution = null;
+      attackTurnEndChoicePending = false;
+      cachePendingAttackResolution(null);
+      hideAttackResultPop();
+      renderTurnEndButton();
+      return false;
+    }
+    pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey };
+    cachePendingAttackResolution(pendingAttackResolution);
+    showAttackResultPop(rows);
+    attackTurnEndChoicePending = true;
+    renderTurnEndButton();
+    return true;
+  }
+
+  function restorePendingAttackResolutionFromSession(){
+    if (!state.roomCode || !state.userId) return false;
+    const raw = sessionStorage.getItem(attackResolutionKey(state.roomCode));
+    if (!raw) return false;
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      sessionStorage.removeItem(attackResolutionKey(state.roomCode));
+      return false;
+    }
+    const rows = Array.isArray(parsed?.rows)
+      ? parsed.rows.map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
+      : [];
+    const pendingTurnKey = safeText(parsed?.turnKey || "");
+    if (!rows.length || !pendingTurnKey){
+      sessionStorage.removeItem(attackResolutionKey(state.roomCode));
+      return false;
+    }
+    pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey };
+    showAttackResultPop(rows);
+    attackTurnEndChoicePending = true;
+    renderTurnEndButton();
+    return true;
+  }
+
   function makeAttackResultNameNode(uid){
     const wrap = document.createElement("span");
     wrap.className = "green-share-btn attack-result-pop-name";
@@ -4590,6 +4684,8 @@
     const pending = pendingAttackResolution;
     pendingAttackResolution = null;
     attackTurnEndChoicePending = false;
+    cachePendingAttackResolution(null);
+    await upsertPendingAttackResolution([], "");
     renderTurnEndButton();
     hideAttackResultPop();
     clearAttackResultDice();
@@ -6422,7 +6518,10 @@
             : 0
         }));
         const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
-        pendingAttackResolution = { rows: resolvedRows, applied:false };
+        const pendingTurnKey = turnCycleKey();
+        pendingAttackResolution = { rows: resolvedRows, applied:false, turnKey: pendingTurnKey };
+        cachePendingAttackResolution(pendingAttackResolution);
+        await upsertPendingAttackResolution(resolvedRows, pendingTurnKey);
         showAttackResultPop(resolvedRows);
         if (dealtDamage && isMyRole("SHA_V2")){
           if (isMyIdentityRevealed()){
@@ -7445,6 +7544,7 @@
   ];
 
   const seatKey = (room)=>`bbSeat_${room}_${state.userId}`;
+  const attackResolutionKey = (room)=>`bbAttackResolution_${room}_${state.userId}`;
 
   function isGameStarted(){
     return !!(state.room && (state.room.gameStarted || state.room.startedAt));
@@ -7611,6 +7711,7 @@
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     onValue(roomRef, snap => {
       state.room = snap.val() || {};
+      restorePendingAttackResolutionFromRoom();
       if (isGameStarted() && !currentTurnPlayerId() && state.isHost){
         ensureTurnInitialized();
       }
@@ -8007,9 +8108,11 @@
     }
 
     const turn = roomData.turn || null;
-    if (turn && safeText(turn.currentPlayerId || "") === safeText(previousPlayerId || "")) {
+    const isTurnOwnerStolen = !!turn && safeText(turn.currentPlayerId || "") === safeText(previousPlayerId || "");
+    const nextTurnUpdatedAt = isTurnOwnerStolen ? Date.now() : Number(turn?.updatedAt || 0);
+    if (isTurnOwnerStolen) {
       updates[`turn/currentPlayerId`] = state.userId;
-      updates[`turn/updatedAt`] = Date.now();
+      updates[`turn/updatedAt`] = nextTurnUpdatedAt;
     }
 
     const positionOrder = Array.isArray(roomData.positionOrder) ? roomData.positionOrder : null;
@@ -8057,6 +8160,22 @@
     if (Object.prototype.hasOwnProperty.call(greenCloseSignals, previousPlayerId)){
       updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
       updates[`greenCloseSignals/${previousPlayerId}`] = null;
+    }
+
+    const attackResolutionPending = roomData.attackResolutionPending || {};
+    if (Object.prototype.hasOwnProperty.call(attackResolutionPending, previousPlayerId)){
+      const pending = attackResolutionPending[previousPlayerId] || {};
+      const prevTurnKey = safeText(pending.turnKey || "");
+      const expectedOldTurnKey = turn ? `${safeText(previousPlayerId || "")}:${Number(turn.updatedAt || 0)}` : "";
+      const nextTurnKey = (isTurnOwnerStolen && prevTurnKey === expectedOldTurnKey)
+        ? `${safeText(state.userId || "")}:${nextTurnUpdatedAt}`
+        : prevTurnKey;
+      updates[`attackResolutionPending/${state.userId}`] = {
+        ...pending,
+        uid: state.userId,
+        turnKey: nextTurnKey
+      };
+      updates[`attackResolutionPending/${previousPlayerId}`] = null;
     }
 
     if (roomData.abilityUsage){
@@ -8300,6 +8419,7 @@
       remove(ref(db, `${base}/greenReplyBubbles`)),
       remove(ref(db, `${base}/greenReveals`)),
       remove(ref(db, `${base}/turn`)),
+      remove(ref(db, `${base}/attackResolutionPending`)),
     ]);
 
     deckCache = null;
@@ -8309,6 +8429,7 @@
     state.seatedTable = null;
     state.spectating = false;
     sessionStorage.removeItem(seatKey(state.roomCode));
+    sessionStorage.removeItem(attackResolutionKey(state.roomCode));
     startPop.classList.add('hidden');
 
     renderSeatTiles();
@@ -8328,6 +8449,7 @@
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
+    cachePendingAttackResolution(null);
     await advanceTurnToNextPlayer();
     hideAttackPop();
     hideAttackResultPop();
@@ -8411,6 +8533,7 @@
 
     const cachedSeat = sessionStorage.getItem(seatKey(state.roomCode));
     if (cachedSeat) state.seatedTable = Number(cachedSeat) || null;
+    restorePendingAttackResolutionFromSession();
     await syncMySeatNameIfNeeded();
 
     subscribeRoom();
