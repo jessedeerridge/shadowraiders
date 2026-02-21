@@ -1972,6 +1972,7 @@
     return !!t.moveDone && !t.attackDone && !t.deckDrawDone;
   }
   function canClickType(type){
+    if (isEquipSelectionLockActive()) return false;
     if (canDrawTypeNormally(type)) return true;
     if (type === "green" && canUseParasolGreenDraw()) return true;
     return false;
@@ -4071,9 +4072,17 @@
     }
 
     if (pendingEquipAction?.type === "banana_give"){
+      const action = { ...pendingEquipAction };
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
-      if (ownerUid !== state.userId || !sourceKey) return;
+      if (ownerUid !== state.userId || !sourceKey){
+        openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+        setZoomPassthrough(false);
+        zoomDismissHandler = async () => {
+          restorePendingEquipSelection(action);
+        };
+        return;
+      }
       const cardName = safeText(card.dataset.cardName || "この装備");
       pendingEquipAction.selectedSourceKey = sourceKey;
       openTargetSelectDock({
@@ -4095,7 +4104,15 @@
     }
 
     if (pendingEquipAction?.type === "oliver_target"){
-      if (!card.classList.contains("equip-steal-pulse")) return;
+      const action = { ...pendingEquipAction };
+      if (!card.classList.contains("equip-steal-pulse")){
+        openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+        setZoomPassthrough(false);
+        zoomDismissHandler = async () => {
+          restorePendingEquipSelection(action);
+        };
+        return;
+      }
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
@@ -4651,9 +4668,31 @@
     renderEquipmentDock();
   }
 
+  function isEquipSelectionLockActive(){
+    return pendingEquipAction?.type === "oliver_target" || pendingEquipAction?.type === "banana_give";
+  }
+
+  function restorePendingEquipSelection(action = null){
+    const next = action || pendingEquipAction;
+    const type = safeText(next?.type || "");
+    if (!next || (type !== "oliver_target" && type !== "banana_give")) return;
+    const cardObj = next.cardObj || null;
+    if (!cardObj) return;
+    openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
+    if (type === "banana_give"){
+      pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
+    } else {
+      pendingEquipAction = { type:"oliver_target", cardObj };
+    }
+    renderEquipmentDock();
+  }
+
   function canShowEndTurnButton(){
     if (!isMyTurn()) return false;
     if (cardPlayerSelectActive) return false;
+    if (isEquipSelectionLockActive()) return false;
+    if (pendingEquipAction?.type === "oliver_confirm") return false;
     if (mustAttackWithMasamune()) return false;
     if (attackTurnEndChoicePending) return false;
     if (suppressEndTurnButton) return false;
@@ -5675,6 +5714,7 @@
 
   const cardsPanelEl = document.getElementById("cardsPanel");
   cardsPanelEl.addEventListener("click", (e) => {
+    if (isEquipSelectionLockActive()) return;
     const card = e.target.closest(".card72.wb-front");
     if (!card) return;
     if (card.classList.contains("locked") || card.classList.contains("blocked")) return;
@@ -7329,6 +7369,7 @@
     };
 
     g.addEventListener('pointerdown', (e) => {
+      if (isEquipSelectionLockActive()) return;
       markerLongPressDone = false;
       clearMarkerLongPress();
       if (!canUseWalpurgisSwap()) return;
@@ -7343,6 +7384,7 @@
     g.addEventListener('pointercancel', clearMarkerLongPress);
 
     g.addEventListener('click', (e) => {
+      if (isEquipSelectionLockActive()) return;
       clearMarkerLongPress();
       if (markerLongPressDone){
         e.preventDefault();
@@ -7627,6 +7669,7 @@
       roomHitEls[roomId] = hit;
 
       hit.addEventListener('click', async (ev) => {
+        if (isEquipSelectionLockActive()) return;
         if (isGameStarted()){
           if (await resolvePendingMoveChoice(roomId)) return;
           if (!canChooseOuterRoomDirectly()) return;
@@ -7649,6 +7692,7 @@
     centerHit.dataset.roomId = "7";
     roomHitEls[7] = centerHit;
     centerHit.addEventListener('click', async (ev) => {
+      if (isEquipSelectionLockActive()) return;
       if (isGameStarted()){
         if (await resolvePendingMoveChoice(7)) return;
         return;
@@ -8817,7 +8861,14 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
+        const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
+        if (action){
+          setZoomPassthrough(false);
+          zoomDismissHandler = async () => {
+            restorePendingEquipSelection(action);
+          };
+        }
       });
       myRoleCard.appendChild(face);
     } else {
@@ -8829,7 +8880,14 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
+        const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
+        if (action){
+          setZoomPassthrough(false);
+          zoomDismissHandler = async () => {
+            restorePendingEquipSelection(action);
+          };
+        }
       });
 
       myRoleCard.appendChild(back);
