@@ -5508,8 +5508,9 @@
       }
 
       if (attackDefeatedUids.length){
+        const shouldUseRosaryLoot = !!lastAttackWatch?.hasRosary;
         setTimeout(() => {
-          if (lastAttackWatch?.hasRosary){
+          if (shouldUseRosaryLoot){
             runRosaryAutoLootFlow(attackDefeatedUids).catch(() => {});
           } else {
             createOrMergeAttackLootPending(attackDefeatedUids).catch(() => {});
