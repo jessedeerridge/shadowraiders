@@ -2794,6 +2794,13 @@
     }
   }
 
+  function shouldKeepGreenRevealOpen(){
+    const pendingRequestId = safeText(pendingGreenRequestId || pendingGreenAnswerMsg?.requestId || "");
+    const hasVisibleReveal = !!(pendingRequestId && greenRevealByRequestId[pendingRequestId]?.roleId);
+    const revealPanelOpen = !!(greenRevealPanel && !greenRevealPanel.classList.contains("hidden"));
+    return hasVisibleReveal || revealPanelOpen;
+  }
+
   async function setGreenSessionState(payload){
     if (greenSessionRestoring) return;
     if (!state.roomCode || !state.userId) return;
@@ -8019,10 +8026,7 @@
 
       if (!data){
         pendingGreenSessionEntry = null;
-        const pendingRequestId = safeText(pendingGreenRequestId || pendingGreenAnswerMsg?.requestId || "");
-        const hasVisibleReveal = !!(pendingRequestId && greenRevealByRequestId[pendingRequestId]?.roleId);
-        const revealPanelOpen = !!(greenRevealPanel && !greenRevealPanel.classList.contains("hidden"));
-        if (!hasVisibleReveal && !revealPanelOpen && (pendingGreenAnswerMsg || pendingGreenRequestId || (greenShareCard && !greenShareDock?.classList.contains("hidden")))){
+        if (!shouldKeepGreenRevealOpen() && (pendingGreenAnswerMsg || pendingGreenRequestId || (greenShareCard && !greenShareDock?.classList.contains("hidden")))){
           hideGreenShareDock();
           closeZoom();
         }
@@ -8112,8 +8116,10 @@
         state.seatedTable = null;
         if (wasSeated){
           state.spectating = false;
-          hideGreenShareDock();
-          closeZoom();
+          if (!shouldKeepGreenRevealOpen()){
+            hideGreenShareDock();
+            closeZoom();
+          }
         }
         sessionStorage.removeItem(seatKey(state.roomCode));
       }
