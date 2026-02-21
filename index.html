@@ -132,6 +132,38 @@
   .help-pop-title{font-weight:1000;font-size:14px;}
   .help-pop-body{padding:12px;overflow:auto;max-height:calc(82vh - 48px);}
 
+  .equip-expand-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,.35);
+    display:flex;align-items:flex-end;justify-content:center;
+    z-index:2012;
+    padding:16px 16px 64px;
+  }
+  .equip-expand-backdrop.hidden{display:none;}
+  .equip-expand-pop{
+    width:min(560px, calc(100% - 0px));
+    max-height:min(82vh, 780px);
+    background:#fff;border:1px solid #ddd;border-radius:16px;
+    box-shadow:0 18px 40px rgba(0,0,0,.35);
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+  .equip-expand-header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 12px;border-bottom:1px solid #eee;
+  }
+  .equip-expand-title{font-weight:1000;font-size:14px;}
+  .equip-expand-body{
+    padding:12px;
+    overflow:auto;
+    max-height:calc(82vh - 48px);
+    background-color:#ffffff;
+    background-image:url('gear.jpg');
+    background-size:cover;
+    background-position:center;
+    background-repeat:no-repeat;
+  }
+
   .help-section{padding:6px 0 10px;}
   .help-section + .help-section{border-top:1px solid rgba(0,0,0,.16);}
   .help-section-title{font-weight:900;font-size:13px;margin:0 0 8px;}
@@ -1661,6 +1693,16 @@
       <button id="btnHelpClose" class="btn ghost" style="padding:2px 6px;font-size:12px;">×</button>
     </div>
     <div class="help-pop-body" id="helpBody"></div>
+  </div>
+</div>
+
+<div id="equipExpandBackdrop" class="equip-expand-backdrop hidden">
+  <div class="equip-expand-pop" role="dialog" aria-modal="true" aria-label="装備欄（拡大表示）">
+    <div class="equip-expand-header">
+      <div class="equip-expand-title">装備欄（拡大表示）</div>
+      <button id="equipExpandClose" class="btn">閉じる</button>
+    </div>
+    <div class="equip-expand-body" id="equipExpandBody"></div>
   </div>
 </div>
 
@@ -3227,7 +3269,7 @@
   function renderEquipmentDock(){
     syncRoomAbilityTurnState();
     equipDock?.classList.toggle("david-select-front", pendingEquipAction?.type === "david_select");
-    if (!state.roomCode) { equipDock.classList.remove("visible"); return; }
+    if (!state.roomCode) { equipDock.classList.remove("visible"); closeEquipExpand(); return; }
     if (!isMyTurn() && defeatLootQueue.length > 0){
       defeatLootQueue = [];
     }
@@ -3246,6 +3288,7 @@
 
     if (rows.length === 0){
       equipDock.classList.remove("visible");
+      closeEquipExpand();
       return;
     }
 
@@ -3293,6 +3336,9 @@
     }
     refreshRoomAbilityHint();
     ensureDavidIdentityZoomVisible();
+    if (equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden')){
+      renderEquipExpandBody();
+    }
   }
 
   async function grantEquipmentToMe(cardObj, theme){
@@ -3677,7 +3723,9 @@
       if (pendingEquipAction?.type === "david_select"){
         hideRoomActionPop();
         restoreDavidAbilitySelection();
+        return;
       }
+      openEquipExpand();
       return;
     }
 
@@ -7060,6 +7108,9 @@
   const helpBtn = document.getElementById('helpBtn');
   const roomGuideBtn = document.getElementById('roomGuideBtn');
   const helpBackdrop = document.getElementById('helpBackdrop');
+  const equipExpandBackdrop = document.getElementById('equipExpandBackdrop');
+  const equipExpandBody = document.getElementById('equipExpandBody');
+  const equipExpandClose = document.getElementById('equipExpandClose');
   const btnHelpClose = document.getElementById('btnHelpClose');
   const helpBody = document.getElementById('helpBody');
 
@@ -7230,6 +7281,18 @@
     await resetAllAbilityUsageForUids([state.userId]);
   }
   function closeHelp(){ helpBackdrop.classList.add('hidden'); }
+  function renderEquipExpandBody(){
+    if (!equipExpandBody || !equipBody) return;
+    equipExpandBody.innerHTML = equipBody.innerHTML;
+  }
+  function openEquipExpand(){
+    if (!equipDock?.classList.contains('visible')) return;
+    renderEquipExpandBody();
+    equipExpandBackdrop?.classList.remove('hidden');
+  }
+  function closeEquipExpand(){
+    equipExpandBackdrop?.classList.add('hidden');
+  }
   function toggleRoomGuideOverlay(){
     roomGuideVisible = !roomGuideVisible;
     roomGuideBtn.classList.toggle('active', roomGuideVisible);
@@ -7246,6 +7309,10 @@
   btnHelpClose.addEventListener('click', closeHelp);
   helpBackdrop.addEventListener('click', (e) => {
     if (!helpBackdrop.classList.contains('hidden') && !e.target.closest('.help-pop')) closeHelp();
+  });
+  equipExpandClose?.addEventListener('click', closeEquipExpand);
+  equipExpandBackdrop?.addEventListener('click', (e) => {
+    if (!equipExpandBackdrop.classList.contains('hidden') && !e.target.closest('.equip-expand-pop')) closeEquipExpand();
   });
 
   const SEAT_COLORS = [
