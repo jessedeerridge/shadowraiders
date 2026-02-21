@@ -7946,7 +7946,15 @@
         return;
       }
 
-      if (!data || !at) return;
+      if (!data){
+        pendingGreenSessionEntry = null;
+        if (pendingGreenAnswerMsg || pendingGreenRequestId || (greenShareCard && !greenShareDock?.classList.contains("hidden"))){
+          hideGreenShareDock();
+          closeZoom();
+        }
+        return;
+      }
+      if (!at) return;
       if (at <= greenSessionSeenAt) return;
       greenSessionSeenAt = at;
       pendingGreenSessionEntry = data;
@@ -8318,42 +8326,34 @@
 
     const greenSessions = roomData.greenSessions || {};
     const previousGreenSession = greenSessions[previousPlayerId] || null;
-    const isAnsweringGreenSession = safeText(previousGreenSession?.phase || "") === "answering";
 
     const greenInbox = roomData.greenInbox || {};
     if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId)){
-      const hasMine = Object.prototype.hasOwnProperty.call(greenInbox, state.userId);
-      if (!isAnsweringGreenSession && !hasMine) updates[`greenInbox/${state.userId}`] = greenInbox[previousPlayerId];
+      updates[`greenInbox/${state.userId}`] = greenInbox[previousPlayerId];
       updates[`greenInbox/${previousPlayerId}`] = null;
     }
     const greenResponses = roomData.greenResponses || {};
     if (Object.prototype.hasOwnProperty.call(greenResponses, previousPlayerId)){
-      const hasMine = Object.prototype.hasOwnProperty.call(greenResponses, state.userId);
-      if (!isAnsweringGreenSession && !hasMine) updates[`greenResponses/${state.userId}`] = greenResponses[previousPlayerId];
+      updates[`greenResponses/${state.userId}`] = greenResponses[previousPlayerId];
       updates[`greenResponses/${previousPlayerId}`] = null;
     }
     const greenCloseSignals = roomData.greenCloseSignals || {};
     if (Object.prototype.hasOwnProperty.call(greenCloseSignals, previousPlayerId)){
-      const hasMine = Object.prototype.hasOwnProperty.call(greenCloseSignals, state.userId);
-      if (!hasMine) updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
+      updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
       updates[`greenCloseSignals/${previousPlayerId}`] = null;
     }
     if (Object.prototype.hasOwnProperty.call(greenSessions, previousPlayerId)){
-      const hasMine = Object.prototype.hasOwnProperty.call(greenSessions, state.userId);
-      if (!isAnsweringGreenSession && !hasMine) updates[`greenSessions/${state.userId}`] = previousGreenSession;
+      updates[`greenSessions/${state.userId}`] = previousGreenSession;
       updates[`greenSessions/${previousPlayerId}`] = null;
     }
 
-    const shouldForceCloseGreenUi = ["answering","waiting","confirm"].includes(safeText(previousGreenSession?.phase || ""));
+    const shouldForceCloseGreenUi = ["selecting","answering","waiting","confirm"].includes(safeText(previousGreenSession?.phase || ""));
     if (shouldForceCloseGreenUi){
-      const requestId = safeText(previousGreenSession?.msg?.requestId || previousGreenSession?.requestId || "");
-      if (requestId){
-        updates[`greenCloseSignals/${previousPlayerId}`] = {
-          requestId,
-          from: state.userId,
-          at: Date.now()
-        };
-      }
+      updates[`greenCloseSignals/${previousPlayerId}`] = {
+        requestId: safeText(previousGreenSession?.msg?.requestId || previousGreenSession?.requestId || ""),
+        from: state.userId,
+        at: Date.now()
+      };
     }
 
     const attackResolutionPending = roomData.attackResolutionPending || {};
