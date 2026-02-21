@@ -8411,8 +8411,10 @@
     }
     const greenCloseSignals = roomData.greenCloseSignals || {};
     if (Object.prototype.hasOwnProperty.call(greenCloseSignals, previousPlayerId)){
-      updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
       updates[`greenCloseSignals/${previousPlayerId}`] = null;
+    }
+    if (Object.prototype.hasOwnProperty.call(greenCloseSignals, state.userId)){
+      updates[`greenCloseSignals/${state.userId}`] = null;
     }
     if (Object.prototype.hasOwnProperty.call(greenSessions, previousPlayerId)){
       updates[`greenSessions/${state.userId}`] = migrateUidInGreenSession(previousGreenSession);
