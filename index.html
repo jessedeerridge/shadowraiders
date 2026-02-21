@@ -8280,6 +8280,65 @@
     state.spectating = true;
   }
 
+  function replaceUidInGreenPayload(value, fromUid, toUid){
+    const prev = safeText(fromUid || "");
+    const next = safeText(toUid || "");
+    if (!prev || !next || prev === next) return value;
+    if (typeof value === "string") return (safeText(value) === prev) ? next : value;
+    if (Array.isArray(value)) return value.map(v => replaceUidInGreenPayload(v, prev, next));
+    if (!value || typeof value !== "object") return value;
+
+    const out = {};
+    for (const [k, v] of Object.entries(value)){
+      out[k] = replaceUidInGreenPayload(v, prev, next);
+    }
+    return out;
+  }
+
+  function migrateGreenStateForSeatSteal(roomData, previousPlayerId, nextPlayerId, updates){
+    const prevUid = safeText(previousPlayerId || "");
+    const nextUid = safeText(nextPlayerId || "");
+    if (!prevUid || !nextUid || prevUid === nextUid) return { previousGreenSession:null };
+
+    const moveUidKeyedMap = (path) => {
+      const src = roomData?.[path] || {};
+      if (Object.prototype.hasOwnProperty.call(src, prevUid)){
+        const moved = replaceUidInGreenPayload(src[prevUid], prevUid, nextUid);
+        updates[`${path}/${nextUid}`] = moved;
+        updates[`${path}/${prevUid}`] = null;
+      }
+      for (const [key, entry] of Object.entries(src)){
+        if (safeText(key || "") === prevUid) continue;
+        const migrated = replaceUidInGreenPayload(entry, prevUid, nextUid);
+        if (JSON.stringify(migrated) !== JSON.stringify(entry)){
+          updates[`${path}/${key}`] = migrated;
+        }
+      }
+    };
+
+    moveUidKeyedMap("greenInbox");
+    moveUidKeyedMap("greenResponses");
+    moveUidKeyedMap("greenCloseSignals");
+    moveUidKeyedMap("greenSessions");
+
+    const moveRequestKeyedMap = (path) => {
+      const src = roomData?.[path] || {};
+      for (const [key, entry] of Object.entries(src)){
+        const migrated = replaceUidInGreenPayload(entry, prevUid, nextUid);
+        if (JSON.stringify(migrated) !== JSON.stringify(entry)){
+          updates[`${path}/${key}`] = migrated;
+        }
+      }
+    };
+
+    moveRequestKeyedMap("greenReplyBubbles");
+    moveRequestKeyedMap("greenRequests");
+    moveRequestKeyedMap("greenReveals");
+
+    const previousGreenSession = roomData?.greenSessions?.[prevUid] || null;
+    return { previousGreenSession };
+  }
+
   async function stealSeatStarted(seatIndex, previousPlayerId){
     if (!state.roomCode) return;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
@@ -8376,92 +8435,7 @@
       updates[`guardianAngelShield/${previousPlayerId}`] = null;
     }
 
-    const greenSessions = roomData.greenSessions || {};
-    const previousGreenSession = greenSessions[previousPlayerId] || null;
-
-    const migrateUidInGreenSession = (entry) => {
-      if (!entry || typeof entry !== "object") return entry;
-      const next = JSON.parse(JSON.stringify(entry));
-      const prevUid = safeText(previousPlayerId || "");
-      const myUid = safeText(state.userId || "");
-      const replaceUid = (uid) => safeText(uid || "") === prevUid ? myUid : safeText(uid || "");
-      if (next.msg && typeof next.msg === "object"){
-        next.msg.from = replaceUid(next.msg.from);
-        next.msg.to = replaceUid(next.msg.to);
-      }
-      if (Object.prototype.hasOwnProperty.call(next, "toUid")) next.toUid = replaceUid(next.toUid);
-      return next;
-    };
-
-    const greenInbox = roomData.greenInbox || {};
-    for (const [uid, entry] of Object.entries(greenInbox)){
-      if (!entry || safeText(entry.from || "") !== safeText(previousPlayerId || "")) continue;
-      updates[`greenInbox/${uid}/from`] = state.userId;
-    }
-    if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId) && !previousGreenSession){
-      updates[`greenInbox/${state.userId}`] = greenInbox[previousPlayerId];
-      updates[`greenInbox/${previousPlayerId}`] = null;
-    } else if (Object.prototype.hasOwnProperty.call(greenInbox, previousPlayerId)){
-      updates[`greenInbox/${previousPlayerId}`] = null;
-    }
-    const greenResponses = roomData.greenResponses || {};
-    if (Object.prototype.hasOwnProperty.call(greenResponses, previousPlayerId)){
-      updates[`greenResponses/${state.userId}`] = greenResponses[previousPlayerId];
-      updates[`greenResponses/${previousPlayerId}`] = null;
-    }
-    const greenCloseSignals = roomData.greenCloseSignals || {};
-    if (Object.prototype.hasOwnProperty.call(greenCloseSignals, previousPlayerId)){
-      updates[`greenCloseSignals/${state.userId}`] = greenCloseSignals[previousPlayerId];
-      updates[`greenCloseSignals/${previousPlayerId}`] = null;
-    }
-    if (Object.prototype.hasOwnProperty.call(greenSessions, previousPlayerId)){
-      updates[`greenSessions/${state.userId}`] = migrateUidInGreenSession(previousGreenSession);
-      updates[`greenSessions/${previousPlayerId}`] = null;
-    }
-    for (const [uid, entry] of Object.entries(greenSessions)){
-      if (safeText(uid || "") === safeText(previousPlayerId || "")) continue;
-      if (!entry || typeof entry !== "object") continue;
-      const migrated = migrateUidInGreenSession(entry);
-      if (JSON.stringify(migrated) !== JSON.stringify(entry)){
-        updates[`greenSessions/${uid}`] = migrated;
-      }
-    }
-
-    const greenReplyBubbles = roomData.greenReplyBubbles || {};
-    for (const [bubbleId, bubble] of Object.entries(greenReplyBubbles)){
-      if (!bubble || typeof bubble !== "object") continue;
-      const nextBubble = { ...bubble };
-      let changed = false;
-      if (safeText(nextBubble.from || "") === safeText(previousPlayerId || "")){
-        nextBubble.from = state.userId;
-        changed = true;
-      }
-      if (safeText(nextBubble.responderId || "") === safeText(previousPlayerId || "")){
-        nextBubble.responderId = state.userId;
-        changed = true;
-      }
-      if (changed){
-        updates[`greenReplyBubbles/${bubbleId}`] = nextBubble;
-      }
-    }
-
-    const greenRequests = roomData.greenRequests || {};
-    for (const [requestId, req] of Object.entries(greenRequests)){
-      if (!req || typeof req !== "object") continue;
-      let changed = false;
-      const nextReq = { ...req };
-      if (safeText(nextReq.from || "") === previousPlayerId){
-        nextReq.from = state.userId;
-        changed = true;
-      }
-      if (safeText(nextReq.to || "") === previousPlayerId){
-        nextReq.to = state.userId;
-        changed = true;
-      }
-      if (changed){
-        updates[`greenRequests/${requestId}`] = nextReq;
-      }
-    }
+    const { previousGreenSession } = migrateGreenStateForSeatSteal(roomData, previousPlayerId, state.userId, updates);
 
     const shouldForceCloseGreenUi = ["selecting","answering","waiting","confirm"].includes(safeText(previousGreenSession?.phase || ""));
     if (shouldForceCloseGreenUi){
