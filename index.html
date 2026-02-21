@@ -2073,6 +2073,8 @@
   let greenRevealByRequestId = {};
   let greenSessionInitialized = false;
   let greenSessionRestoring = false;
+  let greenSessionSeenAt = 0;
+  let pendingGreenSessionEntry = null;
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
     "CIT_D3", // デボラ
@@ -3003,6 +3005,7 @@
     cardPlayerSelectActive = false;
     renderTurnEndButton();
     setGreenSessionState(null).catch(() => {});
+    pendingGreenSessionEntry = null;
   }
 
   function restoreGreenSessionUI(entry){
@@ -7890,14 +7893,41 @@
     });
   }
 
+  function tryRestorePendingGreenSession(){
+    const entry = pendingGreenSessionEntry;
+    if (!entry) return;
+    const phase = safeText(entry?.phase || "");
+    if (!phase){
+      pendingGreenSessionEntry = null;
+      return;
+    }
+    const needsPlayers = phase !== "answering";
+    if (needsPlayers && latestPlayers.length === 0) return;
+    restoreGreenSessionUI(entry);
+    pendingGreenSessionEntry = null;
+  }
+
   function subscribeGreenSessionState(){
     const gsRef = ref(db, `rooms/${state.roomCode}/greenSessions/${state.userId}`);
     onValue(gsRef, snap => {
       const data = snap.val() || null;
+      const at = Number(data?.at || 0);
+
       if (!greenSessionInitialized){
         greenSessionInitialized = true;
-        if (data) restoreGreenSessionUI(data);
+        greenSessionSeenAt = at || 0;
+        if (data){
+          pendingGreenSessionEntry = data;
+          tryRestorePendingGreenSession();
+        }
+        return;
       }
+
+      if (!data || !at) return;
+      if (at <= greenSessionSeenAt) return;
+      greenSessionSeenAt = at;
+      pendingGreenSessionEntry = data;
+      tryRestorePendingGreenSession();
     });
   }
 
@@ -7964,6 +7994,7 @@
         .sort((a,b) => a.seatIndex - b.seatIndex);
 
       latestPlayers = players;
+      tryRestorePendingGreenSession();
 
       const mySeat = players.find(p => p.id === state.userId);
       if (mySeat) {
