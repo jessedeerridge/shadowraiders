@@ -4034,6 +4034,9 @@
         hideRoomActionPop();
         restoreDavidAbilitySelection();
       }
+      if (pendingEquipAction?.type === "venom_give"){
+        showPersistentRoleOverlay("SHA_V1", safeText(pendingEquipAction?.toUid || ""));
+      }
       return;
     }
 
