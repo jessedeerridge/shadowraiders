@@ -2721,6 +2721,7 @@
       answerLabel,
       at: Date.now()
     });
+    await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${state.userId}`)).catch(() => {});
   }
 
   async function applyGreenAnswerEffect(msg, opt){
@@ -8404,15 +8405,27 @@
         if (!entry || typeof entry !== "object") return entry;
         return { ...entry, at: migratedAt };
       };
+      const answeredRequestIds = new Set(
+        Object.values(room.greenResponses || {})
+          .map((row) => safeText(row?.requestId || ""))
+          .filter(Boolean)
+      );
 
       const migrateUidNode = (nodeName, shouldTouchAt = false) => {
         const node = room[nodeName] || {};
         if (!node || typeof node !== "object") return;
 
         if (Object.prototype.hasOwnProperty.call(node, prevUid)){
-          const migrated = deepReplaceUid(copy(node[prevUid]));
-          outUpdates[`${nodeName}/${nextUid}`] = shouldTouchAt ? touchAt(migrated) : migrated;
-          outUpdates[`${nodeName}/${prevUid}`] = null;
+          const original = node[prevUid];
+          const requestId = safeText(original?.requestId || "");
+          const skipAnsweredInbox = nodeName === "greenInbox" && requestId && answeredRequestIds.has(requestId);
+          if (skipAnsweredInbox){
+            outUpdates[`${nodeName}/${prevUid}`] = null;
+          } else {
+            const migrated = deepReplaceUid(copy(original));
+            outUpdates[`${nodeName}/${nextUid}`] = shouldTouchAt ? touchAt(migrated) : migrated;
+            outUpdates[`${nodeName}/${prevUid}`] = null;
+          }
         }
 
         for (const [key, value] of Object.entries(node)){
