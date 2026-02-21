@@ -4899,6 +4899,26 @@
     return !!result.committed;
   }
 
+
+  async function runRosaryAutoLootFlow(defeatedUids = []){
+    const targets = [...new Set((defeatedUids || []).map(uid => safeText(uid)).filter(uid => uid && uid !== state.userId))];
+    if (!targets.length) return;
+
+    await waitUntilZoomClosed({ maxWaitMs:16000, pollMs:80 });
+    openZoomFromDeckCard({ name:"銀のロザリオ", effect:"装備、ダイスの攻撃によって倒したPLの全ての装備を奪う。" }, "white", {
+      closeOnBackdrop:false,
+      showCloseButton:false
+    });
+    setZoomOverPanel(true);
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    for (const uid of targets){
+      await stealAllEquipmentFromPlayer(uid);
+    }
+    closeZoom();
+    renderEquipmentDock();
+  }
+
   async function moveEquipmentCardBetweenPlayers(fromUid, toUid, sourceKey){
     if (!state.roomCode || !fromUid || !toUid || !sourceKey) return false;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
@@ -5489,7 +5509,11 @@
 
       if (attackDefeatedUids.length){
         setTimeout(() => {
-          createOrMergeAttackLootPending(attackDefeatedUids).catch(() => {});
+          if (lastAttackWatch?.hasRosary){
+            runRosaryAutoLootFlow(attackDefeatedUids).catch(() => {});
+          } else {
+            createOrMergeAttackLootPending(attackDefeatedUids).catch(() => {});
+          }
         }, 2200);
       }
 
