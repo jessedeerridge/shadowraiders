@@ -2114,6 +2114,7 @@
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
   let pendingAttackResolution = null;
+  let pendingAttackResolutionHydrated = false;
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -4528,6 +4529,28 @@
     attackResultPop?.classList.add("hidden");
   }
 
+  function sanitizeAttackResolutionRows(rows = []){
+    return (Array.isArray(rows) ? rows : [])
+      .map(item => ({
+        uid: safeText(item?.uid || ""),
+        damage: Math.max(0, Number(item?.damage || 0))
+      }))
+      .filter(item => item.uid);
+  }
+
+  async function savePendingAttackResolution(rows = []){
+    if (!state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/pendingAttackResolutions/${state.userId}`), {
+      rows: sanitizeAttackResolutionRows(rows),
+      updatedAt: Date.now()
+    });
+  }
+
+  async function clearPendingAttackResolutionSaved(){
+    if (!state.roomCode || !state.userId) return;
+    await remove(ref(db, `rooms/${state.roomCode}/pendingAttackResolutions/${state.userId}`));
+  }
+
   function makeAttackResultNameNode(uid){
     const wrap = document.createElement("span");
     wrap.className = "green-share-btn attack-result-pop-name";
@@ -4593,6 +4616,7 @@
     renderTurnEndButton();
     hideAttackResultPop();
     clearAttackResultDice();
+    await clearPendingAttackResolutionSaved();
     if (!pending || pending.applied) return;
     pending.applied = true;
     await addResolvedDamageToPlayers(pending.rows || []);
@@ -4854,6 +4878,29 @@
         applyDamage: safeText(ev.uid || "") === state.userId,
         motion: ev.motion || null
       });
+    });
+  }
+
+  function subscribePendingAttackResolution(){
+    const pendingRef = ref(db, `rooms/${state.roomCode}/pendingAttackResolutions/${state.userId}`);
+    onValue(pendingRef, snap => {
+      const raw = snap.val();
+      if (!raw){
+        if (pendingAttackResolutionHydrated){
+          pendingAttackResolution = null;
+          attackTurnEndChoicePending = false;
+          hideAttackResultPop();
+          renderTurnEndButton();
+        }
+        pendingAttackResolutionHydrated = true;
+        return;
+      }
+      const rows = sanitizeAttackResolutionRows(raw.rows);
+      pendingAttackResolution = { rows, applied:false };
+      attackTurnEndChoicePending = true;
+      pendingAttackResolutionHydrated = true;
+      showAttackResultPop(rows);
+      renderTurnEndButton();
     });
   }
 
@@ -6423,6 +6470,7 @@
         }));
         const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
         pendingAttackResolution = { rows: resolvedRows, applied:false };
+        await savePendingAttackResolution(resolvedRows);
         showAttackResultPop(resolvedRows);
         if (dealtDamage && isMyRole("SHA_V2")){
           if (isMyIdentityRevealed()){
@@ -8059,6 +8107,12 @@
       updates[`greenCloseSignals/${previousPlayerId}`] = null;
     }
 
+    const pendingAttackResolutions = roomData.pendingAttackResolutions || {};
+    if (Object.prototype.hasOwnProperty.call(pendingAttackResolutions, previousPlayerId)){
+      updates[`pendingAttackResolutions/${state.userId}`] = pendingAttackResolutions[previousPlayerId];
+      updates[`pendingAttackResolutions/${previousPlayerId}`] = null;
+    }
+
     if (roomData.abilityUsage){
       const abilityUsageCopy = JSON.parse(JSON.stringify(roomData.abilityUsage));
       moveAbilityUsageUid(abilityUsageCopy, previousPlayerId, state.userId);
@@ -8299,6 +8353,7 @@
       remove(ref(db, `${base}/greenResponses`)),
       remove(ref(db, `${base}/greenReplyBubbles`)),
       remove(ref(db, `${base}/greenReveals`)),
+      remove(ref(db, `${base}/pendingAttackResolutions`)),
       remove(ref(db, `${base}/turn`)),
     ]);
 
@@ -8328,6 +8383,7 @@
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
+    await clearPendingAttackResolutionSaved();
     await advanceTurnToNextPlayer();
     hideAttackPop();
     hideAttackResultPop();
@@ -8412,6 +8468,7 @@
     const cachedSeat = sessionStorage.getItem(seatKey(state.roomCode));
     if (cachedSeat) state.seatedTable = Number(cachedSeat) || null;
     await syncMySeatNameIfNeeded();
+    pendingAttackResolutionHydrated = false;
 
     subscribeRoom();
     subscribeHostState();
@@ -8426,6 +8483,7 @@
     subscribeEquipment();
     subscribeDamage();
     subscribeDiceEvents();
+    subscribePendingAttackResolution();
     subscribeRoleFlashEvents();
     subscribeWalpurgisSwapEvents();
 
