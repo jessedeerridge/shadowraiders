@@ -89,9 +89,16 @@
 
   .attack-result-pop-rows{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;max-height:220px;overflow:auto;}
   .attack-result-pop-row{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;line-height:1.4;text-align:center;}
-  .attack-result-pop-name{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:0;width:auto;cursor:default;padding:4px 8px;}
-  .attack-result-pop-name-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .attack-result-pop-name{display:inline-flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;width:96px;max-width:96px;cursor:default;padding:4px 6px;}
+  .attack-result-pop-name-text{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;}
   .attack-result-pop-row .chip16{flex:0 0 auto;}
+
+  #attackResultPop{
+    min-width:unset;
+    width:fit-content;
+    max-width:min(92vw, 320px);
+  }
+  #attackResultPop .actions{justify-content:center;flex-wrap:nowrap;}
 
   .help-btn{
     position:fixed;left:16px;bottom:24px;width:44px;height:44px;border-radius:50%;
@@ -2114,6 +2121,7 @@
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
   let pendingAttackResolution = null;
+  let suppressEndTurnButton = false;
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -4435,6 +4443,7 @@
     if (cardPlayerSelectActive) return false;
     if (mustAttackWithMasamune()) return false;
     if (attackTurnEndChoicePending) return false;
+    if (suppressEndTurnButton) return false;
     return !!turnState()?.moveDone;
   }
 
@@ -4656,7 +4665,8 @@
       const row = document.createElement("div");
       row.className = "attack-result-pop-row";
       const amount = document.createElement("span");
-      amount.textContent = `${Math.max(0, Number(item?.damage || 0))} >`;
+      const damageValue = Math.max(0, Number(item?.damage || 0));
+      amount.textContent = damageValue > 0 ? `${damageValue} Damege >` : "攻撃失敗 >";
       row.appendChild(amount);
       row.appendChild(makeAttackResultNameNode(uid));
       attackResultRows.appendChild(row);
@@ -4684,17 +4694,23 @@
     const pending = pendingAttackResolution;
     pendingAttackResolution = null;
     attackTurnEndChoicePending = false;
+    suppressEndTurnButton = !!endTurnAfterApply;
     cachePendingAttackResolution(null);
     await upsertPendingAttackResolution([], "");
     renderTurnEndButton();
     hideAttackResultPop();
     clearAttackResultDice();
-    if (!pending || pending.applied) return;
+    if (!pending || pending.applied){
+      if (!endTurnAfterApply) suppressEndTurnButton = false;
+      return;
+    }
     pending.applied = true;
     await addResolvedDamageToPlayers(pending.rows || []);
     if (endTurnAfterApply){
       await new Promise(resolve => setTimeout(resolve, 2000));
       await doEndTurn();
+      suppressEndTurnButton = false;
+      renderTurnEndButton();
     }
   }
 
@@ -8449,6 +8465,7 @@
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
+    suppressEndTurnButton = false;
     cachePendingAttackResolution(null);
     await advanceTurnToNextPlayer();
     hideAttackPop();
