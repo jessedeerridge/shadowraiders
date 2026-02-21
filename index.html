@@ -2797,6 +2797,16 @@
     });
   }
 
+  function currentMySeatIndex(){
+    const fromPlayers = latestPlayers.find(p => p.id === state.userId);
+    if (fromPlayers?.seatIndex) return Number(fromPlayers.seatIndex || 0);
+    const tables = state.room?.tables || {};
+    for (const [seatIndex, t] of Object.entries(tables)){
+      if (t && safeText(t.playerId || "") === safeText(state.userId || "")) return Number(seatIndex || 0);
+    }
+    return Number(state.seatedTable || 0);
+  }
+
   function renderGreenWaitingSelection(toUid, toName="", toInitial="", toColor=""){
     if (!greenShareList) return;
     greenShareList.innerHTML = "";
@@ -2831,7 +2841,7 @@
 
   function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onlyAlive=false, onSelect=null, nameSuffixForUid=null } = {}){
     if (!greenShareDock || !greenShareList) return;
-    const mySeat = Number(state.seatedTable || 0);
+    const mySeat = currentMySeatIndex();
     const players = latestPlayers
       .filter(p => includeSelf || (p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat))
       .filter(p => !isPlayerEliminated(p.id))
@@ -2884,7 +2894,7 @@
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
-    const mySeat = Number(state.seatedTable || 0);
+    const mySeat = currentMySeatIndex();
     const players = latestPlayers
       .filter(p => p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat)
       .filter(p => !isPlayerEliminated(p.id))
@@ -7856,6 +7866,7 @@
     onValue(handsRef, snap => {
       state.hands = snap.val() || {};
       renderHands();
+      tryRestorePendingGreenSession();
     });
   }
 
@@ -7925,7 +7936,12 @@
       return;
     }
     const needsPlayers = phase !== "answering";
-    if (needsPlayers && latestPlayers.length === 0) return;
+    if (phase === "answering" && !myRoleInfo()) return;
+    if (needsPlayers){
+      if (latestPlayers.length === 0) return;
+      const mySeatReady = latestPlayers.some(p => p.id === state.userId);
+      if (!mySeatReady) return;
+    }
     restoreGreenSessionUI(entry);
     pendingGreenSessionEntry = null;
   }
