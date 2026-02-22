@@ -2239,6 +2239,7 @@
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+  let activeCardTargetSelectionCard = null;
   let seatPromptUnsubscribe = null;
   let subscribedSeatPromptIndex = null;
   let restoringSeatIdentityPrompt = false;
@@ -2247,6 +2248,16 @@
   let restoringSeatEquipSelection = false;
 
   const IDENTITY_PROMPT_CARD_NAMES = new Set(["幸せのクッキー", "光臨", "戦慄の闇儀式"]);
+  const TEMP_IDENTITY_PREVIEW_CARD_NAMES = new Set([
+    "三つ目の黒犬",
+    "吸血コウモリ",
+    "呪いの人形",
+    "戦慄の闇儀式",
+    "応急手当",
+    "光臨",
+    "恩恵",
+    "幸せのクッキー"
+  ]);
 
   function turnRoomActionState(){
     const t = turnState() || {};
@@ -2627,7 +2638,9 @@
     pendingIdentityPrompt = {
       onYes: typeof onYes === "function" ? onYes : null,
       onNo: typeof onNo === "function" ? onNo : null,
-      closeZoomOnChoice: !!openZoom
+      closeZoomOnChoice: !!openZoom,
+      cardObj: cardObj || null,
+      cardTheme: safeText(cardTheme || "white") || "white"
     };
     identityPromptMsg.textContent = safeText(message || "");
 
@@ -3195,9 +3208,11 @@
     const targetUid = safeText(entry?.targetUid || "");
     const spec = cardTargetSelectionSpec(card);
     if (!spec || !targetUid){
+      activeCardTargetSelectionCard = null;
       await setCardTargetSessionState(null);
       return;
     }
+    activeCardTargetSelectionCard = card;
     openZoomFromDeckCard(card, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
     setGreenDockMeta({ title:`${safeText(card?.name || "") }：効果を処理中です。`, subtitle:"" });
     greenShareActions?.classList.add("hidden");
@@ -3208,6 +3223,7 @@
     try {
       await spec.resolver(targetUid);
     } finally {
+      activeCardTargetSelectionCard = null;
       cardPlayerSelectActive = false;
       renderTurnEndButton();
       await setCardTargetSessionState(null);
@@ -3220,6 +3236,7 @@
     const spec = cardTargetSelectionSpec(cardObj);
     if (!spec) return false;
     openZoomFromDeckCard(cardObj, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
+    activeCardTargetSelectionCard = cardObj;
     const opened = openTargetSelectDock({
       title: spec.title,
       lockEndTurnUntilResolved: true,
@@ -3238,6 +3255,7 @@
         try {
           await spec.resolver(uid);
         } finally {
+          activeCardTargetSelectionCard = null;
           await setCardTargetSessionState(null);
           closeZoom();
         }
@@ -3245,6 +3263,7 @@
     });
 
     if (!opened){
+      activeCardTargetSelectionCard = null;
       await setCardTargetSessionState(null);
       closeZoom();
       return false;
@@ -3413,6 +3432,7 @@
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareActions?.classList.add("hidden");
     greenShareDock?.classList.add("hidden");
+    activeCardTargetSelectionCard = null;
     cardPlayerSelectActive = false;
     renderTurnEndButton();
     setGreenSessionState(null).catch(() => {});
@@ -9574,6 +9594,49 @@
     pendingMode = "prestart";
   }
 
+  function cardThemeForTargetSelectionCard(cardObj){
+    const spec = cardTargetSelectionSpec(cardObj);
+    return safeText(spec?.theme || "white") || "white";
+  }
+
+  function maybeOpenTemporaryIdentityPreview(role){
+    if (!role || !zoomBackdrop || zoomBackdrop.classList.contains("hidden")) return false;
+
+    const targetCard = activeCardTargetSelectionCard || pendingIdentityPrompt?.cardObj || null;
+    const cardName = safeText(targetCard?.name || "");
+    if (!TEMP_IDENTITY_PREVIEW_CARD_NAMES.has(cardName)) return false;
+
+    const hasTargetSelection = cardPlayerSelectActive && !!activeCardTargetSelectionCard;
+    const hasIdentityPrompt = !identityPromptPop?.classList.contains("hidden") && !!pendingIdentityPrompt?.cardObj;
+    if (!hasTargetSelection && !hasIdentityPrompt) return false;
+
+    const restore = {
+      cardObj: targetCard,
+      cardTheme: hasTargetSelection
+        ? cardThemeForTargetSelectionCard(activeCardTargetSelectionCard)
+        : safeText(pendingIdentityPrompt?.cardTheme || "white") || "white",
+      restoreTargetSelection: hasTargetSelection,
+      restorePrompt: hasIdentityPrompt
+    };
+
+    greenShareDock?.classList.add("hidden");
+    identityPromptPop?.classList.add("hidden");
+
+    openZoomFromRole(role, { enableRevealPop:false, showCloseButton:false, closeOnBackdrop:true });
+    zoomDismissHandler = async () => {
+      if (restore.restoreTargetSelection && restore.cardObj){
+        openZoomFromDeckCard(restore.cardObj, restore.cardTheme, { closeOnBackdrop:false, showCloseButton:false });
+        greenShareDock?.classList.remove("hidden");
+      } else if (restore.restorePrompt && restore.cardObj){
+        openZoomFromDeckCard(restore.cardObj, restore.cardTheme, { closeOnBackdrop:false, showCloseButton:false });
+        identityPromptPop?.classList.remove("hidden");
+      } else {
+        closeZoom();
+      }
+    };
+    return true;
+  }
+
   /* =========================================================
      ★④右下：正体カードは「裏面(browncard.jpg)」で表示し、
         クリックで「オモテ(拡大)」を表示
@@ -9595,6 +9658,7 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (maybeOpenTemporaryIdentityPreview(role)) return;
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
         if (action){
@@ -9614,6 +9678,7 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (maybeOpenTemporaryIdentityPreview(role)) return;
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
         if (action){
