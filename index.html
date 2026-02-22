@@ -63,6 +63,7 @@
   .confirm-pop.hidden{display:none;}
   .confirm-pop .msg{font-size:13px;line-height:1.45;margin:0 0 10px;}
   .confirm-pop .msg .ability-pill{display:inline-block;padding:1px 6px;border-radius:999px;background:#111;color:#fff;font-weight:700;}
+  .ability-pill{display:inline-block;padding:1px 6px;border-radius:999px;background:#111;color:#fff;font-weight:700;}
   .confirm-pop .actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
   .confirm-pop .caret{
     position:absolute;
@@ -3169,8 +3170,9 @@
     const alive = latestPlayers.filter(p => !isPlayerEliminated(p.id));
     const eliminated = latestPlayers.filter(p => isPlayerEliminated(p.id));
     if (roleId === "RAI_F2") return alive;
-    if (roleId === "RAI_E3") return alive.filter(p => markerRoomId(markerCache?.[p.id]) === actorRoom);
+    if (roleId === "RAI_E3") return alive.filter(p => p.id !== actorUid && markerRoomId(markerCache?.[p.id]) === actorRoom);
     if (roleId === "RAI_G3") return eliminated.filter(p => p.id !== actorUid);
+    if (roleId === "SHA_U2") return alive.filter(p => p.id !== actorUid && [6,7].includes(markerRoomId(markerCache?.[p.id])));
     return alive.filter(p => p.id !== actorUid);
   }
 
@@ -3178,6 +3180,12 @@
     const spec = roleSelectionSpec(roleId);
     if (!spec) return "";
     return `<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>${escapeHtml(spec.prompt)}`;
+  }
+
+  function canStartRoleSelection(roleId, actorUid){
+    const entry = { roleId, actorUid };
+    const candidates = roleSelectionTargetPlayers(entry);
+    return candidates.length > 0;
   }
 
   async function completeRoleAbilitySelection(entry, targetUid){
@@ -3189,11 +3197,13 @@
     if (roleId === "RAI_F2"){
       await setDamageToPlayer(selectedUid, 7);
     } else if (roleId === "RAI_F1"){
-      const eye = await runCornerD6Roll();
+      const eye = 1 + Math.floor(Math.random() * 6);
+      await emitCardDiceEvent({ kind:"role_felix", uid: actorUid, d6: eye });
       await waitMs(1000);
       await addDamageToPlayer(selectedUid, eye);
     } else if (roleId === "RAI_E3"){
-      const eye = await runCornerD4Roll();
+      const eye = 1 + Math.floor(Math.random() * 4);
+      await emitCardDiceEvent({ kind:"role_emma", uid: actorUid, d4: eye });
       await waitMs(1000);
       await healDamageToPlayer(selectedUid, eye);
     } else if (roleId === "RAI_G3"){
@@ -3238,6 +3248,11 @@
       return;
     }
     const candidates = roleSelectionTargetPlayers(entry);
+    if (candidates.length === 0){
+      setRoleAbilitySelectionState(null).catch(() => {});
+      showRevealPopAt(null, { mode:"notice", message:"今は公開できません。" });
+      return;
+    }
     setGreenDockMeta({ title:"", subtitle:"" });
     if (greenShareList) greenShareList.innerHTML = "";
     if (!greenShareList || !greenShareDock) return;
@@ -3258,6 +3273,29 @@
         }, { fixedLower:true, dismissOnOutside:false, noCaret:true });
       });
       greenShareList.appendChild(btn);
+    }
+    if (roleId === "RAI_E3" || roleId === "SHA_U2"){
+      const skipBtn = document.createElement("button");
+      skipBtn.type = "button";
+      skipBtn.className = "green-share-btn";
+      skipBtn.textContent = "しない";
+      const spec = roleSelectionSpec(roleId);
+      skipBtn.addEventListener("click", () => {
+        const abilityName = safeText(spec?.abilityName || "能力");
+        showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
+        }, {
+          messageHtml: `<span class="ability-pill">${escapeHtml(abilityName)}</span>を使いませんか。`,
+          yesLabel: "はい",
+          noLabel: "いいえ",
+          fixedLower:true,
+          noCaret:true,
+          dismissOnOutside:true,
+          onNo: async () => {
+            await setRoleAbilitySelectionState(null);
+          }
+        });
+      });
+      greenShareList.appendChild(skipBtn);
     }
     greenShareActions?.classList.add("hidden");
     greenShareDock.classList.remove("hidden");
@@ -4514,7 +4552,17 @@
     }
     if (isMyIdentityRevealed()){
       if (isRoleSelectionAbility(myRoleId)){
+        if (myRoleId === "RAI_G3"){
+          e.stopPropagation();
+          showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
+          return;
+        }
         if (isRoleAbilityUsed(myRoleId) || !isMyTurn()) return;
+        if (!canStartRoleSelection(myRoleId, state.userId)){
+          e.stopPropagation();
+          showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
+          return;
+        }
         const spec = roleSelectionSpec(myRoleId);
         e.stopPropagation();
         showRevealPopAt(idCard, {
@@ -4555,7 +4603,7 @@
         return;
       }
     }
-    if (myRoleId === "SHA_U1"){
+    if (myRoleId === "SHA_U1" || myRoleId === "RAI_G3"){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
       return;
@@ -4647,6 +4695,11 @@
       const roleId = safeText(pendingRevealAction.split(":")[1] || "");
       const role = ROLE_BY_ID[roleId];
       if (role && !isRoleAbilityUsed(roleId)){
+        if (!canStartRoleSelection(roleId, state.userId)){
+          hideRevealPop();
+          showRevealPopAt(null, { mode:"notice", message:"今は公開できません。" });
+          return;
+        }
         await setRoleAbilitySelectionState({ roleId, actorUid: state.userId });
       }
       hideRevealPop();
@@ -4654,6 +4707,11 @@
     }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
     if (isRoleSelectionAbility(myRoleId) && !isRoleAbilityUsed(myRoleId)){
+      if (!canStartRoleSelection(myRoleId, state.userId)){
+        hideRevealPop();
+        showRevealPopAt(null, { mode:"notice", message:"今は公開できません。" });
+        return;
+      }
       await setRoleAbilitySelectionState({ roleId: myRoleId, actorUid: state.userId });
     }
     if (myRoleId === "CIT_A1"){
@@ -6303,6 +6361,10 @@
           d6: Number(ev.d6 || 1),
           d4: Number(ev.d4 || 1)
         });
+      } else if (kind === "role_felix"){
+        runCornerD6Roll(Number(ev.d6 || 1));
+      } else if (kind === "role_emma"){
+        runCornerD4Roll(Number(ev.d4 || 1));
       }
     });
   }
