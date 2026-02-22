@@ -6977,8 +6977,13 @@
 
   function canChooseOuterRoomDirectly(){
     if (!canUseMoveDice()) return false;
+    if (hasMovedByDiceInCurrentTurn()) return false;
     const myMarker = markerCache?.[state.userId] || null;
     return markerRoomId(myMarker) === 7;
+  }
+
+  function hasMovedByDiceInCurrentTurn(){
+    return !!turnRoomActionState()?.movedByDiceRoomId;
   }
 
   function highlightedMarkerUids(){
@@ -8176,7 +8181,7 @@
     ensureMarkerLayer();
     clearMarkerLayer();
     const pulseTargets = highlightedMarkerUids();
-    if (canUseMoveDice() && !mustResolveUranusMeteorStrike()) pulseTargets.add(state.userId);
+    if (canUseMoveDice() && !mustResolveUranusMeteorStrike() && !hasMovedByDiceInCurrentTurn()) pulseTargets.add(state.userId);
     const entries = Object.entries(markerCache || {});
     for (const [uid, m] of entries){
       if (!m) continue;
