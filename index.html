@@ -2208,6 +2208,7 @@
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
   let zoomDismissHandler = null;
+  let temporaryIdentityViewState = null;
   let suppressOutsidePopCloseUntil = 0;
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
@@ -2623,6 +2624,7 @@
     if (!identityPromptPop || !identityPromptMsg || !btnIdentityPromptYes || !btnIdentityPromptNo) return;
     if (openZoom && cardObj){
       openZoomFromDeckCard(cardObj, cardTheme, { closeOnBackdrop:false, showCloseButton:false });
+      setZoomPassthrough(true);
     }
     pendingIdentityPrompt = {
       onYes: typeof onYes === "function" ? onYes : null,
@@ -3199,6 +3201,7 @@
       return;
     }
     openZoomFromDeckCard(card, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
     setGreenDockMeta({ title:`${safeText(card?.name || "") }：効果を処理中です。`, subtitle:"" });
     greenShareActions?.classList.add("hidden");
     renderGreenWaitingSelection(targetUid, safeText(entry?.targetName || ""), safeText(entry?.targetInitial || ""), safeText(entry?.targetColor || ""));
@@ -3220,6 +3223,7 @@
     const spec = cardTargetSelectionSpec(cardObj);
     if (!spec) return false;
     openZoomFromDeckCard(cardObj, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
     const opened = openTargetSelectDock({
       title: spec.title,
       lockEndTurnUntilResolved: true,
@@ -3550,6 +3554,59 @@
     if (options?.enableRevealPop) cardEl.dataset.revealInteractive = "1";
     openZoomContent(cardEl, { showCloseButton:false, ...(options || {}) });
   }
+
+  function canOpenTemporaryIdentityView(){
+    return cardPlayerSelectActive || !identityPromptPop?.classList.contains("hidden");
+  }
+
+  function openTemporaryIdentityView(role){
+    if (!role || !zoomBackdrop || !zoomStage) return false;
+    if (temporaryIdentityViewState) return true;
+    if (!canOpenTemporaryIdentityView()) return false;
+
+    temporaryIdentityViewState = {
+      stageNode: zoomStage.firstElementChild || null,
+      stageClassMulti: zoomStage.classList.contains("zoom-stage-multi"),
+      closeOnBackdrop: !!zoomCloseOnBackdrop,
+      closeOnAnyClick: !!zoomCloseOnAnyClick,
+      passthrough: !!zoomPassthroughMode,
+      greenDockVisible: !greenShareDock?.classList.contains("hidden"),
+      promptVisible: !identityPromptPop?.classList.contains("hidden"),
+      overPanel: zoomBackdrop.classList.contains("over-panel")
+    };
+
+    if (temporaryIdentityViewState.greenDockVisible) greenShareDock?.classList.add("hidden");
+    if (temporaryIdentityViewState.promptVisible) identityPromptPop?.classList.add("hidden");
+    hideRevealPop();
+
+    openZoomFromRole(role, { enableRevealPop:false, closeOnBackdrop:true, showCloseButton:false });
+    setZoomPassthrough(false);
+    zoomDismissHandler = async () => {
+      restoreTemporaryIdentityView();
+    };
+    return true;
+  }
+
+  function restoreTemporaryIdentityView(){
+    const prev = temporaryIdentityViewState;
+    temporaryIdentityViewState = null;
+    if (!prev) return;
+
+    zoomStage.innerHTML = "";
+    zoomStage.classList.remove("zoom-stage-multi");
+    if (prev.stageClassMulti) zoomStage.classList.add("zoom-stage-multi");
+    if (prev.stageNode) zoomStage.appendChild(prev.stageNode);
+
+    zoomCloseOnBackdrop = !!prev.closeOnBackdrop;
+    zoomCloseOnAnyClick = !!prev.closeOnAnyClick;
+    zoomDismissHandler = null;
+    setZoomPassthrough(!!prev.passthrough);
+    setZoomOverPanel(!!prev.overPanel);
+    zoomBackdrop.classList.remove("hidden");
+
+    if (prev.greenDockVisible) greenShareDock?.classList.remove("hidden");
+    if (prev.promptVisible) identityPromptPop?.classList.remove("hidden");
+  }
   function openIdentityRevealZoom(role, revealerUid){
     if (!role) return;
     const wrap = document.createElement("div");
@@ -3630,6 +3687,7 @@
     return !!zoomBackdrop?.classList.contains("hidden");
   }
   function closeZoom(){
+    temporaryIdentityViewState = null;
     zoomBackdrop.classList.add("hidden");
     zoomBackdrop.classList.remove("passthrough");
     zoomStage.innerHTML = "";
@@ -9595,6 +9653,7 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (openTemporaryIdentityView(role)) return;
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
         if (action){
@@ -9614,6 +9673,7 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (openTemporaryIdentityView(role)) return;
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
         if (action){
