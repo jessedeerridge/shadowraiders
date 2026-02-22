@@ -1345,12 +1345,17 @@
   }
   .zoom-stage{
     position:relative;
-    width:72px;
-    height:108px;
-    transform:scale(var(--zoom, 4));
+    width:calc(72px * var(--zoom, 4));
+    height:calc(108px * var(--zoom, 4));
+    transform:none;
     transform-origin:center;
     will-change:transform;
     transition:transform .35s ease;
+  }
+  .zoom-stage > .zoom-content{
+    transform:scale(var(--zoom, 4));
+    transform-origin:top left;
+    will-change:transform;
   }
   .zoom-stage.zoom-stage-multi{
     width:min(98vw, 1400px);
@@ -1359,10 +1364,10 @@
     transition:none;
   }
   .zoom-backdrop.green-reveal-active .zoom-stage{
-    transform:translateX(-90px) scale(var(--zoom, 4));
+    transform:translateX(-90px);
   }
   .zoom-backdrop.david-select-active .zoom-stage{
-    transform:translateX(-90px) scale(var(--zoom, 4));
+    transform:translateX(-90px);
   }
   .zoom-stage .card72,
   .zoom-stage .id72{
@@ -3604,6 +3609,8 @@
     zoomStage.innerHTML = "";
     zoomStage.classList.remove("zoom-stage-multi");
     if (stageClass) zoomStage.classList.add(stageClass);
+    const isMultiStage = stageClass === "zoom-stage-multi";
+    if (!isMultiStage && contentEl && !contentEl.classList.contains("zoom-content")) contentEl.classList.add("zoom-content");
     hideGreenRevealPanel();
     zoomCloseOnBackdrop = !!closeOnBackdrop;
     zoomCloseOnAnyClick = !!closeOnAnyClick;
@@ -3624,6 +3631,7 @@
     const clone = cardEl.cloneNode(true);
     clone.classList.remove("locked","blocked");
     clone.classList.remove("equip-steal-pulse","equip-defeat-pulse","eliminated-dim");
+    clone.classList.add("zoom-content");
     clone.style.pointerEvents = "auto";
     openZoomContent(clone, options);
   }
@@ -3633,6 +3641,7 @@
   function openZoomFromRole(role, options){
     if (!role) return;
     const cardEl = createIdentityCard(role);
+    cardEl.classList.add("zoom-content");
     if (options?.enableRevealPop) cardEl.dataset.revealInteractive = "1";
     openZoomContent(cardEl, { showCloseButton:false, ...(options || {}) });
   }
@@ -3702,6 +3711,7 @@
     if (!cardObj) return;
     const cardEl = document.createElement("div");
     cardEl.className = `card72 wb-front ${theme === "black" ? "wb-black" : theme === "green" ? "wb-green" : "wb-white"}`;
+    cardEl.classList.add("zoom-content");
     cardEl.innerHTML = buildWbFrontHTML(cardObj, theme);
     adjustCardNameFont(cardEl);
     cardEl.dataset.cardType = theme || "";
