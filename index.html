@@ -4592,11 +4592,22 @@
     if (isAgathaAbilityUsed()) return;
 
     await markAgathaAbilityUsed();
-    const rolled = await runCornerD6D4Roll();
-    await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4 });
-    await waitMs(1000);
+    showRoleFlashOverlay("CIT_A3", 1200);
+    await emitRoleFlashEvent("CIT_A3", "agatha_ability");
+    const rolled = {
+      d6: 1 + Math.floor(Math.random() * 6),
+      d4: 1 + Math.floor(Math.random() * 4)
+    };
+    const rollStartAt = Date.now() + 180;
+    await emitCardDiceEvent({
+      kind:"role_agatha",
+      uid:state.userId,
+      d6:rolled.d6,
+      d4:rolled.d4,
+      startAt: rollStartAt
+    });
+    await waitMs(Math.max(0, rollStartAt - Date.now()) + 2500);
     const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
-    await waitMs(1500);
     await addDamageToPlayers(playerIdsInRoom(targetRoomId), 3);
     await waitMs(500);
     const cleanupTimer = setTimeout(() => {
@@ -6662,11 +6673,10 @@
           d4: Number(ev.d4 || 1)
         });
       } else if (kind === "role_agatha"){
-        if (safeText(ev.uid || "") === state.userId) return;
-        runCornerD6D4Roll({
+        scheduleCornerD6D4Roll({
           d6: Number(ev.d6 || 1),
           d4: Number(ev.d4 || 1)
-        });
+        }, Number(ev.startAt || 0));
       } else if (kind === "role_felix"){
         runCornerD6Roll(Number(ev.d6 || 1));
       } else if (kind === "role_emma"){
@@ -8123,6 +8133,20 @@
     });
 
     return { d6: finalD6, d4: finalD4 };
+  }
+
+  function scheduleCornerD6D4Roll(fixed = null, startAt = 0){
+    const delay = Math.max(0, Number(startAt || 0) - Date.now());
+    if (delay <= 0){
+      return runCornerD6D4Roll(fixed);
+    }
+    return new Promise(resolve => {
+      const timerId = setTimeout(async () => {
+        const rolled = await runCornerD6D4Roll(fixed);
+        resolve(rolled);
+      }, delay);
+      diceRollTimers.push(timerId);
+    });
   }
 
   async function addDamageToAllOtherPlayers(uid, amount){
