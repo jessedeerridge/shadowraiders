@@ -2757,13 +2757,25 @@
     });
   }
 
+  function identityPromptRevealOptions(cardName){
+    const name = safeText(cardName || "");
+    if (!IDENTITY_PROMPT_CARD_NAMES.has(name)) return {};
+    if (name === "幸せのクッキー"){
+      return {
+        revealedBy: "happy_cookie",
+        useAgathaAbilityOnReveal: false
+      };
+    }
+    return {};
+  }
+
   function buildIdentityPromptResolver(cardName){
     const name = safeText(cardName || "");
     if (!IDENTITY_PROMPT_CARD_NAMES.has(name)) return null;
     return async () => {
       const role = myRoleInfo();
       if (!role) return;
-      await revealMyIdentityToEquipment();
+      await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
       openIdentityRevealZoom(role, state.userId);
       await fullRecoverPlayer(state.userId);
     };
@@ -4520,6 +4532,7 @@
     if (!my || !my.roleId) return;
 
     const revealedBy = safeText(options.revealedBy || "");
+    const useAgathaAbilityOnReveal = options.useAgathaAbilityOnReveal !== false;
     const eRef = ref(db, `rooms/${state.roomCode}/equipment/${state.userId}/identity`);
     let revealedNow = false;
     await runTransaction(eRef, (cur) => {
@@ -4535,7 +4548,7 @@
       return next;
     });
     maybeResolveVampireHiddenHealOnReveal();
-    if (revealedNow && safeText(my.roleId) === "CIT_A3"){
+    if (revealedNow && safeText(my.roleId) === "CIT_A3" && useAgathaAbilityOnReveal){
       await triggerAgathaRevealAbility();
     }
   }
@@ -4579,9 +4592,18 @@
     if (isAgathaAbilityUsed()) return;
 
     await markAgathaAbilityUsed();
-    const rolled = await runCornerD6D4Roll();
-    await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4 });
-    await waitMs(1000);
+    if (options.broadcastRoleFlash){
+      await emitRoleFlashEvent("CIT_A3", "agatha_ability");
+    }
+
+    const rolled = {
+      d6: 1 + Math.floor(Math.random() * 6),
+      d4: 1 + Math.floor(Math.random() * 4)
+    };
+    const startAt = Date.now() + 240;
+    await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4, startAt });
+
+    await waitMs(1200);
     const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
     await waitMs(1500);
     await addDamageToPlayers(playerIdsInRoom(targetRoomId), 3);
@@ -4912,7 +4934,7 @@
       if (!isMyIdentityRevealed()){
         await revealMyIdentityToEquipment({ revealedBy:"manual" });
       } else {
-        await triggerAgathaRevealAbility({ endTurnAfterResolve:true });
+        await triggerAgathaRevealAbility({ endTurnAfterResolve:true, broadcastRoleFlash:true });
       }
       return;
     }
@@ -6637,28 +6659,7 @@
       }
       if (!ev || !at || at <= cardDiceEventSeenAt) return;
       cardDiceEventSeenAt = at;
-      const kind = safeText(ev.kind || "");
-      if (kind === "curse_doll"){
-        runCornerD6Roll(Number(ev.d6 || 1));
-      } else if (kind === "blessing"){
-        if (safeText(ev.uid || "") === state.userId) return;
-        runCornerD6Roll(Number(ev.d6 || 1));
-      } else if (kind === "riot"){
-        runCornerD6D4Roll({
-          d6: Number(ev.d6 || 1),
-          d4: Number(ev.d4 || 1)
-        });
-      } else if (kind === "role_agatha"){
-        if (safeText(ev.uid || "") === state.userId) return;
-        runCornerD6D4Roll({
-          d6: Number(ev.d6 || 1),
-          d4: Number(ev.d4 || 1)
-        });
-      } else if (kind === "role_felix"){
-        runCornerD6Roll(Number(ev.d6 || 1));
-      } else if (kind === "role_emma"){
-        runCornerD4Roll(Number(ev.d4 || 1));
-      }
+      playCardDiceEvent(ev);
     });
   }
 
@@ -8041,6 +8042,34 @@
     });
   }
 
+  function playCardDiceEvent(ev){
+    const kind = safeText(ev?.kind || "");
+    if (!kind) return;
+    const startAt = Number(ev?.startAt || 0);
+    const runVisual = () => {
+      if (kind === "curse_doll"){
+        runCornerD6Roll(Number(ev?.d6 || 1));
+      } else if (kind === "blessing"){
+        if (safeText(ev?.uid || "") === state.userId) return;
+        runCornerD6Roll(Number(ev?.d6 || 1));
+      } else if (kind === "riot" || kind === "role_agatha"){
+        runCornerD6D4Roll({
+          d6: Number(ev?.d6 || 1),
+          d4: Number(ev?.d4 || 1)
+        });
+      } else if (kind === "role_felix"){
+        runCornerD6Roll(Number(ev?.d6 || 1));
+      } else if (kind === "role_emma"){
+        runCornerD4Roll(Number(ev?.d4 || 1));
+      }
+    };
+    const delay = startAt ? Math.max(0, startAt - Date.now()) : 0;
+    if (delay > 0){
+      setTimeout(runVisual, delay);
+      return;
+    }
+    runVisual();
+  }
 
 
   async function runCornerD6D4Roll(fixed = null){
@@ -8230,7 +8259,7 @@
         cardTheme: "white",
         openZoom: true,
         onYes: async () => {
-          await revealMyIdentityToEquipment();
+          await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
           openIdentityRevealZoom(role, state.userId);
           await fullRecoverPlayer(state.userId);
         }
