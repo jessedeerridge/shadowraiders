@@ -820,26 +820,15 @@
   --cy: calc(100% * 2 / 3);
   --k: 0.45;
 }
-.tpip{
-  width:var(--pip); height:var(--pip);
-  background:#fff; border-radius:50%;
+.d4-num{
   position:absolute;
+  left:50%;
+  top:60%;
   transform:translate(-50%,-50%);
-}
-.t_center{left:var(--cx); top: var(--cy);}
-.t_midL{left: calc(var(--cx) - var(--d4-2-gap)); top:  var(--cy);}
-.t_midR{left: calc(var(--cx) + var(--d4-2-gap)); top:  var(--cy);}
-.t_top{
-  left: calc(var(--cx) + (var(--vTopX) - var(--cx)) * var(--k));
-  top:  calc(var(--cy) + (var(--vTopY) - var(--cy)) * var(--k));
-}
-.t_botL{
-  left: calc(var(--cx) + (var(--vLftX) - var(--cx)) * var(--k));
-  top:  calc(var(--cy) + (var(--vLftY) - var(--cy)) * var(--k));
-}
-.t_botR{
-  left: calc(var(--cx) + (var(--vRgtX) - var(--cx)) * var(--k));
-  top:  calc(var(--cy) + (var(--vRgtY) - var(--cy)) * var(--k));
+  color:#fff;
+  font-size:18px;
+  font-weight:1000;
+  line-height:1;
 }
 
   /* =========================================================
@@ -1338,7 +1327,7 @@
   .zoom-backdrop{
     position:fixed;
     inset:0;
-    background:rgba(0,0,0,.55);
+    background:transparent;
     display:flex;
     align-items:center;
     justify-content:center;
@@ -1447,23 +1436,6 @@
     opacity:.45;
     cursor:pointer;
   }
-  .zoom-close{
-    position:fixed;
-    right:14px;
-    top:14px;
-    z-index:10000;
-    width:40px;
-    height:40px;
-    border-radius:999px;
-    border:1px solid rgba(255,255,255,.55);
-    background:rgba(17,17,17,.7);
-    color:#fff;
-    font-size:20px;
-    font-weight:900;
-    cursor:pointer;
-  }
-  .zoom-close.hidden{ display:none; }
-
   .green-share-dock{
     position:fixed;
     left:50%;
@@ -1663,7 +1635,6 @@
 
 <!-- 拡大表示 -->
 <div id="zoomBackdrop" class="zoom-backdrop hidden" aria-label="拡大表示">
-  <button id="zoomCloseBtn" class="zoom-close hidden" aria-label="閉じる">×</button>
   <div id="zoomStage" class="zoom-stage" style="--zoom:2"></div>
   <div id="greenRevealPanel" class="green-reveal-panel hidden" aria-live="polite">
     <div id="greenRevealLabel" class="green-reveal-label"></div>
@@ -1814,6 +1785,7 @@
     <span class="small">開始後は座席変更できません。</span>
   </div>
   <div class="start-pop-actions">
+    <button id="btnHostDice" class="btn ghost">ダイス</button>
     <button id="btnResetRoom" class="btn ghost">リセット</button>
     <button id="btnGameStart" class="btn primary">スタート</button>
   </div>
@@ -2152,7 +2124,6 @@
 
   const zoomBackdrop = document.getElementById("zoomBackdrop");
   const zoomStage = document.getElementById("zoomStage");
-  const zoomCloseBtn = document.getElementById("zoomCloseBtn");
   const greenRevealPanel = document.getElementById("greenRevealPanel");
   const greenRevealLabel = document.getElementById("greenRevealLabel");
   const greenRevealCardWrap = document.getElementById("greenRevealCardWrap");
@@ -3534,7 +3505,6 @@
     zoomBackdrop.classList.remove("passthrough");
     zoomBackdrop.classList.remove("over-panel");
     greenZoomLocked = !showCloseButton;
-    zoomCloseBtn.classList.toggle("hidden", !showCloseButton);
     zoomStage.appendChild(contentEl);
     zoomBackdrop.classList.remove("hidden");
   }
@@ -3643,7 +3613,6 @@
     zoomBackdrop.classList.remove("passthrough");
     zoomStage.innerHTML = "";
     hideGreenRevealPanel();
-    zoomCloseBtn.classList.add("hidden");
     zoomCloseOnBackdrop = true;
     zoomCloseOnAnyClick = false;
     zoomPassthroughMode = false;
@@ -3657,16 +3626,6 @@
     zoomBackdrop?.classList.remove("david-select-active");
     equipDock?.classList.remove("david-select-front");
   }
-  zoomCloseBtn.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    if (greenZoomLocked) return;
-    if (typeof zoomDismissHandler === "function"){
-      await zoomDismissHandler();
-      return;
-    }
-    await clearPendingGreenBubble();
-    closeZoom();
-  });
   zoomBackdrop.addEventListener("click", async (e) => {
     const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
     if (canClose){
@@ -4763,7 +4722,7 @@
     d.style.color = textColorFor(color);
     d.textContent = initial || "";
     d.title = p ? p.name : "";
-    if (isTestPlayer()){
+    if (canControlHpBoard()){
       d.style.cursor = "pointer";
       const longPressMs = 500;
       let longPressTimer = null;
@@ -4827,6 +4786,10 @@
 
   function isTestPlayer(){
     return safeText(state.userName).trim().toLowerCase() === "test";
+  }
+
+  function canControlHpBoard(){
+    return isTestPlayer() || !!state.isHost;
   }
 
   function chooseSumForTestPlayer(label){
@@ -6652,16 +6615,6 @@
     return map[face] || map[1];
   }
 
-  function dicePipsD4(face){
-    const map = {
-      1:["t_center"],
-      2:["t_midL","t_midR"],
-      3:["t_top","t_botL","t_botR"],
-      4:["t_top","t_botL","t_botR","t_center"]
-    };
-    return map[face] || map[1];
-  }
-
   function renderD6Face(el, face){
     el.innerHTML = '';
     for (const klass of dicePipsD6(face)){
@@ -6673,11 +6626,10 @@
 
   function renderD4Face(el, face){
     el.innerHTML = '';
-    for (const klass of dicePipsD4(face)){
-      const pip = document.createElement('span');
-      pip.className = `tpip ${klass}`;
-      el.appendChild(pip);
-    }
+    const num = document.createElement('span');
+    num.className = 'd4-num';
+    num.textContent = String(Math.max(1, Math.min(4, Number(face) || 1)));
+    el.appendChild(num);
   }
 
   function randomCornerStart(width, height){
@@ -7827,7 +7779,7 @@
   if (pulse) g.classList.add("mark-pulse-target");
   if (eliminated) g.classList.add("marker-eliminated");
 
-  const size = 16;
+  const size = (uid && uid === state.userId) ? 17 : 16;
   const rx = 3;
 
   if (!eliminated && uid && uid === state.userId){
@@ -7945,16 +7897,6 @@
       pendingAttackTargetUid = uid;
       showAttackPopAt(e.clientX, e.clientY, p?.name || 'このプレイヤー');
     });
-  }
-
-  // ★自分だけ丸い点線リング（四角マーカーの外側）
-  if (uid && uid === state.userId){
-    const ring = document.createElementNS("http://www.w3.org/2000/svg","circle");
-    ring.setAttribute("cx", String(x));
-    ring.setAttribute("cy", String(y));
-    ring.setAttribute("r", String(size/2 + 5)); // ←リングの大きさ（必要なら調整）
-    ring.setAttribute("class", "mark-me-ring");
-    g.appendChild(ring);
   }
 
   const rect = document.createElementNS("http://www.w3.org/2000/svg","rect");
@@ -8323,6 +8265,7 @@
   const startPop = document.getElementById('startPop');
   const btnStartPopClose = document.getElementById('btnStartPopClose');
   const btnGameStart = document.getElementById('btnGameStart');
+  const btnHostDice = document.getElementById('btnHostDice');
   const btnResetRoom = document.getElementById('btnResetRoom');
   const startBadge = document.getElementById('startBadge');
 
@@ -8765,14 +8708,15 @@
     refreshRoomLabels();
     if (state.isHost){
       hostSettingsBtn.classList.add('visible');
-      roomGuideBtn.classList.add('host-position');
+      roomGuideBtn.classList.remove('visible');
+      roomGuideBtn.classList.remove('host-position');
     } else {
       hostSettingsBtn.classList.remove('visible');
       startPop.classList.add('hidden');
+      roomGuideBtn.classList.add('visible');
       roomGuideBtn.classList.remove('host-position');
     }
     helpBtn.classList.add('visible');
-    roomGuideBtn.classList.add('visible');
   }
 
   function subscribeRoom(){
@@ -9390,6 +9334,9 @@
     if (safeText(roomData.startPlayerId || "") === safeText(previousPlayerId || "")){
       updates[`startPlayerId`] = state.userId;
     }
+    if (roomData.hostId && previousPlayerId && roomData.hostId === previousPlayerId){
+      updates[`hostId`] = state.userId;
+    }
 
     const damage = roomData.damage || {};
     if (Object.prototype.hasOwnProperty.call(damage, previousPlayerId)){
@@ -9743,6 +9690,16 @@
     startPop.classList.toggle('hidden');
   });
   btnStartPopClose.addEventListener('click', () => startPop.classList.add('hidden'));
+  btnHostDice?.addEventListener('click', async () => {
+    if (!state.isHost) return;
+    await runCornerD6D4Roll();
+    const cleanupTimer = setTimeout(() => {
+      diceRollOverlay.innerHTML = '';
+      clearDiceRollTimers();
+    }, 2000);
+    diceRollTimers.push(cleanupTimer);
+  });
+
   btnGameStart.addEventListener('click', async () => {
     if (!state.isHost) return;
     await dealIdentityCards();
