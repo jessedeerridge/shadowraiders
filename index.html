@@ -6720,6 +6720,47 @@
     refreshRoomAbilityHint();
   }
 
+  function mySeatMoveChoiceFromRoom(){
+    const seatIndex = Number(state.seatedTable || 0);
+    if (!seatIndex) return null;
+    const table = state.room?.tables?.[String(seatIndex)] || null;
+    if (!table || safeText(table.playerId || "") !== safeText(state.userId || "")) return null;
+    const node = table.moveDiceChoice || null;
+    if (!node || typeof node !== "object") return null;
+    const roomIds = Array.isArray(node.roomIds)
+      ? [...new Set(node.roomIds.map(v => Number(v)).filter(v => Number.isFinite(v) && v >= 1 && v <= 7))]
+      : [];
+    if (!roomIds.length) return null;
+    return {
+      roomIds,
+      d6: Number(node.d6 || 0),
+      d4: Number(node.d4 || 0),
+      secondD6: Number(node.secondD6 || 0),
+      secondD4: Number(node.secondD4 || 0),
+      at: Number(node.at || 0)
+    };
+  }
+
+  async function saveMySeatMoveChoice(payload = null){
+    if (!state.roomCode || !state.seatedTable) return;
+    await set(ref(db, `rooms/${state.roomCode}/tables/${state.seatedTable}/moveDiceChoice`), payload);
+  }
+
+  function restorePendingMoveChoiceFromSeat(){
+    if (!isMyTurn()) return;
+    if (!!turnState()?.moveDone) return;
+    const saved = mySeatMoveChoiceFromRoom();
+    if (!saved) return;
+    const now = pendingMoveChoice || null;
+    const sameChoice = !!now
+      && !now.consumed
+      && Array.isArray(now.roomIds)
+      && now.roomIds.length === saved.roomIds.length
+      && now.roomIds.every((rid, idx) => rid === saved.roomIds[idx]);
+    if (sameChoice) return;
+    setPendingMoveChoice(saved.roomIds);
+  }
+
   async function resolvePendingMoveChoice(roomId){
     if (!pendingMoveChoice || pendingMoveChoice.consumed) return false;
     if (!pendingMoveChoice.roomIds.includes(roomId)) return false;
@@ -6727,6 +6768,7 @@
     clearPendingMoveChoiceUi();
     pendingMoveChoice = null;
     await placeMarkerInRoom(roomId);
+    await saveMySeatMoveChoice(null);
     if (state.roomCode && isMyTurn()){
       await update(ref(db, `rooms/${state.roomCode}/turn`), {
         moveDone: true,
@@ -7057,6 +7099,7 @@
   async function placeMarkerByDice(total){
     const roomId = diceTotalToRoomId(total);
     await placeMarkerInRoom(roomId);
+    await saveMySeatMoveChoice(null);
     renderEquipmentDock();
     renderMarkers();
   }
@@ -7725,6 +7768,14 @@
         if (!applyMove) return;
         const roomA = diceTotalToRoomId(finalD6 + finalD4);
         const roomB = diceTotalToRoomId(secondD6 + secondD4);
+        saveMySeatMoveChoice({
+          roomIds: [roomA, roomB],
+          d6: finalD6,
+          d4: finalD4,
+          secondD6,
+          secondD4,
+          at: Date.now()
+        }).catch(() => {});
         setPendingMoveChoice([roomA, roomB]);
       }
     });
@@ -8897,6 +8948,7 @@
       renderPositionLine();
       renderTurnEndButton();
       renderMarkers();
+      restorePendingMoveChoiceFromSeat();
       updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
     });
@@ -9468,6 +9520,7 @@
 
     const updates = {};
     updates[`tables/${seatIndex}`] = {
+      ...(cur || {}),
       playerId: state.userId,
       playerName: state.userName || '名無し',
       color: SEAT_COLORS[seatIndex-1] || null,
