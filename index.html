@@ -2502,6 +2502,23 @@
     await set(ref(db, `rooms/${state.roomCode}/abilityUsage/wight/${state.userId}`), true);
   }
 
+  function isAliceAbilityUsed(){
+    return !!state.room?.abilityUsage?.alice?.[state.userId];
+  }
+
+  async function markAliceAbilityUsed(){
+    if (!state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/alice/${state.userId}`), true);
+  }
+
+  function canUseAliceAbilityNow(){
+    if (!isMyRole("CIT_A1")) return { ok:false, message:"今は使えません。" };
+    if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
+    if (isAliceAbilityUsed()) return { ok:false, message:"この能力はすでに使用済みです。" };
+    if (!!turnState()?.moveDone) return { ok:false, message:"手番の初めにだけ使えます。" };
+    return { ok:true };
+  }
+
   function canUseWightAbilityNow(){
     if (!isMyRole("SHA_W1")) return { ok:false, message:"今は公開できません。" };
     if (isWightAbilityUsed()) return { ok:false, message:"今は公開できません。" };
@@ -4673,6 +4690,10 @@
     if (!my || !my.roleId) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if (myRoleId === "CIT_A1" && isAliceAbilityUsed()){
+      e.stopPropagation();
+      return;
+    }
     if (!isMyTurn()){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
@@ -4729,6 +4750,24 @@
         showRevealPopAt(idCard, {
           action: "agatha_ability",
           messageHtml: `<span class="ability-pill">完全犯罪</span>を使いますか。<br>使用後に手番が終了します。`
+        });
+        return;
+      }
+      if (myRoleId === "CIT_A1"){
+        const check = canUseAliceAbilityNow();
+        if (!check.ok){
+          if (isAliceAbilityUsed()){
+            e.stopPropagation();
+            return;
+          }
+          e.stopPropagation();
+          showRevealPopAt(idCard, { mode:"notice", message:check.message || "今は使えません。" });
+          return;
+        }
+        e.stopPropagation();
+        showRevealPopAt(idCard, {
+          action: "alice_ability",
+          messageHtml: `<span class="ability-pill">うさぎさんヒール</span>を使いますか。`
         });
         return;
       }
@@ -4877,6 +4916,19 @@
       }
       return;
     }
+    if (pendingRevealAction === "alice_ability"){
+      const check = canUseAliceAbilityNow();
+      hideRevealPop();
+      if (!check.ok){
+        showRevealPopAt(null, { mode:"notice", message:check.message || "今は使えません。" });
+        return;
+      }
+      await markAliceAbilityUsed();
+      setTimeout(() => {
+        setDamageToPlayer(state.userId, 0);
+      }, 1500);
+      return;
+    }
     if (pendingRevealAction.startsWith("role_select:")){
       const roleId = safeText(pendingRevealAction.split(":")[1] || "");
       const role = ROLE_BY_ID[roleId];
@@ -4901,6 +4953,7 @@
       await setRoleAbilitySelectionState({ roleId: myRoleId, actorUid: state.userId, justRevealed:true, privateToActor: (myRoleId === "RAI_E3" || myRoleId === "SHA_U2") });
     }
     if (myRoleId === "CIT_A1"){
+      await markAliceAbilityUsed();
       setTimeout(() => {
         setDamageToPlayer(state.userId, 0);
       }, 1500);
