@@ -3278,21 +3278,19 @@
       const skipBtn = document.createElement("button");
       skipBtn.type = "button";
       skipBtn.className = "green-share-btn";
-      skipBtn.textContent = "しない";
+      skipBtn.textContent = "使わない";
       const spec = roleSelectionSpec(roleId);
       skipBtn.addEventListener("click", () => {
         const abilityName = safeText(spec?.abilityName || "能力");
         showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
+          await setRoleAbilitySelectionState(null);
         }, {
           messageHtml: `<span class="ability-pill">${escapeHtml(abilityName)}</span>を使いませんか。`,
           yesLabel: "はい",
           noLabel: "いいえ",
           fixedLower:true,
           noCaret:true,
-          dismissOnOutside:true,
-          onNo: async () => {
-            await setRoleAbilitySelectionState(null);
-          }
+          dismissOnOutside:true
         });
       });
       greenShareList.appendChild(skipBtn);
@@ -4567,7 +4565,7 @@
         e.stopPropagation();
         showRevealPopAt(idCard, {
           action: `role_select:${myRoleId}`,
-          messageHtml: `(<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>)を使いますか。`
+          messageHtml: `<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>を使いますか。`
         });
         return;
       }
@@ -4581,7 +4579,7 @@
       e.stopPropagation();
       showRevealPopAt(idCard, {
         action: "wight_ability",
-        messageHtml: `(<span class="ability-pill">亡者の王</span>)を使いますか。`
+        messageHtml: `<span class="ability-pill">亡者の王</span>を使いますか。`
       });
       return;
     }
@@ -4604,6 +4602,11 @@
       }
     }
     if (myRoleId === "SHA_U1" || myRoleId === "RAI_G3"){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
+      return;
+    }
+    if (myRoleId === "SHA_U2" && !canStartRoleSelection(myRoleId, state.userId)){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
       return;
