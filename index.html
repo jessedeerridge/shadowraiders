@@ -6746,6 +6746,31 @@
     await set(ref(db, `rooms/${state.roomCode}/tables/${state.seatedTable}/moveDiceChoice`), payload);
   }
 
+  function clearPendingMoveChoiceState(){
+    if (!pendingMoveChoice) return;
+    pendingMoveChoice = null;
+    clearPendingMoveChoiceUi();
+    updateRoomChoiceUi();
+    refreshRoomAbilityHint();
+  }
+
+  function syncPendingMoveChoiceOwnership(){
+    const seatIndex = Number(state.seatedTable || 0);
+    if (!seatIndex){
+      clearPendingMoveChoiceState();
+      return;
+    }
+    const table = state.room?.tables?.[String(seatIndex)] || null;
+    const isSeatOwner = !!table && safeText(table.playerId || "") === safeText(state.userId || "");
+    if (!isSeatOwner){
+      clearPendingMoveChoiceState();
+      return;
+    }
+    if (!isMyTurn() || !!turnState()?.moveDone){
+      clearPendingMoveChoiceState();
+    }
+  }
+
   function restorePendingMoveChoiceFromSeat(){
     if (!isMyTurn()) return;
     if (!!turnState()?.moveDone) return;
@@ -8948,6 +8973,7 @@
       renderPositionLine();
       renderTurnEndButton();
       renderMarkers();
+      syncPendingMoveChoiceOwnership();
       restorePendingMoveChoiceFromSeat();
       updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
