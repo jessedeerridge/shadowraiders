@@ -3806,6 +3806,13 @@
     if (options?.enableRevealPop) cardEl.dataset.revealInteractive = "1";
     openZoomContent(cardEl, { showCloseButton:false, ...(options || {}) });
   }
+  function isRoleAbilityDisplayActiveFor(uid){
+    const activeUid = safeText(state.room?.roleAbilityDisplay?.uid || "");
+    if (!activeUid) return false;
+    if (!uid) return true;
+    return activeUid === safeText(uid || "");
+  }
+
   function openIdentityRevealZoom(role, revealerUid){
     if (!role) return;
     const wrap = document.createElement("div");
@@ -3829,6 +3836,7 @@
 
     openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
     setTimeout(() => {
+      if (isRoleAbilityDisplayActiveFor(revealerUid)) return;
       if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
     }, 2000);
   }
