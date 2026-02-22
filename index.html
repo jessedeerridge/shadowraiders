@@ -1186,6 +1186,13 @@
     pointer-events:none;
   }
 
+  .card72.turn-dark{
+    opacity:1;
+    filter:brightness(.56) saturate(.92);
+    cursor:default !important;
+    pointer-events:none;
+  }
+
   .count-tag{
     position:absolute;
     top:4px;
@@ -2035,11 +2042,28 @@
   }
   function applyLocked(el, locked, {noDim=false} = {}){
     if (!el) return;
+    const useDark = !!(locked && noDim === "turn-dark");
+    if (useDark){
+      el.classList.add("turn-dark");
+      el.classList.remove("locked","blocked");
+      return;
+    }
+    el.classList.remove("turn-dark");
     el.classList.toggle("locked", !!locked && !noDim);
     el.classList.toggle("blocked", !!locked && !!noDim);
     if (!locked){
-      el.classList.remove("locked","blocked");
+      el.classList.remove("locked","blocked","turn-dark");
     }
+  }
+
+  function adjustWbNameFont(slotEl){
+    const nameSpan = slotEl?.querySelector('.wb-name span');
+    if (!nameSpan) return;
+    nameSpan.style.fontSize = '8px';
+    if (nameSpan.scrollWidth <= nameSpan.clientWidth) return;
+    nameSpan.style.fontSize = '7px';
+    if (nameSpan.scrollWidth <= nameSpan.clientWidth) return;
+    nameSpan.style.fontSize = '6px';
   }
 
   function ensureCountTag(el){
@@ -2107,7 +2131,38 @@
     slotEl.classList.remove("noframe");
     slotEl.style.backgroundImage = '';
     slotEl.innerHTML = buildWbFrontHTML(cardObj, theme);
+    adjustWbNameFont(slotEl);
     slotEl.dataset.cardType = theme || "";
+  }
+
+  let imagePreloadPromise = null;
+  function preloadAllImages(){
+    if (imagePreloadPromise) return imagePreloadPromise;
+
+    const sources = new Set([
+      'maemain.jpg','back.jpg','gear.jpg','map.png','hp.png','endgear.png',
+      'greendeck.jpg','whitedeck.jpg','blackdeck.jpg','browncard.jpg','suiri.jpg',
+      'room1.jpg','room2.jpg','room3.jpg','room4.jpg','room5.jpg','room6.jpg','room7.jpg'
+    ]);
+
+    for (const role of ROLES){
+      const roleFile = `${encodeURI(`${safeText(role?.initial || "")}${safeText(role?.name || "")}`.trim())}.jpg`;
+      if (roleFile) sources.add(roleFile);
+    }
+    for (const card of WHITE_DECK) sources.add(cardImageFileFromName(card?.name));
+    for (const card of BLACK_DECK) sources.add(cardImageFileFromName(card?.name));
+
+    const tasks = Array.from(sources)
+      .map(src => safeText(src || '').trim())
+      .filter(Boolean)
+      .map(src => new Promise(resolve => {
+        const img = new Image();
+        img.onload = img.onerror = () => resolve(src);
+        img.src = src;
+      }));
+
+    imagePreloadPromise = Promise.allSettled(tasks);
+    return imagePreloadPromise;
   }
 
   function setSlotEmpty(slotEl){
@@ -3664,6 +3719,7 @@
     const cardEl = document.createElement("div");
     cardEl.className = `card72 wb-front ${theme === "black" ? "wb-black" : theme === "green" ? "wb-green" : "wb-white"}`;
     cardEl.innerHTML = buildWbFrontHTML(cardObj, theme);
+    adjustWbNameFont(cardEl);
     cardEl.dataset.cardType = theme || "";
     openZoomContent(cardEl, options);
   }
@@ -3734,8 +3790,10 @@
       }
 
       const shouldLock = !canClickType(t);
+      const darkByTurn = shouldLock && !isMyTurn() && ["white","black","green"].includes(t);
 
       const noDim =
+        darkByTurn ? "turn-dark" :
         (el === slot3 && t === "white") ||
         (el === slot5 && t === "black");
 
@@ -10087,6 +10145,7 @@
   });
 
   btnJoin.addEventListener('click', async () => {
+    await preloadAllImages();
     state.userName = (inputName.value || '名無し').slice(0,4);
     localStorage.setItem(USER_NAME_CACHE_KEY, state.userName);
     state.roomCode = inputCode.value.trim() || generateRoomCode();
