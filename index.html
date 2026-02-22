@@ -2239,6 +2239,7 @@
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+  let suspendedSelectionOverlay = null;
   let seatPromptUnsubscribe = null;
   let subscribedSeatPromptIndex = null;
   let restoringSeatIdentityPrompt = false;
@@ -2535,9 +2536,64 @@
     roomActionPop.style.top  = top + "px";
   }
 
-  function hideIdentityPrompt(){
-    pendingIdentityPrompt = null;
+  function hideIdentityPrompt({ keepState=false } = {}){
+    if (!keepState) pendingIdentityPrompt = null;
     identityPromptPop?.classList.add("hidden");
+  }
+
+  function isIdentityPromptVisible(){
+    return !!identityPromptPop && !identityPromptPop.classList.contains("hidden") && !!pendingIdentityPrompt;
+  }
+
+  function captureSelectionOverlayState(){
+    if (suspendedSelectionOverlay) return suspendedSelectionOverlay;
+
+    if (isIdentityPromptVisible()){
+      const prompt = pendingIdentityPrompt;
+      const cardObj = prompt?.cardObj || null;
+      const payload = {
+        type:"identity_prompt",
+        restore: () => {
+          if (!prompt) return;
+          showIdentityPromptPop({
+            message: safeText(prompt.message || ""),
+            canReveal: !!prompt.canReveal,
+            onYes: prompt.onYes,
+            onNo: prompt.onNo,
+            cardObj,
+            cardTheme: safeText(prompt.cardTheme || "white") || "white",
+            openZoom: true
+          });
+        }
+      };
+      hideIdentityPrompt({ keepState:true });
+      closeZoom();
+      suspendedSelectionOverlay = payload;
+      return payload;
+    }
+
+    const selectingCardTarget = !!(cardPlayerSelectActive && pendingCardTargetSessionEntry?.phase === "selecting" && pendingCardTargetSessionEntry?.card);
+    if (selectingCardTarget){
+      const cardObj = pendingCardTargetSessionEntry.card;
+      const payload = {
+        type:"card_target",
+        restore: async () => {
+          await openPersistentCardTargetSelection(cardObj, { restore:true });
+        }
+      };
+      greenShareDock?.classList.add("hidden");
+      closeZoom();
+      suspendedSelectionOverlay = payload;
+      return payload;
+    }
+    return null;
+  }
+
+  async function restoreSelectionOverlayState(){
+    const pending = suspendedSelectionOverlay;
+    if (!pending) return;
+    suspendedSelectionOverlay = null;
+    await pending.restore?.();
   }
 
   function cardByName(name){
@@ -2627,7 +2683,11 @@
     pendingIdentityPrompt = {
       onYes: typeof onYes === "function" ? onYes : null,
       onNo: typeof onNo === "function" ? onNo : null,
-      closeZoomOnChoice: !!openZoom
+      closeZoomOnChoice: !!openZoom,
+      message: safeText(message || ""),
+      canReveal: !!canReveal,
+      cardObj: cardObj || null,
+      cardTheme: safeText(cardTheme || "white") || "white"
     };
     identityPromptMsg.textContent = safeText(message || "");
 
@@ -8434,6 +8494,12 @@
               zoomDismissHandler = async () => {
                 restorePendingEquipSelection(action);
               };
+            } else if (suspendedSelectionOverlay){
+              zoomDismissHandler = async () => {
+                await closeHelp({ restoreSelection:false });
+                await closeEquipExpand({ restoreSelection:false });
+                await restoreSelectionOverlayState();
+              };
             }
           });
         }
@@ -8466,6 +8532,12 @@
             zoomDismissHandler = async () => {
               restorePendingEquipSelection(action);
             };
+          } else if (suspendedSelectionOverlay){
+            zoomDismissHandler = async () => {
+              await closeHelp({ restoreSelection:false });
+              await closeEquipExpand({ restoreSelection:false });
+              await restoreSelectionOverlayState();
+            };
           }
         });
         grid.appendChild(card);
@@ -8482,6 +8554,7 @@
     });
   }
   function openHelp(){
+    captureSelectionOverlayState();
     renderHelpList();
     helpBackdrop.classList.remove('hidden');
   }
@@ -8499,7 +8572,10 @@
     });
     await resetAllAbilityUsageForUids([state.userId]);
   }
-  function closeHelp(){ helpBackdrop.classList.add('hidden'); }
+  async function closeHelp({ restoreSelection=true } = {}){
+    helpBackdrop.classList.add('hidden');
+    if (restoreSelection) await restoreSelectionOverlayState();
+  }
   function renderEquipExpandBody(){
     if (!equipExpandBody || !equipBody) return;
     equipExpandBody.innerHTML = equipBody.innerHTML;
@@ -8529,33 +8605,36 @@
   }
   function openEquipExpand(){
     if (!equipDock?.classList.contains('visible')) return;
+    captureSelectionOverlayState();
     renderEquipExpandBody();
     equipExpandBackdrop?.classList.remove('hidden');
   }
-  function closeEquipExpand(){
+  async function closeEquipExpand({ restoreSelection=true } = {}){
     equipExpandBackdrop?.classList.add('hidden');
     if (isEquipSelectionLockActive() && zoomBackdrop?.classList.contains('hidden')){
       restorePendingEquipSelection();
+      return;
     }
+    if (restoreSelection) await restoreSelectionOverlayState();
   }
   function toggleRoomGuideOverlay(){
     roomGuideVisible = !roomGuideVisible;
     roomGuideBtn.classList.toggle('active', roomGuideVisible);
     renderRoomGuideLayer();
   }
-  helpBtn.addEventListener('click', () => {
+  helpBtn.addEventListener('click', async () => {
     if (!joinBox.classList.contains('hidden')) return;
     if (helpBackdrop.classList.contains('hidden')) openHelp();
-    else closeHelp();
+    else await closeHelp();
   });
   roomGuideBtn.addEventListener('click', () => {
     if (joinBox.classList.contains('hidden')) toggleRoomGuideOverlay();
   });
-  helpBackdrop.addEventListener('click', (e) => {
-    if (!helpBackdrop.classList.contains('hidden') && !e.target.closest('.help-pop')) closeHelp();
+  helpBackdrop.addEventListener('click', async (e) => {
+    if (!helpBackdrop.classList.contains('hidden') && !e.target.closest('.help-pop')) await closeHelp();
   });
-  equipExpandBackdrop?.addEventListener('click', (e) => {
-    if (!equipExpandBackdrop.classList.contains('hidden') && !e.target.closest('.equip-expand-pop')) closeEquipExpand();
+  equipExpandBackdrop?.addEventListener('click', async (e) => {
+    if (!equipExpandBackdrop.classList.contains('hidden') && !e.target.closest('.equip-expand-pop')) await closeEquipExpand();
   });
   equipExpandBody?.addEventListener('click', (e) => {
     const card = e.target.closest('.card72.wb-front, .id72');
@@ -8587,6 +8666,12 @@
     openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
     setZoomOverPanel(true);
     setZoomPassthrough(false);
+    if (suspendedSelectionOverlay){
+      zoomDismissHandler = async () => {
+        await closeEquipExpand({ restoreSelection:false });
+        await restoreSelectionOverlayState();
+      };
+    }
   });
 
   const SEAT_COLORS = [
@@ -9596,11 +9681,16 @@
       face.addEventListener('click', (e) => {
         e.stopPropagation();
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
+        const suspended = captureSelectionOverlayState();
+        openZoomFromRole(role, { enableRevealPop: !suspended, showCloseButton:false });
         if (action){
           setZoomPassthrough(false);
           zoomDismissHandler = async () => {
             restorePendingEquipSelection(action);
+          };
+        } else if (suspended){
+          zoomDismissHandler = async () => {
+            await restoreSelectionOverlayState();
           };
         }
       });
@@ -9615,11 +9705,16 @@
       back.addEventListener('click', (e) => {
         e.stopPropagation();
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
+        const suspended = captureSelectionOverlayState();
+        openZoomFromRole(role, { enableRevealPop: !suspended, showCloseButton:false }); // 拡大はオモテ（id72）
         if (action){
           setZoomPassthrough(false);
           zoomDismissHandler = async () => {
             restorePendingEquipSelection(action);
+          };
+        } else if (suspended){
+          zoomDismissHandler = async () => {
+            await restoreSelectionOverlayState();
           };
         }
       });
