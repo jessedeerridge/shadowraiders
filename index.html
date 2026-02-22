@@ -2268,6 +2268,29 @@
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+  let identityPromptSeatUnsubscribe = null;
+  let identityPromptSessionInitialized = false;
+  let identityPromptSessionSeenAt = 0;
+  let pendingIdentityPromptSessionEntry = null;
+  let identityPromptSessionRestoring = false;
+
+  const IDENTITY_PROMPT_CARDS = {
+    "戦慄の闇儀式": {
+      message: "シャドウとして正体を公開しますか。",
+      cardTheme: "black",
+      canReveal: (role) => role?.faction === "シャドウ"
+    },
+    "光臨": {
+      message: "レイダーとして正体を公開しますか。",
+      cardTheme: "white",
+      canReveal: (role) => role?.faction === "レイダー"
+    },
+    "幸せのクッキー": {
+      message: "AまたはUとして正体を公開しますか。",
+      cardTheme: "white",
+      canReveal: (role) => role?.initial === "A" || role?.initial === "U"
+    }
+  };
 
   function turnRoomActionState(){
     const t = turnState() || {};
@@ -2943,6 +2966,80 @@
       uid: state.userId,
       at
     });
+  }
+
+  function identityPromptConfigByCardName(cardName){
+    return IDENTITY_PROMPT_CARDS[safeText(cardName || "")] || null;
+  }
+
+  async function setIdentityPromptSessionState(payload){
+    if (identityPromptSessionRestoring) return;
+    if (!state.roomCode) return;
+    const seatIndex = currentMySeatIndex();
+    if (!seatIndex) return;
+    const sessionRef = ref(db, `rooms/${state.roomCode}/identityPromptSessions/${seatIndex}`);
+    if (!payload){
+      pendingIdentityPromptSessionEntry = null;
+      await set(sessionRef, null);
+      return;
+    }
+    const at = Date.now();
+    identityPromptSessionSeenAt = Math.max(identityPromptSessionSeenAt, at);
+    await set(sessionRef, {
+      ...payload,
+      uid: state.userId,
+      seatIndex,
+      at
+    });
+  }
+
+  async function openPersistentIdentityPrompt(cardName, cardObj=null, options={}){
+    const config = identityPromptConfigByCardName(cardName);
+    const role = myRoleInfo();
+    if (!config || !role || !state.userId) return;
+    const restoreMode = !!options.restore;
+    if (!restoreMode){
+      await setIdentityPromptSessionState({ phase:"selecting", cardName: safeText(cardName || "") });
+    }
+    showIdentityPromptPop({
+      message: config.message,
+      canReveal: !!config.canReveal(role),
+      cardObj,
+      cardTheme: config.cardTheme,
+      openZoom: !!cardObj,
+      onNo: async () => {
+        await setIdentityPromptSessionState(null);
+      },
+      onYes: async () => {
+        await revealMyIdentityToEquipment();
+        openIdentityRevealZoom(role, state.userId);
+        await fullRecoverPlayer(state.userId);
+        await setIdentityPromptSessionState(null);
+      }
+    });
+  }
+
+  async function tryRestorePendingIdentityPromptSession(){
+    const entry = pendingIdentityPromptSessionEntry;
+    if (!entry) return;
+    const phase = safeText(entry?.phase || "");
+    const cardName = safeText(entry?.cardName || "");
+    if (!phase || !cardName){
+      pendingIdentityPromptSessionEntry = null;
+      await setIdentityPromptSessionState(null);
+      return;
+    }
+    if (latestPlayers.length === 0) return;
+    const mySeatReady = latestPlayers.some(p => p.id === state.userId);
+    if (!mySeatReady) return;
+
+    pendingIdentityPromptSessionEntry = null;
+    identityPromptSessionRestoring = true;
+    try {
+      await openPersistentIdentityPrompt(cardName, null, { restore:true });
+    } finally {
+      identityPromptSessionRestoring = false;
+    }
   }
 
   function currentMySeatIndex(){
@@ -7156,41 +7253,8 @@
       return;
     }
 
-    if (name === "戦慄の闇儀式" || name === "光臨"){
-      const targetFaction = (name === "戦慄の闇儀式") ? "シャドウ" : "レイダー";
-      const message = (name === "戦慄の闇儀式")
-        ? "シャドウとして正体を公開しますか。"
-        : "レイダーとして正体を公開しますか。";
-      const canReveal = role.faction === targetFaction;
-      showIdentityPromptPop({
-        message,
-        canReveal,
-        cardObj,
-        cardTheme: name === "戦慄の闇儀式" ? "black" : "white",
-        openZoom: true,
-        onYes: async () => {
-          await revealMyIdentityToEquipment();
-          openIdentityRevealZoom(role, state.userId);
-          await fullRecoverPlayer(state.userId);
-        }
-      });
-      return;
-    }
-
-    if (name === "幸せのクッキー"){
-      const canReveal = role.initial === "A" || role.initial === "U";
-      showIdentityPromptPop({
-        message: "AまたはUとして正体を公開しますか。",
-        canReveal,
-        cardObj,
-        cardTheme: "white",
-        openZoom: true,
-        onYes: async () => {
-          await revealMyIdentityToEquipment();
-          openIdentityRevealZoom(role, state.userId);
-          await fullRecoverPlayer(state.userId);
-        }
-      });
+    if (name === "戦慄の闇儀式" || name === "光臨" || name === "幸せのクッキー"){
+      await openPersistentIdentityPrompt(name, cardObj);
       return;
     }
 
@@ -8909,6 +8973,51 @@
       tryRestorePendingCardTargetSession().catch(() => {});
     });
   }
+
+  function subscribeIdentityPromptSessionStateForSeat(){
+    if (identityPromptSeatUnsubscribe){
+      identityPromptSeatUnsubscribe();
+      identityPromptSeatUnsubscribe = null;
+    }
+
+    const seatIndex = currentMySeatIndex();
+    if (!state.roomCode || !seatIndex){
+      identityPromptSessionInitialized = false;
+      identityPromptSessionSeenAt = 0;
+      pendingIdentityPromptSessionEntry = null;
+      return;
+    }
+
+    identityPromptSessionInitialized = false;
+    identityPromptSessionSeenAt = 0;
+    pendingIdentityPromptSessionEntry = null;
+
+    const sessionRef = ref(db, `rooms/${state.roomCode}/identityPromptSessions/${seatIndex}`);
+    identityPromptSeatUnsubscribe = onValue(sessionRef, snap => {
+      const data = snap.val() || null;
+      const at = Number(data?.at || 0);
+
+      if (!identityPromptSessionInitialized){
+        identityPromptSessionInitialized = true;
+        identityPromptSessionSeenAt = at || 0;
+        if (data){
+          pendingIdentityPromptSessionEntry = data;
+          tryRestorePendingIdentityPromptSession().catch(() => {});
+        }
+        return;
+      }
+
+      if (!data){
+        pendingIdentityPromptSessionEntry = null;
+        return;
+      }
+      if (!at) return;
+      if (at <= identityPromptSessionSeenAt) return;
+      identityPromptSessionSeenAt = at;
+      pendingIdentityPromptSessionEntry = data;
+      tryRestorePendingIdentityPromptSession().catch(() => {});
+    });
+  }
   function subscribeGreenReveals(){
     const revealRef = ref(db, `rooms/${state.roomCode}/greenReveals`);
     onValue(revealRef, snap => {
@@ -8961,6 +9070,7 @@
   function subscribePlayers(){
     const tablesRef = ref(db, `rooms/${state.roomCode}/tables`);
     onValue(tablesRef, snap => {
+      const prevSeatIndex = Number(state.seatedTable || 0);
       const wasSeated = state.seatedTable != null;
       const data = snap.val() || {};
       const players = Object.entries(data)
@@ -8990,6 +9100,11 @@
           closeZoom();
         }
         sessionStorage.removeItem(seatKey(state.roomCode));
+      }
+
+      const nextSeatIndex = Number(state.seatedTable || 0);
+      if (prevSeatIndex !== nextSeatIndex){
+        subscribeIdentityPromptSessionStateForSeat();
       }
 
       renderSeatTiles();
@@ -9764,6 +9879,7 @@
     subscribeRoom();
     subscribeHostState();
     subscribePlayers();
+    subscribeIdentityPromptSessionStateForSeat();
     subscribeHands();
     subscribeGreenInbox();
     subscribeGreenResponses();
