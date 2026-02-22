@@ -2182,6 +2182,10 @@
   let greenSessionRestoring = false;
   let greenSessionSeenAt = 0;
   let pendingGreenSessionEntry = null;
+  let cardTargetSessionInitialized = false;
+  let cardTargetSessionRestoring = false;
+  let cardTargetSessionSeenAt = 0;
+  let pendingCardTargetSessionEntry = null;
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
     "CIT_D3", // デボラ
@@ -2238,6 +2242,8 @@
   let attackTurnEndChoicePending = false;
   let pendingAttackResolution = null;
   let suppressEndTurnButton = false;
+
+  const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -2921,6 +2927,24 @@
     });
   }
 
+  async function setCardTargetSessionState(payload){
+    if (cardTargetSessionRestoring) return;
+    if (!state.roomCode || !state.userId) return;
+    const sessionRef = ref(db, `rooms/${state.roomCode}/cardTargetSessions/${state.userId}`);
+    if (!payload){
+      pendingCardTargetSessionEntry = null;
+      await remove(sessionRef);
+      return;
+    }
+    const at = Date.now();
+    cardTargetSessionSeenAt = Math.max(cardTargetSessionSeenAt, at);
+    await set(sessionRef, {
+      ...payload,
+      uid: state.userId,
+      at
+    });
+  }
+
   function currentMySeatIndex(){
     const fromPlayers = latestPlayers.find(p => p.id === state.userId);
     if (fromPlayers?.seatIndex) return Number(fromPlayers.seatIndex || 0);
@@ -2974,7 +2998,7 @@
     if (players.length === 0){
       cardPlayerSelectActive = false;
       renderTurnEndButton();
-      return;
+      return false;
     }
 
     let selected = false;
@@ -3002,7 +3026,7 @@
         }
         const handler = (typeof onSelect === "function") ? onSelect : null;
         try {
-          if (handler) await handler(p.id);
+          if (handler) await handler(p.id, p);
         } finally {
           if (lockEndTurnUntilResolved){
             cardPlayerSelectActive = false;
@@ -3016,6 +3040,154 @@
     cardPlayerSelectActive = true;
     renderTurnEndButton();
     greenShareDock.classList.remove("hidden");
+    return true;
+  }
+
+  function cardTargetSelectionSpec(cardObj){
+    const name = safeText(cardObj?.name || "");
+    if (!name) return null;
+    if (name === "応急手当"){
+      return {
+        theme:"white",
+        title:"応急手当：対象プレイヤーを選択してください。",
+        includeSelf:true,
+        resolver: async (uid) => {
+          await waitMs(1000);
+          await setDamageToPlayer(uid, 7);
+        }
+      };
+    }
+    if (name === "恩恵"){
+      return {
+        theme:"white",
+        title:"恩恵：回復させるプレイヤーを選択してください。",
+        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
+        resolver: async (uid) => {
+          const eye = 1 + Math.floor(Math.random() * 6);
+          await emitCardDiceEvent({ kind:"blessing", uid:state.userId, d6:eye });
+          await runCornerD6Roll(eye);
+          await waitMs(1000);
+          await healDamageToPlayer(uid, eye);
+        }
+      };
+    }
+    if (name === "吸血コウモリ"){
+      return {
+        theme:"black",
+        title:"吸血コウモリ：対象プレイヤーを選択してください。",
+        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
+        resolver: async (uid) => {
+          await waitMs(1000);
+          if (!hasEquipmentByName(uid, "いにしえの聖杯")){
+            await addDamageToPlayer(uid, 2);
+          }
+          await healDamageToPlayer(state.userId, 1);
+        }
+      };
+    }
+    if (name === "三つ目の黒犬"){
+      return {
+        theme:"black",
+        title:"三つ目の黒犬：対象プレイヤーを選択してください。",
+        onlyAlive:true,
+        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
+        resolver: async (uid) => {
+          await waitMs(1000);
+          const targetHasChalice = hasEquipmentByName(uid, "いにしえの聖杯");
+          const myHasChalice = hasEquipmentByName(state.userId, "いにしえの聖杯");
+          if (!targetHasChalice) await addDamageToPlayer(uid, 2);
+          if (!myHasChalice) await addDamageToPlayer(state.userId, 2);
+        }
+      };
+    }
+    if (name === "呪いの人形"){
+      return {
+        theme:"black",
+        title:"呪いの人形：対象プレイヤーを選択してください。",
+        onlyAlive:true,
+        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
+        resolver: async (uid) => {
+          const eye = 1 + Math.floor(Math.random() * 6);
+          await emitCardDiceEvent({ kind:"curse_doll", uid: state.userId, d6: eye });
+          await waitMs(1000);
+          if (eye <= 4){
+            if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 3);
+          } else if (!hasEquipmentByName(state.userId, "いにしえの聖杯")){
+            await addDamageToPlayer(state.userId, 3);
+          }
+        }
+      };
+    }
+    return null;
+  }
+
+  async function resolveCardTargetSessionEntry(entry){
+    const card = entry?.card || null;
+    const targetUid = safeText(entry?.targetUid || "");
+    const spec = cardTargetSelectionSpec(card);
+    if (!spec || !targetUid){
+      await setCardTargetSessionState(null);
+      return;
+    }
+    openZoomFromDeckCard(card, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
+    setGreenDockMeta({ title:`${safeText(card?.name || "") }：効果を処理中です。`, subtitle:"" });
+    greenShareActions?.classList.add("hidden");
+    renderGreenWaitingSelection(targetUid, safeText(entry?.targetName || ""), safeText(entry?.targetInitial || ""), safeText(entry?.targetColor || ""));
+    greenShareDock?.classList.remove("hidden");
+    cardPlayerSelectActive = true;
+    renderTurnEndButton();
+    try {
+      await spec.resolver(targetUid);
+    } finally {
+      cardPlayerSelectActive = false;
+      renderTurnEndButton();
+      await setCardTargetSessionState(null);
+      greenShareDock?.classList.add("hidden");
+      closeZoom();
+    }
+  }
+
+  async function openPersistentCardTargetSelection(cardObj, { restore=false } = {}){
+    const spec = cardTargetSelectionSpec(cardObj);
+    if (!spec) return false;
+    openZoomFromDeckCard(cardObj, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
+    const opened = openTargetSelectDock({
+      title: spec.title,
+      lockEndTurnUntilResolved: true,
+      includeSelf: !!spec.includeSelf,
+      onlyAlive: !!spec.onlyAlive,
+      nameSuffixForUid: spec.nameSuffixForUid,
+      onSelect: async (uid, player) => {
+        await setCardTargetSessionState({
+          phase:"resolving",
+          card: cardObj,
+          targetUid: safeText(uid || ""),
+          targetName: safeText(player?.name || ""),
+          targetInitial: firstChar(player?.name || ""),
+          targetColor: safeText(player?.color || "")
+        });
+        try {
+          await spec.resolver(uid);
+        } finally {
+          await setCardTargetSessionState(null);
+          closeZoom();
+        }
+      }
+    });
+
+    if (!opened){
+      await setCardTargetSessionState(null);
+      closeZoom();
+      return false;
+    }
+
+    if (!restore){
+      await setCardTargetSessionState({
+        phase:"selecting",
+        card: cardObj
+      });
+    }
+    return true;
   }
 
   function openGreenShareDock(cardObj, { attackRangeOnly=false } = {}){
@@ -6971,8 +7143,6 @@
     const lockKey = `${name}:${state.userId}`;
     if (isEffectResolutionLocked(lockKey)) return;
     setEffectResolutionLock(lockKey, true);
-    const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
     try {
     if (name === "いやしの聖水"){
       await waitMs(1500);
@@ -7043,79 +7213,22 @@
     }
 
     if (name === "応急手当"){
-      openZoomFromDeckCard(cardObj, "white", { closeOnBackdrop:false, showCloseButton:false });
-      openTargetSelectDock({
-        title: "応急手当：対象プレイヤーを選択してください。",
-        lockEndTurnUntilResolved: true,
-        includeSelf: true,
-        onSelect: async (uid) => {
-          await waitMs(1000);
-          await setDamageToPlayer(uid, 7);
-          closeZoom();
-        }
-      });
+      await openPersistentCardTargetSelection(cardObj);
       return;
     }
 
     if (name === "恩恵"){
-      openZoomFromDeckCard(cardObj, "white", { closeOnBackdrop:false, showCloseButton:false });
-      openTargetSelectDock({
-        title: "恩恵：回復させるプレイヤーを選択してください。",
-        lockEndTurnUntilResolved: true,
-        includeSelf: false,
-        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
-        onSelect: async (uid) => {
-          const eye = 1 + Math.floor(Math.random() * 6);
-          await emitCardDiceEvent({ kind:"blessing", uid:state.userId, d6:eye });
-          await runCornerD6Roll(eye);
-          await waitMs(1000);
-          await healDamageToPlayer(uid, eye);
-          closeZoom();
-        }
-      });
+      await openPersistentCardTargetSelection(cardObj);
       return;
     }
 
     if (name === "吸血コウモリ"){
-      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
-      openTargetSelectDock({
-        title: "吸血コウモリ：対象プレイヤーを選択してください。",
-        lockEndTurnUntilResolved: true,
-        includeSelf: false,
-        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
-        onSelect: async (uid) => {
-          await waitMs(1000);
-          if (!hasEquipmentByName(uid, "いにしえの聖杯")){
-            await addDamageToPlayer(uid, 2);
-          }
-          await healDamageToPlayer(state.userId, 1);
-          closeZoom();
-        }
-      });
+      await openPersistentCardTargetSelection(cardObj);
       return;
     }
 
     if (name === "三つ目の黒犬"){
-      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
-      openTargetSelectDock({
-        title: "三つ目の黒犬：対象プレイヤーを選択してください。",
-        lockEndTurnUntilResolved: true,
-        includeSelf: false,
-        onlyAlive: true,
-        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
-        onSelect: async (uid) => {
-          await waitMs(1000);
-          const targetHasChalice = hasEquipmentByName(uid, "いにしえの聖杯");
-          const myHasChalice = hasEquipmentByName(state.userId, "いにしえの聖杯");
-          if (!targetHasChalice){
-            await addDamageToPlayer(uid, 2);
-          }
-          if (!myHasChalice){
-            await addDamageToPlayer(state.userId, 2);
-          }
-          closeZoom();
-        }
-      });
+      await openPersistentCardTargetSelection(cardObj);
       return;
     }
 
@@ -7159,27 +7272,7 @@
     }
 
     if (name === "呪いの人形"){
-      openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
-      openTargetSelectDock({
-        title: "呪いの人形：対象プレイヤーを選択してください。",
-        lockEndTurnUntilResolved: true,
-        includeSelf: false,
-        onlyAlive: true,
-        nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
-        onSelect: async (uid) => {
-          const eye = 1 + Math.floor(Math.random() * 6);
-          await emitCardDiceEvent({ kind:"curse_doll", uid: state.userId, d6: eye });
-          await waitMs(1000);
-          if (eye <= 4){
-            if (!hasEquipmentByName(uid, "いにしえの聖杯")){
-              await addDamageToPlayer(uid, 3);
-            }
-          } else if (!hasEquipmentByName(state.userId, "いにしえの聖杯")){
-            await addDamageToPlayer(state.userId, 3);
-          }
-          closeZoom();
-        }
-      });
+      await openPersistentCardTargetSelection(cardObj);
       return;
     }
 
@@ -8641,6 +8734,7 @@
       state.hands = snap.val() || {};
       renderHands();
       tryRestorePendingGreenSession();
+      tryRestorePendingCardTargetSession().catch(() => {});
     });
   }
 
@@ -8761,6 +8855,60 @@
     });
   }
 
+
+  async function tryRestorePendingCardTargetSession(){
+    const entry = pendingCardTargetSessionEntry;
+    if (!entry) return;
+    const phase = safeText(entry?.phase || "");
+    if (!phase){
+      pendingCardTargetSessionEntry = null;
+      await setCardTargetSessionState(null);
+      return;
+    }
+    if (latestPlayers.length === 0) return;
+    const mySeatReady = latestPlayers.some(p => p.id === state.userId);
+    if (!mySeatReady) return;
+
+    pendingCardTargetSessionEntry = null;
+    cardTargetSessionRestoring = true;
+    try {
+      if (phase === "resolving"){
+        await resolveCardTargetSessionEntry(entry);
+      } else {
+        await openPersistentCardTargetSelection(entry.card || null, { restore:true });
+      }
+    } finally {
+      cardTargetSessionRestoring = false;
+    }
+  }
+
+  function subscribeCardTargetSessionState(){
+    const sessionRef = ref(db, `rooms/${state.roomCode}/cardTargetSessions/${state.userId}`);
+    onValue(sessionRef, snap => {
+      const data = snap.val() || null;
+      const at = Number(data?.at || 0);
+
+      if (!cardTargetSessionInitialized){
+        cardTargetSessionInitialized = true;
+        cardTargetSessionSeenAt = at || 0;
+        if (data){
+          pendingCardTargetSessionEntry = data;
+          tryRestorePendingCardTargetSession().catch(() => {});
+        }
+        return;
+      }
+
+      if (!data){
+        pendingCardTargetSessionEntry = null;
+        return;
+      }
+      if (!at) return;
+      if (at <= cardTargetSessionSeenAt) return;
+      cardTargetSessionSeenAt = at;
+      pendingCardTargetSessionEntry = data;
+      tryRestorePendingCardTargetSession().catch(() => {});
+    });
+  }
   function subscribeGreenReveals(){
     const revealRef = ref(db, `rooms/${state.roomCode}/greenReveals`);
     onValue(revealRef, snap => {
@@ -8828,6 +8976,7 @@
 
       latestPlayers = players;
       tryRestorePendingGreenSession();
+      tryRestorePendingCardTargetSession().catch(() => {});
 
       const mySeat = players.find(p => p.id === state.userId);
       if (mySeat) {
@@ -9187,6 +9336,7 @@
       migrateUidNode("greenResponses", true);
       migrateUidNode("greenCloseSignals", true);
       migrateUidNode("greenSessions", true);
+      migrateUidNode("cardTargetSessions", true);
 
       const migrateRequestNode = (nodeName, shouldTouchAt = false) => {
         const node = room[nodeName] || {};
@@ -9618,6 +9768,7 @@
     subscribeGreenInbox();
     subscribeGreenResponses();
     subscribeGreenSessionState();
+    subscribeCardTargetSessionState();
     subscribeGreenReveals();
     subscribeGreenCloseSignals();
     subscribeGreenReplyBubbles();
