@@ -3913,6 +3913,9 @@
   zoomBackdrop.addEventListener("click", async (e) => {
     const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
     if (canClose){
+      if (cardPlayerSelectActive){
+        return;
+      }
       if (typeof zoomDismissHandler === "function"){
         await zoomDismissHandler();
         return;
