@@ -3287,6 +3287,7 @@
   function openRoleAbilitySelectionUI(entry){
     const roleId = safeText(entry?.roleId || "");
     const actorUid = safeText(entry?.actorUid || "");
+    let selectionBusy = false;
     const role = ROLE_BY_ID[roleId];
     if (!role) return;
     activeRoleAbilitySelection = entry;
@@ -3312,6 +3313,13 @@
     if (!greenShareList || !greenShareDock) return;
     const text = buildRoleSelectionMessage(roleId);
     setGreenDockMeta({ title:text, subtitle:"" });
+    const lockRoleSelectionButtons = () => {
+      if (!greenShareList) return;
+      greenShareList.querySelectorAll("button").forEach((el) => {
+        el.disabled = true;
+        el.style.pointerEvents = "none";
+      });
+    };
     for (const p of candidates){
       const btn = document.createElement("button");
       btn.type = "button";
@@ -3322,7 +3330,11 @@
       btn.appendChild(chip);
       btn.appendChild(label);
       btn.addEventListener("click", () => {
+        if (selectionBusy) return;
         showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `「${safeText(p.name || "このプレイヤー")}」を選びますか。`, async () => {
+          if (selectionBusy) return;
+          selectionBusy = true;
+          lockRoleSelectionButtons();
           await completeRoleAbilitySelection(entry, p.id);
         }, { fixedLower:true, noCaret:true });
       });
@@ -3340,9 +3352,12 @@
         skipBtn.style.cursor = "not-allowed";
       }
       skipBtn.addEventListener("click", () => {
-        if (disableSkip) return;
+        if (disableSkip || selectionBusy) return;
         const abilityName = safeText(spec?.abilityName || "能力");
         showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
+          if (selectionBusy) return;
+          selectionBusy = true;
+          lockRoleSelectionButtons();
           await setRoleAbilitySelectionState(null);
           if (roleId === "RAI_E3" && !!entry?.endTurnAfterResolve){
             await doEndTurn();
