@@ -366,7 +366,7 @@
     position:fixed;
     right:16px;
     bottom:16px;
-    z-index:260;
+    z-index:12040;
     display:none;
   }
   .my-role-dock.visible{ display:block; }
@@ -2239,6 +2239,8 @@
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+  let activeCardTargetSelectionCard = null;
+  let temporaryIdentityPreviewState = null;
   let seatPromptUnsubscribe = null;
   let subscribedSeatPromptIndex = null;
   let restoringSeatIdentityPrompt = false;
@@ -2627,7 +2629,14 @@
     pendingIdentityPrompt = {
       onYes: typeof onYes === "function" ? onYes : null,
       onNo: typeof onNo === "function" ? onNo : null,
-      closeZoomOnChoice: !!openZoom
+      closeZoomOnChoice: !!openZoom,
+      uiState: {
+        message: safeText(message || ""),
+        canReveal: !!canReveal,
+        cardObj: cardObj ? { ...cardObj } : null,
+        cardTheme: safeText(cardTheme || "white") || "white",
+        openZoom: !!openZoom
+      }
     };
     identityPromptMsg.textContent = safeText(message || "");
 
@@ -2650,6 +2659,71 @@
         cardTheme: safeText(cardTheme || "white") || "white"
       }).catch(() => {});
     }
+  }
+
+  function canTemporarilyShowIdentityPreview(){
+    const hasCardTargetSelection = !!(activeCardTargetSelectionCard && cardPlayerSelectActive && !greenShareDock?.classList.contains("hidden"));
+    const hasIdentityPrompt = !!(pendingIdentityPrompt?.uiState && !identityPromptPop?.classList.contains("hidden"));
+    return hasCardTargetSelection || hasIdentityPrompt;
+  }
+
+  function openTemporaryIdentityPreview(role){
+    if (!role || temporaryIdentityPreviewState) return false;
+    const hasCardTargetSelection = !!(activeCardTargetSelectionCard && cardPlayerSelectActive && !greenShareDock?.classList.contains("hidden"));
+    const promptState = pendingIdentityPrompt?.uiState ? {
+      ui: {
+        ...pendingIdentityPrompt.uiState,
+        cardObj: pendingIdentityPrompt.uiState.cardObj ? { ...pendingIdentityPrompt.uiState.cardObj } : null
+      },
+      onYes: typeof pendingIdentityPrompt?.onYes === "function" ? pendingIdentityPrompt.onYes : null,
+      onNo: typeof pendingIdentityPrompt?.onNo === "function" ? pendingIdentityPrompt.onNo : null
+    } : null;
+    const hasIdentityPrompt = !!(promptState && !identityPromptPop?.classList.contains("hidden"));
+    if (!hasCardTargetSelection && !hasIdentityPrompt) return false;
+
+    temporaryIdentityPreviewState = {
+      cardTargetCardObj: hasCardTargetSelection ? { ...activeCardTargetSelectionCard } : null,
+      promptState
+    };
+
+    if (hasCardTargetSelection){
+      greenShareDock?.classList.add("hidden");
+      cardPlayerSelectActive = false;
+      renderTurnEndButton();
+    }
+    if (hasIdentityPrompt){
+      identityPromptPop?.classList.add("hidden");
+    }
+
+    closeZoom();
+    openZoomFromRole(role, { showCloseButton:false, closeOnBackdrop:true, closeOnAnyClick:false });
+    zoomDismissHandler = async () => {
+      const restore = temporaryIdentityPreviewState;
+      temporaryIdentityPreviewState = null;
+      closeZoom();
+
+      if (restore?.cardTargetCardObj){
+        const cardSpec = cardTargetSelectionSpec(restore.cardTargetCardObj);
+        if (cardSpec){
+          openZoomFromDeckCard(restore.cardTargetCardObj, cardSpec.theme, { closeOnBackdrop:false, showCloseButton:false });
+          greenShareDock?.classList.remove("hidden");
+          cardPlayerSelectActive = true;
+          renderTurnEndButton();
+        }
+      }
+      if (restore?.promptState){
+        showIdentityPromptPop({
+          message: restore.promptState.ui.message,
+          canReveal: restore.promptState.ui.canReveal,
+          onYes: restore.promptState.onYes,
+          onNo: restore.promptState.onNo,
+          cardObj: restore.promptState.ui.cardObj,
+          cardTheme: restore.promptState.ui.cardTheme,
+          openZoom: !!restore.promptState.ui.openZoom
+        });
+      }
+    };
+    return true;
   }
 
 
@@ -3209,6 +3283,7 @@
       await spec.resolver(targetUid);
     } finally {
       cardPlayerSelectActive = false;
+      activeCardTargetSelectionCard = null;
       renderTurnEndButton();
       await setCardTargetSessionState(null);
       greenShareDock?.classList.add("hidden");
@@ -3219,6 +3294,7 @@
   async function openPersistentCardTargetSelection(cardObj, { restore=false } = {}){
     const spec = cardTargetSelectionSpec(cardObj);
     if (!spec) return false;
+    activeCardTargetSelectionCard = cardObj ? { ...cardObj } : null;
     openZoomFromDeckCard(cardObj, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
     const opened = openTargetSelectDock({
       title: spec.title,
@@ -3238,6 +3314,7 @@
         try {
           await spec.resolver(uid);
         } finally {
+          activeCardTargetSelectionCard = null;
           await setCardTargetSessionState(null);
           closeZoom();
         }
@@ -3245,6 +3322,7 @@
     });
 
     if (!opened){
+      activeCardTargetSelectionCard = null;
       await setCardTargetSessionState(null);
       closeZoom();
       return false;
@@ -8965,6 +9043,7 @@
       if (!data){
         pendingCardTargetSessionEntry = null;
         cardPlayerSelectActive = false;
+        activeCardTargetSelectionCard = null;
         greenShareDock?.classList.add("hidden");
         closeZoom();
         renderTurnEndButton();
@@ -9595,6 +9674,10 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (canTemporarilyShowIdentityPreview()){
+          openTemporaryIdentityPreview(role);
+          return;
+        }
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
         if (action){
@@ -9614,6 +9697,10 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (canTemporarilyShowIdentityPreview()){
+          openTemporaryIdentityPreview(role);
+          return;
+        }
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
         if (action){
