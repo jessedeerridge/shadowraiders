@@ -63,6 +63,7 @@
   .confirm-pop.hidden{display:none;}
   .confirm-pop .msg{font-size:13px;line-height:1.45;margin:0 0 10px;}
   .confirm-pop .msg .ability-pill{display:inline-block;padding:1px 6px;border-radius:999px;background:#111;color:#fff;font-weight:700;}
+  .ability-pill{display:inline-block;padding:1px 6px;border-radius:999px;background:#111;color:#fff;font-weight:700;}
   .confirm-pop .actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
   .confirm-pop .caret{
     position:absolute;
@@ -2255,6 +2256,8 @@
   const deckRebuildTimers = { green:null, white:null, black:null };
   let roleFlashEventSeenAt = 0;
   let roleFlashEventInitialized = false;
+  let hpSwapEventSeenAt = 0;
+  let hpSwapEventInitialized = false;
   let walpurgisSwapEventSeenAt = 0;
   let walpurgisSwapEventInitialized = false;
   let roleFlashTimer = null;
@@ -2283,6 +2286,7 @@
   let attackTurnEndChoicePending = false;
   let pendingAttackResolution = null;
   let suppressEndTurnButton = false;
+  let pendingHpSwapAnimation = null;
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -2450,8 +2454,9 @@
       }
     }
     btnRevealYes?.classList.toggle("hidden", mode === "notice");
+    btnRevealNo?.classList.toggle("hidden", mode === "notice");
     if (btnRevealNo){
-      btnRevealNo.textContent = (mode === "notice") ? "OK" : "いいえ";
+      btnRevealNo.textContent = "いいえ";
     }
     revealPop.classList.remove("hidden");
     if (!anchorEl){
@@ -2861,6 +2866,18 @@
     });
   }
 
+
+  async function emitHpSwapEvent(aUid, bUid){
+    const a = safeText(aUid || "");
+    const b = safeText(bUid || "");
+    if (!state.roomCode || !a || !b || a === b) return;
+    await set(ref(db, `rooms/${state.roomCode}/effectEvents/hpSwap`), {
+      aUid: a,
+      bUid: b,
+      at: Date.now()
+    });
+  }
+
   async function emitWalpurgisSwapEvent(uidA, uidB, durationMs = 620){
     const a = safeText(uidA || "");
     const b = safeText(uidB || "");
@@ -3167,8 +3184,9 @@
     const alive = latestPlayers.filter(p => !isPlayerEliminated(p.id));
     const eliminated = latestPlayers.filter(p => isPlayerEliminated(p.id));
     if (roleId === "RAI_F2") return alive;
-    if (roleId === "RAI_E3") return alive.filter(p => markerRoomId(markerCache?.[p.id]) === actorRoom);
+    if (roleId === "RAI_E3") return alive.filter(p => p.id !== actorUid && markerRoomId(markerCache?.[p.id]) === actorRoom);
     if (roleId === "RAI_G3") return eliminated.filter(p => p.id !== actorUid);
+    if (roleId === "SHA_U2") return alive.filter(p => p.id !== actorUid && [6,7].includes(markerRoomId(markerCache?.[p.id])));
     return alive.filter(p => p.id !== actorUid);
   }
 
@@ -3178,33 +3196,130 @@
     return `<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>${escapeHtml(spec.prompt)}`;
   }
 
+  function canStartRoleSelection(roleId, actorUid){
+    const entry = { roleId, actorUid };
+    const candidates = roleSelectionTargetPlayers(entry);
+    return candidates.length > 0;
+  }
+
+  function isCornerRoomForEmma(roomId){
+    const rid = Number(roomId || 0);
+    return [1,3,5,7].includes(rid);
+  }
+
+  function emmaAbilityAvailability(){
+    if (!isMyRole("RAI_E3")) return { ok:false, message:"今は使えません。" };
+    if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
+    if (!isMyIdentityRevealed()) return { ok:false, message:"今は使えません。" };
+    if (!turnState()?.moveDone) return { ok:false, message:"今は使えません。" };
+    if (isRoleAbilityUsed("RAI_E3")) return { ok:false, message:"今は使えません。" };
+    if (!canStartRoleSelection("RAI_E3", state.userId)) return { ok:false, message:"今は使えません。" };
+    return { ok:true };
+  }
+
+  function uranusAbilityAvailability(){
+    if (!isMyRole("SHA_U2")) return { ok:false, message:"今は使えません。" };
+    if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
+    if (!isMyIdentityRevealed()) return { ok:false, message:"今は使えません。" };
+    if (isRoleAbilityUsed("SHA_U2")) return { ok:false, message:"今は使えません。" };
+    if (!canStartRoleSelection("SHA_U2", state.userId)) return { ok:false, message:"今は使えません。" };
+    return { ok:true };
+  }
+
   async function completeRoleAbilitySelection(entry, targetUid){
     const actorUid = safeText(entry?.actorUid || "");
     const roleId = safeText(entry?.roleId || "");
-    if (!actorUid || !roleId || actorUid !== state.userId) return;
+    const selectedUid = safeText(targetUid || "");
+    if (!actorUid || !roleId || actorUid !== state.userId || !selectedUid) return;
+
+    if (roleId === "RAI_F2"){
+      await setDamageToPlayer(selectedUid, 7);
+    } else if (roleId === "RAI_F1"){
+      const eye = 1 + Math.floor(Math.random() * 6);
+      await emitCardDiceEvent({ kind:"role_felix", uid: actorUid, d6: eye });
+      await waitMs(1000);
+      await addDamageToPlayer(selectedUid, eye);
+    } else if (roleId === "RAI_E3"){
+      const eye = 1 + Math.floor(Math.random() * 4);
+      await emitCardDiceEvent({ kind:"role_emma", uid: actorUid, d4: eye });
+      await waitMs(1000);
+      await healDamageToPlayer(selectedUid, eye);
+      await update(ref(db, `rooms/${state.roomCode}/turn`), {
+        attackDone: true,
+        deckDrawDone: true,
+        updatedAt: Date.now()
+      });
+    } else if (roleId === "RAI_G3"){
+      await setDamageToPlayer(selectedUid, 7);
+      await update(ref(db, `rooms/${state.roomCode}`), {
+        [`markers/${selectedUid}`]: null
+      });
+    } else if (roleId === "SHA_U2"){
+      await addDamageToPlayer(selectedUid, 3);
+      uranusMeteorResolved = true;
+    } else if (roleId === "CIT_C3"){
+      const me = clampDamage(damageCache?.[actorUid]);
+      const target = clampDamage(damageCache?.[selectedUid]);
+      pendingHpSwapAnimation = { aUid: actorUid, bUid: selectedUid, at: Date.now() };
+      const roomRef = ref(db, `rooms/${state.roomCode}`);
+      await runTransaction(roomRef, (cur) => {
+        if (!cur) return cur;
+        cur.damage = cur.damage || {};
+        const curMe = clampDamage(cur.damage?.[actorUid]);
+        const curTarget = clampDamage(cur.damage?.[selectedUid]);
+        cur.damage[actorUid] = curTarget;
+        cur.damage[selectedUid] = curMe;
+        return cur;
+      });
+      if (me === target){
+        pendingHpSwapAnimation = null;
+      }
+      await emitHpSwapEvent(actorUid, selectedUid);
+    }
+
     await markRoleAbilityUsed(roleId);
     await setRoleAbilitySelectionState(null);
+    if (roleId === "RAI_E3" && !!entry?.endTurnAfterResolve){
+      await doEndTurn();
+    }
   }
 
   function openRoleAbilitySelectionUI(entry){
     const roleId = safeText(entry?.roleId || "");
     const actorUid = safeText(entry?.actorUid || "");
+    let selectionBusy = false;
     const role = ROLE_BY_ID[roleId];
     if (!role) return;
     activeRoleAbilitySelection = entry;
+    const isActor = actorUid === state.userId;
+    if (!!entry?.privateToActor && !isActor){
+      greenShareDock?.classList.add("hidden");
+      return;
+    }
     openIdentityRevealZoom(role, actorUid, { persist:true });
     setZoomPassthrough(true);
-    const isActor = actorUid === state.userId;
     if (!isActor){
       greenShareDock?.classList.add("hidden");
       return;
     }
     const candidates = roleSelectionTargetPlayers(entry);
+    if (candidates.length === 0){
+      setRoleAbilitySelectionState(null).catch(() => {});
+      showRevealPopAt(null, { mode:"notice", message:"今は公開できません。" });
+      return;
+    }
     setGreenDockMeta({ title:"", subtitle:"" });
     if (greenShareList) greenShareList.innerHTML = "";
     if (!greenShareList || !greenShareDock) return;
     const text = buildRoleSelectionMessage(roleId);
     setGreenDockMeta({ title:text, subtitle:"" });
+    const lockRoleSelectionButtons = () => {
+      if (!greenShareList) return;
+      greenShareList.querySelectorAll("button").forEach((el) => {
+        el.disabled = true;
+        el.style.pointerEvents = "none";
+      });
+    };
     for (const p of candidates){
       const btn = document.createElement("button");
       btn.type = "button";
@@ -3215,11 +3330,48 @@
       btn.appendChild(chip);
       btn.appendChild(label);
       btn.addEventListener("click", () => {
+        if (selectionBusy) return;
         showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `「${safeText(p.name || "このプレイヤー")}」を選びますか。`, async () => {
+          if (selectionBusy) return;
+          selectionBusy = true;
+          lockRoleSelectionButtons();
           await completeRoleAbilitySelection(entry, p.id);
-        }, { fixedLower:true, dismissOnOutside:false, noCaret:true });
+        }, { fixedLower:true, noCaret:true });
       });
       greenShareList.appendChild(btn);
+    }
+    if (roleId === "RAI_E3" || roleId === "SHA_U2"){
+      const skipBtn = document.createElement("button");
+      skipBtn.type = "button";
+      skipBtn.className = "green-share-btn";
+      skipBtn.textContent = "使わない";
+      const spec = roleSelectionSpec(roleId);
+      const disableSkip = !!entry?.justRevealed;
+      if (disableSkip){
+        skipBtn.style.opacity = "0.45";
+        skipBtn.style.cursor = "not-allowed";
+      }
+      skipBtn.addEventListener("click", () => {
+        if (disableSkip || selectionBusy) return;
+        const abilityName = safeText(spec?.abilityName || "能力");
+        showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
+          if (selectionBusy) return;
+          selectionBusy = true;
+          lockRoleSelectionButtons();
+          await setRoleAbilitySelectionState(null);
+          if (roleId === "RAI_E3" && !!entry?.endTurnAfterResolve){
+            await doEndTurn();
+          }
+        }, {
+          messageHtml: `<span class="ability-pill">${escapeHtml(abilityName)}</span>を使いませんか。`,
+          yesLabel: "はい",
+          noLabel: "いいえ",
+          fixedLower:true,
+          noCaret:true,
+          dismissOnOutside:true
+        });
+      });
+      greenShareList.appendChild(skipBtn);
     }
     greenShareActions?.classList.add("hidden");
     greenShareDock.classList.remove("hidden");
@@ -4476,12 +4628,41 @@
     }
     if (isMyIdentityRevealed()){
       if (isRoleSelectionAbility(myRoleId)){
-        if (isRoleAbilityUsed(myRoleId) || !isMyTurn()) return;
+        if (myRoleId === "RAI_G3"){
+          e.stopPropagation();
+          showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
+          return;
+        }
+        if (!isMyTurn()) return;
+        if (myRoleId === "RAI_E3"){
+          if (isRoleAbilityUsed("RAI_E3")) return;
+          const check = emmaAbilityAvailability();
+          if (!check.ok){
+            e.stopPropagation();
+            showRevealPopAt(idCard, { mode:"notice", message:check.message || "今は使えません。" });
+            return;
+          }
+        } else if (myRoleId === "SHA_U2"){
+          if (isRoleAbilityUsed("SHA_U2")) return;
+          const check = uranusAbilityAvailability();
+          if (!check.ok){
+            e.stopPropagation();
+            showRevealPopAt(idCard, { mode:"notice", message:check.message || "今は使えません。" });
+            return;
+          }
+        } else {
+          if (isRoleAbilityUsed(myRoleId)) return;
+          if (!canStartRoleSelection(myRoleId, state.userId)){
+            e.stopPropagation();
+            showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
+            return;
+          }
+        }
         const spec = roleSelectionSpec(myRoleId);
         e.stopPropagation();
         showRevealPopAt(idCard, {
           action: `role_select:${myRoleId}`,
-          messageHtml: `(<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>)を使いますか。`
+          messageHtml: `<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>を使いますか。`
         });
         return;
       }
@@ -4495,7 +4676,7 @@
       e.stopPropagation();
       showRevealPopAt(idCard, {
         action: "wight_ability",
-        messageHtml: `(<span class="ability-pill">亡者の王</span>)を使いますか。`
+        messageHtml: `<span class="ability-pill">亡者の王</span>を使いますか。`
       });
       return;
     }
@@ -4517,7 +4698,12 @@
         return;
       }
     }
-    if (myRoleId === "SHA_U1"){
+    if (myRoleId === "SHA_U1" || myRoleId === "RAI_G3"){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
+      return;
+    }
+    if (myRoleId === "SHA_U2" && !canStartRoleSelection(myRoleId, state.userId)){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
       return;
@@ -4609,14 +4795,24 @@
       const roleId = safeText(pendingRevealAction.split(":")[1] || "");
       const role = ROLE_BY_ID[roleId];
       if (role && !isRoleAbilityUsed(roleId)){
-        await setRoleAbilitySelectionState({ roleId, actorUid: state.userId });
+        if (!canStartRoleSelection(roleId, state.userId)){
+          hideRevealPop();
+          showRevealPopAt(null, { mode:"notice", message:((roleId === "RAI_E3" || roleId === "SHA_U2") ? "今は使えません。" : "今は公開できません。") });
+          return;
+        }
+        await setRoleAbilitySelectionState({ roleId, actorUid: state.userId, privateToActor: (roleId === "SHA_U2") });
       }
       hideRevealPop();
       return;
     }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
     if (isRoleSelectionAbility(myRoleId) && !isRoleAbilityUsed(myRoleId)){
-      await setRoleAbilitySelectionState({ roleId: myRoleId, actorUid: state.userId });
+      if (!canStartRoleSelection(myRoleId, state.userId)){
+        hideRevealPop();
+        showRevealPopAt(null, { mode:"notice", message:((myRoleId === "RAI_E3" || myRoleId === "SHA_U2") ? "今は使えません。" : "今は公開できません。") });
+        return;
+      }
+      await setRoleAbilitySelectionState({ roleId: myRoleId, actorUid: state.userId, justRevealed:true, privateToActor: (myRoleId === "RAI_E3" || myRoleId === "SHA_U2") });
     }
     if (myRoleId === "CIT_A1"){
       setTimeout(() => {
@@ -4728,6 +4924,11 @@
 
   btnAttackResultEnd?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
+    if (openedEmma){
+      await finalizePendingAttackResolution(false);
+      return;
+    }
     await finalizePendingAttackResolution(true);
   });
 
@@ -5182,6 +5383,12 @@
       cachePendingAttackResolution(null);
     }
     showTurnHint("");
+    if (isMyTurn() && isMyIdentityRevealed() && isMyRole("SHA_U2") && !isRoleAbilityUsed("SHA_U2")){
+      const check = uranusAbilityAvailability();
+      if (check.ok){
+        setRoleAbilitySelectionState({ roleId:"SHA_U2", actorUid: state.userId, privateToActor:true }).catch(() => {});
+      }
+    }
   }
 
   function canUseRoom4Steal(){
@@ -5903,6 +6110,66 @@
     }
   }
 
+  function animateHpBoardSwapIfNeeded(){
+    const swap = pendingHpSwapAnimation;
+    if (!swap || !hpBoard) return;
+    pendingHpSwapAnimation = null;
+    const fromA = hpBoard.querySelector(`.hp-cell .chip16[data-uid="${swap.aUid}"]`);
+    const fromB = hpBoard.querySelector(`.hp-cell .chip16[data-uid="${swap.bUid}"]`);
+    if (!fromA || !fromB) return;
+
+    const rectA = fromA.getBoundingClientRect();
+    const rectB = fromB.getBoundingClientRect();
+    if (!rectA.width || !rectB.width) return;
+
+    const floatA = fromA.cloneNode(true);
+    const floatB = fromB.cloneNode(true);
+    for (const node of [floatA, floatB]){
+      node.style.position = 'fixed';
+      node.style.margin = '0';
+      node.style.zIndex = '360';
+      node.style.pointerEvents = 'none';
+    }
+
+    floatA.style.left = `${rectA.left}px`;
+    floatA.style.top = `${rectA.top}px`;
+    floatB.style.left = `${rectB.left}px`;
+    floatB.style.top = `${rectB.top}px`;
+
+    document.body.appendChild(floatA);
+    document.body.appendChild(floatB);
+
+    fromA.style.opacity = '0';
+    fromB.style.opacity = '0';
+
+    const dxAB = rectB.left - rectA.left;
+    const dyAB = rectB.top - rectA.top;
+    const dxBA = rectA.left - rectB.left;
+    const dyBA = rectA.top - rectB.top;
+    const curveY = Math.max(28, Math.min(84, Math.abs(dxAB) * 0.28));
+
+    const animationMs = 520;
+    const easing = 'cubic-bezier(.22,.75,.2,1)';
+    const endA = floatA.animate([
+      { transform:'translate(0px, 0px) scale(1)' },
+      { transform:`translate(${dxAB*0.5}px, ${dyAB*0.5-curveY}px) scale(1.05)` },
+      { transform:`translate(${dxAB}px, ${dyAB}px) scale(1)` }
+    ], { duration:animationMs, easing, fill:'forwards' });
+
+    const endB = floatB.animate([
+      { transform:'translate(0px, 0px) scale(1)' },
+      { transform:`translate(${dxBA*0.5}px, ${dyBA*0.5+curveY}px) scale(1.05)` },
+      { transform:`translate(${dxBA}px, ${dyBA}px) scale(1)` }
+    ], { duration:animationMs, easing, fill:'forwards' });
+
+    Promise.allSettled([endA.finished, endB.finished]).finally(() => {
+      floatA.remove();
+      floatB.remove();
+      fromA.style.opacity = '';
+      fromB.style.opacity = '';
+    });
+  }
+
   function renderHpBoard(){
     if (!hpBoard) return;
     if (!state.roomCode) return;
@@ -5952,6 +6219,7 @@
         cell.appendChild(chip);
       }
     }
+    animateHpBoardSwapIfNeeded();
   }
 
   function renderPositionLine(){
@@ -6204,6 +6472,10 @@
           d6: Number(ev.d6 || 1),
           d4: Number(ev.d4 || 1)
         });
+      } else if (kind === "role_felix"){
+        runCornerD6Roll(Number(ev.d6 || 1));
+      } else if (kind === "role_emma"){
+        runCornerD4Roll(Number(ev.d4 || 1));
       }
     });
   }
@@ -6221,6 +6493,33 @@
       if (!ev || !at || at <= roleFlashEventSeenAt) return;
       roleFlashEventSeenAt = at;
       showRoleFlashOverlay(safeText(ev.roleId || ""), 1200);
+    });
+  }
+
+  
+  function subscribeHpSwapEvents(){
+    const hpSwapRef = ref(db, `rooms/${state.roomCode}/effectEvents/hpSwap`);
+    onValue(hpSwapRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!hpSwapEventInitialized){
+        hpSwapEventInitialized = true;
+        hpSwapEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= hpSwapEventSeenAt) return;
+      hpSwapEventSeenAt = at;
+      const aUid = safeText(ev.aUid || "");
+      const bUid = safeText(ev.bUid || "");
+      if (!aUid || !bUid) return;
+      pendingHpSwapAnimation = { aUid, bUid, at };
+      renderHpBoard();
+      setTimeout(() => {
+        if (!pendingHpSwapAnimation){
+          pendingHpSwapAnimation = { aUid, bUid, at };
+        }
+        renderHpBoard();
+      }, 120);
     });
   }
 
@@ -7493,6 +7792,58 @@
       const stop = setTimeout(() => {
         wrap.classList.remove('rolling');
         renderD6Face(d6, finalFace);
+        resolve();
+      }, 980);
+      diceRollTimers.push(stop);
+    });
+    return finalFace;
+  }
+
+  async function runCornerD4Roll(fixedFace = null){
+    if (!diceRollOverlay) return Number(fixedFace || (1 + Math.floor(Math.random() * 4)));
+    clearDiceRollTimers();
+    diceRollOverlay.innerHTML = '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'dice-flyer rolling';
+    const d4 = document.createElement('div');
+    d4.className = 'd4';
+    wrap.appendChild(d4);
+    diceRollOverlay.appendChild(wrap);
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const corners = [
+      { x: 60, y: 60 },
+      { x: Math.max(60, width - 60), y: 60 },
+      { x: 60, y: Math.max(60, height - 60) },
+      { x: Math.max(60, width - 60), y: Math.max(60, height - 60) }
+    ];
+    const start = corners[Math.floor(Math.random() * corners.length)];
+    const end = { x: width / 2, y: height / 2 };
+    setFlyerTransform(wrap, start.x, start.y, Math.floor(Math.random() * 360));
+
+    const animDuration = 900;
+    const rollStartAt = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - rollStartAt;
+      if (elapsed >= animDuration) return;
+      renderD4Face(d4, 1 + Math.floor(Math.random() * 4));
+      const id = setTimeout(tick, 70 + Math.floor(Math.random() * 80));
+      diceRollTimers.push(id);
+    };
+    tick();
+
+    const launch = setTimeout(() => {
+      setFlyerTransform(wrap, end.x, end.y, 720 + Math.floor(Math.random() * 360));
+    }, 20);
+    diceRollTimers.push(launch);
+
+    const finalFace = Number(fixedFace || (1 + Math.floor(Math.random() * 4)));
+    await new Promise(resolve => {
+      const stop = setTimeout(() => {
+        wrap.classList.remove('rolling');
+        renderD4Face(d4, finalFace);
         resolve();
       }, 980);
       diceRollTimers.push(stop);
@@ -10382,6 +10733,14 @@
     updateEquipDockTop();
   });
 
+  async function tryOpenEmmaSelectionOnEndAttempt(){
+    if (!isMyRole("RAI_E3") || !isMyIdentityRevealed()) return false;
+    const check = emmaAbilityAvailability();
+    if (!check.ok) return false;
+    await setRoleAbilitySelectionState({ roleId:"RAI_E3", actorUid: state.userId, privateToActor:true, endTurnAfterResolve:true });
+    return true;
+  }
+
   async function doEndTurn(){
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
@@ -10398,6 +10757,8 @@
 
   btnEndTurn?.addEventListener('click', async () => {
     if (!canShowEndTurnButton()) return;
+    const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
+    if (openedEmma) return;
     if (!turnState()?.attackDone){
       showEndTurnConfirm({ message:"本当に終了しますか。" });
       return;
@@ -10414,6 +10775,9 @@
       hideEndTurnConfirm();
       return;
     }
+    hideEndTurnConfirm();
+    const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
+    if (openedEmma) return;
     await doEndTurn();
   });
 
@@ -10492,6 +10856,7 @@
     subscribeDamage();
     subscribeDiceEvents();
     subscribeRoleFlashEvents();
+    subscribeHpSwapEvents();
     subscribeWalpurgisSwapEvents();
 
     renderSeatTiles();
