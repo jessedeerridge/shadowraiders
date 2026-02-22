@@ -6104,18 +6104,28 @@
     });
   }
 
+  async function waitForHpBoardSwapAnimationEnd(maxWaitMs = 1800){
+    const startedAt = Date.now();
+    while (hpBoardAnimationActive && (Date.now() - startedAt) < maxWaitMs){
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+  }
+
   async function finalizePendingAttackResolution(endTurnAfterApply){
     const pending = pendingAttackResolution;
     pendingAttackResolution = null;
     attackTurnEndChoicePending = false;
-    suppressEndTurnButton = !!endTurnAfterApply;
+    suppressEndTurnButton = true;
     cachePendingAttackResolution(null);
     await upsertPendingAttackResolution([], "");
     renderTurnEndButton();
     hideAttackResultPop();
     clearAttackResultDice();
     if (!pending || pending.applied){
-      if (!endTurnAfterApply) suppressEndTurnButton = false;
+      if (!endTurnAfterApply){
+        suppressEndTurnButton = false;
+        renderTurnEndButton();
+      }
       return;
     }
     pending.applied = true;
@@ -6125,7 +6135,13 @@
       await doEndTurn();
       suppressEndTurnButton = false;
       renderTurnEndButton();
+      return;
     }
+
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await waitForHpBoardSwapAnimationEnd();
+    suppressEndTurnButton = false;
+    renderTurnEndButton();
   }
 
   function animateHpBoardSwapIfNeeded(){
