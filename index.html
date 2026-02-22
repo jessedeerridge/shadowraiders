@@ -4599,6 +4599,7 @@
           pendingEquipAction = null;
           await setSeatEquipSelectionState(null);
           renderTurnEndButton();
+          closeEquipExpandIfOpen();
           greenShareDock?.classList.add("hidden");
           const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
           if (ok){
@@ -4646,6 +4647,7 @@
         pendingEquipAction = null;
         await setSeatEquipSelectionState(null);
         renderTurnEndButton();
+        closeEquipExpandIfOpen();
         zoomDismissHandler = null;
         const ok = await stealEquipmentFromPlayer(action.ownerUid, action.sourceKey);
         if (ok){
@@ -8600,6 +8602,10 @@
     if (isEquipSelectionLockActive() && zoomBackdrop?.classList.contains('hidden')){
       restorePendingEquipSelection();
     }
+  }
+  function closeEquipExpandIfOpen(){
+    if (!equipExpandBackdrop || equipExpandBackdrop.classList.contains('hidden')) return;
+    closeEquipExpand();
   }
   function toggleRoomGuideOverlay(){
     roomGuideVisible = !roomGuideVisible;
