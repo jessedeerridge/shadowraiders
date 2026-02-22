@@ -3625,10 +3625,7 @@
   }
 
   function hideGreenShareDock(){
-    if (activeRoleAbilitySelection){
-      greenShareDock?.classList.add("hidden");
-      return;
-    }
+    if (activeRoleAbilitySelection) return;
     greenShareCard = null;
     pendingGreenRequestId = "";
     pendingGreenAnswerMsg = null;
@@ -3801,6 +3798,7 @@
     openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
     if (options.persist) return;
     setTimeout(() => {
+      if (activeRoleAbilitySelection) return;
       if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
     }, 2000);
   }
@@ -9631,6 +9629,9 @@
       latestPlayers = players;
       tryRestorePendingGreenSession();
       tryRestorePendingCardTargetSession().catch(() => {});
+      if (activeRoleAbilitySelection){
+        openRoleAbilitySelectionUI(activeRoleAbilitySelection);
+      }
 
       const mySeat = players.find(p => p.id === state.userId);
       if (mySeat) {
@@ -10094,7 +10095,8 @@
      ========================================================= */
   function renderMyRoleCard(role){
     myRoleCard.innerHTML = '';
-    if (!role){
+    const isSeatedNow = latestPlayers.some(p => p.id === state.userId && Number(p.seatIndex || 0) > 0);
+    if (!isSeatedNow || !role){
       myRoleDock.classList.remove('visible');
       renderEquipmentDock();
       return;
@@ -10109,6 +10111,7 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (activeRoleAbilitySelection && safeText(activeRoleAbilitySelection.actorUid || "") === safeText(state.userId || "")) return;
         const action = captureSelectionRestoreAction();
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
         if (action){
@@ -10128,6 +10131,7 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (activeRoleAbilitySelection && safeText(activeRoleAbilitySelection.actorUid || "") === safeText(state.userId || "")) return;
         const action = captureSelectionRestoreAction();
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
         if (action){
