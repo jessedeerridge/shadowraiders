@@ -3356,6 +3356,23 @@
     });
   }
 
+  async function startRoleAbilitySelection(roleId){
+    const rid = safeText(roleId || "");
+    const spec = roleAbilitySelectionSpecByRoleId(rid);
+    if (!spec || !canStartFelixOrFeliciaAbility(rid)) return false;
+    const payload = {
+      phase:"selecting",
+      roleId: rid,
+      ownerUid: state.userId,
+      titleHtml: spec.title,
+      at: Date.now()
+    };
+    pendingRoleAbilitySessionEntry = payload;
+    restoreRoleAbilitySelectionView(payload);
+    await setRoleAbilitySessionState(payload);
+    return true;
+  }
+
   function hideRoleAbilitySelectionUi(){
     pendingRoleAbilitySelection = null;
     cardPlayerSelectActive = false;
@@ -4647,31 +4664,16 @@
     }
     if (pendingRevealAction === "role_ability_RAI_F1" || pendingRevealAction === "role_ability_RAI_F2"){
       const roleId = pendingRevealAction.endsWith("RAI_F1") ? "RAI_F1" : "RAI_F2";
-      const spec = roleAbilitySelectionSpecByRoleId(roleId);
       hideRevealPop();
-      if (!spec || !canStartFelixOrFeliciaAbility(roleId)){
+      const started = await startRoleAbilitySelection(roleId);
+      if (!started){
         showRevealPopAt(null, { mode:"notice", message:"今は公開できません。" });
-        return;
       }
-      await setRoleAbilitySessionState({
-          phase:"selecting",
-          roleId,
-          ownerUid: state.userId,
-          titleHtml: spec.title
-        });
       return;
     }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
     if ((myRoleId === "RAI_F1" || myRoleId === "RAI_F2") && canStartFelixOrFeliciaAbility(myRoleId)){
-      const spec = roleAbilitySelectionSpecByRoleId(myRoleId);
-      if (spec){
-        await setRoleAbilitySessionState({
-          phase:"selecting",
-          roleId: myRoleId,
-          ownerUid: state.userId,
-          titleHtml: spec.title
-        });
-      }
+      await startRoleAbilitySelection(myRoleId);
     }
     if (myRoleId === "CIT_A1"){
       setTimeout(() => {
