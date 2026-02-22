@@ -2014,6 +2014,7 @@
     return !!t.moveDone && !t.attackDone && !t.deckDrawDone;
   }
   function canClickType(type){
+    if (isIdentityPromptInteractionLockActive()) return false;
     if (cardPlayerSelectActive) return false;
     if (isEquipSelectionLockActive()) return false;
     if (canDrawTypeNormally(type)) return true;
@@ -2543,6 +2544,29 @@
     identityPromptPop?.classList.add("hidden");
   }
 
+  function isIdentityPromptInteractionLockActive(){
+    if (!pendingIdentityPrompt?.closeZoomOnChoice) return false;
+    return !identityPromptPop?.classList.contains("hidden");
+  }
+
+  function canInteractWithMapPlayerIcons(){
+    return !isIdentityPromptInteractionLockActive();
+  }
+
+  function restoreIdentityPromptSelection(action = null){
+    const next = action || pendingIdentityPrompt;
+    const cardObj = next?.cardObj || null;
+    if (!cardObj) return;
+    const canReveal = !!next?.canReveal;
+    openZoomFromDeckCard(cardObj, safeText(next?.cardTheme || "white") || "white", { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
+    identityPromptMsg.textContent = safeText(next?.message || "");
+    btnIdentityPromptYes?.classList.toggle("pop-disabled", !canReveal);
+    btnIdentityPromptYes?.classList.toggle("pop-dark", canReveal);
+    if (btnIdentityPromptYes) btnIdentityPromptYes.disabled = !canReveal;
+    identityPromptPop?.classList.remove("hidden");
+  }
+
   function cardByName(name){
     const target = safeText(name || "");
     if (!target) return null;
@@ -2630,7 +2654,11 @@
     pendingIdentityPrompt = {
       onYes: typeof onYes === "function" ? onYes : null,
       onNo: typeof onNo === "function" ? onNo : null,
-      closeZoomOnChoice: !!openZoom
+      closeZoomOnChoice: !!openZoom,
+      cardObj: cardObj || null,
+      cardTheme: safeText(cardTheme || "white") || "white",
+      message: safeText(message || ""),
+      canReveal: !!canReveal
     };
     identityPromptMsg.textContent = safeText(message || "");
 
@@ -2642,6 +2670,7 @@
     btnIdentityPromptNo.disabled = false;
 
     identityPromptPop.classList.remove("hidden");
+    if (openZoom) setZoomPassthrough(true);
 
     const cardName = safeText(cardObj?.name || "");
     if (IDENTITY_PROMPT_CARD_NAMES.has(cardName)){
@@ -5251,6 +5280,15 @@
     if (cardPlayerSelectActive && pendingCardTargetSelection?.cardObj){
       return { kind:"card_target", cardObj: pendingCardTargetSelection.cardObj };
     }
+    if (isIdentityPromptInteractionLockActive()){
+      return {
+        kind:"identity_prompt",
+        cardObj: pendingIdentityPrompt?.cardObj || null,
+        cardTheme: safeText(pendingIdentityPrompt?.cardTheme || "white") || "white",
+        message: safeText(pendingIdentityPrompt?.message || ""),
+        canReveal: !!pendingIdentityPrompt?.canReveal
+      };
+    }
     return null;
   }
 
@@ -5262,7 +5300,9 @@
     }
     if (action.kind === "card_target"){
       await openPersistentCardTargetSelection(action.cardObj, { restore:true });
+      return;
     }
+    if (action.kind === "identity_prompt") restoreIdentityPromptSelection(action);
   }
 
   function restorePendingEquipSelection(action = null){
@@ -7884,8 +7924,9 @@
   const rx = 3;
 
   if (!eliminated && uid && uid === state.userId){
-    g.style.cursor = 'pointer';
+    g.style.cursor = canInteractWithMapPlayerIcons() ? 'pointer' : 'default';
     g.addEventListener('click', (e) => {
+      if (!canInteractWithMapPlayerIcons()) return;
       if (cardPlayerSelectActive) return;
       if (canUseRoom3Action()){
         if (hasEquipmentByName(uid, "幸運のブローチ")) return;
@@ -7927,7 +7968,7 @@
       triggerMoveDiceForAll();
     });
   } else if (!eliminated && uid){
-    if (pulse) g.style.cursor = 'pointer';
+    if (pulse) g.style.cursor = canInteractWithMapPlayerIcons() ? 'pointer' : 'default';
     const longPressMs = 500;
     let markerLongPressTimer = null;
     let markerLongPressDone = false;
@@ -7938,6 +7979,7 @@
     };
 
     g.addEventListener('pointerdown', (e) => {
+      if (!canInteractWithMapPlayerIcons()) return;
       if (cardPlayerSelectActive) return;
       if (isEquipSelectionLockActive()) return;
       markerLongPressDone = false;
@@ -7954,6 +7996,7 @@
     g.addEventListener('pointercancel', clearMarkerLongPress);
 
     g.addEventListener('click', (e) => {
+      if (!canInteractWithMapPlayerIcons()) return;
       if (cardPlayerSelectActive) return;
       if (isEquipSelectionLockActive()) return;
       clearMarkerLongPress();
@@ -8618,6 +8661,7 @@
     else closeHelp();
   });
   roomGuideBtn.addEventListener('click', () => {
+    if (isIdentityPromptInteractionLockActive()) return;
     if (joinBox.classList.contains('hidden')) toggleRoomGuideOverlay();
   });
   helpBackdrop.addEventListener('click', (e) => {
