@@ -4092,6 +4092,7 @@
     const byId = new Map(latestPlayers.map(p => [p.id, p]));
     const selected = payload.selected || null;
     let lastCardsWrap = null;
+    let hasLootableCard = false;
 
     for (const uid of payload.defeatedUids){
       const p = byId.get(uid);
@@ -4113,6 +4114,7 @@
         cardEl.dataset.cardName = safeText(it.name || "");
         cardEl.dataset.itemKind = isIdentityEquipItem(it) ? "identity" : "equip";
         if (!isIdentityEquipItem(it)){
+          hasLootableCard = true;
           cardEl.classList.add("equip-defeat-pulse");
         }
         if (selected && !selected.noSteal && selected.ownerUid === uid && selected.sourceKey === safeText(it.sourceKey || "") && !isIdentityEquipItem(it)){
@@ -4124,6 +4126,11 @@
       row.appendChild(cardsWrap);
       attackLootBody.appendChild(row);
       lastCardsWrap = cardsWrap;
+    }
+
+    if (!hasLootableCard){
+      closeAttackLootPanel();
+      return;
     }
 
     const noStealCard = document.createElement("div");
@@ -4159,6 +4166,7 @@
     const ownerUid = safeText(selection?.ownerUid || "");
     const sourceKey = safeText(selection?.sourceKey || "");
     if (!ownerUid || !sourceKey) return;
+    closeAttackLootPanel();
     const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
     if (ok){
       await clearAttackLootPending();
