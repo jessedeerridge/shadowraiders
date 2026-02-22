@@ -1352,8 +1352,6 @@
     transform:scale(var(--zoom, 4));
     transform-origin:center;
     will-change:transform;
-    -webkit-font-smoothing:antialiased;
-    text-rendering:optimizeLegibility;
     transition:transform .35s ease;
   }
   .zoom-stage.zoom-stage-multi{
@@ -1371,17 +1369,6 @@
   .zoom-stage .card72,
   .zoom-stage .id72{
     box-shadow:0 18px 50px rgba(0,0,0,.45);
-    transform:translateZ(0);
-    backface-visibility:hidden;
-    -webkit-backface-visibility:hidden;
-  }
-
-  @media (hover:none) and (pointer:coarse){
-    .zoom-stage,
-    .zoom-backdrop.green-reveal-active .zoom-stage,
-    .zoom-backdrop.david-select-active .zoom-stage{
-      will-change:auto;
-    }
   }
   .zoom-stage .equip-steal-pulse{
     animation:none;
