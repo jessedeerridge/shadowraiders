@@ -2176,6 +2176,7 @@
     "SHA_W1", // ワイト
   ]);
   let cardPlayerSelectActive = false;
+  let suspendedCardTargetSelectionCard = null;
   let activeGreenReplies = {};
   let moveDiceEventSeenAt = 0;
   let moveDiceEventInitialized = false;
@@ -3208,6 +3209,7 @@
     try {
       await spec.resolver(targetUid);
     } finally {
+      suspendedCardTargetSelectionCard = null;
       cardPlayerSelectActive = false;
       renderTurnEndButton();
       await setCardTargetSessionState(null);
@@ -3219,6 +3221,7 @@
   async function openPersistentCardTargetSelection(cardObj, { restore=false } = {}){
     const spec = cardTargetSelectionSpec(cardObj);
     if (!spec) return false;
+    suspendedCardTargetSelectionCard = cardObj;
     openZoomFromDeckCard(cardObj, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
     const opened = openTargetSelectDock({
       title: spec.title,
@@ -3238,6 +3241,7 @@
         try {
           await spec.resolver(uid);
         } finally {
+          suspendedCardTargetSelectionCard = null;
           await setCardTargetSessionState(null);
           closeZoom();
         }
@@ -3245,6 +3249,7 @@
     });
 
     if (!opened){
+      suspendedCardTargetSelectionCard = null;
       await setCardTargetSessionState(null);
       closeZoom();
       return false;
@@ -3257,6 +3262,19 @@
       });
     }
     return true;
+  }
+
+  function suspendCardTargetSelectionUi(){
+    if (!cardPlayerSelectActive || !suspendedCardTargetSelectionCard) return false;
+    greenShareDock?.classList.add("hidden");
+    closeZoom();
+    return true;
+  }
+
+  async function restoreCardTargetSelectionUi(){
+    if (!suspendedCardTargetSelectionCard) return;
+    const cardObj = suspendedCardTargetSelectionCard;
+    await openPersistentCardTargetSelection(cardObj, { restore:true });
   }
 
   function openGreenShareDock(cardObj, { attackRangeOnly=false } = {}){
@@ -8482,6 +8500,8 @@
     });
   }
   function openHelp(){
+    const suspended = suspendCardTargetSelectionUi();
+    helpBackdrop.dataset.restoreCardTarget = suspended ? "1" : "";
     renderHelpList();
     helpBackdrop.classList.remove('hidden');
   }
@@ -8499,7 +8519,13 @@
     });
     await resetAllAbilityUsageForUids([state.userId]);
   }
-  function closeHelp(){ helpBackdrop.classList.add('hidden'); }
+  async function closeHelp(){
+    helpBackdrop.classList.add('hidden');
+    if (helpBackdrop.dataset.restoreCardTarget === "1"){
+      helpBackdrop.dataset.restoreCardTarget = "";
+      await restoreCardTargetSelectionUi();
+    }
+  }
   function renderEquipExpandBody(){
     if (!equipExpandBody || !equipBody) return;
     equipExpandBody.innerHTML = equipBody.innerHTML;
@@ -8529,11 +8555,17 @@
   }
   function openEquipExpand(){
     if (!equipDock?.classList.contains('visible')) return;
+    const suspended = suspendCardTargetSelectionUi();
+    equipExpandBackdrop.dataset.restoreCardTarget = suspended ? "1" : "";
     renderEquipExpandBody();
     equipExpandBackdrop?.classList.remove('hidden');
   }
-  function closeEquipExpand(){
+  async function closeEquipExpand(){
     equipExpandBackdrop?.classList.add('hidden');
+    if (equipExpandBackdrop?.dataset.restoreCardTarget === "1"){
+      equipExpandBackdrop.dataset.restoreCardTarget = "";
+      await restoreCardTargetSelectionUi();
+    }
     if (isEquipSelectionLockActive() && zoomBackdrop?.classList.contains('hidden')){
       restorePendingEquipSelection();
     }
@@ -8543,19 +8575,19 @@
     roomGuideBtn.classList.toggle('active', roomGuideVisible);
     renderRoomGuideLayer();
   }
-  helpBtn.addEventListener('click', () => {
+  helpBtn.addEventListener('click', async () => {
     if (!joinBox.classList.contains('hidden')) return;
     if (helpBackdrop.classList.contains('hidden')) openHelp();
-    else closeHelp();
+    else await closeHelp();
   });
   roomGuideBtn.addEventListener('click', () => {
     if (joinBox.classList.contains('hidden')) toggleRoomGuideOverlay();
   });
-  helpBackdrop.addEventListener('click', (e) => {
-    if (!helpBackdrop.classList.contains('hidden') && !e.target.closest('.help-pop')) closeHelp();
+  helpBackdrop.addEventListener('click', async (e) => {
+    if (!helpBackdrop.classList.contains('hidden') && !e.target.closest('.help-pop')) await closeHelp();
   });
-  equipExpandBackdrop?.addEventListener('click', (e) => {
-    if (!equipExpandBackdrop.classList.contains('hidden') && !e.target.closest('.equip-expand-pop')) closeEquipExpand();
+  equipExpandBackdrop?.addEventListener('click', async (e) => {
+    if (!equipExpandBackdrop.classList.contains('hidden') && !e.target.closest('.equip-expand-pop')) await closeEquipExpand();
   });
   equipExpandBody?.addEventListener('click', (e) => {
     const card = e.target.closest('.card72.wb-front, .id72');
@@ -9595,12 +9627,22 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
+        const suspendedCardTarget = suspendCardTargetSelectionUi();
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
+        openZoomFromRole(role, { enableRevealPop:false, showCloseButton:false });
         if (action){
           setZoomPassthrough(false);
+          const prevDismiss = zoomDismissHandler;
           zoomDismissHandler = async () => {
+            if (typeof prevDismiss === 'function') await prevDismiss();
             restorePendingEquipSelection(action);
+            if (suspendedCardTarget) await restoreCardTargetSelectionUi();
+          };
+        } else if (suspendedCardTarget){
+          const prevDismiss = zoomDismissHandler;
+          zoomDismissHandler = async () => {
+            if (typeof prevDismiss === 'function') await prevDismiss();
+            await restoreCardTargetSelectionUi();
           };
         }
       });
@@ -9614,12 +9656,22 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
+        const suspendedCardTarget = suspendCardTargetSelectionUi();
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
+        openZoomFromRole(role, { enableRevealPop:false, showCloseButton:false }); // 拡大はオモテ（id72）
         if (action){
           setZoomPassthrough(false);
+          const prevDismiss = zoomDismissHandler;
           zoomDismissHandler = async () => {
+            if (typeof prevDismiss === 'function') await prevDismiss();
             restorePendingEquipSelection(action);
+            if (suspendedCardTarget) await restoreCardTargetSelectionUi();
+          };
+        } else if (suspendedCardTarget){
+          const prevDismiss = zoomDismissHandler;
+          zoomDismissHandler = async () => {
+            if (typeof prevDismiss === 'function') await prevDismiss();
+            await restoreCardTargetSelectionUi();
           };
         }
       });
