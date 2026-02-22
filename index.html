@@ -3754,7 +3754,7 @@
 
       const shouldLock = !canClickType(t);
 
-      const noDim = ["white", "black", "green"].includes(t);
+      const noDim = !isMyTurn() && ["white", "black", "green"].includes(t);
 
       applyLocked(el, shouldLock, { noDim });
     }
