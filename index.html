@@ -3838,7 +3838,7 @@
           identityRevealSeenByUid[uid] = at;
           const rid = safeText(row?.identity?.roleId || "");
           const role = ROLE_BY_ID[rid];
-          if (role && uid !== state.userId) openIdentityRevealZoom(role, uid);
+          if (role) openIdentityRevealZoom(role, uid);
         }
       }
       equipCache = next;
