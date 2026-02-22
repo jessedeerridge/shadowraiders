@@ -3662,6 +3662,7 @@
   }
   function openIdentityRevealZoom(role, revealerUid){
     if (!role) return;
+    const revealToken = ++activeIdentityRevealZoomToken;
     const wrap = document.createElement("div");
     wrap.style.position = "relative";
     const cardEl = createIdentityCard(role);
@@ -3683,7 +3684,8 @@
 
     openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
     setTimeout(() => {
-      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
+      if (revealToken !== activeIdentityRevealZoomToken) return;
+      closeZoom();
     }, 2000);
   }
   function openMultiIdentityRevealZoom(entries = []){
@@ -3916,6 +3918,7 @@
   let attackExpectedEliminationAt = 0;
   let previousEliminatedMap = {};
   let pendingAttackLoot = null;
+  let activeIdentityRevealZoomToken = 0;
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
   const attackLootBody = document.getElementById("attackLootBody");
 
@@ -3958,9 +3961,18 @@
   async function createOrMergeAttackLootPending(defeatedUids = []){
     const uid = safeText(state.userId || "");
     if (!uid) return;
-    const list = (defeatedUids || []).map(v => safeText(v || "")).filter(v => v && v !== uid);
+    const list = (defeatedUids || [])
+      .map(v => safeText(v || ""))
+      .filter(v => v && v !== uid)
+      .filter(v => hasNonIdentityEquipment(v));
     if (!list.length) return;
-    const merged = new Set([...(pendingAttackLoot?.defeatedUids || []), ...list]);
+    const merged = new Set(
+      [...(pendingAttackLoot?.defeatedUids || []), ...list].filter(v => hasNonIdentityEquipment(v))
+    );
+    if (!merged.size){
+      await clearAttackLootPending();
+      return;
+    }
     pendingAttackLoot = {
       uid,
       defeatedUids:[...merged],
@@ -4088,12 +4100,18 @@
       return;
     }
 
+    const lootableDefeatedUids = payload.defeatedUids.filter(v => hasNonIdentityEquipment(v));
+    if (!lootableDefeatedUids.length){
+      clearAttackLootPending();
+      return;
+    }
+
     attackLootBody.innerHTML = "";
     const byId = new Map(latestPlayers.map(p => [p.id, p]));
     const selected = payload.selected || null;
     let lastCardsWrap = null;
 
-    for (const uid of payload.defeatedUids){
+    for (const uid of lootableDefeatedUids){
       const p = byId.get(uid);
       if (!p) continue;
       const list = listEquipForUid(uid);
@@ -4126,24 +4144,26 @@
       lastCardsWrap = cardsWrap;
     }
 
-    const noStealCard = document.createElement("div");
-    noStealCard.className = "card72 wb-front wb-white attack-loot-no-steal equip-defeat-pulse";
-    noStealCard.dataset.noSteal = "1";
-    noStealCard.textContent = "奪わない";
-    if (selected?.noSteal){
-      noStealCard.classList.remove("equip-defeat-pulse");
-      noStealCard.classList.add("equip-steal-pulse");
-    }
-    if (lastCardsWrap){
-      lastCardsWrap.appendChild(noStealCard);
-    } else {
-      const row = document.createElement("div");
-      row.className = "attack-loot-row";
-      const cardsWrap = document.createElement("div");
-      cardsWrap.className = "attack-loot-cards";
-      cardsWrap.appendChild(noStealCard);
-      row.appendChild(cardsWrap);
-      attackLootBody.appendChild(row);
+    if (!selected || selected.noSteal){
+      const noStealCard = document.createElement("div");
+      noStealCard.className = "card72 wb-front wb-white attack-loot-no-steal equip-defeat-pulse";
+      noStealCard.dataset.noSteal = "1";
+      noStealCard.textContent = "奪わない";
+      if (selected?.noSteal){
+        noStealCard.classList.remove("equip-defeat-pulse");
+        noStealCard.classList.add("equip-steal-pulse");
+      }
+      if (lastCardsWrap){
+        lastCardsWrap.appendChild(noStealCard);
+      } else {
+        const row = document.createElement("div");
+        row.className = "attack-loot-row";
+        const cardsWrap = document.createElement("div");
+        cardsWrap.className = "attack-loot-cards";
+        cardsWrap.appendChild(noStealCard);
+        row.appendChild(cardsWrap);
+        attackLootBody.appendChild(row);
+      }
     }
     attackLootBackdrop.classList.remove("hidden");
   }
