@@ -4608,6 +4608,11 @@
         }
       });
       zoomDismissHandler = async () => {
+        greenShareDock?.classList.remove("over-equip-expand");
+        greenShareDock?.classList.add("hidden");
+        cardPlayerSelectActive = false;
+        updateCardInteractivity();
+        renderTurnEndButton();
         restorePendingEquipSelection(actionForRestore);
       };
       return;
