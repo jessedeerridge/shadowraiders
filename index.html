@@ -127,7 +127,7 @@
   .help-pop-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.35);
     display:flex;align-items:flex-end;justify-content:center;
-    z-index:12010;
+    z-index:12060;
     padding:16px 16px 64px;
   }
   .help-pop-backdrop.hidden{display:none;}
@@ -148,7 +148,7 @@
   .equip-expand-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.35);
     display:flex;align-items:flex-end;justify-content:center;
-    z-index:10000;
+    z-index:12055;
     padding:16px 16px 64px;
   }
   .equip-expand-backdrop.hidden{display:none;}
@@ -7870,6 +7870,7 @@
   if (!eliminated && uid && uid === state.userId){
     g.style.cursor = 'pointer';
     g.addEventListener('click', (e) => {
+      if (cardPlayerSelectActive) return;
       if (canUseRoom3Action()){
         if (hasEquipmentByName(uid, "幸運のブローチ")) return;
         e.stopPropagation();
@@ -7921,6 +7922,7 @@
     };
 
     g.addEventListener('pointerdown', (e) => {
+      if (cardPlayerSelectActive) return;
       if (isEquipSelectionLockActive()) return;
       markerLongPressDone = false;
       clearMarkerLongPress();
@@ -7936,6 +7938,7 @@
     g.addEventListener('pointercancel', clearMarkerLongPress);
 
     g.addEventListener('click', (e) => {
+      if (cardPlayerSelectActive) return;
       if (isEquipSelectionLockActive()) return;
       clearMarkerLongPress();
       if (markerLongPressDone){
