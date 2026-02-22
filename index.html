@@ -4690,6 +4690,10 @@
     if (!my || !my.roleId) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if (myRoleId === "CIT_A1" && isAliceAbilityUsed()){
+      e.stopPropagation();
+      return;
+    }
     if (!isMyTurn()){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
@@ -4752,6 +4756,10 @@
       if (myRoleId === "CIT_A1"){
         const check = canUseAliceAbilityNow();
         if (!check.ok){
+          if (isAliceAbilityUsed()){
+            e.stopPropagation();
+            return;
+          }
           e.stopPropagation();
           showRevealPopAt(idCard, { mode:"notice", message:check.message || "今は使えません。" });
           return;
