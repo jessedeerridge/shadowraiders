@@ -2271,6 +2271,9 @@
   let seatPromptUnsubscribe = null;
   let subscribedSeatPromptIndex = null;
   let restoringSeatIdentityPrompt = false;
+  let seatCardSelectionUnsubscribe = null;
+  let subscribedSeatCardSelectionIndex = null;
+  let restoringSeatCardSelection = false;
 
   const IDENTITY_PROMPT_CARD_NAMES = new Set(["幸せのクッキー", "光臨", "戦慄の闇儀式"]);
 
@@ -2583,6 +2586,24 @@
       return;
     }
     await set(promptRef, {
+      ...payload,
+      seat,
+      ownerUid: state.userId,
+      at: Date.now()
+    });
+  }
+
+  async function setSeatCardSelectionState(payload){
+    if (restoringSeatCardSelection) return;
+    if (!state.roomCode) return;
+    const seat = Number(state.seatedTable || 0);
+    if (!seat) return;
+    const seatRef = ref(db, `rooms/${state.roomCode}/seatCardSelectionState/${seat}`);
+    if (!payload){
+      await remove(seatRef).catch(() => {});
+      return;
+    }
+    await set(seatRef, {
       ...payload,
       seat,
       ownerUid: state.userId,
@@ -4544,6 +4565,7 @@
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "このカードをわたしますか。", async () => {
         pendingEquipAction = null;
+        syncSeatCardSelectionState(null);
         renderTurnEndButton();
         zoomDismissHandler = null;
         const ok = await moveEquipmentCardBetweenPlayers(action.fromUid, action.toUid, sourceKey);
@@ -4586,6 +4608,7 @@
       }
       const cardName = safeText(card.dataset.cardName || "この装備");
       pendingEquipAction.selectedSourceKey = sourceKey;
+      syncSeatCardSelectionState();
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
       setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
       greenShareDock?.classList.add("hidden");
@@ -4596,6 +4619,7 @@
         onSelect: async (uid) => {
           const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
           pendingEquipAction = null;
+          syncSeatCardSelectionState(null);
           renderTurnEndButton();
           greenShareDock?.classList.add("hidden");
           const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
@@ -4625,6 +4649,7 @@
       if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
       const cardObj = pendingEquipAction?.cardObj || null;
       pendingEquipAction = { type:"oliver_confirm", ownerUid, sourceKey, cardObj };
+      syncSeatCardSelectionState(null);
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
       renderTurnEndButton();
@@ -4634,6 +4659,7 @@
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "これを奪いますか。", async () => {
         const action = pendingEquipAction;
         pendingEquipAction = null;
+        syncSeatCardSelectionState(null);
         renderTurnEndButton();
         zoomDismissHandler = null;
         const ok = await stealEquipmentFromPlayer(action.ownerUid, action.sourceKey);
@@ -5215,6 +5241,22 @@
     renderTurnEndButton();
   }
 
+  function buildSeatCardSelectionPayload(action = null){
+    const next = action || pendingEquipAction;
+    const type = safeText(next?.type || "");
+    if (type !== "oliver_target" && type !== "banana_give") return null;
+    return {
+      type,
+      card: next.cardObj || null,
+      selectedSourceKey: safeText(next.selectedSourceKey || "")
+    };
+  }
+
+  function syncSeatCardSelectionState(action = null){
+    const payload = buildSeatCardSelectionPayload(action);
+    setSeatCardSelectionState(payload).catch(() => {});
+  }
+
   function isEquipSelectionLockActive(){
     return pendingEquipAction?.type === "oliver_target" || pendingEquipAction?.type === "banana_give";
   }
@@ -5228,9 +5270,11 @@
     openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
     setZoomPassthrough(true);
     if (type === "banana_give"){
-      pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
+      pendingEquipAction = { type:"banana_give", selectedSourceKey:safeText(next.selectedSourceKey || ""), cardObj };
+      syncSeatCardSelectionState();
     } else {
       pendingEquipAction = { type:"oliver_target", cardObj };
+      syncSeatCardSelectionState();
     }
     renderEquipmentDock();
     renderTurnEndButton();
@@ -7321,6 +7365,7 @@
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       setZoomPassthrough(true);
       pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
+      syncSeatCardSelectionState();
       renderEquipmentDock();
       renderTurnEndButton();
       return;
@@ -7336,6 +7381,7 @@
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       setZoomPassthrough(true);
       pendingEquipAction = { type:"oliver_target", cardObj };
+      syncSeatCardSelectionState();
       renderEquipmentDock();
       renderTurnEndButton();
       return;
@@ -8993,6 +9039,45 @@
     });
   }
 
+  function subscribeSeatCardSelectionState(){
+    const seat = Number(state.seatedTable || 0);
+    if (seatCardSelectionUnsubscribe && subscribedSeatCardSelectionIndex !== seat){
+      seatCardSelectionUnsubscribe();
+      seatCardSelectionUnsubscribe = null;
+      subscribedSeatCardSelectionIndex = null;
+    }
+    if (!state.roomCode || !seat){
+      pendingEquipAction = null;
+      renderEquipmentDock();
+      renderTurnEndButton();
+      return;
+    }
+    if (seatCardSelectionUnsubscribe && subscribedSeatCardSelectionIndex === seat) return;
+
+    subscribedSeatCardSelectionIndex = seat;
+    const seatRef = ref(db, `rooms/${state.roomCode}/seatCardSelectionState/${seat}`);
+    seatCardSelectionUnsubscribe = onValue(seatRef, (snap) => {
+      const data = snap.val() || null;
+      const type = safeText(data?.type || "");
+      if (type !== "oliver_target" && type !== "banana_give"){
+        if (isEquipSelectionLockActive() || pendingEquipAction?.type === "oliver_confirm") {
+          pendingEquipAction = null;
+          renderEquipmentDock();
+          renderTurnEndButton();
+        }
+        return;
+      }
+      const cardObj = data?.card || null;
+      if (!cardObj) return;
+      restoringSeatCardSelection = true;
+      try {
+        restorePendingEquipSelection({ type, cardObj, selectedSourceKey: safeText(data.selectedSourceKey || "") });
+      } finally {
+        restoringSeatCardSelection = false;
+      }
+    });
+  }
+
   function subscribeSeatPromptState(){
     const seat = Number(state.seatedTable || 0);
     if (seatPromptUnsubscribe && subscribedSeatPromptIndex !== seat){
@@ -9122,6 +9207,7 @@
       }
 
       subscribeSeatPromptState();
+      subscribeSeatCardSelectionState();
       renderSeatTiles();
       refreshStartBadge();
       updateSeatBoardVisibility();
@@ -9899,6 +9985,7 @@
     subscribeGreenResponses();
     subscribeGreenSessionState();
     subscribeCardTargetSessionState();
+    subscribeSeatCardSelectionState();
     subscribeGreenReveals();
     subscribeGreenCloseSignals();
     subscribeGreenReplyBubbles();
