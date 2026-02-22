@@ -387,6 +387,7 @@
   }
   .equip-dock.visible{ display:block; }
   .equip-dock.david-select-front{ z-index:283; }
+  .equip-dock.deduction-front{ z-index:286; }
 
   .equip-board{
     background-color:#ffffff;
@@ -2281,6 +2282,7 @@
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
   let zoomDismissHandler = null;
+  let hpBoardAnimationActive = false;
   let suppressOutsidePopCloseUntil = 0;
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
@@ -3927,6 +3929,16 @@
     greenZoomLocked = !showCloseButton;
     zoomStage.appendChild(contentEl);
     zoomBackdrop.classList.remove("hidden");
+    refreshEquipDockLayer();
+  }
+
+  function isDeductionZoomActive(){
+    if (zoomBackdrop?.classList.contains("hidden")) return false;
+    return !!zoomStage?.querySelector('.card72.wb-front[data-card-type="green"]');
+  }
+
+  function refreshEquipDockLayer(){
+    equipDock?.classList.toggle("deduction-front", isDeductionZoomActive());
   }
 
   function setZoomPassthrough(enabled){
@@ -4049,6 +4061,7 @@
     hideDavidSelectPreview();
     zoomBackdrop?.classList.remove("david-select-active");
     equipDock?.classList.remove("david-select-front");
+    refreshEquipDockLayer();
   }
   zoomBackdrop.addEventListener("click", async (e) => {
     const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
@@ -4303,6 +4316,7 @@
   function renderEquipmentDock(){
     syncRoomAbilityTurnState();
     equipDock?.classList.toggle("david-select-front", pendingEquipAction?.type === "david_select");
+    refreshEquipDockLayer();
     if (!state.roomCode) { equipDock.classList.remove("visible"); closeEquipExpand(); return; }
 
     updateEquipDockTop();
@@ -5164,6 +5178,9 @@
       };
       return;
     }
+
+    if (isDeductionZoomActive()) return;
+
     openZoomFromCard(card);
   });
 
@@ -5804,6 +5821,7 @@
     if (mustAttackWithMasamune()) return false;
     if (attackTurnEndChoicePending) return false;
     if (suppressEndTurnButton) return false;
+    if (hpBoardAnimationActive) return false;
     return !!turnState()?.moveDone;
   }
 
@@ -6086,18 +6104,28 @@
     });
   }
 
+  async function waitForHpBoardSwapAnimationEnd(maxWaitMs = 1800){
+    const startedAt = Date.now();
+    while (hpBoardAnimationActive && (Date.now() - startedAt) < maxWaitMs){
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+  }
+
   async function finalizePendingAttackResolution(endTurnAfterApply){
     const pending = pendingAttackResolution;
     pendingAttackResolution = null;
     attackTurnEndChoicePending = false;
-    suppressEndTurnButton = !!endTurnAfterApply;
+    suppressEndTurnButton = true;
     cachePendingAttackResolution(null);
     await upsertPendingAttackResolution([], "");
     renderTurnEndButton();
     hideAttackResultPop();
     clearAttackResultDice();
     if (!pending || pending.applied){
-      if (!endTurnAfterApply) suppressEndTurnButton = false;
+      if (!endTurnAfterApply){
+        suppressEndTurnButton = false;
+        renderTurnEndButton();
+      }
       return;
     }
     pending.applied = true;
@@ -6107,7 +6135,13 @@
       await doEndTurn();
       suppressEndTurnButton = false;
       renderTurnEndButton();
+      return;
     }
+
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await waitForHpBoardSwapAnimationEnd();
+    suppressEndTurnButton = false;
+    renderTurnEndButton();
   }
 
   function animateHpBoardSwapIfNeeded(){
@@ -6162,11 +6196,16 @@
       { transform:`translate(${dxBA}px, ${dyBA}px) scale(1)` }
     ], { duration:animationMs, easing, fill:'forwards' });
 
+    hpBoardAnimationActive = true;
+    renderTurnEndButton();
+
     Promise.allSettled([endA.finished, endB.finished]).finally(() => {
       floatA.remove();
       floatB.remove();
       fromA.style.opacity = '';
       fromB.style.opacity = '';
+      hpBoardAnimationActive = false;
+      renderTurnEndButton();
     });
   }
 
