@@ -2013,6 +2013,7 @@
     return !!t.moveDone && !t.attackDone && !t.deckDrawDone;
   }
   function canClickType(type){
+    if (cardPlayerSelectActive) return false;
     if (isEquipSelectionLockActive()) return false;
     if (canDrawTypeNormally(type)) return true;
     if (type === "green" && canUseParasolGreenDraw()) return true;
@@ -3067,6 +3068,7 @@
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
     if (players.length === 0){
       cardPlayerSelectActive = false;
+      updateCardInteractivity();
       renderTurnEndButton();
       return false;
     }
@@ -3092,6 +3094,7 @@
         if (greenShareDock) greenShareDock.classList.add("hidden");
         if (!lockEndTurnUntilResolved){
           cardPlayerSelectActive = false;
+          updateCardInteractivity();
           renderTurnEndButton();
         }
         const handler = (typeof onSelect === "function") ? onSelect : null;
@@ -3100,6 +3103,7 @@
         } finally {
           if (lockEndTurnUntilResolved){
             cardPlayerSelectActive = false;
+            updateCardInteractivity();
             renderTurnEndButton();
           }
         }
@@ -3108,6 +3112,7 @@
     }
 
     cardPlayerSelectActive = true;
+    updateCardInteractivity();
     renderTurnEndButton();
     greenShareDock.classList.remove("hidden");
     return true;
@@ -3205,12 +3210,14 @@
     renderGreenWaitingSelection(targetUid, safeText(entry?.targetName || ""), safeText(entry?.targetInitial || ""), safeText(entry?.targetColor || ""));
     greenShareDock?.classList.remove("hidden");
     cardPlayerSelectActive = true;
+    updateCardInteractivity();
     renderTurnEndButton();
     try {
       await spec.resolver(targetUid);
     } finally {
       pendingCardTargetSelection = null;
       cardPlayerSelectActive = false;
+      updateCardInteractivity();
       renderTurnEndButton();
       await setCardTargetSessionState(null);
       greenShareDock?.classList.add("hidden");
@@ -3420,6 +3427,7 @@
     greenShareActions?.classList.add("hidden");
     greenShareDock?.classList.add("hidden");
     cardPlayerSelectActive = false;
+    updateCardInteractivity();
     renderTurnEndButton();
     setGreenSessionState(null).catch(() => {});
     pendingGreenSessionEntry = null;
@@ -4805,6 +4813,7 @@
     chipEl.classList.add("eliminated-clickable");
     chipEl.title = `${chipEl.title ? chipEl.title + "\n" : ""}クリックで+1上の部屋へ移動`;
     chipEl.addEventListener("click", async (e) => {
+      if (cardPlayerSelectActive || isEquipSelectionLockActive()) return;
       e.stopPropagation();
       await moveEliminatedPlayerToUpperRoom(uid);
     });
@@ -8202,6 +8211,7 @@
       roomHitEls[roomId] = hit;
 
       hit.addEventListener('click', async (ev) => {
+        if (cardPlayerSelectActive) return;
         if (isEquipSelectionLockActive()) return;
         if (isGameStarted()){
           if (await resolvePendingMoveChoice(roomId)) return;
@@ -8225,6 +8235,7 @@
     centerHit.dataset.roomId = "7";
     roomHitEls[7] = centerHit;
     centerHit.addEventListener('click', async (ev) => {
+      if (cardPlayerSelectActive) return;
       if (isEquipSelectionLockActive()) return;
       if (isGameStarted()){
         if (await resolvePendingMoveChoice(7)) return;
@@ -9007,6 +9018,7 @@
         pendingCardTargetSessionEntry = null;
         pendingCardTargetSelection = null;
         cardPlayerSelectActive = false;
+        updateCardInteractivity();
         greenShareDock?.classList.add("hidden");
         closeZoom();
         renderTurnEndButton();
