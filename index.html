@@ -109,6 +109,7 @@
     z-index:2000;
   }
   .help-btn.visible{display:flex;}
+  body.card-target-aux-enabled .help-btn{z-index:12060;}
 
   .room-guide-btn{
     position:fixed;left:16px;bottom:74px;width:44px;height:44px;border-radius:50%;
@@ -152,6 +153,13 @@
     padding:16px 16px 64px;
   }
   .equip-expand-backdrop.hidden{display:none;}
+  .identity-peek-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,.38);
+    display:flex;align-items:center;justify-content:center;
+    z-index:12070;padding:16px;
+  }
+  .identity-peek-backdrop.hidden{display:none;}
+  .identity-peek-stage{transform:scale(4);transform-origin:center;pointer-events:auto;}
   .equip-expand-pop{
     width:min(560px, calc(100% - 0px));
     max-height:min(82vh, 780px);
@@ -370,6 +378,7 @@
     display:none;
   }
   .my-role-dock.visible{ display:block; }
+  body.card-target-aux-enabled .my-role-dock{ z-index:12060; }
 
   /* =========================
      装備枠（★カードパネル直下まで上に伸ばす）
@@ -386,6 +395,7 @@
   }
   .equip-dock.visible{ display:block; }
   .equip-dock.david-select-front{ z-index:10030; }
+  body.card-target-aux-enabled .equip-dock{ z-index:12055; }
 
   .equip-board{
     background-color:#ffffff;
@@ -1766,6 +1776,10 @@
   </div>
 </div>
 
+<div id="identityPeekBackdrop" class="identity-peek-backdrop hidden" aria-label="正体カード拡大表示">
+  <div id="identityPeekStage" class="identity-peek-stage"></div>
+</div>
+
 <div id="attackLootBackdrop" class="attack-loot-backdrop hidden">
   <div class="attack-loot-pop" role="dialog" aria-modal="true" aria-label="攻撃脱落後の装備奪取">
     <div class="attack-loot-header">脱落者の装備</div>
@@ -2157,6 +2171,8 @@
   let cardTargetSessionRestoring = false;
   let cardTargetSessionSeenAt = 0;
   let pendingCardTargetSessionEntry = null;
+  let cardTargetUiSuspended = false;
+  const cardTargetSuspendReasons = new Set();
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
     "CIT_D3", // デボラ
@@ -2176,6 +2192,10 @@
     "SHA_W1", // ワイト
   ]);
   let cardPlayerSelectActive = false;
+  function setCardPlayerSelectActive(active){
+    cardPlayerSelectActive = !!active;
+    document.body.classList.toggle('card-target-aux-enabled', cardPlayerSelectActive);
+  }
   let activeGreenReplies = {};
   let moveDiceEventSeenAt = 0;
   let moveDiceEventInitialized = false;
@@ -3065,7 +3085,7 @@
       .filter(p => !onlyAlive || !isPlayerEliminated(p.id))
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
     if (players.length === 0){
-      cardPlayerSelectActive = false;
+      setCardPlayerSelectActive(false);
       renderTurnEndButton();
       return false;
     }
@@ -3090,7 +3110,7 @@
         selected = true;
         if (greenShareDock) greenShareDock.classList.add("hidden");
         if (!lockEndTurnUntilResolved){
-          cardPlayerSelectActive = false;
+          setCardPlayerSelectActive(false);
           renderTurnEndButton();
         }
         const handler = (typeof onSelect === "function") ? onSelect : null;
@@ -3098,7 +3118,7 @@
           if (handler) await handler(p.id, p);
         } finally {
           if (lockEndTurnUntilResolved){
-            cardPlayerSelectActive = false;
+            setCardPlayerSelectActive(false);
             renderTurnEndButton();
           }
         }
@@ -3106,7 +3126,7 @@
       greenShareList.appendChild(btn);
     }
 
-    cardPlayerSelectActive = true;
+    setCardPlayerSelectActive(true);
     renderTurnEndButton();
     greenShareDock.classList.remove("hidden");
     return true;
@@ -3203,12 +3223,12 @@
     greenShareActions?.classList.add("hidden");
     renderGreenWaitingSelection(targetUid, safeText(entry?.targetName || ""), safeText(entry?.targetInitial || ""), safeText(entry?.targetColor || ""));
     greenShareDock?.classList.remove("hidden");
-    cardPlayerSelectActive = true;
+    setCardPlayerSelectActive(true);
     renderTurnEndButton();
     try {
       await spec.resolver(targetUid);
     } finally {
-      cardPlayerSelectActive = false;
+      setCardPlayerSelectActive(false);
       renderTurnEndButton();
       await setCardTargetSessionState(null);
       greenShareDock?.classList.add("hidden");
@@ -3413,7 +3433,7 @@
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareActions?.classList.add("hidden");
     greenShareDock?.classList.add("hidden");
-    cardPlayerSelectActive = false;
+    setCardPlayerSelectActive(false);
     renderTurnEndButton();
     setGreenSessionState(null).catch(() => {});
     pendingGreenSessionEntry = null;
@@ -3534,6 +3554,29 @@
     zoomPassthroughMode = !!enabled;
     zoomBackdrop?.classList.toggle("passthrough", zoomPassthroughMode);
   }
+  function beginCardTargetUiSuspend(reason){
+    const key = safeText(reason || "");
+    if (!key) return;
+    cardTargetSuspendReasons.add(key);
+    if (cardTargetUiSuspended) return;
+    if (!cardPlayerSelectActive) return;
+    if (zoomBackdrop?.classList.contains("hidden")) return;
+    cardTargetUiSuspended = true;
+    zoomBackdrop.classList.add("hidden");
+    greenShareDock?.classList.add("hidden");
+  }
+
+  function endCardTargetUiSuspend(reason){
+    const key = safeText(reason || "");
+    if (key) cardTargetSuspendReasons.delete(key);
+    if (!cardTargetUiSuspended) return;
+    if (cardTargetSuspendReasons.size > 0) return;
+    cardTargetUiSuspended = false;
+    if (!cardPlayerSelectActive) return;
+    zoomBackdrop.classList.remove("hidden");
+    greenShareDock?.classList.remove("hidden");
+  }
+
   function openZoomFromCard(cardEl, options){
     const clone = cardEl.cloneNode(true);
     clone.classList.remove("locked","blocked");
@@ -3550,6 +3593,23 @@
     if (options?.enableRevealPop) cardEl.dataset.revealInteractive = "1";
     openZoomContent(cardEl, { showCloseButton:false, ...(options || {}) });
   }
+  function openIdentityPeek(role){
+    if (!role || !identityPeekBackdrop || !identityPeekStage) return;
+    beginCardTargetUiSuspend("identityPeek");
+    identityPeekStage.innerHTML = "";
+    const cardEl = createIdentityCard(role);
+    cardEl.style.pointerEvents = "auto";
+    identityPeekStage.appendChild(cardEl);
+    identityPeekBackdrop.classList.remove("hidden");
+  }
+
+  function closeIdentityPeek(){
+    if (!identityPeekBackdrop || !identityPeekStage) return;
+    identityPeekBackdrop.classList.add("hidden");
+    identityPeekStage.innerHTML = "";
+    endCardTargetUiSuspend("identityPeek");
+  }
+
   function openIdentityRevealZoom(role, revealerUid){
     if (!role) return;
     const wrap = document.createElement("div");
@@ -3630,6 +3690,8 @@
     return !!zoomBackdrop?.classList.contains("hidden");
   }
   function closeZoom(){
+    cardTargetUiSuspended = false;
+    cardTargetSuspendReasons.clear();
     zoomBackdrop.classList.add("hidden");
     zoomBackdrop.classList.remove("passthrough");
     zoomStage.innerHTML = "";
@@ -8316,6 +8378,8 @@
   const equipExpandBackdrop = document.getElementById('equipExpandBackdrop');
   const equipExpandBody = document.getElementById('equipExpandBody');
   const helpBody = document.getElementById('helpBody');
+  const identityPeekBackdrop = document.getElementById('identityPeekBackdrop');
+  const identityPeekStage = document.getElementById('identityPeekStage');
 
   function teamColor(f){
     if (f === "レイダー")  return "#c21d1d";
@@ -8482,6 +8546,7 @@
     });
   }
   function openHelp(){
+    beginCardTargetUiSuspend("help");
     renderHelpList();
     helpBackdrop.classList.remove('hidden');
   }
@@ -8499,7 +8564,10 @@
     });
     await resetAllAbilityUsageForUids([state.userId]);
   }
-  function closeHelp(){ helpBackdrop.classList.add('hidden'); }
+  function closeHelp(){
+    helpBackdrop.classList.add('hidden');
+    endCardTargetUiSuspend("help");
+  }
   function renderEquipExpandBody(){
     if (!equipExpandBody || !equipBody) return;
     equipExpandBody.innerHTML = equipBody.innerHTML;
@@ -8529,11 +8597,13 @@
   }
   function openEquipExpand(){
     if (!equipDock?.classList.contains('visible')) return;
+    beginCardTargetUiSuspend("equipExpand");
     renderEquipExpandBody();
     equipExpandBackdrop?.classList.remove('hidden');
   }
   function closeEquipExpand(){
     equipExpandBackdrop?.classList.add('hidden');
+    endCardTargetUiSuspend("equipExpand");
     if (isEquipSelectionLockActive() && zoomBackdrop?.classList.contains('hidden')){
       restorePendingEquipSelection();
     }
@@ -8553,6 +8623,12 @@
   });
   helpBackdrop.addEventListener('click', (e) => {
     if (!helpBackdrop.classList.contains('hidden') && !e.target.closest('.help-pop')) closeHelp();
+  });
+  identityPeekBackdrop?.addEventListener('click', (e) => {
+    if (e.target === identityPeekBackdrop) closeIdentityPeek();
+  });
+  identityPeekStage?.addEventListener('click', (e) => {
+    e.stopPropagation();
   });
   equipExpandBackdrop?.addEventListener('click', (e) => {
     if (!equipExpandBackdrop.classList.contains('hidden') && !e.target.closest('.equip-expand-pop')) closeEquipExpand();
@@ -8964,7 +9040,7 @@
 
       if (!data){
         pendingCardTargetSessionEntry = null;
-        cardPlayerSelectActive = false;
+        setCardPlayerSelectActive(false);
         greenShareDock?.classList.add("hidden");
         closeZoom();
         renderTurnEndButton();
@@ -9595,6 +9671,10 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (cardPlayerSelectActive){
+          openIdentityPeek(role);
+          return;
+        }
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
         if (action){
@@ -9614,6 +9694,10 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (cardPlayerSelectActive){
+          openIdentityPeek(role);
+          return;
+        }
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
         if (action){
