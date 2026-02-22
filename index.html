@@ -2262,6 +2262,8 @@
   let walpurgisSwapEventInitialized = false;
   let roleFlashTimer = null;
   let roleFlashOverlayEl = null;
+  let agathaPinnedRoleTimer = null;
+  let agathaPinnedRoleOverlayEl = null;
   let identityRevealInitialized = false;
   let identityRevealSeenByUid = {};
   let autoDamageRevealLock = {};
@@ -2959,6 +2961,44 @@
     roleFlashTimer = setTimeout(() => {
       hideRoleFlashOverlay();
     }, Math.max(100, Number(durationMs) || 1200));
+  }
+
+  function hideAgathaPinnedRoleOverlay(){
+    if (agathaPinnedRoleTimer){
+      clearTimeout(agathaPinnedRoleTimer);
+      agathaPinnedRoleTimer = null;
+    }
+    if (agathaPinnedRoleOverlayEl){
+      agathaPinnedRoleOverlayEl.remove();
+      agathaPinnedRoleOverlayEl = null;
+    }
+  }
+
+  function showAgathaPinnedRoleOverlay(durationMs = 1500){
+    const role = ROLE_BY_ID.CIT_A3;
+    if (!role) return;
+    hideAgathaPinnedRoleOverlay();
+
+    const overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.zIndex = "286";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.pointerEvents = "none";
+
+    const card = createIdentityCard(role);
+    card.style.transform = "scale(2.1)";
+    card.style.transformOrigin = "center center";
+    card.style.boxShadow = "0 14px 32px rgba(0,0,0,.35)";
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    agathaPinnedRoleOverlayEl = overlay;
+
+    agathaPinnedRoleTimer = setTimeout(() => {
+      hideAgathaPinnedRoleOverlay();
+    }, Math.max(100, Number(durationMs) || 1500));
   }
 
   function showTemporaryRoleTag(uid, text, durationMs = 2000){
@@ -4591,9 +4631,23 @@
     if (!state.userId || !state.roomCode) return;
     if (isAgathaAbilityUsed()) return;
 
+    const fromRevealedState = !!options.fromRevealedState;
     await markAgathaAbilityUsed();
-    const rolled = await runCornerD6D4Roll();
-    await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4 });
+    const rolled = {
+      d6: 1 + Math.floor(Math.random() * 6),
+      d4: 1 + Math.floor(Math.random() * 4)
+    };
+    const startAt = Date.now() + 260;
+    await emitCardDiceEvent({
+      kind:"role_agatha",
+      uid:state.userId,
+      d6:rolled.d6,
+      d4:rolled.d4,
+      startAt,
+      showRole: fromRevealedState
+    });
+    const waitToStart = Math.max(0, startAt - Date.now());
+    if (waitToStart > 0) await waitMs(waitToStart);
     await waitMs(1000);
     const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
     await waitMs(1500);
@@ -4925,7 +4979,7 @@
       if (!isMyIdentityRevealed()){
         await revealMyIdentityToEquipment({ revealedBy:"manual" });
       } else {
-        await triggerAgathaRevealAbility({ endTurnAfterResolve:true });
+        await triggerAgathaRevealAbility({ endTurnAfterResolve:true, fromRevealedState:true });
       }
       return;
     }
@@ -6662,10 +6716,16 @@
           d4: Number(ev.d4 || 1)
         });
       } else if (kind === "role_agatha"){
-        if (safeText(ev.uid || "") === state.userId) return;
+        if (ev.showRole) showAgathaPinnedRoleOverlay(1500);
+        const wait = Math.max(0, Number(ev.startAt || 0) - Date.now());
         runCornerD6D4Roll({
           d6: Number(ev.d6 || 1),
-          d4: Number(ev.d4 || 1)
+          d4: Number(ev.d4 || 1),
+          delayMs: wait,
+          fixedStart: { x: 60, y: 60 },
+          fixedEnd: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+          startDeg: 0,
+          endDeg: 720
         });
       } else if (kind === "role_felix"){
         runCornerD6Roll(Number(ev.d6 || 1));
@@ -8058,6 +8118,8 @@
 
   async function runCornerD6D4Roll(fixed = null){
     if (!diceRollOverlay) return { d6: Number(fixed?.d6 || (1 + Math.floor(Math.random() * 6))), d4: Number(fixed?.d4 || (1 + Math.floor(Math.random() * 4))) };
+    const delayMs = Math.max(0, Number(fixed?.delayMs || 0));
+    if (delayMs > 0) await waitMs(delayMs);
     clearDiceRollTimers();
     diceRollOverlay.innerHTML = '';
 
@@ -8084,12 +8146,20 @@
       { x: 60, y: Math.max(60, height - 60) },
       { x: Math.max(60, width - 60), y: Math.max(60, height - 60) }
     ];
-    const startA = corners[Math.floor(Math.random() * corners.length)] || corners[0];
+    const fixedStart = fixed?.fixedStart;
+    const startA = fixedStart
+      ? { x: Number(fixedStart.x || 60), y: Number(fixedStart.y || 60) }
+      : (corners[Math.floor(Math.random() * corners.length)] || corners[0]);
     const startB = startA;
-    const end = { x: width / 2, y: height / 2 };
+    const fixedEnd = fixed?.fixedEnd;
+    const end = fixedEnd
+      ? { x: Number(fixedEnd.x || (width / 2)), y: Number(fixedEnd.y || (height / 2)) }
+      : { x: width / 2, y: height / 2 };
 
-    setFlyerTransform(d6Wrap, startA.x, startA.y, Math.floor(Math.random() * 360));
-    setFlyerTransform(d4Wrap, startB.x, startB.y, Math.floor(Math.random() * 360));
+    const fixedStartDeg = Number.isFinite(Number(fixed?.startDeg)) ? Number(fixed.startDeg) : null;
+    const startDeg = (fixedStartDeg != null) ? fixedStartDeg : Math.floor(Math.random() * 360);
+    setFlyerTransform(d6Wrap, startA.x, startA.y, startDeg);
+    setFlyerTransform(d4Wrap, startB.x, startB.y, startDeg);
 
     const animDuration = 900;
     const rollStartAt = Date.now();
@@ -8104,8 +8174,10 @@
     tick();
 
     const launch = setTimeout(() => {
-      setFlyerTransform(d6Wrap, end.x - 18, end.y - 6, 720 + Math.floor(Math.random() * 360));
-      setFlyerTransform(d4Wrap, end.x + 18, end.y + 6, 720 + Math.floor(Math.random() * 360));
+      const fixedEndDeg = Number.isFinite(Number(fixed?.endDeg)) ? Number(fixed.endDeg) : null;
+      const endDeg = (fixedEndDeg != null) ? fixedEndDeg : (720 + Math.floor(Math.random() * 360));
+      setFlyerTransform(d6Wrap, end.x - 18, end.y - 6, endDeg);
+      setFlyerTransform(d4Wrap, end.x + 18, end.y + 6, endDeg);
     }, 20);
     diceRollTimers.push(launch);
 
