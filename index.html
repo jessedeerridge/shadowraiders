@@ -2989,8 +2989,6 @@
     overlay.style.pointerEvents = "none";
 
     const card = createIdentityCard(role);
-    card.style.transform = "scale(2.1)";
-    card.style.transformOrigin = "center center";
     card.style.boxShadow = "0 14px 32px rgba(0,0,0,.35)";
     overlay.appendChild(card);
     document.body.appendChild(overlay);
@@ -4638,12 +4636,16 @@
       d4: 1 + Math.floor(Math.random() * 4)
     };
     const startAt = Date.now() + 260;
+    const cardHideAt = startAt + 1500;
+    const diceHideAt = startAt + 5000;
     await emitCardDiceEvent({
       kind:"role_agatha",
       uid:state.userId,
       d6:rolled.d6,
       d4:rolled.d4,
       startAt,
+      cardHideAt,
+      diceHideAt,
       showRole: fromRevealedState
     });
     const waitToStart = Math.max(0, startAt - Date.now());
@@ -4653,11 +4655,6 @@
     await waitMs(1500);
     await addDamageToPlayers(playerIdsInRoom(targetRoomId), 3);
     await waitMs(500);
-    const cleanupTimer = setTimeout(() => {
-      diceRollOverlay.innerHTML = '';
-      clearDiceRollTimers();
-    }, 2000);
-    diceRollTimers.push(cleanupTimer);
 
     if (options.endTurnAfterResolve && isMyTurn()){
       await doEndTurn();
@@ -6716,12 +6713,26 @@
           d4: Number(ev.d4 || 1)
         });
       } else if (kind === "role_agatha"){
-        if (ev.showRole) showAgathaPinnedRoleOverlay(1500);
-        const wait = Math.max(0, Number(ev.startAt || 0) - Date.now());
+        const now = Date.now();
+        const startAt = Number(ev.startAt || 0);
+        if (ev.showRole){
+          const cardDelay = Math.max(0, startAt - now);
+          const cardHideAt = Number(ev.cardHideAt || (startAt + 1500));
+          const cardDuration = Math.max(100, cardHideAt - Math.max(now, startAt));
+          if (cardDelay > 0){
+            const timer = setTimeout(() => showAgathaPinnedRoleOverlay(cardDuration), cardDelay);
+            diceRollTimers.push(timer);
+          } else {
+            showAgathaPinnedRoleOverlay(cardDuration);
+          }
+        }
+        const wait = Math.max(0, startAt - Date.now());
+        const diceHideAt = Number(ev.diceHideAt || (startAt + 5000));
         runCornerD6D4Roll({
           d6: Number(ev.d6 || 1),
           d4: Number(ev.d4 || 1),
           delayMs: wait,
+          hideDelayMs: Math.max(1200, diceHideAt - Math.max(Date.now(), startAt)),
           fixedStart: { x: 60, y: 60 },
           fixedEnd: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
           startDeg: 0,
@@ -8193,6 +8204,15 @@
       }, 980);
       diceRollTimers.push(stop);
     });
+
+    const hideDelayMs = Math.max(0, Number(fixed?.hideDelayMs || 0));
+    if (hideDelayMs > 0){
+      const cleanupTimer = setTimeout(() => {
+        diceRollOverlay.innerHTML = '';
+        clearDiceRollTimers();
+      }, hideDelayMs);
+      diceRollTimers.push(cleanupTimer);
+    }
 
     return { d6: finalD6, d4: finalD4 };
   }
