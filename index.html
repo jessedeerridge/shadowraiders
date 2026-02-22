@@ -2223,6 +2223,10 @@
   let cardTargetSessionRestoring = false;
   let cardTargetSessionSeenAt = 0;
   let pendingCardTargetSessionEntry = null;
+  let roleAbilitySessionInitialized = false;
+  let roleAbilitySessionSeenAt = 0;
+  let restoringRoleAbilitySession = false;
+  let pendingRoleAbilitySessionEntry = null;
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
     "CIT_D3", // デボラ
@@ -2271,6 +2275,7 @@
   let vampireHealScheduled = false;
   let pendingEquipAction = null;
   let pendingCardTargetSelection = null;
+  let pendingRoleAbilitySelection = null;
   let danielAutoRevealTimer = null;
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
@@ -2613,6 +2618,8 @@
   }
 
   function canInteractWithMapPlayerIcons(){
+    if (pendingRoleAbilitySelection) return false;
+    if (pendingRoleAbilitySessionEntry) return false;
     return !isIdentityPromptInteractionLockActive();
   }
 
@@ -3291,6 +3298,152 @@
     return null;
   }
 
+  function roleAbilitySelectionSpecByRoleId(roleId){
+    const rid = safeText(roleId || "");
+    if (rid === "RAI_F2"){
+      return {
+        roleId: rid,
+        title: '<span class="ability-pill">スラム街の天使</span>ダメージを7にするプレイヤーを選んでください。',
+        includeSelf: true,
+        cardTheme: "identity",
+        abilityNameHtml: '<span class="ability-pill">スラム街の天使</span>',
+        resolver: async (uid) => {
+          await setDamageToPlayer(uid, 7);
+          await placePlayerMarkerInRoom(uid, 7);
+        }
+      };
+    }
+    if (rid === "RAI_F1"){
+      return {
+        roleId: rid,
+        title: '<span class="ability-pill">アストラル・メイス</span>ダメージを与えるプレイヤーを選んでください。',
+        includeSelf: false,
+        cardTheme: "identity",
+        abilityNameHtml: '<span class="ability-pill">アストラル・メイス</span>',
+        resolver: async (uid) => {
+          const eye = 1 + Math.floor(Math.random() * 6);
+          await emitCardDiceEvent({ kind:"felix_mace", uid:state.userId, d6:eye });
+          await runCornerD6Roll(eye);
+          await waitMs(1000);
+          await addDamageToPlayer(uid, eye);
+        }
+      };
+    }
+    return null;
+  }
+
+  function canStartFelixOrFeliciaAbility(roleId){
+    const rid = safeText(roleId || "");
+    if (!isMyTurn()) return false;
+    if (!isMyIdentityRevealed()) return false;
+    if (!!turnState()?.moveDone) return false;
+    if (rid === "RAI_F1") return !isFelixAbilityUsed();
+    if (rid === "RAI_F2") return !isFeliciaAbilityUsed();
+    return false;
+  }
+
+  async function setRoleAbilitySessionState(payload){
+    if (restoringRoleAbilitySession) return;
+    if (!state.roomCode) return;
+    const rRef = ref(db, `rooms/${state.roomCode}/roleAbilitySession`);
+    if (!payload){
+      await remove(rRef).catch(() => {});
+      return;
+    }
+    await set(rRef, {
+      ...payload,
+      at: Date.now()
+    });
+  }
+
+  async function startRoleAbilitySelection(roleId){
+    const rid = safeText(roleId || "");
+    const spec = roleAbilitySelectionSpecByRoleId(rid);
+    if (!spec || !canStartFelixOrFeliciaAbility(rid)) return false;
+    const payload = {
+      phase:"selecting",
+      roleId: rid,
+      ownerUid: state.userId,
+      titleHtml: spec.title,
+      at: Date.now()
+    };
+    pendingRoleAbilitySessionEntry = payload;
+    restoreRoleAbilitySelectionView(payload);
+    await setRoleAbilitySessionState(payload);
+    return true;
+  }
+
+  function hideRoleAbilitySelectionUi(){
+    pendingRoleAbilitySelection = null;
+    cardPlayerSelectActive = false;
+    updateCardInteractivity();
+    renderTurnEndButton();
+    greenShareDock?.classList.add("hidden");
+  }
+
+  function restoreRoleAbilitySelectionView(entry){
+    const rid = safeText(entry?.roleId || "");
+    const ownerUid = safeText(entry?.ownerUid || "");
+    const ownerRole = ROLE_BY_ID[rid] || null;
+    if (!ownerRole || !ownerUid) return false;
+    openZoomFromRole(ownerRole, { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
+    greenShareActions?.classList.add("hidden");
+    greenShareList.innerHTML = "";
+    const spec = roleAbilitySelectionSpecByRoleId(rid);
+    const titleHtml = String(entry?.titleHtml || spec?.title || "");
+    setGreenDockMeta({ title:"", subtitle:"" });
+    if (greenShareTitle) greenShareTitle.innerHTML = titleHtml;
+
+    const isOwner = ownerUid === state.userId;
+    const phase = safeText(entry?.phase || "");
+    if (!isOwner || phase !== "selecting"){
+      renderGreenWaitingSelection(safeText(entry?.targetUid || ""), safeText(entry?.targetName || ""), safeText(entry?.targetInitial || ""), safeText(entry?.targetColor || ""));
+      cardPlayerSelectActive = false;
+      updateCardInteractivity();
+      renderTurnEndButton();
+      greenShareDock?.classList.remove("hidden");
+      return true;
+    }
+
+    pendingRoleAbilitySelection = { roleId: rid, ownerUid };
+    const opened = openTargetSelectDock({
+      title: "対象プレイヤーを選択してください。",
+      lockEndTurnUntilResolved: true,
+      includeSelf: !!spec?.includeSelf,
+      onlyAlive: true,
+      onSelect: async (uid, p) => {
+        if (!pendingRoleAbilitySelection) return;
+        showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `「${safeText(p?.name || "このプレイヤー")}」を選びますか。`, async () => {
+          const targetUid = safeText(uid || "");
+          const roleSpec = roleAbilitySelectionSpecByRoleId(rid);
+          if (!roleSpec || !targetUid) return;
+          await setRoleAbilitySessionState({
+            phase:"resolving",
+            roleId: rid,
+            ownerUid,
+            titleHtml,
+            targetUid,
+            targetName: safeText(p?.name || ""),
+            targetInitial: firstChar(p?.name || ""),
+            targetColor: safeText(p?.color || "")
+          });
+          try {
+            await roleSpec.resolver(targetUid);
+            if (rid === "RAI_F1") await markFelixAbilityUsed(ownerUid);
+            if (rid === "RAI_F2") await markFeliciaAbilityUsed(ownerUid);
+          } finally {
+            await setRoleAbilitySessionState(null);
+          }
+        }, { fixedLower:true, closeZoomOnNo:false });
+      }
+    });
+    if (!opened) return false;
+    if (greenShareTitle) greenShareTitle.innerHTML = titleHtml;
+    greenShareDock?.classList.remove("hidden");
+    return true;
+  }
+
   async function resolveCardTargetSessionEntry(entry){
     const card = entry?.card || null;
     const targetUid = safeText(entry?.targetUid || "");
@@ -3757,6 +3910,13 @@
     hideDavidSelectPreview();
     zoomBackdrop?.classList.remove("david-select-active");
     equipDock?.classList.remove("david-select-front");
+    if (pendingRoleAbilitySessionEntry){
+      setTimeout(() => {
+        if (pendingRoleAbilitySessionEntry && zoomBackdrop?.classList.contains("hidden")){
+          restoreRoleAbilitySelectionView(pendingRoleAbilitySessionEntry);
+        }
+      }, 0);
+    }
   }
   zoomBackdrop.addEventListener("click", async (e) => {
     const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
@@ -4236,6 +4396,30 @@
     await set(ref(db, `rooms/${state.roomCode}/abilityUsage/david/${state.userId}`), true);
   }
 
+  function isFelixAbilityUsed(uid = state.userId){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return false;
+    return !!state.room?.abilityUsage?.felix?.[targetUid];
+  }
+
+  async function markFelixAbilityUsed(uid = state.userId){
+    const targetUid = safeText(uid || "");
+    if (!state.roomCode || !targetUid) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/felix/${targetUid}`), true);
+  }
+
+  function isFeliciaAbilityUsed(uid = state.userId){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return false;
+    return !!state.room?.abilityUsage?.felicia?.[targetUid];
+  }
+
+  async function markFeliciaAbilityUsed(uid = state.userId){
+    const targetUid = safeText(uid || "");
+    if (!state.roomCode || !targetUid) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/felicia/${targetUid}`), true);
+  }
+
   function restoreDavidIdentityZoom(){
     const my = state.hands?.[state.userId];
     const role = my?.roleId ? ROLE_BY_ID[my.roleId] : null;
@@ -4331,6 +4515,21 @@
       return;
     }
     if (isMyIdentityRevealed()){
+      if (myRoleId === "RAI_F1" || myRoleId === "RAI_F2"){
+        const spec = roleAbilitySelectionSpecByRoleId(myRoleId);
+        if (!spec) return;
+        if (!canStartFelixOrFeliciaAbility(myRoleId)){
+          e.stopPropagation();
+          showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
+          return;
+        }
+        e.stopPropagation();
+        showRevealPopAt(idCard, {
+          action: `role_ability_${myRoleId}`,
+          messageHtml: `${spec.abilityNameHtml}を使いますか。`
+        });
+        return;
+      }
       if (myRoleId !== "SHA_W1") return;
       const check = canUseWightAbilityNow();
       if (!check.ok){
@@ -4451,7 +4650,19 @@
       }
       return;
     }
+    if (pendingRevealAction === "role_ability_RAI_F1" || pendingRevealAction === "role_ability_RAI_F2"){
+      const roleId = pendingRevealAction.endsWith("RAI_F1") ? "RAI_F1" : "RAI_F2";
+      hideRevealPop();
+      const started = await startRoleAbilitySelection(roleId);
+      if (!started){
+        showRevealPopAt(null, { mode:"notice", message:"今は公開できません。" });
+      }
+      return;
+    }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
+    if ((myRoleId === "RAI_F1" || myRoleId === "RAI_F2") && canStartFelixOrFeliciaAbility(myRoleId)){
+      await startRoleAbilitySelection(myRoleId);
+    }
     if (myRoleId === "CIT_A1"){
       setTimeout(() => {
         setDamageToPlayer(state.userId, 0);
@@ -5357,6 +5568,9 @@
     if (cardPlayerSelectActive && pendingCardTargetSelection?.cardObj){
       return { kind:"card_target", cardObj: pendingCardTargetSelection.cardObj };
     }
+    if (pendingRoleAbilitySessionEntry){
+      return { kind:"role_ability", entry: pendingRoleAbilitySessionEntry };
+    }
     if (isIdentityPromptInteractionLockActive()){
       return {
         kind:"identity_prompt",
@@ -5377,6 +5591,10 @@
     }
     if (action.kind === "card_target"){
       await openPersistentCardTargetSelection(action.cardObj, { restore:true });
+      return;
+    }
+    if (action.kind === "role_ability"){
+      restoreRoleAbilitySelectionView(action.entry || null);
       return;
     }
     if (action.kind === "identity_prompt") restoreIdentityPromptSelection(action);
@@ -6020,6 +6238,9 @@
       if (kind === "curse_doll"){
         runCornerD6Roll(Number(ev.d6 || 1));
       } else if (kind === "blessing"){
+        if (safeText(ev.uid || "") === state.userId) return;
+        runCornerD6Roll(Number(ev.d6 || 1));
+      } else if (kind === "felix_mace"){
         if (safeText(ev.uid || "") === state.userId) return;
         runCornerD6Roll(Number(ev.d6 || 1));
       } else if (kind === "riot"){
@@ -9296,6 +9517,41 @@
     });
   }
 
+  function subscribeRoleAbilitySessionState(){
+    const sessionRef = ref(db, `rooms/${state.roomCode}/roleAbilitySession`);
+    onValue(sessionRef, snap => {
+      const data = snap.val() || null;
+      const at = Number(data?.at || 0);
+
+      if (!roleAbilitySessionInitialized){
+        roleAbilitySessionInitialized = true;
+        roleAbilitySessionSeenAt = at || 0;
+        if (data){
+          pendingRoleAbilitySessionEntry = data;
+          restoreRoleAbilitySelectionView(data);
+        }
+        return;
+      }
+
+      if (!data){
+        pendingRoleAbilitySessionEntry = null;
+        hideRoleAbilitySelectionUi();
+        closeZoom();
+        return;
+      }
+      if (!at) return;
+      if (at <= roleAbilitySessionSeenAt) return;
+      roleAbilitySessionSeenAt = at;
+      pendingRoleAbilitySessionEntry = data;
+      restoringRoleAbilitySession = true;
+      try {
+        restoreRoleAbilitySelectionView(data);
+      } finally {
+        restoringRoleAbilitySession = false;
+      }
+    });
+  }
+
   function subscribeSeatEquipSelectionState(){
     const seat = Number(state.seatedTable || 0);
     if (seatEquipSelectionUnsubscribe && subscribedSeatEquipSelectionIndex !== seat){
@@ -9813,6 +10069,13 @@
       migrateUidNode("greenSessions", true);
       migrateUidNode("cardTargetSessions", true);
 
+      if (room.roleAbilitySession && typeof room.roleAbilitySession === "object"){
+        const rewritten = deepReplaceUid(copy(room.roleAbilitySession));
+        if (!sameJson(rewritten, room.roleAbilitySession)){
+          outUpdates[`roleAbilitySession`] = touchAt(rewritten);
+        }
+      }
+
       const migrateRequestNode = (nodeName, shouldTouchAt = false) => {
         const node = room[nodeName] || {};
         if (!node || typeof node !== "object") return;
@@ -10128,6 +10391,7 @@
       remove(ref(db, `${base}/greenReveals`)),
       remove(ref(db, `${base}/greenRequests`)),
       remove(ref(db, `${base}/turn`)),
+      remove(ref(db, `${base}/roleAbilitySession`)),
       remove(ref(db, `${base}/attackResolutionPending`)),
       remove(ref(db, `${base}/attackLootPending`)),
     ]);
@@ -10255,6 +10519,7 @@
     subscribeGreenResponses();
     subscribeGreenSessionState();
     subscribeCardTargetSessionState();
+    subscribeRoleAbilitySessionState();
     subscribeGreenReveals();
     subscribeGreenCloseSignals();
     subscribeGreenReplyBubbles();
