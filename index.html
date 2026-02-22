@@ -3211,6 +3211,7 @@
     if (!isMyRole("RAI_E3")) return { ok:false, message:"今は使えません。" };
     if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
     if (!isMyIdentityRevealed()) return { ok:false, message:"今は使えません。" };
+    if (!turnState()?.moveDone) return { ok:false, message:"今は使えません。" };
     if (isRoleAbilityUsed("RAI_E3")) return { ok:false, message:"今は使えません。" };
     if (!canStartRoleSelection("RAI_E3", state.userId)) return { ok:false, message:"今は使えません。" };
     return { ok:true };
@@ -3278,6 +3279,9 @@
 
     await markRoleAbilityUsed(roleId);
     await setRoleAbilitySelectionState(null);
+    if (roleId === "RAI_E3" && !!entry?.endTurnAfterResolve){
+      await doEndTurn();
+    }
   }
 
   function openRoleAbilitySelectionUI(entry){
@@ -3340,6 +3344,9 @@
         const abilityName = safeText(spec?.abilityName || "能力");
         showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
           await setRoleAbilitySelectionState(null);
+          if (roleId === "RAI_E3" && !!entry?.endTurnAfterResolve){
+            await doEndTurn();
+          }
         }, {
           messageHtml: `<span class="ability-pill">${escapeHtml(abilityName)}</span>を使いませんか。`,
           yesLabel: "はい",
@@ -4902,6 +4909,11 @@
 
   btnAttackResultEnd?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
+    if (openedEmma){
+      await finalizePendingAttackResolution(false);
+      return;
+    }
     await finalizePendingAttackResolution(true);
   });
 
@@ -10710,7 +10722,7 @@
     if (!isMyRole("RAI_E3") || !isMyIdentityRevealed()) return false;
     const check = emmaAbilityAvailability();
     if (!check.ok) return false;
-    await setRoleAbilitySelectionState({ roleId:"RAI_E3", actorUid: state.userId, privateToActor:true });
+    await setRoleAbilitySelectionState({ roleId:"RAI_E3", actorUid: state.userId, privateToActor:true, endTurnAfterResolve:true });
     return true;
   }
 
