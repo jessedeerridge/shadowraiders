@@ -4592,8 +4592,12 @@
     if (isAgathaAbilityUsed()) return;
 
     await markAgathaAbilityUsed();
-    const rolled = await runCornerD6D4Roll();
+    const rolled = {
+      d6: 1 + Math.floor(Math.random() * 6),
+      d4: 1 + Math.floor(Math.random() * 4)
+    };
     await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4 });
+    await runCornerD6D4Roll(rolled);
     await waitMs(1000);
     const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
     await waitMs(1500);
@@ -4925,6 +4929,7 @@
       if (!isMyIdentityRevealed()){
         await revealMyIdentityToEquipment({ revealedBy:"manual" });
       } else {
+        await emitRoleFlashEvent("CIT_A3", "agatha_ability");
         await triggerAgathaRevealAbility({ endTurnAfterResolve:true });
       }
       return;
