@@ -2757,13 +2757,25 @@
     });
   }
 
+  function identityPromptRevealOptions(cardName){
+    const name = safeText(cardName || "");
+    if (!IDENTITY_PROMPT_CARD_NAMES.has(name)) return {};
+    if (name === "幸せのクッキー"){
+      return {
+        revealedBy: "happy_cookie",
+        useAgathaAbilityOnReveal: false
+      };
+    }
+    return {};
+  }
+
   function buildIdentityPromptResolver(cardName){
     const name = safeText(cardName || "");
     if (!IDENTITY_PROMPT_CARD_NAMES.has(name)) return null;
     return async () => {
       const role = myRoleInfo();
       if (!role) return;
-      await revealMyIdentityToEquipment();
+      await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
       openIdentityRevealZoom(role, state.userId);
       await fullRecoverPlayer(state.userId);
     };
@@ -8231,10 +8243,7 @@
         cardTheme: "white",
         openZoom: true,
         onYes: async () => {
-          await revealMyIdentityToEquipment({
-            revealedBy: "happy_cookie",
-            useAgathaAbilityOnReveal: false
-          });
+          await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
           openIdentityRevealZoom(role, state.userId);
           await fullRecoverPlayer(state.userId);
         }
