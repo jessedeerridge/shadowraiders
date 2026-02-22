@@ -106,7 +106,7 @@
     box-shadow:0 8px 20px rgba(0,0,0,.18);
     display:none;align-items:center;justify-content:center;
     font-size:22px;font-weight:1000;cursor:pointer;
-    z-index:2000;
+    z-index:12042;
   }
   .help-btn.visible{display:flex;}
 
@@ -116,7 +116,7 @@
     box-shadow:0 8px 20px rgba(0,0,0,.18);
     display:none;align-items:center;justify-content:center;
     font-size:20px;font-weight:1000;cursor:pointer;
-    z-index:2000;
+    z-index:12042;
   }
   .room-guide-btn.host-position{bottom:124px;}
   .room-guide-btn.visible{display:flex;}
@@ -385,6 +385,7 @@
     min-height:120px;
   }
   .equip-dock.visible{ display:block; }
+  .equip-dock.selection-front{ z-index:12042; }
   .equip-dock.david-select-front{ z-index:10030; }
 
   .equip-board{
@@ -2208,6 +2209,8 @@
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
   let zoomDismissHandler = null;
+  let temporaryIdentityViewState = null;
+  let temporaryEquipExpandState = null;
   let suppressOutsidePopCloseUntil = 0;
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
@@ -2623,6 +2626,7 @@
     if (!identityPromptPop || !identityPromptMsg || !btnIdentityPromptYes || !btnIdentityPromptNo) return;
     if (openZoom && cardObj){
       openZoomFromDeckCard(cardObj, cardTheme, { closeOnBackdrop:false, showCloseButton:false });
+      setZoomPassthrough(true);
     }
     pendingIdentityPrompt = {
       onYes: typeof onYes === "function" ? onYes : null,
@@ -3199,6 +3203,7 @@
       return;
     }
     openZoomFromDeckCard(card, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
     setGreenDockMeta({ title:`${safeText(card?.name || "") }：効果を処理中です。`, subtitle:"" });
     greenShareActions?.classList.add("hidden");
     renderGreenWaitingSelection(targetUid, safeText(entry?.targetName || ""), safeText(entry?.targetInitial || ""), safeText(entry?.targetColor || ""));
@@ -3220,6 +3225,7 @@
     const spec = cardTargetSelectionSpec(cardObj);
     if (!spec) return false;
     openZoomFromDeckCard(cardObj, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
     const opened = openTargetSelectDock({
       title: spec.title,
       lockEndTurnUntilResolved: true,
@@ -3550,6 +3556,63 @@
     if (options?.enableRevealPop) cardEl.dataset.revealInteractive = "1";
     openZoomContent(cardEl, { showCloseButton:false, ...(options || {}) });
   }
+
+  function canOpenTemporaryIdentityView(){
+    return cardPlayerSelectActive || !identityPromptPop?.classList.contains("hidden");
+  }
+
+  function isEffectSelectionOverlayActive(){
+    return canOpenTemporaryIdentityView() || !!temporaryIdentityViewState;
+  }
+
+  function openTemporaryIdentityView(role){
+    if (!role || !zoomBackdrop || !zoomStage) return false;
+    if (temporaryIdentityViewState) return true;
+    if (!canOpenTemporaryIdentityView()) return false;
+
+    temporaryIdentityViewState = {
+      stageNode: zoomStage.firstElementChild || null,
+      stageClassMulti: zoomStage.classList.contains("zoom-stage-multi"),
+      closeOnBackdrop: !!zoomCloseOnBackdrop,
+      closeOnAnyClick: !!zoomCloseOnAnyClick,
+      passthrough: !!zoomPassthroughMode,
+      greenDockVisible: !greenShareDock?.classList.contains("hidden"),
+      promptVisible: !identityPromptPop?.classList.contains("hidden"),
+      overPanel: zoomBackdrop.classList.contains("over-panel")
+    };
+
+    if (temporaryIdentityViewState.greenDockVisible) greenShareDock?.classList.add("hidden");
+    if (temporaryIdentityViewState.promptVisible) identityPromptPop?.classList.add("hidden");
+    hideRevealPop();
+
+    openZoomFromRole(role, { enableRevealPop:false, closeOnBackdrop:true, showCloseButton:false });
+    setZoomPassthrough(false);
+    zoomDismissHandler = async () => {
+      restoreTemporaryIdentityView();
+    };
+    return true;
+  }
+
+  function restoreTemporaryIdentityView(){
+    const prev = temporaryIdentityViewState;
+    temporaryIdentityViewState = null;
+    if (!prev) return;
+
+    zoomStage.innerHTML = "";
+    zoomStage.classList.remove("zoom-stage-multi");
+    if (prev.stageClassMulti) zoomStage.classList.add("zoom-stage-multi");
+    if (prev.stageNode) zoomStage.appendChild(prev.stageNode);
+
+    zoomCloseOnBackdrop = !!prev.closeOnBackdrop;
+    zoomCloseOnAnyClick = !!prev.closeOnAnyClick;
+    zoomDismissHandler = null;
+    setZoomPassthrough(!!prev.passthrough);
+    setZoomOverPanel(!!prev.overPanel);
+    zoomBackdrop.classList.remove("hidden");
+
+    if (prev.greenDockVisible) greenShareDock?.classList.remove("hidden");
+    if (prev.promptVisible) identityPromptPop?.classList.remove("hidden");
+  }
   function openIdentityRevealZoom(role, revealerUid){
     if (!role) return;
     const wrap = document.createElement("div");
@@ -3630,6 +3693,8 @@
     return !!zoomBackdrop?.classList.contains("hidden");
   }
   function closeZoom(){
+    temporaryIdentityViewState = null;
+    temporaryEquipExpandState = null;
     zoomBackdrop.classList.add("hidden");
     zoomBackdrop.classList.remove("passthrough");
     zoomStage.innerHTML = "";
@@ -3658,6 +3723,18 @@
       closeZoom();
     }
   });
+
+  document.addEventListener("click", (e) => {
+    if (!isEffectSelectionOverlayActive()) return;
+    const target = e.target;
+    const inAllowed = target?.closest?.("#myRoleDock, #zoomBackdrop, #greenShareDock, #identityPromptPop, #equipExpandBackdrop");
+    if (inAllowed) return;
+    const blockedChip = !!target?.closest?.(".chip16");
+    const blockedDeck = !!target?.closest?.("#slot1, #slot2, #slot3, #slot4, #slot5");
+    if (!blockedChip && !blockedDeck) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
 
   let slot1 = document.getElementById('slot1');
   let slot2 = document.getElementById('slot2');
@@ -3895,6 +3972,7 @@
   function renderEquipmentDock(){
     syncRoomAbilityTurnState();
     equipDock?.classList.toggle("david-select-front", pendingEquipAction?.type === "david_select");
+    equipDock?.classList.toggle("selection-front", canOpenTemporaryIdentityView());
     if (!state.roomCode) { equipDock.classList.remove("visible"); closeEquipExpand(); return; }
 
     updateEquipDockTop();
@@ -8529,11 +8607,24 @@
   }
   function openEquipExpand(){
     if (!equipDock?.classList.contains('visible')) return;
+    if (!temporaryEquipExpandState && canOpenTemporaryIdentityView()){
+      temporaryEquipExpandState = {
+        greenDockVisible: !greenShareDock?.classList.contains('hidden'),
+        promptVisible: !identityPromptPop?.classList.contains('hidden')
+      };
+      if (temporaryEquipExpandState.greenDockVisible) greenShareDock?.classList.add('hidden');
+      if (temporaryEquipExpandState.promptVisible) identityPromptPop?.classList.add('hidden');
+    }
     renderEquipExpandBody();
     equipExpandBackdrop?.classList.remove('hidden');
   }
   function closeEquipExpand(){
     equipExpandBackdrop?.classList.add('hidden');
+    if (temporaryEquipExpandState){
+      if (temporaryEquipExpandState.greenDockVisible) greenShareDock?.classList.remove('hidden');
+      if (temporaryEquipExpandState.promptVisible) identityPromptPop?.classList.remove('hidden');
+      temporaryEquipExpandState = null;
+    }
     if (isEquipSelectionLockActive() && zoomBackdrop?.classList.contains('hidden')){
       restorePendingEquipSelection();
     }
@@ -9595,6 +9686,7 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (openTemporaryIdentityView(role)) return;
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
         if (action){
@@ -9614,6 +9706,7 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (openTemporaryIdentityView(role)) return;
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
         if (action){
