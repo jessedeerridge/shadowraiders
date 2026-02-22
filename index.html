@@ -1345,17 +1345,12 @@
   }
   .zoom-stage{
     position:relative;
-    width:calc(72px * var(--zoom, 4));
-    height:calc(108px * var(--zoom, 4));
-    transform:none;
+    width:72px;
+    height:108px;
+    transform:scale(var(--zoom, 4));
     transform-origin:center;
     will-change:transform;
     transition:transform .35s ease;
-  }
-  .zoom-stage > .zoom-content{
-    transform:scale(var(--zoom, 4));
-    transform-origin:top left;
-    will-change:transform;
   }
   .zoom-stage.zoom-stage-multi{
     width:min(98vw, 1400px);
@@ -1364,10 +1359,10 @@
     transition:none;
   }
   .zoom-backdrop.green-reveal-active .zoom-stage{
-    transform:translateX(-90px);
+    transform:translateX(-90px) scale(var(--zoom, 4));
   }
   .zoom-backdrop.david-select-active .zoom-stage{
-    transform:translateX(-90px);
+    transform:translateX(-90px) scale(var(--zoom, 4));
   }
   .zoom-stage .card72,
   .zoom-stage .id72{
@@ -1751,11 +1746,11 @@
 
 <button id="hostSettingsBtn" class="host-settings-btn" title="設定">⚙</button>
 <button id="roomGuideBtn" class="room-guide-btn" title="ルーム効果" aria-label="ルーム効果"><img src="map.png" alt="map"></button>
-<button id="helpBtn" class="help-btn" title="正体カード一覧">？</button>
+<button id="helpBtn" class="help-btn" title="カードリスト">？</button>
 
 
 <div id="helpBackdrop" class="help-pop-backdrop hidden">
-  <div class="help-pop" role="dialog" aria-modal="true" aria-label="正体カード一覧">
+  <div class="help-pop" role="dialog" aria-modal="true" aria-label="カードリスト">
     <div class="help-pop-header">
       <div class="help-pop-title">カードリスト</div>
     </div>
@@ -1774,7 +1769,7 @@
 
 <div id="attackLootBackdrop" class="attack-loot-backdrop hidden">
   <div class="attack-loot-pop" role="dialog" aria-modal="true" aria-label="攻撃脱落後の装備奪取">
-    <div class="attack-loot-header">脱落者の装備</div>
+    <div class="attack-loot-header">脱落者の装備カード</div>
     <div class="attack-loot-body" id="attackLootBody"></div>
   </div>
 </div>
@@ -1786,7 +1781,7 @@
   </div>
   <div class="start-pop-main">
     <span class="start-badge" id="startBadge">参加人数：0</span><br>
-    「スタート」で全員に正体カードを1枚配布。<br>
+    「スタート」で参加人数に応じた構成で、全員に正体カードを1枚配布。<br>
     「リセット」で席・正体をリセットします。<br>
     <span class="small">開始後は座席変更できません。</span>
   </div>
@@ -3609,8 +3604,6 @@
     zoomStage.innerHTML = "";
     zoomStage.classList.remove("zoom-stage-multi");
     if (stageClass) zoomStage.classList.add(stageClass);
-    const isMultiStage = stageClass === "zoom-stage-multi";
-    if (!isMultiStage && contentEl && !contentEl.classList.contains("zoom-content")) contentEl.classList.add("zoom-content");
     hideGreenRevealPanel();
     zoomCloseOnBackdrop = !!closeOnBackdrop;
     zoomCloseOnAnyClick = !!closeOnAnyClick;
@@ -3631,7 +3624,6 @@
     const clone = cardEl.cloneNode(true);
     clone.classList.remove("locked","blocked");
     clone.classList.remove("equip-steal-pulse","equip-defeat-pulse","eliminated-dim");
-    clone.classList.add("zoom-content");
     clone.style.pointerEvents = "auto";
     openZoomContent(clone, options);
   }
@@ -3641,7 +3633,6 @@
   function openZoomFromRole(role, options){
     if (!role) return;
     const cardEl = createIdentityCard(role);
-    cardEl.classList.add("zoom-content");
     if (options?.enableRevealPop) cardEl.dataset.revealInteractive = "1";
     openZoomContent(cardEl, { showCloseButton:false, ...(options || {}) });
   }
@@ -3711,7 +3702,6 @@
     if (!cardObj) return;
     const cardEl = document.createElement("div");
     cardEl.className = `card72 wb-front ${theme === "black" ? "wb-black" : theme === "green" ? "wb-green" : "wb-white"}`;
-    cardEl.classList.add("zoom-content");
     cardEl.innerHTML = buildWbFrontHTML(cardObj, theme);
     adjustCardNameFont(cardEl);
     cardEl.dataset.cardType = theme || "";
