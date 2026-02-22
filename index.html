@@ -2757,13 +2757,25 @@
     });
   }
 
+  function identityPromptRevealOptions(cardName){
+    const name = safeText(cardName || "");
+    if (!IDENTITY_PROMPT_CARD_NAMES.has(name)) return {};
+    if (name === "幸せのクッキー"){
+      return {
+        revealedBy: "happy_cookie",
+        useAgathaAbilityOnReveal: false
+      };
+    }
+    return {};
+  }
+
   function buildIdentityPromptResolver(cardName){
     const name = safeText(cardName || "");
     if (!IDENTITY_PROMPT_CARD_NAMES.has(name)) return null;
     return async () => {
       const role = myRoleInfo();
       if (!role) return;
-      await revealMyIdentityToEquipment();
+      await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
       openIdentityRevealZoom(role, state.userId);
       await fullRecoverPlayer(state.userId);
     };
@@ -4520,6 +4532,7 @@
     if (!my || !my.roleId) return;
 
     const revealedBy = safeText(options.revealedBy || "");
+    const useAgathaAbilityOnReveal = options.useAgathaAbilityOnReveal !== false;
     const eRef = ref(db, `rooms/${state.roomCode}/equipment/${state.userId}/identity`);
     let revealedNow = false;
     await runTransaction(eRef, (cur) => {
@@ -4535,7 +4548,7 @@
       return next;
     });
     maybeResolveVampireHiddenHealOnReveal();
-    if (revealedNow && safeText(my.roleId) === "CIT_A3"){
+    if (revealedNow && safeText(my.roleId) === "CIT_A3" && useAgathaAbilityOnReveal){
       await triggerAgathaRevealAbility();
     }
   }
@@ -8230,7 +8243,7 @@
         cardTheme: "white",
         openZoom: true,
         onYes: async () => {
-          await revealMyIdentityToEquipment();
+          await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
           openIdentityRevealZoom(role, state.userId);
           await fullRecoverPlayer(state.userId);
         }
