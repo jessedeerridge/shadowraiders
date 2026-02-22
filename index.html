@@ -8626,6 +8626,9 @@
 
     const linked = findEquipBodyCardFromDataset(card);
     if (linked){
+      if (action?.kind === 'equip' && action?.type === 'banana_give' && card.classList.contains('equip-steal-pulse')){
+        closeEquipExpand();
+      }
       linked.click();
       return;
     }
