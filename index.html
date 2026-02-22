@@ -3212,8 +3212,6 @@
     if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
     if (!isMyIdentityRevealed()) return { ok:false, message:"今は使えません。" };
     if (isRoleAbilityUsed("RAI_E3")) return { ok:false, message:"今は使えません。" };
-    const movedRoom = Number(turnRoomActionState()?.movedByDiceRoomId || 0);
-    if (!isCornerRoomForEmma(movedRoom)) return { ok:false, message:"今は使えません。" };
     if (!canStartRoleSelection("RAI_E3", state.userId)) return { ok:false, message:"今は使えません。" };
     return { ok:true };
   }
@@ -4615,6 +4613,7 @@
         }
         if (!isMyTurn()) return;
         if (myRoleId === "RAI_E3"){
+          if (isRoleAbilityUsed("RAI_E3")) return;
           const check = emmaAbilityAvailability();
           if (!check.ok){
             e.stopPropagation();
@@ -6488,6 +6487,12 @@
       if (!aUid || !bUid) return;
       pendingHpSwapAnimation = { aUid, bUid, at };
       renderHpBoard();
+      setTimeout(() => {
+        if (!pendingHpSwapAnimation){
+          pendingHpSwapAnimation = { aUid, bUid, at };
+        }
+        renderHpBoard();
+      }, 120);
     });
   }
 
@@ -10704,10 +10709,7 @@
   async function tryOpenEmmaSelectionOnEndAttempt(){
     if (!isMyRole("RAI_E3") || !isMyIdentityRevealed()) return false;
     const check = emmaAbilityAvailability();
-    if (!check.ok){
-      showRevealPopAt(null, { mode:"notice", message:check.message || "今は使えません。" });
-      return false;
-    }
+    if (!check.ok) return false;
     await setRoleAbilitySelectionState({ roleId:"RAI_E3", actorUid: state.userId, privateToActor:true });
     return true;
   }
