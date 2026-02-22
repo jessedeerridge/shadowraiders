@@ -2317,6 +2317,16 @@
   let restoringSeatEquipSelection = false;
 
   const IDENTITY_PROMPT_CARD_NAMES = new Set(["幸せのクッキー", "光臨", "戦慄の闇儀式"]);
+  const IDENTITY_REVEAL_POP_BLOCK_CARD_NAMES = new Set([
+    "三つ目の黒犬",
+    "吸血コウモリ",
+    "呪いの人形",
+    "戦慄の闇儀式",
+    "応急手当",
+    "光臨",
+    "恩恵",
+    "幸せのクッキー"
+  ]);
 
   function turnRoomActionState(){
     const t = turnState() || {};
@@ -2650,6 +2660,20 @@
 
   function canInteractWithMapPlayerIcons(){
     return !isIdentityPromptInteractionLockActive() && !cardPlayerSelectActive;
+  }
+
+  function isIdentityRevealPopBlockedByEffectPop(){
+    const promptCardName = safeText(pendingIdentityPrompt?.cardObj?.name || "");
+    if (!identityPromptPop?.classList.contains("hidden") && IDENTITY_REVEAL_POP_BLOCK_CARD_NAMES.has(promptCardName)){
+      return true;
+    }
+
+    const selectionCardName = safeText(pendingCardTargetSelection?.cardObj?.name || "");
+    if (pendingCardTargetSelection && IDENTITY_REVEAL_POP_BLOCK_CARD_NAMES.has(selectionCardName)){
+      return true;
+    }
+
+    return false;
   }
 
   function restoreIdentityPromptSelection(action = null){
@@ -4433,6 +4457,10 @@
     if (!idCard) return;
     if (idCard.dataset.revealInteractive !== "1") return;
     if (isEquipSelectionLockActive()){
+      e.stopPropagation();
+      return;
+    }
+    if (isIdentityRevealPopBlockedByEffectPop()){
       e.stopPropagation();
       return;
     }
