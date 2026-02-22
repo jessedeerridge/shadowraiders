@@ -4557,7 +4557,7 @@
     await set(ref(db, `rooms/${state.roomCode}/abilityUsage/agatha/${state.userId}`), true);
   }
 
-  async function triggerAgathaRevealAbility(){
+  async function triggerAgathaRevealAbility(options = {}){
     if (!state.userId || !state.roomCode) return;
     if (isAgathaAbilityUsed()) return;
 
@@ -4568,11 +4568,16 @@
     const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
     await waitMs(1500);
     await addDamageToPlayers(playerIdsInRoom(targetRoomId), 3);
+    await waitMs(500);
     const cleanupTimer = setTimeout(() => {
       diceRollOverlay.innerHTML = '';
       clearDiceRollTimers();
     }, 2000);
     diceRollTimers.push(cleanupTimer);
+
+    if (options.endTurnAfterResolve && isMyTurn()){
+      await doEndTurn();
+    }
   }
 
   function restoreDavidIdentityZoom(){
@@ -4713,6 +4718,20 @@
         });
         return;
       }
+      if (myRoleId === "CIT_A3"){
+        if (isAgathaAbilityUsed()) return;
+        if (!turnState()?.moveDone){
+          e.stopPropagation();
+          showRevealPopAt(idCard, { mode:"notice", message:"手番の最後にだけ正体を公開できます。" });
+          return;
+        }
+        e.stopPropagation();
+        showRevealPopAt(idCard, {
+          action: "agatha_ability",
+          messageHtml: `<span class="ability-pill">完全犯罪</span>を使いますか。<br>使用後に手番が終了します。`
+        });
+        return;
+      }
       if (myRoleId !== "SHA_W1") return;
       const check = canUseWightAbilityNow();
       if (!check.ok){
@@ -4750,9 +4769,16 @@
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
       return;
     }
-    if (myRoleId === "CIT_A3" && isAgathaAbilityUsed()){
-      e.stopPropagation();
-      return;
+    if (myRoleId === "CIT_A3"){
+      if (isAgathaAbilityUsed()){
+        e.stopPropagation();
+        return;
+      }
+      if (!turnState()?.moveDone){
+        e.stopPropagation();
+        showRevealPopAt(idCard, { mode: "notice", message: "手番の最後にだけ正体を公開できます。" });
+        return;
+      }
     }
     if (myRoleId === "SHA_U2" && !canStartRoleSelection(myRoleId, state.userId)){
       e.stopPropagation();
@@ -4787,7 +4813,7 @@
     }
 
     e.stopPropagation();
-    showRevealPopAt(idCard, { appendEndTurnNotice: REVEAL_ENDS_TURN_ROLE_IDS.has(myRoleId) });
+    showRevealPopAt(idCard, { appendEndTurnNotice: REVEAL_ENDS_TURN_ROLE_IDS.has(myRoleId) || myRoleId === "CIT_A3" });
   });
 
   window.__lastPointerX = window.innerWidth / 2;
@@ -4842,6 +4868,15 @@
       }
       return;
     }
+    if (pendingRevealAction === "agatha_ability"){
+      hideRevealPop();
+      if (!isMyIdentityRevealed()){
+        await revealMyIdentityToEquipment({ revealedBy:"manual" });
+      } else {
+        await triggerAgathaRevealAbility({ endTurnAfterResolve:true });
+      }
+      return;
+    }
     if (pendingRevealAction.startsWith("role_select:")){
       const roleId = safeText(pendingRevealAction.split(":")[1] || "");
       const role = ROLE_BY_ID[roleId];
@@ -4871,6 +4906,9 @@
       }, 1500);
     }
     hideRevealPop();
+    if (myRoleId === "CIT_A3" && isAgathaAbilityUsed() && isMyTurn()){
+      await doEndTurn();
+    }
   });
 
   btnAttackNo.addEventListener("click", (e) => {
