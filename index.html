@@ -2240,7 +2240,6 @@
     "SHA_U2", // ウラヌス
   ]);
   const REVEAL_ENDS_TURN_ROLE_IDS = new Set([
-    "CIT_A3", // アガサ
     "CIT_B2", // ベンジャミン
     "RAI_E3", // エマ
     "RAI_G1", // ゴードン
@@ -4505,8 +4504,10 @@
 
     const revealedBy = safeText(options.revealedBy || "");
     const eRef = ref(db, `rooms/${state.roomCode}/equipment/${state.userId}/identity`);
+    let revealedNow = false;
     await runTransaction(eRef, (cur) => {
       if (cur && cur.kind === "identity" && cur.roleId) return cur;
+      revealedNow = true;
       const next = {
         kind: "identity",
         roleId: String(my.roleId),
@@ -4517,6 +4518,9 @@
       return next;
     });
     maybeResolveVampireHiddenHealOnReveal();
+    if (revealedNow && safeText(my.roleId) === "CIT_A3"){
+      await triggerAgathaRevealAbility();
+    }
   }
 
   function hasNonIdentityEquipment(uid){
@@ -4542,6 +4546,38 @@
   async function markDavidAbilityUsed(){
     if (!state.roomCode || !state.userId) return;
     await set(ref(db, `rooms/${state.roomCode}/abilityUsage/david/${state.userId}`), true);
+  }
+
+  function isAgathaAbilityUsed(){
+    return !!state.room?.abilityUsage?.agatha?.[state.userId];
+  }
+
+  async function markAgathaAbilityUsed(){
+    if (!state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/agatha/${state.userId}`), true);
+  }
+
+  async function triggerAgathaRevealAbility(options = {}){
+    if (!state.userId || !state.roomCode) return;
+    if (isAgathaAbilityUsed()) return;
+
+    await markAgathaAbilityUsed();
+    const rolled = await runCornerD6D4Roll();
+    await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4 });
+    await waitMs(1000);
+    const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
+    await waitMs(1500);
+    await addDamageToPlayers(playerIdsInRoom(targetRoomId), 3);
+    await waitMs(500);
+    const cleanupTimer = setTimeout(() => {
+      diceRollOverlay.innerHTML = '';
+      clearDiceRollTimers();
+    }, 2000);
+    diceRollTimers.push(cleanupTimer);
+
+    if (options.endTurnAfterResolve && isMyTurn()){
+      await doEndTurn();
+    }
   }
 
   function restoreDavidIdentityZoom(){
@@ -4682,6 +4718,20 @@
         });
         return;
       }
+      if (myRoleId === "CIT_A3"){
+        if (isAgathaAbilityUsed()) return;
+        if (!turnState()?.moveDone){
+          e.stopPropagation();
+          showRevealPopAt(idCard, { mode:"notice", message:"手番の最後にだけ正体を公開できます。" });
+          return;
+        }
+        e.stopPropagation();
+        showRevealPopAt(idCard, {
+          action: "agatha_ability",
+          messageHtml: `<span class="ability-pill">完全犯罪</span>を使いますか。<br>使用後に手番が終了します。`
+        });
+        return;
+      }
       if (myRoleId !== "SHA_W1") return;
       const check = canUseWightAbilityNow();
       if (!check.ok){
@@ -4719,6 +4769,17 @@
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
       return;
     }
+    if (myRoleId === "CIT_A3"){
+      if (isAgathaAbilityUsed()){
+        e.stopPropagation();
+        return;
+      }
+      if (!turnState()?.moveDone){
+        e.stopPropagation();
+        showRevealPopAt(idCard, { mode: "notice", message: "手番の最後にだけ正体を公開できます。" });
+        return;
+      }
+    }
     if (myRoleId === "SHA_U2" && !canStartRoleSelection(myRoleId, state.userId)){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
@@ -4752,7 +4813,7 @@
     }
 
     e.stopPropagation();
-    showRevealPopAt(idCard, { appendEndTurnNotice: REVEAL_ENDS_TURN_ROLE_IDS.has(myRoleId) });
+    showRevealPopAt(idCard, { appendEndTurnNotice: REVEAL_ENDS_TURN_ROLE_IDS.has(myRoleId) || myRoleId === "CIT_A3" });
   });
 
   window.__lastPointerX = window.innerWidth / 2;
@@ -4807,6 +4868,15 @@
       }
       return;
     }
+    if (pendingRevealAction === "agatha_ability"){
+      hideRevealPop();
+      if (!isMyIdentityRevealed()){
+        await revealMyIdentityToEquipment({ revealedBy:"manual" });
+      } else {
+        await triggerAgathaRevealAbility({ endTurnAfterResolve:true });
+      }
+      return;
+    }
     if (pendingRevealAction.startsWith("role_select:")){
       const roleId = safeText(pendingRevealAction.split(":")[1] || "");
       const role = ROLE_BY_ID[roleId];
@@ -4836,6 +4906,9 @@
       }, 1500);
     }
     hideRevealPop();
+    if (myRoleId === "CIT_A3" && isAgathaAbilityUsed() && isMyTurn()){
+      await doEndTurn();
+    }
   });
 
   btnAttackNo.addEventListener("click", (e) => {
@@ -6518,6 +6591,12 @@
         if (safeText(ev.uid || "") === state.userId) return;
         runCornerD6Roll(Number(ev.d6 || 1));
       } else if (kind === "riot"){
+        runCornerD6D4Roll({
+          d6: Number(ev.d6 || 1),
+          d4: Number(ev.d4 || 1)
+        });
+      } else if (kind === "role_agatha"){
+        if (safeText(ev.uid || "") === state.userId) return;
         runCornerD6D4Roll({
           d6: Number(ev.d6 || 1),
           d4: Number(ev.d4 || 1)
@@ -9070,7 +9149,7 @@
   const ROLES = [
     { id:"CIT_A1", name:"アリス",    en:"ALICE",    initial:"A", faction:"シチズン", hp:8,  win:"生存している", effect:"うさぎさんヒール：手番初めに使用。ダメージを全回復（1回）" },
     { id:"CIT_A2", name:"アンジェラ", en:"ANGELA",  initial:"A", faction:"シチズン", hp:8,  win:"右隣のプレイヤーが勝利する", effect:"移り気：勝利条件を「左隣のプレイヤーが勝利する」に変更（1回）" },
-    { id:"CIT_A3", name:"アガサ",    en:"AGATHA",   initial:"A", faction:"シチズン", hp:8,  win:"自分の手番でゲーム終了", effect:"完全犯罪：手番最後にダイス2個を振り、出目エリアのPL全員に3ダメージ（1回）" },
+    { id:"CIT_A3", name:"アガサ",    en:"AGATHA",   initial:"A", faction:"シチズン", hp:8,  win:"自分の手番でゲーム終了", effect:"完全犯罪：正体公開時にダイス2個を同時に振り、出目エリアのPL全員に3ダメージ（1回）" },
     { id:"CIT_B1", name:"バイロン",  en:"BYRON",    initial:"B", faction:"シチズン", hp:10, win:"装備カードを5枚以上所持", effect:"念力の懐中時計：2以上の攻撃ダメージ時、代わりに装備を1つ奪う" },
     { id:"CIT_B2", name:"ベンジャミン", en:"BENJAMIN", initial:"B", faction:"シチズン", hp:10, win:"他PLが装備を5つ以上所持", effect:"太鼓持ち：手番最後に同じエリアのPLへ装備を1つ渡せる" },
     { id:"CIT_B3", name:"ブルース",  en:"BRUCE",    initial:"B", faction:"シチズン", hp:10, win:"攻撃でHP12以上のPLを脱落させる、または終了時にマス9にいる", effect:"国士無双：攻撃でHP11以下のPLを脱落させた時、自分の正体を公開" },
