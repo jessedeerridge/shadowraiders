@@ -2549,6 +2549,10 @@
     return !identityPromptPop?.classList.contains("hidden");
   }
 
+  function canInteractWithMapPlayerIcons(){
+    return !isIdentityPromptInteractionLockActive();
+  }
+
   function restoreIdentityPromptSelection(action = null){
     const next = action || pendingIdentityPrompt;
     const cardObj = next?.cardObj || null;
@@ -7920,8 +7924,9 @@
   const rx = 3;
 
   if (!eliminated && uid && uid === state.userId){
-    g.style.cursor = 'pointer';
+    g.style.cursor = canInteractWithMapPlayerIcons() ? 'pointer' : 'default';
     g.addEventListener('click', (e) => {
+      if (!canInteractWithMapPlayerIcons()) return;
       if (cardPlayerSelectActive) return;
       if (canUseRoom3Action()){
         if (hasEquipmentByName(uid, "幸運のブローチ")) return;
@@ -7963,7 +7968,7 @@
       triggerMoveDiceForAll();
     });
   } else if (!eliminated && uid){
-    if (pulse) g.style.cursor = 'pointer';
+    if (pulse) g.style.cursor = canInteractWithMapPlayerIcons() ? 'pointer' : 'default';
     const longPressMs = 500;
     let markerLongPressTimer = null;
     let markerLongPressDone = false;
@@ -7974,6 +7979,7 @@
     };
 
     g.addEventListener('pointerdown', (e) => {
+      if (!canInteractWithMapPlayerIcons()) return;
       if (cardPlayerSelectActive) return;
       if (isEquipSelectionLockActive()) return;
       markerLongPressDone = false;
@@ -7990,6 +7996,7 @@
     g.addEventListener('pointercancel', clearMarkerLongPress);
 
     g.addEventListener('click', (e) => {
+      if (!canInteractWithMapPlayerIcons()) return;
       if (cardPlayerSelectActive) return;
       if (isEquipSelectionLockActive()) return;
       clearMarkerLongPress();
