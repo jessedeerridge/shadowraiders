@@ -2204,6 +2204,7 @@
   let vampireHiddenAttackSuccess = false;
   let vampireHealScheduled = false;
   let pendingEquipAction = null;
+  let pendingCardTargetSelection = null;
   let danielAutoRevealTimer = null;
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
@@ -3208,6 +3209,7 @@
     try {
       await spec.resolver(targetUid);
     } finally {
+      pendingCardTargetSelection = null;
       cardPlayerSelectActive = false;
       renderTurnEndButton();
       await setCardTargetSessionState(null);
@@ -3220,6 +3222,8 @@
     const spec = cardTargetSelectionSpec(cardObj);
     if (!spec) return false;
     openZoomFromDeckCard(cardObj, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
+    pendingCardTargetSelection = { cardObj };
     const opened = openTargetSelectDock({
       title: spec.title,
       lockEndTurnUntilResolved: true,
@@ -3238,6 +3242,7 @@
         try {
           await spec.resolver(uid);
         } finally {
+          pendingCardTargetSelection = null;
           await setCardTargetSessionState(null);
           closeZoom();
         }
@@ -3245,6 +3250,7 @@
     });
 
     if (!opened){
+      pendingCardTargetSelection = null;
       await setCardTargetSessionState(null);
       closeZoom();
       return false;
@@ -5203,6 +5209,25 @@
 
   function isEquipSelectionLockActive(){
     return pendingEquipAction?.type === "oliver_target" || pendingEquipAction?.type === "banana_give";
+  }
+
+  function captureSelectionRestoreAction(){
+    if (isEquipSelectionLockActive()) return { kind:"equip", ...pendingEquipAction };
+    if (cardPlayerSelectActive && pendingCardTargetSelection?.cardObj){
+      return { kind:"card_target", cardObj: pendingCardTargetSelection.cardObj };
+    }
+    return null;
+  }
+
+  async function restoreSelectionAction(action){
+    if (!action) return;
+    if (action.kind === "equip"){
+      restorePendingEquipSelection(action);
+      return;
+    }
+    if (action.kind === "card_target"){
+      await openPersistentCardTargetSelection(action.cardObj, { restore:true });
+    }
   }
 
   function restorePendingEquipSelection(action = null){
@@ -8426,13 +8451,13 @@
         } else {
           roleCard.addEventListener('click', (e) => {
             e.stopPropagation();
-            const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
+            const action = captureSelectionRestoreAction();
             openZoomFromCard(roleCard, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
             setZoomOverPanel(true);
             if (action){
               setZoomPassthrough(false);
               zoomDismissHandler = async () => {
-                restorePendingEquipSelection(action);
+                await restoreSelectionAction(action);
               };
             }
           });
@@ -8458,13 +8483,13 @@
         card.style.cursor = 'pointer';
         card.addEventListener('click', (e) => {
           e.stopPropagation();
-          const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
+          const action = captureSelectionRestoreAction();
           openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
           setZoomOverPanel(true);
           if (action){
             setZoomPassthrough(false);
             zoomDismissHandler = async () => {
-              restorePendingEquipSelection(action);
+              await restoreSelectionAction(action);
             };
           }
         });
@@ -8562,15 +8587,15 @@
     if (!card) return;
     e.stopPropagation();
 
-    const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
+    const action = captureSelectionRestoreAction();
     const ownerUid = safeText(card.dataset.ownerUid || "");
     const sourceKey = safeText(card.dataset.sourceKey || "");
 
-    if (action?.type === 'oliver_target' && (!card.classList.contains('equip-steal-pulse') || !ownerUid || ownerUid === state.userId || !sourceKey)){
+    if (action?.kind === 'equip' && action?.type === 'oliver_target' && (!card.classList.contains('equip-steal-pulse') || !ownerUid || ownerUid === state.userId || !sourceKey)){
       openEquipSelectionTempZoom(card, action);
       return;
     }
-    if (action?.type === 'banana_give' && (ownerUid !== state.userId || !sourceKey)){
+    if (action?.kind === 'equip' && action?.type === 'banana_give' && (ownerUid !== state.userId || !sourceKey)){
       openEquipSelectionTempZoom(card, action);
       return;
     }
@@ -8581,7 +8606,13 @@
       return;
     }
     if (action){
-      openEquipSelectionTempZoom(card, action);
+      greenShareDock?.classList.add("hidden");
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+      setZoomOverPanel(true);
+      setZoomPassthrough(false);
+      zoomDismissHandler = async () => {
+        await restoreSelectionAction(action);
+      };
       return;
     }
     openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
@@ -8964,6 +8995,7 @@
 
       if (!data){
         pendingCardTargetSessionEntry = null;
+        pendingCardTargetSelection = null;
         cardPlayerSelectActive = false;
         greenShareDock?.classList.add("hidden");
         closeZoom();
@@ -9595,12 +9627,12 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
-        const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
+        const action = captureSelectionRestoreAction();
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
         if (action){
           setZoomPassthrough(false);
           zoomDismissHandler = async () => {
-            restorePendingEquipSelection(action);
+            await restoreSelectionAction(action);
           };
         }
       });
@@ -9614,12 +9646,12 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
-        const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
+        const action = captureSelectionRestoreAction();
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
         if (action){
           setZoomPassthrough(false);
           zoomDismissHandler = async () => {
-            restorePendingEquipSelection(action);
+            await restoreSelectionAction(action);
           };
         }
       });
