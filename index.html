@@ -3660,6 +3660,11 @@
     if (options?.enableRevealPop) cardEl.dataset.revealInteractive = "1";
     openZoomContent(cardEl, { showCloseButton:false, ...(options || {}) });
   }
+  function scheduleZoomAutoClose(ms = 2000){
+    setTimeout(() => {
+      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
+    }, Math.max(200, Number(ms) || 2000));
+  }
   function openIdentityRevealZoom(role, revealerUid){
     if (!role) return;
     const wrap = document.createElement("div");
@@ -3682,9 +3687,7 @@
     }
 
     openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
-    setTimeout(() => {
-      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
-    }, 2000);
+    scheduleZoomAutoClose(2000);
   }
   function openMultiIdentityRevealZoom(entries = []){
     const targets = (entries || []).filter(v => v?.role && v?.uid);
@@ -3718,9 +3721,7 @@
     }
 
     openZoomContent(row, { closeOnBackdrop:false, showCloseButton:false, stageClass:"zoom-stage-multi" });
-    setTimeout(() => {
-      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
-    }, 2000);
+    scheduleZoomAutoClose(2000);
   }
   function openZoomFromDeckCard(cardObj, theme, options){
     if (!cardObj) return;
@@ -4092,6 +4093,7 @@
     const byId = new Map(latestPlayers.map(p => [p.id, p]));
     const selected = payload.selected || null;
     let lastCardsWrap = null;
+    let lootableRowCount = 0;
 
     for (const uid of payload.defeatedUids){
       const p = byId.get(uid);
@@ -4124,26 +4126,27 @@
       row.appendChild(cardsWrap);
       attackLootBody.appendChild(row);
       lastCardsWrap = cardsWrap;
+      lootableRowCount += 1;
     }
 
-    const noStealCard = document.createElement("div");
-    noStealCard.className = "card72 wb-front wb-white attack-loot-no-steal equip-defeat-pulse";
-    noStealCard.dataset.noSteal = "1";
-    noStealCard.textContent = "奪わない";
-    if (selected?.noSteal){
-      noStealCard.classList.remove("equip-defeat-pulse");
-      noStealCard.classList.add("equip-steal-pulse");
+    if (lootableRowCount === 0){
+      closeAttackLootPanel();
+      return;
     }
-    if (lastCardsWrap){
-      lastCardsWrap.appendChild(noStealCard);
-    } else {
-      const row = document.createElement("div");
-      row.className = "attack-loot-row";
-      const cardsWrap = document.createElement("div");
-      cardsWrap.className = "attack-loot-cards";
-      cardsWrap.appendChild(noStealCard);
-      row.appendChild(cardsWrap);
-      attackLootBody.appendChild(row);
+
+    const hasEquipSelection = !!(selected && !selected.noSteal && selected.ownerUid && selected.sourceKey);
+    if (!hasEquipSelection){
+      const noStealCard = document.createElement("div");
+      noStealCard.className = "card72 wb-front wb-white attack-loot-no-steal equip-defeat-pulse";
+      noStealCard.dataset.noSteal = "1";
+      noStealCard.textContent = "奪わない";
+      if (selected?.noSteal){
+        noStealCard.classList.remove("equip-defeat-pulse");
+        noStealCard.classList.add("equip-steal-pulse");
+      }
+      if (lastCardsWrap){
+        lastCardsWrap.appendChild(noStealCard);
+      }
     }
     attackLootBackdrop.classList.remove("hidden");
   }
@@ -9913,6 +9916,8 @@
           zoomDismissHandler = async () => {
             await restoreSelectionAction(action);
           };
+        } else {
+          scheduleZoomAutoClose(2000);
         }
       });
       myRoleCard.appendChild(face);
@@ -9932,6 +9937,8 @@
           zoomDismissHandler = async () => {
             await restoreSelectionAction(action);
           };
+        } else {
+          scheduleZoomAutoClose(2000);
         }
       });
 
