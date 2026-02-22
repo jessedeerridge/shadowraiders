@@ -4100,13 +4100,18 @@
       closeAttackLootPanel();
       return;
     }
+    const lootableDefeatedUids = payload.defeatedUids.filter(uid => hasNonIdentityEquipment(uid));
+    if (!lootableDefeatedUids.length){
+      closeAttackLootPanel();
+      return;
+    }
 
     attackLootBody.innerHTML = "";
     const byId = new Map(latestPlayers.map(p => [p.id, p]));
     const selected = payload.selected || null;
     let lastCardsWrap = null;
 
-    for (const uid of payload.defeatedUids){
+    for (const uid of lootableDefeatedUids){
       const p = byId.get(uid);
       if (!p) continue;
       const list = listEquipForUid(uid);
