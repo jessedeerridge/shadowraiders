@@ -2287,6 +2287,7 @@
   let pendingAttackResolution = null;
   let suppressEndTurnButton = false;
   let pendingHpSwapAnimation = null;
+  let attackDamageVisualLock = false;
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -4966,6 +4967,10 @@
       return;
     }
 
+    if (isGreenCardInteractionActive() && !selectionAction){
+      return;
+    }
+
     if (pendingEquipAction?.type === "david_select"){
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
@@ -5804,7 +5809,16 @@
     if (mustAttackWithMasamune()) return false;
     if (attackTurnEndChoicePending) return false;
     if (suppressEndTurnButton) return false;
+    if (attackDamageVisualLock) return false;
     return !!turnState()?.moveDone;
+  }
+
+  function isGreenCardInteractionActive(){
+    return !!greenShareCard
+      && !!greenShareDock
+      && !greenShareDock.classList.contains("hidden")
+      && !!zoomBackdrop
+      && !zoomBackdrop.classList.contains("hidden");
   }
 
   function mustAttackWithMasamune(){
@@ -6091,13 +6105,17 @@
     pendingAttackResolution = null;
     attackTurnEndChoicePending = false;
     suppressEndTurnButton = !!endTurnAfterApply;
+    attackDamageVisualLock = !endTurnAfterApply;
     cachePendingAttackResolution(null);
     await upsertPendingAttackResolution([], "");
     renderTurnEndButton();
     hideAttackResultPop();
     clearAttackResultDice();
     if (!pending || pending.applied){
-      if (!endTurnAfterApply) suppressEndTurnButton = false;
+      if (!endTurnAfterApply){
+        suppressEndTurnButton = false;
+        attackDamageVisualLock = false;
+      }
       return;
     }
     pending.applied = true;
@@ -6106,8 +6124,14 @@
       await new Promise(resolve => setTimeout(resolve, 2000));
       await doEndTurn();
       suppressEndTurnButton = false;
+      attackDamageVisualLock = false;
       renderTurnEndButton();
+      return;
     }
+    await new Promise(resolve => setTimeout(resolve, 700));
+    attackDamageVisualLock = false;
+    suppressEndTurnButton = false;
+    renderTurnEndButton();
   }
 
   function animateHpBoardSwapIfNeeded(){
@@ -9423,6 +9447,9 @@
     const linked = findEquipBodyCardFromDataset(card);
     if (linked){
       linked.click();
+      return;
+    }
+    if (isGreenCardInteractionActive() && !action){
       return;
     }
     if (action){
