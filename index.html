@@ -2541,6 +2541,26 @@
   function hideIdentityPrompt(){
     pendingIdentityPrompt = null;
     identityPromptPop?.classList.add("hidden");
+    cardPlayerSelectActive = false;
+    updateCardInteractivity();
+    renderTurnEndButton();
+  }
+
+  function isIdentityPromptSelectionActive(){
+    return !identityPromptPop?.classList.contains("hidden") && !!pendingIdentityPrompt;
+  }
+
+  function restoreIdentityPromptSelection(action){
+    if (!action) return;
+    showIdentityPromptPop({
+      message: safeText(action.message || ""),
+      canReveal: !!action.canReveal,
+      onYes: action.onYes,
+      onNo: action.onNo,
+      cardObj: action.cardObj || null,
+      cardTheme: safeText(action.cardTheme || "white") || "white",
+      openZoom: !!action.openZoom
+    });
   }
 
   function cardByName(name){
@@ -2630,7 +2650,12 @@
     pendingIdentityPrompt = {
       onYes: typeof onYes === "function" ? onYes : null,
       onNo: typeof onNo === "function" ? onNo : null,
-      closeZoomOnChoice: !!openZoom
+      closeZoomOnChoice: !!openZoom,
+      message: safeText(message || ""),
+      canReveal: !!canReveal,
+      cardObj: cardObj || null,
+      cardTheme: safeText(cardTheme || "white") || "white",
+      openZoom: !!openZoom
     };
     identityPromptMsg.textContent = safeText(message || "");
 
@@ -2642,6 +2667,9 @@
     btnIdentityPromptNo.disabled = false;
 
     identityPromptPop.classList.remove("hidden");
+    cardPlayerSelectActive = true;
+    updateCardInteractivity();
+    renderTurnEndButton();
 
     const cardName = safeText(cardObj?.name || "");
     if (IDENTITY_PROMPT_CARD_NAMES.has(cardName)){
@@ -5247,6 +5275,18 @@
   }
 
   function captureSelectionRestoreAction(){
+    if (isIdentityPromptSelectionActive()){
+      return {
+        kind:"identity_prompt",
+        message: pendingIdentityPrompt?.message || "",
+        canReveal: !!pendingIdentityPrompt?.canReveal,
+        onYes: pendingIdentityPrompt?.onYes || null,
+        onNo: pendingIdentityPrompt?.onNo || null,
+        cardObj: pendingIdentityPrompt?.cardObj || null,
+        cardTheme: pendingIdentityPrompt?.cardTheme || "white",
+        openZoom: !!pendingIdentityPrompt?.openZoom
+      };
+    }
     if (isEquipSelectionLockActive()) return { kind:"equip", ...pendingEquipAction };
     if (cardPlayerSelectActive && pendingCardTargetSelection?.cardObj){
       return { kind:"card_target", cardObj: pendingCardTargetSelection.cardObj };
@@ -5256,6 +5296,10 @@
 
   async function restoreSelectionAction(action){
     if (!action) return;
+    if (action.kind === "identity_prompt"){
+      restoreIdentityPromptSelection(action);
+      return;
+    }
     if (action.kind === "equip"){
       restorePendingEquipSelection(action);
       return;
