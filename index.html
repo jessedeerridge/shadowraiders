@@ -3169,6 +3169,7 @@
     if (!role) return;
     activeRoleAbilitySelection = entry;
     openIdentityRevealZoom(role, actorUid, { persist:true });
+    setZoomPassthrough(true);
     const isActor = actorUid === state.userId;
     if (!isActor){
       greenShareDock?.classList.add("hidden");
@@ -6643,6 +6644,15 @@
     const card = e.target.closest(".card72.wb-front");
     if (!card) return;
     if (card.classList.contains("locked") || card.classList.contains("blocked")) return;
+    const selectionAction = captureSelectionRestoreAction();
+    if (selectionAction){
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+      setZoomPassthrough(false);
+      zoomDismissHandler = async () => {
+        await restoreSelectionAction(selectionAction);
+      };
+      return;
+    }
     openZoomFromCard(card);
   });
 
