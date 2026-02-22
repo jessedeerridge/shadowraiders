@@ -3252,6 +3252,9 @@
       });
     } else if (roleId === "RAI_G3"){
       await setDamageToPlayer(selectedUid, 7);
+      await update(ref(db, `rooms/${state.roomCode}`), {
+        [`markers/${selectedUid}`]: null
+      });
     } else if (roleId === "SHA_U2"){
       await addDamageToPlayer(selectedUid, 3);
       uranusMeteorResolved = true;
@@ -4619,6 +4622,7 @@
             return;
           }
         } else if (myRoleId === "SHA_U2"){
+          if (isRoleAbilityUsed("SHA_U2")) return;
           const check = uranusAbilityAvailability();
           if (!check.ok){
             e.stopPropagation();
@@ -5355,9 +5359,7 @@
     showTurnHint("");
     if (isMyTurn() && isMyIdentityRevealed() && isMyRole("SHA_U2") && !isRoleAbilityUsed("SHA_U2")){
       const check = uranusAbilityAvailability();
-      if (!check.ok){
-        showRevealPopAt(null, { mode:"notice", message:check.message || "今は使えません。" });
-      } else {
+      if (check.ok){
         setRoleAbilitySelectionState({ roleId:"SHA_U2", actorUid: state.userId, privateToActor:true }).catch(() => {});
       }
     }
