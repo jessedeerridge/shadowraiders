@@ -3199,6 +3199,7 @@
       return;
     }
     openZoomFromDeckCard(card, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
     setGreenDockMeta({ title:`${safeText(card?.name || "") }：効果を処理中です。`, subtitle:"" });
     greenShareActions?.classList.add("hidden");
     renderGreenWaitingSelection(targetUid, safeText(entry?.targetName || ""), safeText(entry?.targetInitial || ""), safeText(entry?.targetColor || ""));
@@ -3220,6 +3221,7 @@
     const spec = cardTargetSelectionSpec(cardObj);
     if (!spec) return false;
     openZoomFromDeckCard(cardObj, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
     const opened = openTargetSelectDock({
       title: spec.title,
       lockEndTurnUntilResolved: true,
@@ -3257,6 +3259,25 @@
       });
     }
     return true;
+  }
+
+  function hasCardTargetSelectionOverlay(){
+    const entry = pendingCardTargetSessionEntry;
+    if (!entry || !entry.card) return false;
+    const phase = safeText(entry.phase || "");
+    return phase === "selecting" || phase === "resolving";
+  }
+
+  function restoreCardTargetSelectionOverlay(){
+    if (!hasCardTargetSelectionOverlay()) return;
+    const entry = pendingCardTargetSessionEntry;
+    const spec = cardTargetSelectionSpec(entry.card);
+    if (!spec) return;
+    openZoomFromDeckCard(entry.card, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
+    cardPlayerSelectActive = true;
+    renderTurnEndButton();
+    greenShareDock?.classList.remove("hidden");
   }
 
   function openGreenShareDock(cardObj, { attackRangeOnly=false } = {}){
@@ -9578,6 +9599,28 @@
      ★④右下：正体カードは「裏面(browncard.jpg)」で表示し、
         クリックで「オモテ(拡大)」を表示
      ========================================================= */
+  function openMyRoleZoom(role){
+    if (!role) return;
+    if (hasCardTargetSelectionOverlay()){
+      greenShareDock?.classList.add("hidden");
+      closeZoom();
+      openZoomFromRole(role, { closeOnBackdrop:true, enableRevealPop:false, showCloseButton:false });
+      zoomDismissHandler = async () => {
+        restoreCardTargetSelectionOverlay();
+      };
+      return;
+    }
+
+    const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
+    openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
+    if (action){
+      setZoomPassthrough(false);
+      zoomDismissHandler = async () => {
+        restorePendingEquipSelection(action);
+      };
+    }
+  }
+
   function renderMyRoleCard(role){
     myRoleCard.innerHTML = '';
     if (!role){
@@ -9595,14 +9638,7 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
-        const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
-        if (action){
-          setZoomPassthrough(false);
-          zoomDismissHandler = async () => {
-            restorePendingEquipSelection(action);
-          };
-        }
+        openMyRoleZoom(role);
       });
       myRoleCard.appendChild(face);
     } else {
@@ -9614,14 +9650,7 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
-        const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
-        if (action){
-          setZoomPassthrough(false);
-          zoomDismissHandler = async () => {
-            restorePendingEquipSelection(action);
-          };
-        }
+        openMyRoleZoom(role); // 拡大はオモテ（id72）
       });
 
       myRoleCard.appendChild(back);
