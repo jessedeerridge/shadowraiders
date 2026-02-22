@@ -2287,6 +2287,7 @@
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
   let pendingAttackResolution = null;
+  let attackFlowUiLockActive = false;
   let suppressEndTurnButton = false;
   let pendingHpSwapAnimation = null;
 
@@ -2393,6 +2394,7 @@
     clearAttackResultDice();
     pendingAttackResolution = null;
     attackTurnEndChoicePending = false;
+    attackFlowUiLockActive = false;
     cachePendingAttackResolution(null);
     showTurnHint("");
     renderMarkers();
@@ -4881,10 +4883,12 @@
 
     hideAttackPop();
     attackTurnEndChoicePending = true;
+    attackFlowUiLockActive = true;
     renderTurnEndButton();
     const selectedSum = chooseSumForTestPlayer("攻撃");
     if (isTestPlayer() && selectedSum == null){
       attackTurnEndChoicePending = false;
+      attackFlowUiLockActive = false;
       renderTurnEndButton();
       return;
     }
@@ -5397,6 +5401,7 @@
       hideAttackResultPop();
       pendingAttackResolution = null;
       attackTurnEndChoicePending = false;
+      attackFlowUiLockActive = false;
       cachePendingAttackResolution(null);
     }
     showTurnHint("");
@@ -5820,6 +5825,7 @@
     if (pendingEquipAction?.type === "oliver_confirm") return false;
     if (mustAttackWithMasamune()) return false;
     if (attackTurnEndChoicePending) return false;
+    if (attackFlowUiLockActive) return false;
     if (suppressEndTurnButton) return false;
     if (hpBoardAnimationActive) return false;
     return !!turnState()?.moveDone;
@@ -5987,6 +5993,7 @@
     cachePendingAttackResolution(pendingAttackResolution);
     showAttackResultPop(rows);
     attackTurnEndChoicePending = true;
+    attackFlowUiLockActive = true;
     renderTurnEndButton();
     return true;
   }
@@ -6020,6 +6027,7 @@
     pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey };
     showAttackResultPop(rows);
     attackTurnEndChoicePending = true;
+    attackFlowUiLockActive = true;
     renderTurnEndButton();
     return true;
   }
@@ -6123,6 +6131,7 @@
     clearAttackResultDice();
     if (!pending || pending.applied){
       if (!endTurnAfterApply){
+        attackFlowUiLockActive = false;
         suppressEndTurnButton = false;
         renderTurnEndButton();
       }
@@ -6133,6 +6142,7 @@
     if (endTurnAfterApply){
       await new Promise(resolve => setTimeout(resolve, 2000));
       await doEndTurn();
+      attackFlowUiLockActive = false;
       suppressEndTurnButton = false;
       renderTurnEndButton();
       return;
@@ -6140,6 +6150,7 @@
 
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await waitForHpBoardSwapAnimationEnd();
+    attackFlowUiLockActive = false;
     suppressEndTurnButton = false;
     renderTurnEndButton();
   }
@@ -10784,6 +10795,7 @@
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
+    attackFlowUiLockActive = false;
     suppressEndTurnButton = false;
     cachePendingAttackResolution(null);
     await advanceTurnToNextPlayer();
