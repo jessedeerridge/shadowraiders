@@ -2042,21 +2042,42 @@
     }
   }
 
-  function adjustCardNameFont(rootEl){
+  function adjustCardNameFont(rootEl, retryCount = 0){
     const nameEl = rootEl?.querySelector?.('.wb-name span');
     if (!nameEl) return;
-    nameEl.style.fontSize = '8px';
 
     const frameEl = nameEl.closest('.wb-name');
     if (!frameEl) return;
 
-    const fits = () => nameEl.scrollWidth <= frameEl.clientWidth;
-    if (fits()) return;
+    const availableWidth = frameEl.clientWidth;
+    if (availableWidth <= 0){
+      if (retryCount < 4){
+        requestAnimationFrame(() => adjustCardNameFont(rootEl, retryCount + 1));
+      }
+      return;
+    }
 
-    nameEl.style.fontSize = '5px';
-    if (fits()) return;
+    const maxFontSize = 8;
+    const minFontSize = 1;
+    nameEl.style.fontSize = `${maxFontSize}px`;
 
-    nameEl.style.fontSize = '4px';
+    const measure = () => ({
+      textWidth: nameEl.scrollWidth,
+      frameWidth: frameEl.clientWidth
+    });
+
+    let { textWidth, frameWidth } = measure();
+    if (textWidth <= frameWidth) return;
+
+    let fontSize = Math.max(minFontSize, Number(((maxFontSize * frameWidth) / Math.max(textWidth, 1)).toFixed(2)));
+    nameEl.style.fontSize = `${fontSize}px`;
+
+    while (fontSize > minFontSize){
+      ({ textWidth, frameWidth } = measure());
+      if (textWidth <= frameWidth) break;
+      fontSize = Math.max(minFontSize, Number((fontSize - 0.2).toFixed(2)));
+      nameEl.style.fontSize = `${fontSize}px`;
+    }
   }
 
   function ensureCountTag(el){
