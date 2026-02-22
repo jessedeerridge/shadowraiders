@@ -370,6 +370,7 @@
     display:none;
   }
   .my-role-dock.visible{ display:block; }
+  .my-role-dock.effect-selection-active{ z-index:10080; }
 
   /* =========================
      装備枠（★カードパネル直下まで上に伸ばす）
@@ -2192,6 +2193,16 @@
   let roleFlashOverlayEl = null;
   let identityRevealInitialized = false;
   let identityRevealSeenByUid = {};
+  let cardEffectSelectionContext = null;
+  function updateEffectSelectionIdentityDockState(){
+    const active = !!cardEffectSelectionContext;
+    myRoleDock?.classList.toggle("effect-selection-active", active);
+  }
+
+  function setCardEffectSelectionContext(ctx){
+    cardEffectSelectionContext = ctx || null;
+    updateEffectSelectionIdentityDockState();
+  }
   let autoDamageRevealLock = {};
   let temporaryRoleTagByUid = {};
   let roomAbilityTurnKey = "";
@@ -2537,6 +2548,7 @@
 
   function hideIdentityPrompt(){
     pendingIdentityPrompt = null;
+    setCardEffectSelectionContext(null);
     identityPromptPop?.classList.add("hidden");
   }
 
@@ -2623,6 +2635,11 @@
     if (!identityPromptPop || !identityPromptMsg || !btnIdentityPromptYes || !btnIdentityPromptNo) return;
     if (openZoom && cardObj){
       openZoomFromDeckCard(cardObj, cardTheme, { closeOnBackdrop:false, showCloseButton:false });
+      setCardEffectSelectionContext({
+        type: "identity_prompt",
+        cardObj,
+        cardTheme: safeText(cardTheme || "white") || "white"
+      });
     }
     pendingIdentityPrompt = {
       onYes: typeof onYes === "function" ? onYes : null,
@@ -2650,6 +2667,26 @@
         cardTheme: safeText(cardTheme || "white") || "white"
       }).catch(() => {});
     }
+  }
+
+  function openIdentityPreviewDuringCardEffect(role){
+    if (!role || !cardEffectSelectionContext) return false;
+    const context = { ...cardEffectSelectionContext };
+    const promptWasVisible = !!identityPromptPop && !identityPromptPop.classList.contains("hidden");
+    const dockWasVisible = !!greenShareDock && !greenShareDock.classList.contains("hidden");
+    if (promptWasVisible) identityPromptPop.classList.add("hidden");
+    if (dockWasVisible) greenShareDock.classList.add("hidden");
+
+    openZoomFromRole(role, { enableRevealPop:false, showCloseButton:false, closeOnBackdrop:true });
+    setZoomPassthrough(false);
+    zoomDismissHandler = async () => {
+      if (context.cardObj){
+        openZoomFromDeckCard(context.cardObj, context.cardTheme || "white", { closeOnBackdrop:false, showCloseButton:false });
+      }
+      if (dockWasVisible) greenShareDock?.classList.remove("hidden");
+      if (promptWasVisible) identityPromptPop?.classList.remove("hidden");
+    };
+    return true;
   }
 
 
@@ -3195,9 +3232,15 @@
     const targetUid = safeText(entry?.targetUid || "");
     const spec = cardTargetSelectionSpec(card);
     if (!spec || !targetUid){
+      setCardEffectSelectionContext(null);
       await setCardTargetSessionState(null);
       return;
     }
+    setCardEffectSelectionContext({
+      type: "target_select",
+      cardObj: card,
+      cardTheme: spec.theme
+    });
     openZoomFromDeckCard(card, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
     setGreenDockMeta({ title:`${safeText(card?.name || "") }：効果を処理中です。`, subtitle:"" });
     greenShareActions?.classList.add("hidden");
@@ -3210,6 +3253,7 @@
     } finally {
       cardPlayerSelectActive = false;
       renderTurnEndButton();
+      setCardEffectSelectionContext(null);
       await setCardTargetSessionState(null);
       greenShareDock?.classList.add("hidden");
       closeZoom();
@@ -3219,6 +3263,11 @@
   async function openPersistentCardTargetSelection(cardObj, { restore=false } = {}){
     const spec = cardTargetSelectionSpec(cardObj);
     if (!spec) return false;
+    setCardEffectSelectionContext({
+      type: "target_select",
+      cardObj,
+      cardTheme: spec.theme
+    });
     openZoomFromDeckCard(cardObj, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
     const opened = openTargetSelectDock({
       title: spec.title,
@@ -3238,6 +3287,7 @@
         try {
           await spec.resolver(uid);
         } finally {
+          setCardEffectSelectionContext(null);
           await setCardTargetSessionState(null);
           closeZoom();
         }
@@ -3245,6 +3295,7 @@
     });
 
     if (!opened){
+      setCardEffectSelectionContext(null);
       await setCardTargetSessionState(null);
       closeZoom();
       return false;
@@ -3639,6 +3690,7 @@
     zoomPassthroughMode = false;
     pendingGreenAnswerMsg = null;
     zoomDismissHandler = null;
+    setCardEffectSelectionContext(null);
     greenZoomLocked = false;
     hideGreenShareDock();
     hideRevealPop();
@@ -4447,6 +4499,7 @@
     const closeZoomOnChoice = !!pendingIdentityPrompt?.closeZoomOnChoice;
     hideIdentityPrompt();
     await setSeatIdentityPromptState(null);
+    setCardEffectSelectionContext(null);
     if (closeZoomOnChoice) closeZoom();
     if (handler) await handler();
   });
@@ -4458,6 +4511,7 @@
     const closeZoomOnChoice = !!pendingIdentityPrompt?.closeZoomOnChoice;
     hideIdentityPrompt();
     await setSeatIdentityPromptState(null);
+    setCardEffectSelectionContext(null);
     if (closeZoomOnChoice) closeZoom();
     if (handler) await handler();
   });
@@ -9595,6 +9649,7 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (openIdentityPreviewDuringCardEffect(role)) return;
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
         if (action){
@@ -9614,6 +9669,7 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (openIdentityPreviewDuringCardEffect(role)) return;
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
         openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
         if (action){
