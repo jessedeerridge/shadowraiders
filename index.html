@@ -4520,6 +4520,7 @@
     if (!my || !my.roleId) return;
 
     const revealedBy = safeText(options.revealedBy || "");
+    const skipRevealAbility = !!options.skipRevealAbility;
     const eRef = ref(db, `rooms/${state.roomCode}/equipment/${state.userId}/identity`);
     let revealedNow = false;
     await runTransaction(eRef, (cur) => {
@@ -4535,7 +4536,7 @@
       return next;
     });
     maybeResolveVampireHiddenHealOnReveal();
-    if (revealedNow && safeText(my.roleId) === "CIT_A3"){
+    if (!skipRevealAbility && revealedNow && safeText(my.roleId) === "CIT_A3"){
       await triggerAgathaRevealAbility();
     }
   }
@@ -8230,7 +8231,7 @@
         cardTheme: "white",
         openZoom: true,
         onYes: async () => {
-          await revealMyIdentityToEquipment();
+          await revealMyIdentityToEquipment({ revealedBy:"happy_cookie", skipRevealAbility:true });
           openIdentityRevealZoom(role, state.userId);
           await fullRecoverPlayer(state.userId);
         }
