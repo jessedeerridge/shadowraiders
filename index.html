@@ -3407,25 +3407,15 @@
     }
 
     pendingRoleAbilitySelection = { roleId: rid, ownerUid };
-    const includeSelf = !!spec?.includeSelf;
-    const players = latestPlayers
-      .filter(p => includeSelf ? true : p.id !== state.userId)
-      .filter(p => !isPlayerEliminated(p.id))
-      .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
-    if (!players.length) return false;
-    for (const p of players){
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "green-share-btn";
-      const chip = buildChipFor(p.id);
-      const name = document.createElement("span");
-      name.textContent = nameFromSecondChar(p.name);
-      btn.appendChild(chip);
-      btn.appendChild(name);
-      btn.addEventListener("click", () => {
+    const opened = openTargetSelectDock({
+      title: "対象プレイヤーを選択してください。",
+      lockEndTurnUntilResolved: true,
+      includeSelf: !!spec?.includeSelf,
+      onlyAlive: true,
+      onSelect: async (uid, p) => {
         if (!pendingRoleAbilitySelection) return;
-        showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `「${safeText(p.name || "このプレイヤー")}」を選びますか。`, async () => {
-          const targetUid = safeText(p.id || "");
+        showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `「${safeText(p?.name || "このプレイヤー")}」を選びますか。`, async () => {
+          const targetUid = safeText(uid || "");
           const roleSpec = roleAbilitySelectionSpecByRoleId(rid);
           if (!roleSpec || !targetUid) return;
           await setRoleAbilitySessionState({
@@ -3434,9 +3424,9 @@
             ownerUid,
             titleHtml,
             targetUid,
-            targetName: safeText(p.name || ""),
-            targetInitial: firstChar(p.name || ""),
-            targetColor: safeText(p.color || "")
+            targetName: safeText(p?.name || ""),
+            targetInitial: firstChar(p?.name || ""),
+            targetColor: safeText(p?.color || "")
           });
           try {
             await roleSpec.resolver(targetUid);
@@ -3446,12 +3436,10 @@
             await setRoleAbilitySessionState(null);
           }
         }, { fixedLower:true, closeZoomOnNo:false });
-      });
-      greenShareList.appendChild(btn);
-    }
-    cardPlayerSelectActive = true;
-    updateCardInteractivity();
-    renderTurnEndButton();
+      }
+    });
+    if (!opened) return false;
+    if (greenShareTitle) greenShareTitle.innerHTML = titleHtml;
     greenShareDock?.classList.remove("hidden");
     return true;
   }
