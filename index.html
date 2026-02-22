@@ -2242,6 +2242,9 @@
   let seatPromptUnsubscribe = null;
   let subscribedSeatPromptIndex = null;
   let restoringSeatIdentityPrompt = false;
+  let seatEquipSelectionUnsubscribe = null;
+  let subscribedSeatEquipSelectionIndex = null;
+  let restoringSeatEquipSelection = false;
 
   const IDENTITY_PROMPT_CARD_NAMES = new Set(["幸せのクッキー", "光臨", "戦慄の闇儀式"]);
 
@@ -2554,6 +2557,24 @@
       return;
     }
     await set(promptRef, {
+      ...payload,
+      seat,
+      ownerUid: state.userId,
+      at: Date.now()
+    });
+  }
+
+  async function setSeatEquipSelectionState(payload){
+    if (restoringSeatEquipSelection) return;
+    if (!state.roomCode) return;
+    const seat = Number(state.seatedTable || 0);
+    if (!seat) return;
+    const selectionRef = ref(db, `rooms/${state.roomCode}/seatEquipSelectionState/${seat}`);
+    if (!payload){
+      await remove(selectionRef).catch(() => {});
+      return;
+    }
+    await set(selectionRef, {
       ...payload,
       seat,
       ownerUid: state.userId,
@@ -4555,6 +4576,7 @@
         onSelect: async (uid) => {
           const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
           pendingEquipAction = null;
+          await setSeatEquipSelectionState(null);
           renderTurnEndButton();
           greenShareDock?.classList.add("hidden");
           const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
@@ -4593,6 +4615,7 @@
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "これを奪いますか。", async () => {
         const action = pendingEquipAction;
         pendingEquipAction = null;
+        await setSeatEquipSelectionState(null);
         renderTurnEndButton();
         zoomDismissHandler = null;
         const ok = await stealEquipmentFromPlayer(action.ownerUid, action.sourceKey);
@@ -5197,6 +5220,22 @@
     }
     renderEquipmentDock();
     renderTurnEndButton();
+  }
+
+  function restoreSeatEquipSelection(entry){
+    const type = safeText(entry?.type || "");
+    const cardObj = entry?.cardObj || null;
+    if (!cardObj || (type !== "banana_give" && type !== "oliver_target")){
+      pendingEquipAction = null;
+      renderTurnEndButton();
+      return;
+    }
+    restoringSeatEquipSelection = true;
+    try {
+      restorePendingEquipSelection({ type, cardObj });
+    } finally {
+      restoringSeatEquipSelection = false;
+    }
   }
 
   function canShowEndTurnButton(){
@@ -7273,6 +7312,7 @@
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       setZoomPassthrough(true);
       pendingEquipAction = { type:"banana_give", selectedSourceKey:"", cardObj };
+      await setSeatEquipSelectionState({ type:"banana_give", cardObj });
       renderEquipmentDock();
       renderTurnEndButton();
       return;
@@ -7288,6 +7328,7 @@
       openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
       setZoomPassthrough(true);
       pendingEquipAction = { type:"oliver_target", cardObj };
+      await setSeatEquipSelectionState({ type:"oliver_target", cardObj });
       renderEquipmentDock();
       renderTurnEndButton();
       return;
@@ -8937,6 +8978,43 @@
     });
   }
 
+  function subscribeSeatEquipSelectionState(){
+    const seat = Number(state.seatedTable || 0);
+    if (seatEquipSelectionUnsubscribe && subscribedSeatEquipSelectionIndex !== seat){
+      seatEquipSelectionUnsubscribe();
+      seatEquipSelectionUnsubscribe = null;
+      subscribedSeatEquipSelectionIndex = null;
+    }
+    if (!state.roomCode || !seat){
+      if (isEquipSelectionLockActive()){
+        pendingEquipAction = null;
+        greenShareDock?.classList.add("hidden");
+        closeZoom();
+        renderEquipmentDock();
+        renderTurnEndButton();
+      }
+      return;
+    }
+    if (seatEquipSelectionUnsubscribe && subscribedSeatEquipSelectionIndex === seat) return;
+
+    subscribedSeatEquipSelectionIndex = seat;
+    const selectionRef = ref(db, `rooms/${state.roomCode}/seatEquipSelectionState/${seat}`);
+    seatEquipSelectionUnsubscribe = onValue(selectionRef, (snap) => {
+      const data = snap.val() || null;
+      if (!data){
+        if (isEquipSelectionLockActive()){
+          pendingEquipAction = null;
+          greenShareDock?.classList.add("hidden");
+          closeZoom();
+          renderEquipmentDock();
+          renderTurnEndButton();
+        }
+        return;
+      }
+      restoreSeatEquipSelection(data);
+    });
+  }
+
   function subscribeSeatPromptState(){
     const seat = Number(state.seatedTable || 0);
     if (seatPromptUnsubscribe && subscribedSeatPromptIndex !== seat){
@@ -9066,6 +9144,7 @@
       }
 
       subscribeSeatPromptState();
+      subscribeSeatEquipSelectionState();
       renderSeatTiles();
       refreshStartBadge();
       updateSeatBoardVisibility();
