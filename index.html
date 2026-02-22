@@ -1680,6 +1680,14 @@
   </div>
 </div>
 
+<div id="roleTargetConfirmPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="能力対象確認">
+  <p class="msg" id="roleTargetConfirmMsg">このプレイヤーを選びますか。</p>
+  <div class="actions">
+    <button class="btn primary" id="btnRoleTargetConfirmYes">はい</button>
+    <button class="btn ghost" id="btnRoleTargetConfirmNo">いいえ</button>
+  </div>
+</div>
+
 <div id="identityPromptPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="陣営公開確認">
   <p class="msg" id="identityPromptMsg"></p>
   <div class="actions">
@@ -2223,6 +2231,10 @@
   let cardTargetSessionRestoring = false;
   let cardTargetSessionSeenAt = 0;
   let pendingCardTargetSessionEntry = null;
+  let roleAbilitySelectionSeenAt = 0;
+  let roleAbilitySelectionInitialized = false;
+  let roleAbilitySelectionPrompt = null;
+  let pendingRoleAbilityConfirmTarget = null;
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
     "CIT_D3", // デボラ
@@ -2241,6 +2253,14 @@
     "RAI_G1", // ゴードン
     "SHA_W1", // ワイト
   ]);
+  const ROLE_TARGET_SELECTION_CONFIG = {
+    RAI_F2: { abilityName:"スラム街の天使", descriptionTail:"ダメージを7にするプレイヤーを選んでください。", includeSelf:true, aliveOnly:true, once:true },
+    RAI_F1: { abilityName:"アストラル・メイス", descriptionTail:"ダメージを与えるプレイヤーを選んでください。", includeSelf:false, aliveOnly:true, once:true },
+    RAI_E2: { abilityName:"封印の鎖", descriptionTail:"特殊能力を失わせるプレイヤーを選んでください。", includeSelf:false, aliveOnly:true, once:true },
+    RAI_E3: { abilityName:"癒しの光", descriptionTail:"回復させるプレイヤーを選んでください。", includeSelf:false, aliveOnly:true, once:true, sameRoomOnly:true },
+    CIT_C3: { abilityName:"キャスリングTYPE-G", descriptionTail:"ダメージを入れ替えるプレイヤーを選んでください。", includeSelf:false, aliveOnly:true, once:true },
+    RAI_G3: { abilityName:"蘇生装置TYPE-G", descriptionTail:"復活させるプレイヤーを選んでください。", includeSelf:false, aliveOnly:false, eliminatedOnly:true, once:true }
+  };
   let cardPlayerSelectActive = false;
   let activeGreenReplies = {};
   let moveDiceEventSeenAt = 0;
@@ -2293,6 +2313,10 @@
   const btnAttackNo = document.getElementById("btnAttackNo");
   const attackResultPop = document.getElementById("attackResultPop");
   const attackResultRows = document.getElementById("attackResultRows");
+  const roleTargetConfirmPop = document.getElementById("roleTargetConfirmPop");
+  const roleTargetConfirmMsg = document.getElementById("roleTargetConfirmMsg");
+  const btnRoleTargetConfirmYes = document.getElementById("btnRoleTargetConfirmYes");
+  const btnRoleTargetConfirmNo = document.getElementById("btnRoleTargetConfirmNo");
   const btnAttackResultEnd = document.getElementById("btnAttackResultEnd");
   const btnAttackResultKeep = document.getElementById("btnAttackResultKeep");
   const roomActionPop = document.getElementById("roomActionPop");
@@ -2384,6 +2408,114 @@
     if (!effect) return "特殊能力";
     const match = effect.match(/^([^：:]+)[：:]/);
     return safeText(match?.[1] || effect).trim() || "特殊能力";
+  }
+
+  function roleTargetSelectionConfig(roleId){
+    const rid = safeText(roleId || "");
+    return ROLE_TARGET_SELECTION_CONFIG[rid] || null;
+  }
+
+  function isRoleTargetAbilityUsed(roleId, uid = state.userId){
+    const rid = safeText(roleId || "");
+    const targetUid = safeText(uid || "");
+    if (!rid || !targetUid) return false;
+    return !!state.room?.abilityUsage?.roleTarget?.[rid]?.[targetUid];
+  }
+
+  async function markRoleTargetAbilityUsed(roleId, uid = state.userId){
+    if (!state.roomCode) return;
+    const rid = safeText(roleId || "");
+    const targetUid = safeText(uid || "");
+    if (!rid || !targetUid) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/roleTarget/${rid}/${targetUid}`), true);
+  }
+
+  function roleTargetSelectionCandidates(roleId, ownerUid){
+    const config = roleTargetSelectionConfig(roleId);
+    if (!config) return [];
+    const owner = playerById(ownerUid);
+    const ownerSeat = Number(owner?.seatIndex || 0);
+    const ownerRoomId = Number(owner?.roomId || 0);
+    return latestPlayers
+      .filter(p => {
+        if (!config.includeSelf && p.id === ownerUid) return false;
+        if (ownerSeat && Number(p.seatIndex || 0) === ownerSeat && p.id !== ownerUid) return false;
+        if (config.sameRoomOnly && ownerRoomId > 0 && Number(p.roomId || 0) !== ownerRoomId) return false;
+        if (config.eliminatedOnly) return isPlayerEliminated(p.id);
+        if (config.aliveOnly) return !isPlayerEliminated(p.id);
+        return true;
+      })
+      .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
+  }
+
+  async function setRoleAbilitySelectionState(payload){
+    if (!state.roomCode) return;
+    const selRef = ref(db, `rooms/${state.roomCode}/roleAbilitySelection`);
+    if (!payload){
+      await remove(selRef);
+      return;
+    }
+    await set(selRef, { ...payload, at: Date.now() });
+  }
+
+  function hideRoleTargetConfirmPop(){
+    pendingRoleAbilityConfirmTarget = null;
+    roleTargetConfirmPop?.classList.add("hidden");
+  }
+
+  function showRoleTargetConfirmPop({ targetUid="", targetName="" } = {}){
+    if (!roleTargetConfirmPop || !roleTargetConfirmMsg) return;
+    const name = safeText(targetName || playerById(targetUid)?.name || "このプレイヤー");
+    roleTargetConfirmMsg.textContent = `「${name}」を選びますか。`;
+    roleTargetConfirmPop.classList.remove("hidden");
+  }
+
+  function hideRoleAbilitySelectionUI(){
+    if (safeText(roleAbilitySelectionPrompt?.phase || "") !== "selecting") return;
+    roleAbilitySelectionPrompt = null;
+    pendingCardTargetSelection = null;
+    cardPlayerSelectActive = false;
+    updateCardInteractivity();
+    renderTurnEndButton();
+    hideRoleTargetConfirmPop();
+    greenShareDock?.classList.add("hidden");
+    if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
+  }
+
+  async function beginRoleAbilitySelection(roleId, ownerUid, trigger){
+    const rid = safeText(roleId || "");
+    const uid = safeText(ownerUid || "");
+    const config = roleTargetSelectionConfig(rid);
+    if (!rid || !uid || !config) return false;
+    if (config.once && isRoleTargetAbilityUsed(rid, uid)) return false;
+    const candidates = roleTargetSelectionCandidates(rid, uid);
+    if (candidates.length <= 0) return false;
+    await setRoleAbilitySelectionState({
+      phase:"selecting",
+      roleId: rid,
+      ownerUid: uid,
+      trigger: safeText(trigger || "manual"),
+      targetUids: candidates.map(p => p.id)
+    });
+    return true;
+  }
+
+  function canActivateRoleTargetAbilityNow(roleId){
+    const rid = safeText(roleId || "");
+    const config = roleTargetSelectionConfig(rid);
+    if (!config) return { ok:false, message:"今は公開できません。" };
+    if (config.once && isRoleTargetAbilityUsed(rid)) return { ok:false, message:"この能力はすでに使用済みです。" };
+    if (!isMyTurn()) return { ok:false, message:"今は公開できません。" };
+    if (rid === "RAI_E3" && isPlayerEliminated(state.userId)) return { ok:false, message:"今は公開できません。" };
+    if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(rid) && !!turnState()?.moveDone){
+      return { ok:false, message:"手番の初めにだけ使用できます。" };
+    }
+    if (REVEAL_ENDS_TURN_ROLE_IDS.has(rid) && !turnState()?.moveDone){
+      return { ok:false, message:"手番の最後にだけ使用できます。" };
+    }
+    const candidates = roleTargetSelectionCandidates(rid, state.userId);
+    if (candidates.length <= 0) return { ok:false, message:"対象がいません。" };
+    return { ok:true };
   }
 
   function showRevealPopAt(anchorEl, options = {}){
@@ -3213,6 +3345,61 @@
     return true;
   }
 
+  function renderRoleAbilitySelectionPrompt(prompt){
+    if (!prompt || !greenShareDock || !greenShareList) return;
+    const roleId = safeText(prompt.roleId || "");
+    const ownerUid = safeText(prompt.ownerUid || "");
+    const config = roleTargetSelectionConfig(roleId);
+    if (!config) return;
+
+    roleAbilitySelectionPrompt = prompt;
+    pendingCardTargetSelection = { kind:"role_ability", roleId, ownerUid };
+    openZoomFromRole(ROLE_BY_ID[roleId], { closeOnBackdrop:false, showCloseButton:false });
+    setZoomPassthrough(true);
+
+    const title = safeText(playerById(ownerUid)?.name || "");
+    setGreenDockMeta({
+      title: title ? `【${title}】の能力対象選択` : "能力対象選択",
+      subtitle: ""
+    });
+    if (greenShareSubtitle){
+      greenShareSubtitle.innerHTML = `<span class="ability-pill">${escapeHtml(config.abilityName)}</span>${escapeHtml(config.descriptionTail)}`;
+      greenShareSubtitle.classList.remove("hidden");
+    }
+    greenShareActions?.classList.add("hidden");
+    greenShareList.innerHTML = "";
+
+    const candidateSet = new Set((prompt.targetUids || []).map(v => safeText(v)));
+    const players = roleTargetSelectionCandidates(roleId, ownerUid).filter(p => candidateSet.has(p.id));
+    const interactive = (ownerUid === state.userId) && safeText(prompt.phase || "") === "selecting";
+
+    for (const p of players){
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "green-share-btn";
+      btn.appendChild(buildChipFor(p.id));
+      const label = document.createElement("span");
+      label.textContent = nameFromSecondChar(p.name || "");
+      btn.appendChild(label);
+      if (!interactive){
+        btn.disabled = true;
+        btn.style.opacity = "0.7";
+      } else {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          pendingRoleAbilityConfirmTarget = { uid:p.id, name:safeText(p.name || "") };
+          showRoleTargetConfirmPop({ targetUid:p.id, targetName:p.name });
+        });
+      }
+      greenShareList.appendChild(btn);
+    }
+
+    cardPlayerSelectActive = true;
+    updateCardInteractivity();
+    renderTurnEndButton();
+    greenShareDock.classList.remove("hidden");
+  }
+
   function cardTargetSelectionSpec(cardObj){
     const name = safeText(cardObj?.name || "");
     if (!name) return null;
@@ -3683,7 +3870,7 @@
 
     openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
     setTimeout(() => {
-      if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
+      if (!zoomBackdrop.classList.contains("hidden") && !roleAbilitySelectionPrompt) closeZoom();
     }, 2000);
   }
   function openMultiIdentityRevealZoom(entries = []){
@@ -3839,6 +4026,9 @@
           const rid = safeText(row?.identity?.roleId || "");
           const role = ROLE_BY_ID[rid];
           if (role) openIdentityRevealZoom(role, uid);
+          if (uid === state.userId && roleTargetSelectionConfig(rid) && !isRoleTargetAbilityUsed(rid, uid)){
+            beginRoleAbilitySelection(rid, uid, "reveal").catch(() => {});
+          }
         }
       }
       equipCache = next;
@@ -4331,6 +4521,21 @@
       return;
     }
     if (isMyIdentityRevealed()){
+      const roleConfig = roleTargetSelectionConfig(myRoleId);
+      if (roleConfig){
+        const abilityCheck = canActivateRoleTargetAbilityNow(myRoleId);
+        if (!abilityCheck.ok){
+          e.stopPropagation();
+          showRevealPopAt(idCard, { mode:"notice", message:abilityCheck.message || "今は公開できません。" });
+          return;
+        }
+        e.stopPropagation();
+        showRevealPopAt(idCard, {
+          action:"role_target_ability",
+          messageHtml:`(<span class="ability-pill">${escapeHtml(roleConfig.abilityName)}</span>)を使いますか。`
+        });
+        return;
+      }
       if (myRoleId !== "SHA_W1") return;
       const check = canUseWightAbilityNow();
       if (!check.ok){
@@ -4418,6 +4623,9 @@
     if (!endTurnConfirm?.classList.contains("hidden") && !e.target.closest("#endTurnConfirm") && !e.target.closest("#btnEndTurn")){
       hideEndTurnConfirm();
     }
+    if (!roleTargetConfirmPop?.classList.contains("hidden") && !e.target.closest("#roleTargetConfirmPop")){
+      hideRoleTargetConfirmPop();
+    }
     if (!roomActionPop.classList.contains("hidden") && !e.target.closest("#roomActionPop")){
       if (pendingRoomAction?.dismissOnOutside !== false){
         hideRoomActionPop();
@@ -4451,6 +4659,15 @@
       }
       return;
     }
+    if (pendingRevealAction === "role_target_ability"){
+      const roleId = myRoleId;
+      const ok = await beginRoleAbilitySelection(roleId, state.userId, "manual");
+      hideRevealPop();
+      if (!ok){
+        showRevealPopAt(null, { mode:"notice", message:"対象がいません。" });
+      }
+      return;
+    }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
     if (myRoleId === "CIT_A1"){
       setTimeout(() => {
@@ -4458,6 +4675,31 @@
       }, 1500);
     }
     hideRevealPop();
+  });
+
+  btnRoleTargetConfirmNo?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    hideRoleTargetConfirmPop();
+  });
+  btnRoleTargetConfirmYes?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const prompt = roleAbilitySelectionPrompt;
+    const target = pendingRoleAbilityConfirmTarget;
+    const roleId = safeText(prompt?.roleId || "");
+    const ownerUid = safeText(prompt?.ownerUid || "");
+    const targetUid = safeText(target?.uid || "");
+    if (!prompt || !roleId || !ownerUid || !targetUid || ownerUid !== state.userId){
+      hideRoleTargetConfirmPop();
+      return;
+    }
+    await markRoleTargetAbilityUsed(roleId, ownerUid);
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/roleTargetResult/${roleId}/${ownerUid}`), {
+      targetUid,
+      targetName: safeText(target?.name || ""),
+      at: Date.now()
+    });
+    await setRoleAbilitySelectionState(null);
+    hideRoleTargetConfirmPop();
   });
 
   btnAttackNo.addEventListener("click", (e) => {
@@ -5905,6 +6147,13 @@
       const justEliminatedUids = latestPlayers
         .map(p => p.id)
         .filter(uid => !!eliminatedNow[uid] && !previousEliminatedMap[uid]);
+
+      if (justEliminatedUids.includes(state.userId)){
+        const myRoleIdOnElim = safeText(state.hands?.[state.userId]?.roleId || "");
+        if (myRoleIdOnElim === "RAI_G3" && !isRoleTargetAbilityUsed("RAI_G3", state.userId)){
+          beginRoleAbilitySelection("RAI_G3", state.userId, "eliminated").catch(() => {});
+        }
+      }
 
       previousEliminatedMap = eliminatedNow;
 
@@ -9296,6 +9545,31 @@
     });
   }
 
+  function subscribeRoleAbilitySelectionState(){
+    const selRef = ref(db, `rooms/${state.roomCode}/roleAbilitySelection`);
+    onValue(selRef, snap => {
+      const data = snap.val() || null;
+      const at = Number(data?.at || 0);
+
+      if (!roleAbilitySelectionInitialized){
+        roleAbilitySelectionInitialized = true;
+        roleAbilitySelectionSeenAt = at || 0;
+        if (data && safeText(data.phase || "") === "selecting"){
+          renderRoleAbilitySelectionPrompt(data);
+        }
+        return;
+      }
+
+      if (!data || safeText(data.phase || "") !== "selecting"){
+        hideRoleAbilitySelectionUI();
+        return;
+      }
+      if (!at || at <= roleAbilitySelectionSeenAt) return;
+      roleAbilitySelectionSeenAt = at;
+      renderRoleAbilitySelectionPrompt(data);
+    });
+  }
+
   function subscribeSeatEquipSelectionState(){
     const seat = Number(state.seatedTable || 0);
     if (seatEquipSelectionUnsubscribe && subscribedSeatEquipSelectionIndex !== seat){
@@ -9827,6 +10101,13 @@
       migrateRequestNode("greenRequests", true);
       migrateRequestNode("greenReplyBubbles", true);
       migrateRequestNode("greenReveals", true);
+
+      if (room.roleAbilitySelection && typeof room.roleAbilitySelection === "object"){
+        const rewrittenRoleSelection = deepReplaceUid(copy(room.roleAbilitySelection));
+        if (!sameJson(rewrittenRoleSelection, room.roleAbilitySelection)){
+          outUpdates[`roleAbilitySelection`] = touchAt(rewrittenRoleSelection);
+        }
+      }
     };
 
     migrateGreenStateBySeatSteal(roomData, previousPlayerId, state.userId, updates);
@@ -10255,6 +10536,7 @@
     subscribeGreenResponses();
     subscribeGreenSessionState();
     subscribeCardTargetSessionState();
+    subscribeRoleAbilitySelectionState();
     subscribeGreenReveals();
     subscribeGreenCloseSignals();
     subscribeGreenReplyBubbles();
