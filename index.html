@@ -2239,6 +2239,8 @@
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+  let pendingIdentityPromptContext = null;
+  let activeCardTargetSelectionCard = null;
   let seatPromptUnsubscribe = null;
   let subscribedSeatPromptIndex = null;
   let restoringSeatIdentityPrompt = false;
@@ -2537,7 +2539,41 @@
 
   function hideIdentityPrompt(){
     pendingIdentityPrompt = null;
+    pendingIdentityPromptContext = null;
     identityPromptPop?.classList.add("hidden");
+  }
+
+  function hideEffectSelectionUiForOverlay(){
+    if (!cardPlayerSelectActive && !isEquipSelectionLockActive() && identityPromptPop?.classList.contains("hidden")) return;
+    greenShareDock?.classList.add("hidden");
+    hideRoomActionPop();
+    if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
+    if (identityPromptPop && !identityPromptPop.classList.contains("hidden")){
+      identityPromptPop.classList.add("hidden");
+    }
+  }
+
+  async function restoreEffectSelectionUi(){
+    if (pendingIdentityPromptContext){
+      const ctx = pendingIdentityPromptContext;
+      showIdentityPromptPop({
+        message: ctx.message,
+        canReveal: !!ctx.canReveal,
+        onYes: ctx.onYes,
+        onNo: ctx.onNo,
+        cardObj: ctx.cardObj,
+        cardTheme: ctx.cardTheme,
+        openZoom: !!ctx.openZoom
+      });
+      return;
+    }
+    if (isEquipSelectionLockActive()){
+      restorePendingEquipSelection();
+      return;
+    }
+    if (activeCardTargetSelectionCard){
+      await openPersistentCardTargetSelection(activeCardTargetSelectionCard, { restore:true });
+    }
   }
 
   function cardByName(name){
@@ -2628,6 +2664,15 @@
       onYes: typeof onYes === "function" ? onYes : null,
       onNo: typeof onNo === "function" ? onNo : null,
       closeZoomOnChoice: !!openZoom
+    };
+    pendingIdentityPromptContext = {
+      message: safeText(message || ""),
+      canReveal: !!canReveal,
+      onYes: typeof onYes === "function" ? onYes : null,
+      onNo: typeof onNo === "function" ? onNo : null,
+      cardObj: cardObj || null,
+      cardTheme: safeText(cardTheme || "white") || "white",
+      openZoom: !!openZoom
     };
     identityPromptMsg.textContent = safeText(message || "");
 
@@ -3198,6 +3243,7 @@
       await setCardTargetSessionState(null);
       return;
     }
+    activeCardTargetSelectionCard = card || null;
     openZoomFromDeckCard(card, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
     setGreenDockMeta({ title:`${safeText(card?.name || "") }：効果を処理中です。`, subtitle:"" });
     greenShareActions?.classList.add("hidden");
@@ -3208,6 +3254,7 @@
     try {
       await spec.resolver(targetUid);
     } finally {
+      activeCardTargetSelectionCard = null;
       cardPlayerSelectActive = false;
       renderTurnEndButton();
       await setCardTargetSessionState(null);
@@ -3219,6 +3266,7 @@
   async function openPersistentCardTargetSelection(cardObj, { restore=false } = {}){
     const spec = cardTargetSelectionSpec(cardObj);
     if (!spec) return false;
+    activeCardTargetSelectionCard = cardObj || null;
     openZoomFromDeckCard(cardObj, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
     const opened = openTargetSelectDock({
       title: spec.title,
@@ -3238,6 +3286,7 @@
         try {
           await spec.resolver(uid);
         } finally {
+          activeCardTargetSelectionCard = null;
           await setCardTargetSessionState(null);
           closeZoom();
         }
@@ -3245,6 +3294,7 @@
     });
 
     if (!opened){
+      activeCardTargetSelectionCard = null;
       await setCardTargetSessionState(null);
       closeZoom();
       return false;
@@ -8426,13 +8476,14 @@
         } else {
           roleCard.addEventListener('click', (e) => {
             e.stopPropagation();
-            const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
+            const shouldSuspend = cardPlayerSelectActive || isEquipSelectionLockActive() || !identityPromptPop?.classList.contains("hidden");
+            if (shouldSuspend) hideEffectSelectionUiForOverlay();
             openZoomFromCard(roleCard, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
             setZoomOverPanel(true);
-            if (action){
+            if (shouldSuspend){
               setZoomPassthrough(false);
               zoomDismissHandler = async () => {
-                restorePendingEquipSelection(action);
+                await restoreEffectSelectionUi();
               };
             }
           });
@@ -8458,13 +8509,14 @@
         card.style.cursor = 'pointer';
         card.addEventListener('click', (e) => {
           e.stopPropagation();
-          const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
+          const shouldSuspend = cardPlayerSelectActive || isEquipSelectionLockActive() || !identityPromptPop?.classList.contains("hidden");
+          if (shouldSuspend) hideEffectSelectionUiForOverlay();
           openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
           setZoomOverPanel(true);
-          if (action){
+          if (shouldSuspend){
             setZoomPassthrough(false);
             zoomDismissHandler = async () => {
-              restorePendingEquipSelection(action);
+              await restoreEffectSelectionUi();
             };
           }
         });
@@ -8499,7 +8551,10 @@
     });
     await resetAllAbilityUsageForUids([state.userId]);
   }
-  function closeHelp(){ helpBackdrop.classList.add('hidden'); }
+  function closeHelp(){
+    helpBackdrop.classList.add('hidden');
+    restoreEffectSelectionUi().catch(() => {});
+  }
   function renderEquipExpandBody(){
     if (!equipExpandBody || !equipBody) return;
     equipExpandBody.innerHTML = equipBody.innerHTML;
@@ -8519,24 +8574,25 @@
   }
   function openEquipSelectionTempZoom(cardEl, action){
     if (!cardEl || !action) return;
-    greenShareDock?.classList.add("hidden");
+    hideEffectSelectionUiForOverlay();
     openZoomFromCard(cardEl, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
     setZoomOverPanel(true);
     setZoomPassthrough(false);
     zoomDismissHandler = async () => {
-      restorePendingEquipSelection(action);
+      await restoreEffectSelectionUi();
     };
   }
   function openEquipExpand(){
     if (!equipDock?.classList.contains('visible')) return;
+    if (cardPlayerSelectActive || isEquipSelectionLockActive() || !identityPromptPop?.classList.contains("hidden")){
+      hideEffectSelectionUiForOverlay();
+    }
     renderEquipExpandBody();
     equipExpandBackdrop?.classList.remove('hidden');
   }
   function closeEquipExpand(){
     equipExpandBackdrop?.classList.add('hidden');
-    if (isEquipSelectionLockActive() && zoomBackdrop?.classList.contains('hidden')){
-      restorePendingEquipSelection();
-    }
+    restoreEffectSelectionUi().catch(() => {});
   }
   function toggleRoomGuideOverlay(){
     roomGuideVisible = !roomGuideVisible;
@@ -8545,8 +8601,14 @@
   }
   helpBtn.addEventListener('click', () => {
     if (!joinBox.classList.contains('hidden')) return;
-    if (helpBackdrop.classList.contains('hidden')) openHelp();
-    else closeHelp();
+    if (helpBackdrop.classList.contains('hidden')){
+      if (cardPlayerSelectActive || isEquipSelectionLockActive() || !identityPromptPop?.classList.contains("hidden")){
+        hideEffectSelectionUiForOverlay();
+      }
+      openHelp();
+      return;
+    }
+    closeHelp();
   });
   roomGuideBtn.addEventListener('click', () => {
     if (joinBox.classList.contains('hidden')) toggleRoomGuideOverlay();
@@ -8584,9 +8646,16 @@
       openEquipSelectionTempZoom(card, action);
       return;
     }
+    const shouldSuspend = cardPlayerSelectActive || !identityPromptPop?.classList.contains("hidden");
+    if (shouldSuspend) hideEffectSelectionUiForOverlay();
     openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
     setZoomOverPanel(true);
     setZoomPassthrough(false);
+    if (shouldSuspend){
+      zoomDismissHandler = async () => {
+        await restoreEffectSelectionUi();
+      };
+    }
   });
 
   const SEAT_COLORS = [
@@ -8964,6 +9033,7 @@
 
       if (!data){
         pendingCardTargetSessionEntry = null;
+        activeCardTargetSelectionCard = null;
         cardPlayerSelectActive = false;
         greenShareDock?.classList.add("hidden");
         closeZoom();
@@ -9595,8 +9665,16 @@
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       face.addEventListener('click', (e) => {
         e.stopPropagation();
+        const shouldSuspend = cardPlayerSelectActive || isEquipSelectionLockActive() || !identityPromptPop?.classList.contains("hidden");
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
+        if (shouldSuspend) hideEffectSelectionUiForOverlay();
+        openZoomFromRole(role, { enableRevealPop:!shouldSuspend, showCloseButton:false, closeOnBackdrop:true });
+        if (shouldSuspend){
+          zoomDismissHandler = async () => {
+            await restoreEffectSelectionUi();
+          };
+          return;
+        }
         if (action){
           setZoomPassthrough(false);
           zoomDismissHandler = async () => {
@@ -9614,8 +9692,16 @@
 
       back.addEventListener('click', (e) => {
         e.stopPropagation();
+        const shouldSuspend = cardPlayerSelectActive || isEquipSelectionLockActive() || !identityPromptPop?.classList.contains("hidden");
         const action = isEquipSelectionLockActive() ? { ...pendingEquipAction } : null;
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
+        if (shouldSuspend) hideEffectSelectionUiForOverlay();
+        openZoomFromRole(role, { enableRevealPop:!shouldSuspend, showCloseButton:false, closeOnBackdrop:true }); // 拡大はオモテ（id72）
+        if (shouldSuspend){
+          zoomDismissHandler = async () => {
+            await restoreEffectSelectionUi();
+          };
+          return;
+        }
         if (action){
           setZoomPassthrough(false);
           zoomDismissHandler = async () => {
