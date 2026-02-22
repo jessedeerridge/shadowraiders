@@ -2671,8 +2671,12 @@
     if (!role || temporaryIdentityPreviewState) return false;
     const hasCardTargetSelection = !!(activeCardTargetSelectionCard && cardPlayerSelectActive && !greenShareDock?.classList.contains("hidden"));
     const promptState = pendingIdentityPrompt?.uiState ? {
-      ...pendingIdentityPrompt.uiState,
-      cardObj: pendingIdentityPrompt.uiState.cardObj ? { ...pendingIdentityPrompt.uiState.cardObj } : null
+      ui: {
+        ...pendingIdentityPrompt.uiState,
+        cardObj: pendingIdentityPrompt.uiState.cardObj ? { ...pendingIdentityPrompt.uiState.cardObj } : null
+      },
+      onYes: typeof pendingIdentityPrompt?.onYes === "function" ? pendingIdentityPrompt.onYes : null,
+      onNo: typeof pendingIdentityPrompt?.onNo === "function" ? pendingIdentityPrompt.onNo : null
     } : null;
     const hasIdentityPrompt = !!(promptState && !identityPromptPop?.classList.contains("hidden"));
     if (!hasCardTargetSelection && !hasIdentityPrompt) return false;
@@ -2699,17 +2703,23 @@
       closeZoom();
 
       if (restore?.cardTargetCardObj){
-        await openPersistentCardTargetSelection(restore.cardTargetCardObj, { restore:true });
+        const cardSpec = cardTargetSelectionSpec(restore.cardTargetCardObj);
+        if (cardSpec){
+          openZoomFromDeckCard(restore.cardTargetCardObj, cardSpec.theme, { closeOnBackdrop:false, showCloseButton:false });
+          greenShareDock?.classList.remove("hidden");
+          cardPlayerSelectActive = true;
+          renderTurnEndButton();
+        }
       }
       if (restore?.promptState){
         showIdentityPromptPop({
-          message: restore.promptState.message,
-          canReveal: restore.promptState.canReveal,
-          onYes: pendingIdentityPrompt?.onYes || null,
-          onNo: pendingIdentityPrompt?.onNo || null,
-          cardObj: restore.promptState.cardObj,
-          cardTheme: restore.promptState.cardTheme,
-          openZoom: !!restore.promptState.openZoom
+          message: restore.promptState.ui.message,
+          canReveal: restore.promptState.ui.canReveal,
+          onYes: restore.promptState.onYes,
+          onNo: restore.promptState.onNo,
+          cardObj: restore.promptState.ui.cardObj,
+          cardTheme: restore.promptState.ui.cardTheme,
+          openZoom: !!restore.promptState.ui.openZoom
         });
       }
     };
