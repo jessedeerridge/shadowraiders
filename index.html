@@ -2013,6 +2013,7 @@
     return !!t.moveDone && !t.attackDone && !t.deckDrawDone;
   }
   function canClickType(type){
+    if (cardPlayerSelectActive) return false;
     if (isEquipSelectionLockActive()) return false;
     if (canDrawTypeNormally(type)) return true;
     if (type === "green" && canUseParasolGreenDraw()) return true;
@@ -2157,6 +2158,8 @@
   let cardTargetSessionRestoring = false;
   let cardTargetSessionSeenAt = 0;
   let pendingCardTargetSessionEntry = null;
+  let cardTargetOverlaySuspended = false;
+  let cardTargetOverlaySuspendInProgress = false;
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
     "CIT_D3", // デボラ
@@ -3280,6 +3283,27 @@
     greenShareDock?.classList.remove("hidden");
   }
 
+  function suspendCardTargetSelectionOverlay(){
+    if (!hasCardTargetSelectionOverlay()) return false;
+    if (cardTargetOverlaySuspended) return true;
+    cardTargetOverlaySuspended = true;
+    cardTargetOverlaySuspendInProgress = true;
+    greenShareDock?.classList.add("hidden");
+    closeZoom();
+    cardTargetOverlaySuspendInProgress = false;
+    return true;
+  }
+
+  function tryResumeCardTargetSelectionOverlay(){
+    if (!cardTargetOverlaySuspended) return;
+    if (cardTargetOverlaySuspendInProgress) return;
+    if (!helpBackdrop?.classList.contains('hidden')) return;
+    if (!equipExpandBackdrop?.classList.contains('hidden')) return;
+    if (!zoomBackdrop?.classList.contains('hidden')) return;
+    cardTargetOverlaySuspended = false;
+    restoreCardTargetSelectionOverlay();
+  }
+
   function openGreenShareDock(cardObj, { attackRangeOnly=false } = {}){
     greenShareCard = cardObj || null;
     if (!greenShareCard || !greenShareDock || !greenShareList){
@@ -3667,6 +3691,7 @@
     hideDavidSelectPreview();
     zoomBackdrop?.classList.remove("david-select-active");
     equipDock?.classList.remove("david-select-front");
+    tryResumeCardTargetSelectionOverlay();
   }
   zoomBackdrop.addEventListener("click", async (e) => {
     const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
@@ -4492,6 +4517,12 @@
         return;
       }
       openEquipExpand();
+      return;
+    }
+
+    if (cardPlayerSelectActive){
+      suspendCardTargetSelectionOverlay();
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       return;
     }
 
@@ -6328,6 +6359,7 @@
 
   const cardsPanelEl = document.getElementById("cardsPanel");
   cardsPanelEl.addEventListener("click", (e) => {
+    if (cardPlayerSelectActive) return;
     if (isEquipSelectionLockActive()) return;
     const card = e.target.closest(".card72.wb-front");
     if (!card) return;
@@ -7898,6 +7930,7 @@
     };
 
     g.addEventListener('pointerdown', (e) => {
+      if (cardPlayerSelectActive) return;
       if (isEquipSelectionLockActive()) return;
       markerLongPressDone = false;
       clearMarkerLongPress();
@@ -7913,6 +7946,7 @@
     g.addEventListener('pointercancel', clearMarkerLongPress);
 
     g.addEventListener('click', (e) => {
+      if (cardPlayerSelectActive) return;
       if (isEquipSelectionLockActive()) return;
       clearMarkerLongPress();
       if (markerLongPressDone){
@@ -8503,6 +8537,7 @@
     });
   }
   function openHelp(){
+    suspendCardTargetSelectionOverlay();
     renderHelpList();
     helpBackdrop.classList.remove('hidden');
   }
@@ -8520,7 +8555,10 @@
     });
     await resetAllAbilityUsageForUids([state.userId]);
   }
-  function closeHelp(){ helpBackdrop.classList.add('hidden'); }
+  function closeHelp(){
+    helpBackdrop.classList.add('hidden');
+    tryResumeCardTargetSelectionOverlay();
+  }
   function renderEquipExpandBody(){
     if (!equipExpandBody || !equipBody) return;
     equipExpandBody.innerHTML = equipBody.innerHTML;
@@ -8550,11 +8588,13 @@
   }
   function openEquipExpand(){
     if (!equipDock?.classList.contains('visible')) return;
+    suspendCardTargetSelectionOverlay();
     renderEquipExpandBody();
     equipExpandBackdrop?.classList.remove('hidden');
   }
   function closeEquipExpand(){
     equipExpandBackdrop?.classList.add('hidden');
+    tryResumeCardTargetSelectionOverlay();
     if (isEquipSelectionLockActive() && zoomBackdrop?.classList.contains('hidden')){
       restorePendingEquipSelection();
     }
@@ -9602,12 +9642,8 @@
   function openMyRoleZoom(role){
     if (!role) return;
     if (hasCardTargetSelectionOverlay()){
-      greenShareDock?.classList.add("hidden");
-      closeZoom();
+      suspendCardTargetSelectionOverlay();
       openZoomFromRole(role, { closeOnBackdrop:true, enableRevealPop:false, showCloseButton:false });
-      zoomDismissHandler = async () => {
-        restoreCardTargetSelectionOverlay();
-      };
       return;
     }
 
