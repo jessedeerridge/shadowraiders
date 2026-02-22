@@ -1230,6 +1230,7 @@
     border-color:#d6b35a;
   }
   .card72.wb-front .wb-name span{
+    display:block;
     font-size:8px;
     line-height:1;
     font-weight:900;
@@ -1238,9 +1239,10 @@
     text-shadow:0 1px 0 rgba(255,255,255,.08);
     white-space:nowrap;
     overflow:hidden;
-    text-overflow:ellipsis;
+    text-overflow:clip;
     width:100%;
     text-align:center;
+    transform-origin:center center;
   }
   .card72.wb-front .wb-circle{
     position:absolute;
@@ -2057,26 +2059,48 @@
       return;
     }
 
+    const text = (nameEl.textContent || '').trim();
+    if (!text){
+      nameEl.style.fontSize = '';
+      nameEl.style.transform = 'scaleX(1)';
+      return;
+    }
+
     const maxFontSize = 8;
-    const minFontSize = 1;
-    nameEl.style.fontSize = `${maxFontSize}px`;
+    const minFontSize = 4;
+    const frameWidth = Math.max(0, frameEl.clientWidth - 2);
+    if (frameWidth <= 0) return;
 
-    const measure = () => ({
-      textWidth: nameEl.scrollWidth,
-      frameWidth: frameEl.clientWidth
-    });
+    const computed = getComputedStyle(nameEl);
+    const canvas = adjustCardNameFont._canvas || (adjustCardNameFont._canvas = document.createElement('canvas'));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    let { textWidth, frameWidth } = measure();
-    if (textWidth <= frameWidth) return;
+    const measureTextWidth = (fontSize) => {
+      ctx.font = `${computed.fontWeight} ${fontSize}px ${computed.fontFamily}`;
+      return ctx.measureText(text).width;
+    };
 
-    let fontSize = Math.max(minFontSize, Number(((maxFontSize * frameWidth) / Math.max(textWidth, 1)).toFixed(2)));
-    nameEl.style.fontSize = `${fontSize}px`;
+    let low = minFontSize;
+    let high = maxFontSize;
+    let best = minFontSize;
+    while ((high - low) > 0.1){
+      const mid = (low + high) / 2;
+      if (measureTextWidth(mid) <= frameWidth){
+        best = mid;
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
 
-    while (fontSize > minFontSize){
-      ({ textWidth, frameWidth } = measure());
-      if (textWidth <= frameWidth) break;
-      fontSize = Math.max(minFontSize, Number((fontSize - 0.2).toFixed(2)));
-      nameEl.style.fontSize = `${fontSize}px`;
+    nameEl.style.fontSize = `${best.toFixed(2)}px`;
+    const finalWidth = measureTextWidth(best);
+    if (finalWidth > frameWidth){
+      const scaleX = Math.max(0.72, frameWidth / Math.max(finalWidth, 1));
+      nameEl.style.transform = `scaleX(${scaleX.toFixed(3)})`;
+    } else {
+      nameEl.style.transform = 'scaleX(1)';
     }
   }
 
