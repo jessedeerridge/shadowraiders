@@ -1450,6 +1450,7 @@
     padding:10px;
   }
   .green-share-dock.hidden{ display:none; }
+  .green-share-dock.over-equip-expand{ z-index:294; }
   .green-share-title{
     font-size:13px;
     font-weight:900;
@@ -2968,6 +2969,7 @@
   function restoreGreenGiveZoomSelection(action){
     if (!action?.cardObj) return;
     openZoomFromDeckCard(action.cardObj, "green", { closeOnBackdrop:false, showCloseButton:false });
+    greenShareDock?.classList.remove("over-equip-expand");
     greenShareDock?.classList.add("hidden");
     setZoomPassthrough(true);
     pendingEquipAction = action;
@@ -3058,7 +3060,7 @@
     greenShareList.appendChild(selected);
   }
 
-  function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onlyAlive=false, onSelect=null, nameSuffixForUid=null, lockEndTurnUntilResolved=false } = {}){
+  function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onlyAlive=false, onSelect=null, nameSuffixForUid=null, lockEndTurnUntilResolved=false, overEquipExpand=false } = {}){
     if (!greenShareDock || !greenShareList) return;
     const mySeat = currentMySeatIndex();
     const players = latestPlayers
@@ -3074,6 +3076,7 @@
     }
 
     let selected = false;
+    greenShareDock?.classList.toggle("over-equip-expand", !!overEquipExpand);
     setGreenDockMeta({ title, subtitle:"" });
     greenShareActions?.classList.add("hidden");
     greenShareList.innerHTML = "";
@@ -3425,6 +3428,7 @@
     if (greenShareList) greenShareList.innerHTML = "";
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareActions?.classList.add("hidden");
+    greenShareDock?.classList.remove("over-equip-expand");
     greenShareDock?.classList.add("hidden");
     cardPlayerSelectActive = false;
     updateCardInteractivity();
@@ -4584,10 +4588,12 @@
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
       setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
       greenShareDock?.classList.add("hidden");
+      const actionForRestore = { ...pendingEquipAction };
       openTargetSelectDock({
         title: `「${cardName}」を誰かに渡しますか。`,
         includeSelf: false,
         onlyAlive: true,
+        overEquipExpand: !equipExpandBackdrop?.classList.contains('hidden'),
         onSelect: async (uid) => {
           const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
           pendingEquipAction = null;
@@ -4601,6 +4607,14 @@
           }
         }
       });
+      zoomDismissHandler = async () => {
+        greenShareDock?.classList.remove("over-equip-expand");
+        greenShareDock?.classList.add("hidden");
+        cardPlayerSelectActive = false;
+        updateCardInteractivity();
+        renderTurnEndButton();
+        restorePendingEquipSelection(actionForRestore);
+      };
       return;
     }
 
