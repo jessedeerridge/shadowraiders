@@ -6981,6 +6981,15 @@
     return markerRoomId(myMarker) === 7;
   }
 
+  function didRollMoveDiceThisTurn(){
+    if (!isMyTurn()) return false;
+    const choice = mySeatMoveChoiceFromRoom();
+    if (!choice) return false;
+    const turnUpdatedAt = Number(turnState()?.updatedAt || 0);
+    if (!turnUpdatedAt) return true;
+    return Number(choice.at || 0) >= turnUpdatedAt;
+  }
+
   function highlightedMarkerUids(){
     if (mustResolveUranusMeteorStrike()){
       return new Set(uranusMeteorTargetUids());
@@ -8155,7 +8164,11 @@
       }
     }
 
-    const centerPending = !!pendingMoveChoice && !pendingMoveChoice.consumed && pendingMoveChoice.roomIds.includes(7);
+    const centerPending =
+      !!pendingMoveChoice &&
+      !pendingMoveChoice.consumed &&
+      pendingMoveChoice.roomIds.includes(7) &&
+      !didRollMoveDiceThisTurn();
     roomShapeEls[7]?.classList.toggle('room-choice-once', centerPending);
     roomHitEls[7]?.classList.toggle('room-choice-once', centerPending);
     if (roomHitEls[7]){
