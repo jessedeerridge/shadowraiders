@@ -3752,6 +3752,12 @@
         continue;
       }
 
+      const isRevealSlot = (el.id === "slot3" || el.id === "slot5") && el.classList.contains("wb-front");
+      if (isRevealSlot){
+        applyLocked(el, false);
+        continue;
+      }
+
       const shouldLock = !canClickType(t);
 
       const noDim = !isMyTurn() && ["white", "black", "green"].includes(t);
@@ -5358,6 +5364,7 @@
 
   function canShowEndTurnButton(){
     if (!isMyTurn()) return false;
+    if (!identityPromptPop?.classList.contains("hidden")) return false;
     if (cardPlayerSelectActive) return false;
     if (isEquipSelectionLockActive()) return false;
     if (pendingEquipAction?.type === "oliver_confirm") return false;
@@ -6217,9 +6224,13 @@
     });
 
     if (drawn && (type === "white" || type === "black")){
+      clearDiceRollTimers();
+      if (diceRollOverlay) diceRollOverlay.innerHTML = '';
       await grantEquipmentToMe(drawn, type);
       await applyImmediateDeckCardEffect(drawn);
     } else if (drawn && type === "green"){
+      clearDiceRollTimers();
+      if (diceRollOverlay) diceRollOverlay.innerHTML = '';
       openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false, showCloseButton:false });
       openGreenShareDock(drawn, { attackRangeOnly: viaParasol });
     }
