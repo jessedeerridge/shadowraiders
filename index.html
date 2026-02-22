@@ -4535,8 +4535,12 @@
       return next;
     });
     maybeResolveVampireHiddenHealOnReveal();
-    if (revealedNow && safeText(my.roleId) === "CIT_A3"){
-      await triggerAgathaRevealAbility();
+    if (
+      revealedNow &&
+      safeText(my.roleId) === "CIT_A3" &&
+      options.triggerAgathaAbility === true
+    ){
+      await triggerAgathaRevealAbility(options.agathaAbilityOptions || {});
     }
   }
 
@@ -4910,7 +4914,11 @@
     if (pendingRevealAction === "agatha_ability"){
       hideRevealPop();
       if (!isMyIdentityRevealed()){
-        await revealMyIdentityToEquipment({ revealedBy:"manual" });
+        await revealMyIdentityToEquipment({
+          revealedBy:"manual",
+          triggerAgathaAbility:true,
+          agathaAbilityOptions:{ endTurnAfterResolve:true }
+        });
       } else {
         await triggerAgathaRevealAbility({ endTurnAfterResolve:true });
       }
