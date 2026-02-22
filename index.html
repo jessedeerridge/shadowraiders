@@ -8155,7 +8155,8 @@
       }
     }
 
-    const centerPending = !!pendingMoveChoice && !pendingMoveChoice.consumed && pendingMoveChoice.roomIds.includes(7);
+    const hideCenterChoiceFrame = Number(movedByDiceRoomId || 0) === 7;
+    const centerPending = !hideCenterChoiceFrame && !!pendingMoveChoice && !pendingMoveChoice.consumed && pendingMoveChoice.roomIds.includes(7);
     roomShapeEls[7]?.classList.toggle('room-choice-once', centerPending);
     roomHitEls[7]?.classList.toggle('room-choice-once', centerPending);
     if (roomHitEls[7]){
