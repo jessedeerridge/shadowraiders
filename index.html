@@ -2256,6 +2256,8 @@
   const deckRebuildTimers = { green:null, white:null, black:null };
   let roleFlashEventSeenAt = 0;
   let roleFlashEventInitialized = false;
+  let hpSwapEventSeenAt = 0;
+  let hpSwapEventInitialized = false;
   let walpurgisSwapEventSeenAt = 0;
   let walpurgisSwapEventInitialized = false;
   let roleFlashTimer = null;
@@ -2864,6 +2866,18 @@
     });
   }
 
+
+  async function emitHpSwapEvent(aUid, bUid){
+    const a = safeText(aUid || "");
+    const b = safeText(bUid || "");
+    if (!state.roomCode || !a || !b || a === b) return;
+    await set(ref(db, `rooms/${state.roomCode}/effectEvents/hpSwap`), {
+      aUid: a,
+      bUid: b,
+      at: Date.now()
+    });
+  }
+
   async function emitWalpurgisSwapEvent(uidA, uidB, durationMs = 620){
     const a = safeText(uidA || "");
     const b = safeText(uidB || "");
@@ -3206,6 +3220,11 @@
       await emitCardDiceEvent({ kind:"role_emma", uid: actorUid, d4: eye });
       await waitMs(1000);
       await healDamageToPlayer(selectedUid, eye);
+      await update(ref(db, `rooms/${state.roomCode}/turn`), {
+        attackDone: true,
+        deckDrawDone: true,
+        updatedAt: Date.now()
+      });
     } else if (roleId === "RAI_G3"){
       await setDamageToPlayer(selectedUid, 7);
     } else if (roleId === "SHA_U2"){
@@ -3228,6 +3247,7 @@
       if (me === target){
         pendingHpSwapAnimation = null;
       }
+      await emitHpSwapEvent(actorUid, selectedUid);
     }
 
     await markRoleAbilityUsed(roleId);
@@ -3270,7 +3290,7 @@
       btn.addEventListener("click", () => {
         showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `「${safeText(p.name || "このプレイヤー")}」を選びますか。`, async () => {
           await completeRoleAbilitySelection(entry, p.id);
-        }, { fixedLower:true, dismissOnOutside:false, noCaret:true });
+        }, { fixedLower:true, noCaret:true });
       });
       greenShareList.appendChild(btn);
     }
@@ -3280,7 +3300,13 @@
       skipBtn.className = "green-share-btn";
       skipBtn.textContent = "使わない";
       const spec = roleSelectionSpec(roleId);
+      const disableSkip = !!entry?.justRevealed;
+      if (disableSkip){
+        skipBtn.style.opacity = "0.45";
+        skipBtn.style.cursor = "not-allowed";
+      }
       skipBtn.addEventListener("click", () => {
+        if (disableSkip) return;
         const abilityName = safeText(spec?.abilityName || "能力");
         showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
           await setRoleAbilitySelectionState(null);
@@ -4555,10 +4581,18 @@
           showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
           return;
         }
-        if (isRoleAbilityUsed(myRoleId) || !isMyTurn()) return;
+        if (!isMyTurn()) return;
+        if (isRoleAbilityUsed(myRoleId)){
+          if (myRoleId === "RAI_E3" || myRoleId === "SHA_U2"){
+            e.stopPropagation();
+            showRevealPopAt(idCard, { mode:"notice", message:"今は使えません。" });
+          }
+          return;
+        }
         if (!canStartRoleSelection(myRoleId, state.userId)){
           e.stopPropagation();
-          showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
+          const msg = (myRoleId === "RAI_E3" || myRoleId === "SHA_U2") ? "今は使えません。" : "今は公開できません。";
+          showRevealPopAt(idCard, { mode:"notice", message: msg });
           return;
         }
         const spec = roleSelectionSpec(myRoleId);
@@ -4700,7 +4734,7 @@
       if (role && !isRoleAbilityUsed(roleId)){
         if (!canStartRoleSelection(roleId, state.userId)){
           hideRevealPop();
-          showRevealPopAt(null, { mode:"notice", message:"今は公開できません。" });
+          showRevealPopAt(null, { mode:"notice", message:((roleId === "RAI_E3" || roleId === "SHA_U2") ? "今は使えません。" : "今は公開できません。") });
           return;
         }
         await setRoleAbilitySelectionState({ roleId, actorUid: state.userId });
@@ -4712,10 +4746,10 @@
     if (isRoleSelectionAbility(myRoleId) && !isRoleAbilityUsed(myRoleId)){
       if (!canStartRoleSelection(myRoleId, state.userId)){
         hideRevealPop();
-        showRevealPopAt(null, { mode:"notice", message:"今は公開できません。" });
+        showRevealPopAt(null, { mode:"notice", message:((myRoleId === "RAI_E3" || myRoleId === "SHA_U2") ? "今は使えません。" : "今は公開できません。") });
         return;
       }
-      await setRoleAbilitySelectionState({ roleId: myRoleId, actorUid: state.userId });
+      await setRoleAbilitySelectionState({ roleId: myRoleId, actorUid: state.userId, justRevealed:true });
     }
     if (myRoleId === "CIT_A1"){
       setTimeout(() => {
@@ -6385,6 +6419,27 @@
       if (!ev || !at || at <= roleFlashEventSeenAt) return;
       roleFlashEventSeenAt = at;
       showRoleFlashOverlay(safeText(ev.roleId || ""), 1200);
+    });
+  }
+
+  
+  function subscribeHpSwapEvents(){
+    const hpSwapRef = ref(db, `rooms/${state.roomCode}/effectEvents/hpSwap`);
+    onValue(hpSwapRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!hpSwapEventInitialized){
+        hpSwapEventInitialized = true;
+        hpSwapEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= hpSwapEventSeenAt) return;
+      hpSwapEventSeenAt = at;
+      const aUid = safeText(ev.aUid || "");
+      const bUid = safeText(ev.bUid || "");
+      if (!aUid || !bUid) return;
+      pendingHpSwapAnimation = { aUid, bUid, at };
+      renderHpBoard();
     });
   }
 
@@ -10708,6 +10763,7 @@
     subscribeDamage();
     subscribeDiceEvents();
     subscribeRoleFlashEvents();
+    subscribeHpSwapEvents();
     subscribeWalpurgisSwapEvents();
 
     renderSeatTiles();
