@@ -4535,7 +4535,10 @@
       return next;
     });
     maybeResolveVampireHiddenHealOnReveal();
-    if (revealedNow && safeText(my.roleId) === "CIT_A3"){
+    const shouldTriggerAgathaAbility = revealedNow
+      && safeText(my.roleId) === "CIT_A3"
+      && revealedBy !== "happy_cookie";
+    if (shouldTriggerAgathaAbility){
       await triggerAgathaRevealAbility();
     }
   }
@@ -8230,7 +8233,7 @@
         cardTheme: "white",
         openZoom: true,
         onYes: async () => {
-          await revealMyIdentityToEquipment();
+          await revealMyIdentityToEquipment({ revealedBy:"happy_cookie" });
           openIdentityRevealZoom(role, state.userId);
           await fullRecoverPlayer(state.userId);
         }
