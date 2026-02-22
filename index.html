@@ -2042,6 +2042,23 @@
     }
   }
 
+  function adjustCardNameFont(rootEl){
+    const nameEl = rootEl?.querySelector?.('.wb-name span');
+    if (!nameEl) return;
+    nameEl.style.fontSize = '8px';
+
+    const frameEl = nameEl.closest('.wb-name');
+    if (!frameEl) return;
+
+    const fits = () => nameEl.scrollWidth <= frameEl.clientWidth;
+    if (fits()) return;
+
+    nameEl.style.fontSize = '7px';
+    if (fits()) return;
+
+    nameEl.style.fontSize = '6px';
+  }
+
   function ensureCountTag(el){
     let tag = el.querySelector('.count-tag');
     if (!tag){
@@ -2107,6 +2124,7 @@
     slotEl.classList.remove("noframe");
     slotEl.style.backgroundImage = '';
     slotEl.innerHTML = buildWbFrontHTML(cardObj, theme);
+    adjustCardNameFont(slotEl);
     slotEl.dataset.cardType = theme || "";
   }
 
@@ -3664,6 +3682,7 @@
     const cardEl = document.createElement("div");
     cardEl.className = `card72 wb-front ${theme === "black" ? "wb-black" : theme === "green" ? "wb-green" : "wb-white"}`;
     cardEl.innerHTML = buildWbFrontHTML(cardObj, theme);
+    adjustCardNameFont(cardEl);
     cardEl.dataset.cardType = theme || "";
     openZoomContent(cardEl, options);
   }
@@ -3735,9 +3754,7 @@
 
       const shouldLock = !canClickType(t);
 
-      const noDim =
-        (el === slot3 && t === "white") ||
-        (el === slot5 && t === "black");
+      const noDim = !isMyTurn() && ["white", "black", "green"].includes(t);
 
       applyLocked(el, shouldLock, { noDim });
     }
@@ -3837,6 +3854,7 @@
     const el = document.createElement("div");
     el.className = `card72 wb-front ${theme === "black" ? "wb-black" : theme === "green" ? "wb-green" : "wb-white"}`;
     el.innerHTML = buildWbFrontHTML(cardObj, theme);
+    adjustCardNameFont(el);
     el.dataset.cardType = theme || "";
     return el;
   }
@@ -8483,6 +8501,37 @@
 
   const gameArea = document.getElementById('gameArea');
 
+
+  let preloadImagesStarted = false;
+  function collectImageAssetsForPreload(){
+    const fromDeck = [...WHITE_DECK, ...BLACK_DECK]
+      .map(card => cardImageFileFromName(card?.name || ""))
+      .filter(Boolean);
+    const fromRole = ROLES
+      .map(role => `${encodeURI(`${safeText(role?.initial || "").trim()}${safeText(role?.name || "").trim()}`)}.jpg`)
+      .filter(v => v && v !== '.jpg');
+    return [...new Set([
+      ...fromDeck,
+      ...fromRole,
+      'maemain.jpg','back.jpg','gear.jpg','hp.png','endgear.png',
+      'greendeck.jpg','whitedeck.jpg','blackdeck.jpg','browncard.jpg','suiri.jpg',
+      ...Array.from({length:7}, (_,i) => `room${i+1}.jpg`),
+      '4d1.png','4d2.png','4d3.png','4d4.png','4da1.png','4da2.png','4da3.png',
+      '6d1.png','6d2.png','6d3.png','6d4.png','6d5.png','6d6.png','6da1.png','6da2.png','6da3.png','6da4.png',
+      'map.png'
+    ])];
+  }
+  function startImagePreload(){
+    if (preloadImagesStarted) return;
+    preloadImagesStarted = true;
+    const files = collectImageAssetsForPreload();
+    files.forEach((file) => {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = file;
+    });
+  }
+
   const myRoleDock = document.getElementById('myRoleDock');
   const myRoleCard = document.getElementById('myRoleCard');
 
@@ -8644,6 +8693,7 @@
         const card = document.createElement('div');
         card.className = `card72 wb-front ${theme === 'black' ? 'wb-black' : theme === 'green' ? 'wb-green' : 'wb-white'}`;
         card.innerHTML = buildWbFrontHTML(toCardObj(cardData), theme);
+        adjustCardNameFont(card);
         card.style.cursor = 'pointer';
         card.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -10087,6 +10137,7 @@
   });
 
   btnJoin.addEventListener('click', async () => {
+    startImagePreload();
     state.userName = (inputName.value || '名無し').slice(0,4);
     localStorage.setItem(USER_NAME_CACHE_KEY, state.userName);
     state.roomCode = inputCode.value.trim() || generateRoomCode();
