@@ -419,6 +419,7 @@
     margin:-8px -4px -8px 0;
     -ms-overflow-style:none;
     scrollbar-width:none;
+    touch-action:pan-y;
   }
   .equip-body::-webkit-scrollbar{
     width:0;
@@ -2287,6 +2288,7 @@
   let pendingAttackResolution = null;
   let suppressEndTurnButton = false;
   let pendingHpSwapAnimation = null;
+  let turnEndLockedUntil = 0;
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -3252,7 +3254,8 @@
     } else if (roleId === "RAI_G3"){
       await setDamageToPlayer(selectedUid, 7);
       await update(ref(db, `rooms/${state.roomCode}`), {
-        [`markers/${selectedUid}`]: null
+        [`markers/${selectedUid}`]: null,
+        [`revivePendingMoveRoll/${selectedUid}`]: true
       });
     } else if (roleId === "SHA_U2"){
       await addDamageToPlayer(selectedUid, 3);
@@ -4867,10 +4870,13 @@
 
     hideAttackPop();
     attackTurnEndChoicePending = true;
+    suppressEndTurnButton = true;
+    lockTurnEndButton(2600);
     renderTurnEndButton();
     const selectedSum = chooseSumForTestPlayer("攻撃");
     if (isTestPlayer() && selectedSum == null){
       attackTurnEndChoicePending = false;
+      suppressEndTurnButton = false;
       renderTurnEndButton();
       return;
     }
@@ -5804,7 +5810,14 @@
     if (mustAttackWithMasamune()) return false;
     if (attackTurnEndChoicePending) return false;
     if (suppressEndTurnButton) return false;
+    if (Date.now() < turnEndLockedUntil) return false;
     return !!turnState()?.moveDone;
+  }
+
+  function lockTurnEndButton(ms = 0){
+    const wait = Math.max(0, Number(ms) || 0);
+    if (wait <= 0) return;
+    turnEndLockedUntil = Math.max(turnEndLockedUntil, Date.now() + wait);
   }
 
   function mustAttackWithMasamune(){
@@ -5868,7 +5881,8 @@
     if (!state.userId) return;
 
     const myMarker = markerCache?.[state.userId] || null;
-    if (myMarker) return;
+    const needsInitialRoll = !!turnState()?.forceInitialMoveRoll;
+    if (myMarker && !needsInitialRoll) return;
 
     const key = turnCycleKey();
     if (!key || key === autoMoveTriggeredTurnKey) return;
@@ -6090,7 +6104,7 @@
     const pending = pendingAttackResolution;
     pendingAttackResolution = null;
     attackTurnEndChoicePending = false;
-    suppressEndTurnButton = !!endTurnAfterApply;
+    suppressEndTurnButton = true;
     cachePendingAttackResolution(null);
     await upsertPendingAttackResolution([], "");
     renderTurnEndButton();
@@ -6102,12 +6116,17 @@
     }
     pending.applied = true;
     await addResolvedDamageToPlayers(pending.rows || []);
+    lockTurnEndButton(700);
+    await waitMs(700);
     if (endTurnAfterApply){
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await waitMs(2000);
       await doEndTurn();
       suppressEndTurnButton = false;
       renderTurnEndButton();
+      return;
     }
+    suppressEndTurnButton = false;
+    renderTurnEndButton();
   }
 
   function animateHpBoardSwapIfNeeded(){
@@ -6636,6 +6655,11 @@
       }
       if (!nextPlayerId) return cur;
 
+      const forceInitialMoveRoll = !!cur.revivePendingMoveRoll?.[nextPlayerId];
+      if (forceInitialMoveRoll && cur.revivePendingMoveRoll){
+        delete cur.revivePendingMoveRoll[nextPlayerId];
+      }
+
       cur.turn = {
         currentPlayerId: nextPlayerId,
         moveDone: false,
@@ -6645,6 +6669,7 @@
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        forceInitialMoveRoll,
         repeatTurnRemaining: nextRepeatRemaining,
         repeatTurnTotal: nextRepeatTotal,
         sealWisdomBonus: false,
@@ -7364,7 +7389,8 @@
     if (state.roomCode && isMyTurn()){
       await update(ref(db, `rooms/${state.roomCode}/turn`), {
         moveDone: true,
-        moveAt: Date.now()
+        moveAt: Date.now(),
+        forceInitialMoveRoll: false
       });
     }
     const cleanupTimer = setTimeout(() => {
@@ -8393,7 +8419,8 @@
         if (applyMove && state.roomCode && isMyTurn()){
           await update(ref(db, `rooms/${state.roomCode}/turn`), {
             moveDone: true,
-            moveAt: Date.now()
+            moveAt: Date.now(),
+            forceInitialMoveRoll: false
           });
         }
       }, 1900);
