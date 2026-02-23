@@ -758,6 +758,23 @@
   pointer-events:none;
   z-index:287;
 }
+.agatha-reveal-overlay{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  pointer-events:none;
+  z-index:286;
+}
+.agatha-reveal-overlay.hidden{ display:none; }
+.agatha-reveal-overlay .id72{
+  transform:scale(2.1);
+  transform-origin:center center;
+  box-shadow:0 18px 50px rgba(0,0,0,.45);
+  animation:none !important;
+  transition:none !important;
+}
 .dice-flyer{
   position:absolute;
   left:0;
@@ -1736,6 +1753,7 @@
   <div id="myRoleCard"></div>
 </div>
 
+<div id="agathaRevealOverlay" class="agatha-reveal-overlay hidden" aria-hidden="true"></div>
 <div id="diceRollOverlay" class="dice-roll-overlay" aria-hidden="true"></div>
 
 <div id="kickDialog" class="dialog-backdrop hidden">
@@ -4592,11 +4610,16 @@
     if (isAgathaAbilityUsed()) return;
 
     await markAgathaAbilityUsed();
-    const rolled = await runCornerD6D4Roll();
-    await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4 });
+    const rolled = {
+      d6: 1 + Math.floor(Math.random() * 6),
+      d4: 1 + Math.floor(Math.random() * 4)
+    };
+    const revealCloseAt = Date.now() + 1200;
+    showAgathaRevealCardOverlay(state.userId, { closeAt: revealCloseAt });
+    await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4, closeAt: revealCloseAt });
     await waitMs(1000);
     const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
-    await waitMs(1500);
+    await waitMs(1200);
     await addDamageToPlayers(playerIdsInRoom(targetRoomId), 3);
     await waitMs(500);
     const cleanupTimer = setTimeout(() => {
@@ -6662,7 +6685,10 @@
           d4: Number(ev.d4 || 1)
         });
       } else if (kind === "role_agatha"){
-        if (safeText(ev.uid || "") === state.userId) return;
+        showAgathaRevealCardOverlay(safeText(ev.uid || ""), {
+          closeAt: Number(ev.closeAt || 0),
+          duration: 1200
+        });
         runCornerD6D4Roll({
           d6: Number(ev.d6 || 1),
           d4: Number(ev.d4 || 1)
@@ -7330,13 +7356,51 @@
   const ROOM_GUIDE_OFFSET = {
     1:[0,-5],2:[0,-5],3:[0,-5],4:[0,-5],5:[0,-5],6:[0,-5],7:[0,0]
   };
+  const agathaRevealOverlay = document.getElementById('agathaRevealOverlay');
   const diceRollOverlay = document.getElementById('diceRollOverlay');
   let diceRollTimers = [];
+  let agathaRevealHideTimer = null;
+  let agathaRevealVisibleUntil = 0;
   let pendingMoveChoice = null;
 
   function clearDiceRollTimers(){
     for (const id of diceRollTimers) clearTimeout(id);
     diceRollTimers = [];
+  }
+
+  function hideAgathaRevealCardOverlay(){
+    if (agathaRevealHideTimer){
+      clearTimeout(agathaRevealHideTimer);
+      agathaRevealHideTimer = null;
+    }
+    agathaRevealVisibleUntil = 0;
+    if (agathaRevealOverlay){
+      agathaRevealOverlay.innerHTML = '';
+      agathaRevealOverlay.classList.add('hidden');
+    }
+  }
+
+  function showAgathaRevealCardOverlay(uid, options = {}){
+    if (!agathaRevealOverlay) return;
+    const roleId = safeText(state.hands?.[uid]?.roleId || "CIT_A3");
+    const role = ROLE_BY_ID[roleId] || ROLE_BY_ID.CIT_A3;
+    if (!role) return;
+
+    const duration = Math.max(0, Number(options.duration || 1200));
+    const requestedCloseAt = Number(options.closeAt || 0);
+    const closeAt = requestedCloseAt > 0 ? requestedCloseAt : (Date.now() + duration);
+    if (closeAt <= agathaRevealVisibleUntil) return;
+
+    agathaRevealVisibleUntil = closeAt;
+    agathaRevealOverlay.innerHTML = '';
+    agathaRevealOverlay.appendChild(createIdentityCard(role));
+    agathaRevealOverlay.classList.remove('hidden');
+
+    if (agathaRevealHideTimer) clearTimeout(agathaRevealHideTimer);
+    const remainMs = Math.max(0, closeAt - Date.now());
+    agathaRevealHideTimer = setTimeout(() => {
+      hideAgathaRevealCardOverlay();
+    }, remainMs);
   }
 
   function myEquipmentNames(){
