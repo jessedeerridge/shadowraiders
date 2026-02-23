@@ -94,8 +94,9 @@
 .attack-result-pop-name{display:inline-flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;width:70px;max-width:70px;cursor:default;padding:4px 6px;}
 .attack-result-pop-name-text{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;}
 .attack-result-pop-row .chip16{flex:0 0 auto;}
-.btn-excalibur{background:#c21d1d;color:#fff;border-color:#c21d1d;}
+.btn-excalibur{background:#FF3655;color:#fff;border-color:#c21d1d;padding:2px 2px;}
 .btn-excalibur:hover{filter:brightness(1.05);}
+.btn-excalibur img{display:block;height:24px;width:auto;}
 
   #attackResultPop{
     min-width:min(92vw, 250px);
@@ -1697,7 +1698,9 @@
 <div id="attackResultPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="攻撃結果確認">
   <div id="attackResultRows" class="attack-result-pop-rows"></div>
   <div class="actions">
-    <button class="btn btn-excalibur hidden" id="btnAttackResultExcalibur">🗡️</button>
+    <button class="btn btn-excalibur hidden" id="btnAttackResultExcalibur" aria-label="エクスカリバー効果">
+      <img src="exkariba.png" alt="エクスカリバー">
+    </button>
     <button class="btn primary" id="btnAttackResultEnd">OKおわる</button>
     <button class="btn ghost" id="btnAttackResultKeep">OKおわらない</button>
   </div>
@@ -6535,7 +6538,16 @@
       const amount = document.createElement("span");
       const damageValue = Math.max(0, Number(item?.damage || 0));
       const treatZeroAsPreview = !!(exMeta.zeroDamagePreview && damageValue === 0);
-      amount.textContent = (damageValue > 0 || treatZeroAsPreview) ? `${damageValue} Damege >` : "攻撃失敗 >";
+      const hasDamageLabel = (damageValue > 0 || treatZeroAsPreview);
+      if (!hasDamageLabel){
+        amount.textContent = "攻撃失敗 >";
+        row.appendChild(amount);
+        row.appendChild(makeAttackResultNameNode(uid));
+        attackResultRows.appendChild(row);
+        continue;
+      }
+      amount.textContent = `${damageValue}`;
+
       row.appendChild(amount);
       if (exMeta.showBonusLabel){
         const plus = document.createElement("span");
@@ -6543,6 +6555,9 @@
         plus.textContent = "(+2)";
         row.appendChild(plus);
       }
+      const suffix = document.createElement("span");
+      suffix.textContent = "Damege >";
+      row.appendChild(suffix);
       row.appendChild(makeAttackResultNameNode(uid));
       attackResultRows.appendChild(row);
     }
@@ -8910,6 +8925,12 @@
         if (hasExcaliburPreviewZero){
           pendingAttackResultMeta.zeroDamagePreview = true;
           pendingAttackResultMeta.showBonusLabel = true;
+        }
+        if (isMyRole("RAI_G2") && !isMyIdentityRevealed()){
+          const hasZeroDamage = resolvedRows.some(row => Number(row.damage || 0) === 0);
+          if (!attackSucceeded || hasZeroDamage){
+            pendingAttackResultMeta.allowExcaliburButton = false;
+          }
         }
         const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
         const pendingTurnKey = turnCycleKey();
