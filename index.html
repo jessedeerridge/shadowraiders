@@ -5870,11 +5870,16 @@
   btnCounterAbilitySkip?.addEventListener("click", async (e) => {
     e.stopPropagation();
     const entry = counterPromptEntryForMe();
-    if (entry && safeText(entry.phase || "") === "venom_response"){
+    const isVenomResponse = !!entry && safeText(entry.phase || "") === "venom_response";
+    if (isVenomResponse){
       await addDamageToPlayer(state.userId, 1, { source:"venom_counter" });
     }
     hideCounterAbilityPrompt();
     const resolvedEntry = await clearCounterPromptForMe(entry?.at || null);
+    if (isVenomResponse){
+      await doEndTurn(state.userId);
+      return;
+    }
     await tryAdvanceTurnAfterCounterChoice(resolvedEntry);
   });
 
@@ -5894,10 +5899,10 @@
         const ok = await moveEquipmentCardBetweenPlayers(state.userId, venomUid, chosenSource);
         if (!ok) return;
         hideCounterAbilityPrompt();
-        const resolvedEntry = await clearCounterPromptForMe(entry.at);
-        await tryAdvanceTurnAfterCounterChoice(resolvedEntry);
+        await clearCounterPromptForMe(entry.at);
         closeZoom();
         renderEquipmentDock();
+        await doEndTurn(state.userId);
       }, { fixedLower:true, closeZoomOnNo:false });
       return;
     }
