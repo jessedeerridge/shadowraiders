@@ -5977,7 +5977,9 @@
       if (!cleared) return;
       venomChoicePop?.classList.add("hidden");
       if (isVenomRevealZoomVisible()) closeZoom();
-      await advanceTurnToNextPlayer(entry.targetUid);
+      if (currentTurnPlayerId() === entry.targetUid){
+        await advanceTurnToNextPlayer(entry.targetUid);
+      }
     } finally {
       venomChoiceBusy = false;
     }
