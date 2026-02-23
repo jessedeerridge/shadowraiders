@@ -7853,13 +7853,12 @@
     const success = !!attackSucceeded;
     const sameDice = (Number(d6) || 0) === (Number(d4) || 0);
     const targetRevealed = isIdentityRevealedFor(targetUid);
-    const galahadAuto = roleId === "RAI_G2" && !success;
     const freddieAuto = roleId === "RAI_F3" && success && targetRevealed;
 
     return {
-      showBonusLabel: success || galahadAuto || freddieAuto,
+      showBonusLabel: success || freddieAuto,
       allowExcaliburButton: success && !freddieAuto && !sameDice,
-      autoBoost: galahadAuto || freddieAuto,
+      autoBoost: freddieAuto,
       freddieSpecial: freddieAuto
     };
   }
