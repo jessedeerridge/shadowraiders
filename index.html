@@ -2310,6 +2310,7 @@
   let suppressEndTurnButton = false;
   let pendingHpSwapAnimation = null;
   let attackAbilityUsedTurnByRole = {};
+  let attackAbilityUsageTurnOwnerUid = "";
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -2955,16 +2956,21 @@
   function isAttackAbilityUsedThisTurn(roleId){
     const rid = safeText(roleId || "");
     if (!rid) return false;
-    const usedTurnKey = safeText(attackAbilityUsedTurnByRole?.[rid] || "");
-    return !!usedTurnKey && usedTurnKey === currentTurnKey();
+    return !!attackAbilityUsedTurnByRole?.[rid];
   }
 
   function markAttackAbilityUsedThisTurn(roleId){
     const rid = safeText(roleId || "");
     if (!rid) return;
+    attackAbilityUsageTurnOwnerUid = currentTurnPlayerId();
     const next = { ...(attackAbilityUsedTurnByRole || {}) };
-    next[rid] = currentTurnKey();
+    next[rid] = true;
     attackAbilityUsedTurnByRole = next;
+  }
+
+  function resetAttackAbilityUsageTurnState(){
+    attackAbilityUsedTurnByRole = {};
+    attackAbilityUsageTurnOwnerUid = "";
   }
 
   function formatAttackAbilityPillLabel(name){
@@ -5732,6 +5738,10 @@
 
   function syncRoomAbilityTurnState(){
     const key = turnCycleKey();
+    const turnOwnerUid = currentTurnPlayerId();
+    if (!turnOwnerUid || turnOwnerUid !== attackAbilityUsageTurnOwnerUid){
+      resetAttackAbilityUsageTurnState();
+    }
     const roomActionState = turnRoomActionState();
     room4StealUsed = roomActionState.room4StealUsed;
     room3ActionUsed = roomActionState.room3ActionUsed;
@@ -11211,6 +11221,7 @@
     ulsterExtraAttackPending = 0;
     attackFlowUiLockActive = false;
     suppressEndTurnButton = false;
+    resetAttackAbilityUsageTurnState();
     cachePendingAttackResolution(null);
     await advanceTurnToNextPlayer();
     hideAttackPop();
