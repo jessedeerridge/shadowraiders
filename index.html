@@ -2826,6 +2826,67 @@
     return null;
   }
 
+  async function forceResolveVenomChoiceAndAdvance(attackerUid = ""){
+    if (!state.roomCode) return;
+    const expectedUid = safeText(attackerUid || "");
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur || !(cur.gameStarted || cur.startedAt)) return cur;
+
+      const counterMap = cur.counterPromptState || {};
+      const hasBlockingCounterPrompt = Object.values(counterMap).some((entry) => !!entry && !!entry.mustChoose);
+      if (hasBlockingCounterPrompt) return cur;
+
+      if (cur.venomCounterChoice?.active){
+        delete cur.venomCounterChoice;
+      }
+
+      const order = Array.isArray(cur.positionOrder) ? cur.positionOrder : [];
+      if (!order.length) return cur;
+      const isEliminatedInRoom = (uid) => {
+        if (!uid) return false;
+        const hand = cur.hands?.[uid];
+        const role = hand?.roleId ? ROLE_BY_ID[hand.roleId] : null;
+        const hp = Number(role?.hp || 0);
+        if (!hp) return false;
+        const dmg = clampDamage(cur.damage?.[uid]);
+        return dmg >= hp;
+      };
+      const aliveOrder = order.filter(uid => !isEliminatedInRoom(uid));
+      if (!aliveOrder.length) return cur;
+
+      const curTurn = cur.turn || {};
+      const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || aliveOrder[0] || "");
+      if (expectedUid && curId !== expectedUid) return cur;
+      let nextIdx = aliveOrder.indexOf(curId);
+      if (nextIdx < 0) nextIdx = 0;
+      let nextPlayerId = safeText(aliveOrder[(nextIdx + 1) % aliveOrder.length] || aliveOrder[0] || "");
+      if (!nextPlayerId || isEliminatedInRoom(nextPlayerId)){
+        nextPlayerId = safeText(aliveOrder[0] || "");
+      }
+      if (!nextPlayerId) return cur;
+
+      cur.turn = {
+        currentPlayerId: nextPlayerId,
+        moveDone: false,
+        attackDone: false,
+        deckDrawDone: false,
+        drawnTypes: { green:false, white:false, black:false },
+        movedByDiceRoomId: null,
+        room3ActionUsed: false,
+        room4StealUsed: false,
+        repeatTurnRemaining: 0,
+        repeatTurnTotal: 0,
+        sealWisdomBonus: false,
+        updatedAt: Date.now()
+      };
+      if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
+        delete cur.guardianAngelShield[nextPlayerId];
+      }
+      return cur;
+    });
+  }
+
   async function beginVenomCounterChoice(entry){
     if (!state.roomCode || !entry) return;
     const attackerUid = safeText(entry.attackerUid || "");
@@ -2861,7 +2922,7 @@
     const role = ROLE_BY_ID[roleId];
     if (!role) return;
     const key = `${venomUid}_${Number(row.at || 0)}`;
-    if (activeVenomRevealLockKey === key){
+    if (activeVenomRevealLockKey === key && !zoomBackdrop?.classList.contains("hidden")){
       setZoomPassthrough(true);
       return;
     }
@@ -5898,6 +5959,7 @@
         const removed = await clearVenomCounterChoiceWithRetry(venomChoice.at);
         const attackerUid = safeText(venomChoice.attackerUid || removed?.targetUid || "");
         await advanceTurnToNextPlayer(attackerUid);
+        await forceResolveVenomChoiceAndAdvance(attackerUid);
       } finally {
         venomCounterChoiceBusy = false;
       }
@@ -5958,6 +6020,7 @@
       if (ownerUid !== state.userId || !sourceKey || !venomUid) return;
       const cardName = safeText(card.dataset.cardName || "カード");
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `「${cardName}」を渡しますか。`, async () => {
         if (venomCounterChoiceBusy) return;
         venomCounterChoiceBusy = true;
@@ -5970,6 +6033,7 @@
           const removed = await clearVenomCounterChoiceWithRetry(choice?.at || null);
           const attackerUid = safeText(choice?.attackerUid || removed?.targetUid || "");
           await advanceTurnToNextPlayer(attackerUid);
+          await forceResolveVenomChoiceAndAdvance(attackerUid);
         } finally {
           venomCounterChoiceBusy = false;
         }
