@@ -2950,6 +2950,12 @@
     return null;
   }
 
+  function formatAttackAbilityPillLabel(name){
+    const raw = safeText(name || "").trim();
+    if (!raw) return "";
+    return Array.from(raw).length <= 2 ? ` ${raw} ` : raw;
+  }
+
 
   async function emitHpSwapEvent(aUid, bUid){
     const a = safeText(aUid || "");
@@ -2997,7 +3003,7 @@
     overlay.style.display = "flex";
     overlay.style.alignItems = "center";
     overlay.style.justifyContent = "center";
-    overlay.style.background = "rgba(0,0,0,.35)";
+    overlay.style.background = "transparent";
     overlay.style.pointerEvents = "none";
 
     const card = createIdentityCard(role);
@@ -5158,7 +5164,7 @@
         attackResultChoiceBusy = false;
       }
     }, {
-      messageHtml: `<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>${escapeHtml(spec.description)}`,
+      messageHtml: `<span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>${escapeHtml(spec.description)}`,
       yesLabel: "はい",
       noLabel: "いいえ",
       fixedLower:true,
@@ -6326,7 +6332,7 @@
     }
     if (btnAttackResultKeep){
       if (spec){
-        btnAttackResultKeep.innerHTML = `OK<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>`;
+        btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>`;
       } else {
         btnAttackResultKeep.textContent = "OKおわらない";
       }
