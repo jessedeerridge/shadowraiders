@@ -2354,7 +2354,7 @@
   let pendingHpSwapAnimation = null;
   let attackAbilityUsedTurnByRole = {};
   let attackAbilityUsageTurnOwnerUid = "";
-  let venomRevealSuppressUntil = 0;
+  let localClearedVenomPromptAtByUid = {};
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -2827,6 +2827,8 @@
       if (!entry) continue;
       if (safeText(entry.roleId || "") !== "SHA_V1") continue;
       if (!entry.mustChoose || !entry.venomUsed) continue;
+      const localClearedAt = Number(localClearedVenomPromptAtByUid[venomUid] || 0);
+      if (localClearedAt && localClearedAt === Number(entry.at || 0)) continue;
       return {
         venomUid: safeText(venomUid || ""),
         attackerUid: safeText(entry.attackerUid || "")
@@ -2836,7 +2838,6 @@
   }
 
   function ensureVenomRevealZoomVisible(){
-    if (Date.now() < Number(venomRevealSuppressUntil || 0)) return;
     const active = activeVenomResolutionEntry();
     if (!active || !zoomBackdrop || !zoomStage) return;
     if (!zoomBackdrop.classList.contains("hidden")) return;
@@ -2849,9 +2850,12 @@
     setZoomPassthrough(true);
   }
 
-  function suppressVenomRevealFor(ms = 1800){
-    const span = Math.max(0, Number(ms || 0));
-    venomRevealSuppressUntil = Math.max(venomRevealSuppressUntil, Date.now() + span);
+  function markVenomPromptClearedLocally(venomUid, promptAt){
+    const uid = safeText(venomUid || "");
+    if (!uid) return;
+    const at = Number(promptAt || 0);
+    if (!at) return;
+    localClearedVenomPromptAtByUid[uid] = at;
   }
 
   async function clearCounterPromptForMe(expectedAt = null){
@@ -5876,8 +5880,9 @@
       hideCounterAbilityPrompt();
       renderEquipmentDock();
       renderTurnEndButton();
-      suppressVenomRevealFor();
+      markVenomPromptClearedLocally(venomUid, counterAt);
       await clearCounterPromptByUid(venomUid, counterAt);
+      closeZoom();
       await addDamageToPlayer(state.userId, 1, { source:"venom_counter" });
       await doEndTurn();
       return;
@@ -6022,10 +6027,10 @@
         zoomDismissHandler = null;
         if (!chosenSource || !venomUid) return;
         await moveEquipmentCardBetweenPlayers(state.userId, venomUid, chosenSource);
-        suppressVenomRevealFor();
+        markVenomPromptClearedLocally(venomUid, counterAt);
+        await clearCounterPromptByUid(venomUid, counterAt);
         closeZoom();
         renderEquipmentDock();
-        await clearCounterPromptByUid(venomUid, counterAt);
         await doEndTurn();
       }, {
         fixedLower:true,
