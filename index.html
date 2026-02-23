@@ -4567,6 +4567,7 @@
     });
     maybeResolveVampireHiddenHealOnReveal();
     if (revealedNow && safeText(my.roleId) === "CIT_A3" && useAgathaAbilityOnReveal){
+      if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
       await triggerAgathaRevealAbility();
     }
   }
@@ -4945,6 +4946,7 @@
     }
     if (pendingRevealAction === "agatha_ability"){
       hideRevealPop();
+      if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
       if (!isMyIdentityRevealed()){
         await revealMyIdentityToEquipment({ revealedBy:"manual" });
       } else {
