@@ -4737,7 +4737,9 @@
     maybeResolveVampireHiddenHealOnReveal();
     if (revealedNow && safeText(my.roleId) === "CIT_C2"){
       await healDamageToPlayer(state.userId, 2);
-      scheduleCarolTurnStartHeal();
+      if (isMyTurn()){
+        carolTurnHealKey = turnCycleKey();
+      }
     }
     if (revealedNow && safeText(my.roleId) === "CIT_A3" && useAgathaAbilityOnReveal){
       if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
