@@ -6405,11 +6405,21 @@
 
   function normalizeAttackResultMeta(meta){
     if (!meta || typeof meta !== "object") return null;
+    const freddieBonusByUid = {};
+    const srcBonus = (meta.freddieBonusByUid && typeof meta.freddieBonusByUid === "object") ? meta.freddieBonusByUid : {};
+    for (const [uid, value] of Object.entries(srcBonus)){
+      const key = safeText(uid || "");
+      const amount = Math.max(0, Number(value) || 0);
+      if (key && amount > 0){
+        freddieBonusByUid[key] = amount;
+      }
+    }
     return {
       showBonusLabel: !!meta.showBonusLabel,
       allowExcaliburButton: !!meta.allowExcaliburButton,
       freddieSpecial: !!meta.freddieSpecial,
-      zeroDamagePreview: !!meta.zeroDamagePreview
+      zeroDamagePreview: !!meta.zeroDamagePreview,
+      freddieBonusByUid
     };
   }
 
@@ -6563,6 +6573,13 @@
       }
       amount.textContent = `${damageValue}`;
 
+      const freddieBonus = Math.max(0, Number(exMeta?.freddieBonusByUid?.[uid] || 0));
+      if (freddieBonus > 0){
+        const plus = document.createElement("span");
+        plus.className = "attack-result-plus-two";
+        plus.textContent = `(+${freddieBonus})`;
+        row.appendChild(plus);
+      }
       row.appendChild(amount);
       if (exMeta.showBonusLabel){
         const plus = document.createElement("span");
@@ -8974,23 +8991,39 @@
           ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
           : [];
         const targetUids = (gatlingTargets.length > 0) ? gatlingTargets : [targetUid];
+        const roleId = safeText(myRoleInfo()?.id || "");
+        const freddieRole = roleId === "RAI_F3";
+        const freddieActive = freddieRole && isMyIdentityRevealed();
+        const hasExcalibur = hasEquipmentByName(state.userId, "エクスカリバー");
+        const freddieBonusByUid = {};
         const exMeta = d4OnlyMode
           ? null
           : buildExcaliburAttackMeta({ attackerUid:state.userId, targetUid, attackSucceeded, d6:finalD6, d4:finalD4 });
         let resolvedRows = targetUids.map(uid => ({
           uid,
           damage: (attackSucceeded && damage > 0)
-            ? applyIncomingDamageModifiers(uid, damage, { source:"attack" })
+            ? (() => {
+                let beforeModifiers = damage;
+                const revealedTarget = isIdentityRevealedFor(uid);
+                if (freddieRole && revealedTarget){
+                  freddieBonusByUid[uid] = hasExcalibur ? 4 : 2;
+                  if (freddieActive){
+                    beforeModifiers += 2;
+                  }
+                }
+                return applyIncomingDamageModifiers(uid, beforeModifiers, { source:"attack" });
+              })()
             : 0
         }));
         if (exMeta?.autoBoost){
           resolvedRows = excaliburExtraDamageRows(resolvedRows, 2);
         }
         pendingAttackResultMeta = {
-          showBonusLabel: !!exMeta?.showBonusLabel,
+          showBonusLabel: !!exMeta?.showBonusLabel && Object.keys(freddieBonusByUid).length === 0,
           allowExcaliburButton: !!exMeta?.allowExcaliburButton,
-          freddieSpecial: !!exMeta?.freddieSpecial,
-          zeroDamagePreview: false
+          freddieSpecial: !!(exMeta?.freddieSpecial || (freddieRole && !freddieActive && Object.keys(freddieBonusByUid).length > 0)),
+          zeroDamagePreview: false,
+          freddieBonusByUid
         };
         const hasExcaliburPreviewZero = !!pendingAttackResultMeta.allowExcaliburButton
           && hasEquipmentByName(state.userId, "賢者のローブ")
