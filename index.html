@@ -2438,6 +2438,31 @@
 
   function roleSelectionSpec(roleId){ return ROLE_SELECTION_SPECS[safeText(roleId || "")] || null; }
   function isRoleSelectionAbility(roleId){ return !!roleSelectionSpec(roleId); }
+
+  const ATTACK_FOLLOWUP_SPECS = {
+    "CIT_C1": { usageKey:"craig_feast", perTurn:true },
+    "SHA_U3": { usageKey:"ulster_del_fris", perTurn:true }
+  };
+
+  function attackFollowupSpec(roleId){ return ATTACK_FOLLOWUP_SPECS[safeText(roleId || "")] || null; }
+
+  function isAttackFollowupAbilityUsed(roleId){
+    const spec = attackFollowupSpec(roleId);
+    if (!spec || !state.userId) return false;
+    if (spec.perTurn){
+      const usedTurn = safeText(state.room?.abilityUsage?.[spec.usageKey]?.[state.userId] || "");
+      return usedTurn && usedTurn === currentTurnKey();
+    }
+    return !!state.room?.abilityUsage?.[spec.usageKey]?.[state.userId];
+  }
+
+  async function markAttackFollowupAbilityUsed(roleId){
+    const spec = attackFollowupSpec(roleId);
+    if (!spec || !state.roomCode || !state.userId) return;
+    const value = spec.perTurn ? currentTurnKey() : true;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/${spec.usageKey}/${state.userId}`), value);
+  }
+
   function isRoleAbilityUsed(roleId){
     const spec = roleSelectionSpec(roleId);
     if (!spec || !state.userId) return false;
@@ -2931,6 +2956,7 @@
     const attackFailed = normalizedRows.length > 0 && !hasSuccessDamage;
 
     if (roleId === "CIT_C1"){
+      if (isAttackFollowupAbilityUsed("CIT_C1")) return null;
       return { abilityName:"死の饗宴", description:"自分に2ダメージ与えて、もう一度攻撃しますか。" };
     }
     if (roleId === "CIT_B1" && maxDamage >= 2){
@@ -2943,6 +2969,7 @@
       return { abilityName:"魔剣の伝承者", description:"エクスカリバーを所有している時、攻撃が成功するまで振り直す。" };
     }
     if (roleId === "SHA_U3"){
+      if (isAttackFollowupAbilityUsed("SHA_U3")) return null;
       return { abilityName:"デル・フリス", description:"もう一度攻撃を行いますか。" };
     }
     if (roleId === "SHA_V2" && hasSuccessDamage){
@@ -5221,6 +5248,7 @@
         await resolveAttackAbilityReveal(role);
 
         if (roleId === "CIT_C1"){
+          await markAttackFollowupAbilityUsed("CIT_C1");
           await addDamageToPlayer(state.userId, 2);
           await runFollowupAttackToTarget(followupTargetUid, 1500);
           return;
@@ -5230,6 +5258,7 @@
           return;
         }
         if (roleId === "SHA_U3"){
+          await markAttackFollowupAbilityUsed("SHA_U3");
           await startUlsterExtraAttackSelection();
           return;
         }
@@ -6378,6 +6407,21 @@
     return wrap;
   }
 
+  function attackResultButtonMode(rows = []){
+    const roleId = safeText(myRoleInfo()?.id || "");
+    const spec = attackAbilitySpecFromRows(rows);
+    if (!spec){
+      if ((roleId === "CIT_C1" || roleId === "SHA_U3") && isAttackFollowupAbilityUsed(roleId)){
+        return { mode:"end_only", spec:null };
+      }
+      return { mode:"both", spec:null };
+    }
+    if (roleId === "SHA_V2" && isMyIdentityRevealed()){
+      return { mode:"keep_only", spec };
+    }
+    return { mode:"both", spec };
+  }
+
   function showAttackResultPop(rows = []){
     if (!attackResultPop || !attackResultRows) return;
     attackResultRows.innerHTML = "";
@@ -6399,16 +6443,22 @@
       row.appendChild(makeAttackResultNameNode(uid));
       attackResultRows.appendChild(row);
     }
-    const spec = attackAbilitySpecFromRows(rows);
+    const { mode, spec } = attackResultButtonMode(rows);
     if (btnAttackResultEnd){
       btnAttackResultEnd.textContent = hasSealWisdomBonusThisTurn() ? "OKおわる(+1)" : "OKおわる";
+      btnAttackResultEnd.classList.toggle("hidden", mode === "keep_only");
     }
     if (btnAttackResultKeep){
       if (spec){
-        btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>`;
+        if (mode === "keep_only" && safeText(spec.abilityName) === "吸血"){
+          btnAttackResultKeep.textContent = "OK吸血";
+        } else {
+          btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>`;
+        }
       } else {
         btnAttackResultKeep.textContent = "OKおわらない";
       }
+      btnAttackResultKeep.classList.toggle("hidden", mode === "end_only");
     }
     attackResultChoiceBusy = false;
     attackResultPop.classList.remove("hidden");
