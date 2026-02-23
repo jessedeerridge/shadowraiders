@@ -7,6 +7,10 @@
 <style>
   html, body{height:100%; overflow:hidden;}
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#fff;color:#111;}
+  :root{
+    --z-dice-roll-overlay: 12050;
+    --z-role-flash-overlay: 12040;
+  }
   header{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #eee; position:sticky; top:0; z-index:272; background:#fff;}
   h1{margin:0;font-size:18px;}
   .small{font-size:12px;opacity:.75;}
@@ -768,7 +772,7 @@
   position:fixed;
   inset:0;
   pointer-events:none;
-  z-index:400;
+  z-index:var(--z-dice-roll-overlay);
 }
 .agatha-reveal-overlay{
   position:fixed;
@@ -3321,7 +3325,7 @@
     const overlay = document.createElement("div");
     overlay.style.position = "fixed";
     overlay.style.inset = "0";
-    overlay.style.zIndex = "11000";
+    overlay.style.zIndex = "var(--z-role-flash-overlay)";
     overlay.style.display = "flex";
     overlay.style.alignItems = "center";
     overlay.style.justifyContent = "center";
