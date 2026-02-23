@@ -2354,6 +2354,7 @@
   let pendingHpSwapAnimation = null;
   let attackAbilityUsedTurnByRole = {};
   let attackAbilityUsageTurnOwnerUid = "";
+  let venomRevealSuppressUntil = 0;
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -2835,6 +2836,7 @@
   }
 
   function ensureVenomRevealZoomVisible(){
+    if (Date.now() < Number(venomRevealSuppressUntil || 0)) return;
     const active = activeVenomResolutionEntry();
     if (!active || !zoomBackdrop || !zoomStage) return;
     if (!zoomBackdrop.classList.contains("hidden")) return;
@@ -2845,6 +2847,11 @@
     if (!role) return;
     openIdentityRevealZoom(role, active.venomUid, { persist:true, showOwnerTag:false });
     setZoomPassthrough(true);
+  }
+
+  function suppressVenomRevealFor(ms = 1800){
+    const span = Math.max(0, Number(ms || 0));
+    venomRevealSuppressUntil = Math.max(venomRevealSuppressUntil, Date.now() + span);
   }
 
   async function clearCounterPromptForMe(expectedAt = null){
@@ -5869,6 +5876,7 @@
       hideCounterAbilityPrompt();
       renderEquipmentDock();
       renderTurnEndButton();
+      suppressVenomRevealFor();
       await clearCounterPromptByUid(venomUid, counterAt);
       await addDamageToPlayer(state.userId, 1, { source:"venom_counter" });
       await doEndTurn();
@@ -6014,6 +6022,7 @@
         zoomDismissHandler = null;
         if (!chosenSource || !venomUid) return;
         await moveEquipmentCardBetweenPlayers(state.userId, venomUid, chosenSource);
+        suppressVenomRevealFor();
         closeZoom();
         renderEquipmentDock();
         await clearCounterPromptByUid(venomUid, counterAt);
