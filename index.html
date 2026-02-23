@@ -5971,17 +5971,19 @@
     const entry = venomChoiceEntry();
     if (!entry || entry.resolved || entry.targetUid !== safeText(state.userId || "")) return;
     venomChoiceBusy = true;
+    if (btnVenomTakeDamage) btnVenomTakeDamage.disabled = true;
     try {
       await addDamageToPlayer(entry.targetUid, 1, { source:"venom_counter" });
       const cleared = await clearVenomChoiceForEntry(entry);
-      if (!cleared) return;
+      if (!cleared){
+        await clearVenomChoiceIfMatch(entry.at);
+      }
       venomChoicePop?.classList.add("hidden");
       if (isVenomRevealZoomVisible()) closeZoom();
-      if (currentTurnPlayerId() === entry.targetUid){
-        await advanceTurnToNextPlayer(entry.targetUid);
-      }
+      await advanceTurnToNextPlayer(entry.targetUid);
     } finally {
       venomChoiceBusy = false;
+      if (btnVenomTakeDamage) btnVenomTakeDamage.disabled = false;
     }
   });
 
