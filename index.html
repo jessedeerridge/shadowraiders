@@ -2506,9 +2506,36 @@
     await set(ref(db, `rooms/${state.roomCode}/abilityUsage/${spec.usageKey}/${state.userId}`), value);
   }
 
+
   function currentTurnKey(){
     const turn = turnState();
     return `${safeText(turn?.currentPlayerId || "")}@${Number(turn?.updatedAt || 0)}`;
+  }
+
+  function isGordonBarrierActive(uid){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return false;
+    return !!state.room?.gordonBarrier?.[targetUid];
+  }
+
+  function canChangeHpWithGordonBarrier(uid, source){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return true;
+    if (!isGordonBarrierActive(targetUid)) return true;
+    const allowedSources = new Set([
+      "room3_heal",
+      "green_card_heal",
+      "korin_heal",
+      "onkei_heal",
+      "holywater_heal",
+      "mermaid_heal",
+      "emma_heal",
+      "vampbat_heal",
+      "felicia_sethp",
+      "firstaid_sethp",
+      "claire_swap"
+    ]);
+    return allowedSources.has(safeText(source || ""));
   }
 
   function showRevealPopAt(anchorEl, options = {}){
@@ -2680,11 +2707,13 @@
     roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret");
     if (btnRoomActionYes){
       btnRoomActionYes.textContent = "はい";
-      btnRoomActionYes.classList.remove("pop-purple","pop-white");
+      btnRoomActionYes.classList.remove("pop-purple","pop-white","pop-disabled");
+      btnRoomActionYes.disabled = false;
     }
     if (btnRoomActionNo){
       btnRoomActionNo.textContent = "いいえ";
-      btnRoomActionNo.classList.remove("pop-purple","pop-white");
+      btnRoomActionNo.classList.remove("pop-purple","pop-white","pop-disabled");
+      btnRoomActionNo.disabled = false;
     }
     if (pendingEquipAction?.type === "david_select") hideDavidSelectPreview();
   }
@@ -2699,7 +2728,9 @@
       onYes: (typeof onYes === "function") ? onYes : null,
       onNo: (typeof options.onNo === "function") ? options.onNo : null,
       closeZoomOnNo: !!options.closeZoomOnNo,
-      dismissOnOutside: options.dismissOnOutside !== false
+      dismissOnOutside: options.dismissOnOutside !== false,
+      yesDisabled: !!options.yesDisabled,
+      noDisabled: !!options.noDisabled
     };
     const yesBtnClass = safeText(options.yesBtnClass || "");
     const noBtnClass = safeText(options.noBtnClass || "");
@@ -2710,13 +2741,19 @@
     }
     if (btnRoomActionYes){
       btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
-      btnRoomActionYes.classList.remove("pop-purple","pop-white");
+      btnRoomActionYes.classList.remove("pop-purple","pop-white","pop-disabled");
       if (yesBtnClass) btnRoomActionYes.classList.add(yesBtnClass);
+      const yesDisabled = !!options.yesDisabled;
+      btnRoomActionYes.disabled = yesDisabled;
+      if (yesDisabled) btnRoomActionYes.classList.add("pop-disabled");
     }
     if (btnRoomActionNo){
       btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
-      btnRoomActionNo.classList.remove("pop-purple","pop-white");
+      btnRoomActionNo.classList.remove("pop-purple","pop-white","pop-disabled");
       if (noBtnClass) btnRoomActionNo.classList.add(noBtnClass);
+      const noDisabled = !!options.noDisabled;
+      btnRoomActionNo.disabled = noDisabled;
+      if (noDisabled) btnRoomActionNo.classList.add("pop-disabled");
     }
     roomActionPop.classList.remove("hidden");
     roomActionPop.classList.toggle("lower-mode", fixedLower);
@@ -2893,12 +2930,14 @@
     const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
     const ability = roleAbilityName(role || {});
     const blockedByGuardianShield = isCounterAbilityBlockedByGuardianShield(entry);
+    const blockedByGordonBarrier = isGordonBarrierActive(entry.attackerUid);
     counterAbilityMsg.textContent = "";
     counterAbilityMsg.classList.add("hidden");
     btnCounterAbilitySkip.textContent = "使わない";
-    btnCounterAbilityUse.disabled = blockedByGuardianShield;
-    btnCounterAbilityUse.classList.toggle("pop-disabled", blockedByGuardianShield);
-    btnCounterAbilityUse.classList.toggle("pop-dark", !blockedByGuardianShield);
+    const disableUse = blockedByGuardianShield || blockedByGordonBarrier;
+    btnCounterAbilityUse.disabled = disableUse;
+    btnCounterAbilityUse.classList.toggle("pop-disabled", disableUse);
+    btnCounterAbilityUse.classList.toggle("pop-dark", !disableUse);
 
     const updateLabel = () => {
       if (entry.mustChoose){
@@ -3022,7 +3061,7 @@
       if (!role) return;
       await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
       openIdentityRevealZoom(role, state.userId);
-      await fullRecoverPlayer(state.userId);
+      await fullRecoverPlayer(state.userId, { source:"korin_heal" });
     };
   }
 
@@ -3514,7 +3553,7 @@
       setTimeout(() => {
         const cur = clampDamage(damageCache?.[state.userId]);
         if (cur <= 0) addDamageToPlayer(state.userId, 1);
-        else healDamageToPlayer(state.userId, 1);
+        else healDamageToPlayer(state.userId, 1, { source:"green_card_heal" });
       }, 1000);
     } else if (!text.includes("❿に移動せよ")) {
       const damageMatch = text.match(/(\d+)ダメージ受けよ/);
@@ -3600,7 +3639,7 @@
     const actorRoom = markerRoomId(markerCache?.[actorUid]);
     const alive = latestPlayers.filter(p => !isPlayerEliminated(p.id));
     const eliminated = latestPlayers.filter(p => isPlayerEliminated(p.id));
-    if (roleId === "RAI_F2") return alive;
+    if (roleId === "RAI_F2") return alive.filter(p => !isGordonBarrierActive(p.id));
     if (roleId === "RAI_E3") return alive.filter(p => p.id !== actorUid && markerRoomId(markerCache?.[p.id]) === actorRoom);
     if (roleId === "RAI_G3") return eliminated.filter(p => p.id !== actorUid);
     if (roleId === "SHA_U2") return alive.filter(p => p.id !== actorUid && [6,7].includes(markerRoomId(markerCache?.[p.id])));
@@ -3682,7 +3721,7 @@
     if (!actorUid || !roleId || actorUid !== state.userId || !selectedUid) return;
 
     if (roleId === "RAI_F2"){
-      await setDamageToPlayer(selectedUid, 7);
+      await setDamageToPlayer(selectedUid, 7, { source:"felicia_sethp" });
     } else if (roleId === "RAI_F1"){
       const eye = 1 + Math.floor(Math.random() * 6);
       await emitCardDiceEvent({ kind:"role_felix", uid: actorUid, d6: eye });
@@ -3692,7 +3731,7 @@
       const eye = 1 + Math.floor(Math.random() * 4);
       await emitCardDiceEvent({ kind:"role_emma", uid: actorUid, d4: eye });
       await waitMs(1000);
-      await healDamageToPlayer(selectedUid, eye);
+      await healDamageToPlayer(selectedUid, eye, { source:"emma_heal" });
       await update(ref(db, `rooms/${state.roomCode}/turn`), {
         attackDone: true,
         deckDrawDone: true,
@@ -3716,8 +3755,10 @@
         cur.damage = cur.damage || {};
         const curMe = clampDamage(cur.damage?.[actorUid]);
         const curTarget = clampDamage(cur.damage?.[selectedUid]);
-        cur.damage[actorUid] = curTarget;
-        cur.damage[selectedUid] = curMe;
+        if (canChangeHpWithGordonBarrier(actorUid, "claire_swap") && canChangeHpWithGordonBarrier(selectedUid, "claire_swap")){
+          cur.damage[actorUid] = curTarget;
+          cur.damage[selectedUid] = curMe;
+        }
         return cur;
       });
       if (me === target){
@@ -3985,7 +4026,7 @@
         instantCloseOnSelect:true,
         resolver: async (uid) => {
           await waitMs(1000);
-          await setDamageToPlayer(uid, 7);
+          await setDamageToPlayer(uid, 7, { source:"firstaid_sethp" });
         }
       };
     }
@@ -3999,7 +4040,7 @@
           await emitCardDiceEvent({ kind:"blessing", uid:state.userId, d6:eye });
           await runCornerD6Roll(eye);
           await waitMs(1000);
-          await healDamageToPlayer(uid, eye);
+          await healDamageToPlayer(uid, eye, { source:"onkei_heal" });
         }
       };
     }
@@ -4013,7 +4054,7 @@
           if (!hasEquipmentByName(uid, "いにしえの聖杯")){
             await addDamageToPlayer(uid, 2);
           }
-          await healDamageToPlayer(state.userId, 1);
+          await healDamageToPlayer(state.userId, 1, { source:"vampbat_heal" });
         }
       };
     }
@@ -5515,6 +5556,7 @@
   });
   btnRoomActionNo?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    if (pendingRoomAction?.noDisabled) return;
     const closeZoomOnNo = !!pendingRoomAction?.closeZoomOnNo;
     const onNo = pendingRoomAction?.onNo;
     hideRoomActionPop();
@@ -5523,6 +5565,7 @@
   });
   btnRoomActionYes?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    if (pendingRoomAction?.yesDisabled) return;
     const handler = pendingRoomAction?.onYes;
     hideRoomActionPop();
     if (handler) await handler();
@@ -5749,7 +5792,7 @@
     e.stopPropagation();
     const entry = counterPromptEntryForMe();
     if (!entry) return;
-    if (isCounterAbilityBlockedByGuardianShield(entry)) return;
+    if (isCounterAbilityBlockedByGuardianShield(entry) || isGordonBarrierActive(entry.attackerUid)) return;
     const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
     if (!role) return;
 
@@ -6164,7 +6207,7 @@
         longPressTimer = setTimeout(async () => {
           longPressDone = true;
           if (!uid) return;
-          await healDamageToPlayer(uid, 1);
+          await healDamageToPlayer(uid, 1, { source:"room3_heal" });
         }, longPressMs);
       });
       d.addEventListener("pointerup", clearLongPressTimer);
@@ -7700,6 +7743,9 @@
       if (cur.guardianAngelShield && cur.guardianAngelShield[startPlayerId]){
         delete cur.guardianAngelShield[startPlayerId];
       }
+      if (cur.gordonBarrier && cur.gordonBarrier[startPlayerId]){
+        delete cur.gordonBarrier[startPlayerId];
+      }
       return cur;
     });
   }
@@ -7764,6 +7810,9 @@
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
         delete cur.guardianAngelShield[nextPlayerId];
+      }
+      if (cur.gordonBarrier && cur.gordonBarrier[nextPlayerId]){
+        delete cur.gordonBarrier[nextPlayerId];
       }
       return cur;
     });
@@ -8738,6 +8787,7 @@
       const rid = markerRoomId(marker);
       if (!rid || !attackRooms.has(rid)) continue;
       if (isAttackTargetProtected(targetUid)) continue;
+      if (isGordonBarrierActive(targetUid)) continue;
       targets.add(targetUid);
     }
     return targets;
@@ -8928,20 +8978,26 @@
   }
 
   async function addDamageToPlayer(uid, amount, options = {}){
+    const source = safeText(options?.source || "");
+    if (!canChangeHpWithGordonBarrier(uid, source)) return;
     const add = applyIncomingDamageModifiers(uid, amount, options);
     if (!uid || !state.roomCode || add <= 0) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) + add));
   }
 
-  async function healDamageToPlayer(uid, amount){
+  async function healDamageToPlayer(uid, amount, options = {}){
+    const source = safeText(options?.source || "");
+    if (!canChangeHpWithGordonBarrier(uid, source)) return;
     const heal = Math.max(0, Number(amount) || 0);
     if (!uid || !state.roomCode || heal <= 0) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) - heal));
   }
 
-  async function fullRecoverPlayer(uid){
+  async function fullRecoverPlayer(uid, options = {}){
+    const source = safeText(options?.source || "");
+    if (!canChangeHpWithGordonBarrier(uid, source)) return;
     if (!uid || !state.roomCode) return;
     await set(ref(db, `rooms/${state.roomCode}/damage/${uid}`), 0);
   }
@@ -8953,7 +9009,9 @@
   }
 
 
-  async function setDamageToPlayer(uid, damage){
+  async function setDamageToPlayer(uid, damage, options = {}){
+    const source = safeText(options?.source || "");
+    if (!canChangeHpWithGordonBarrier(uid, source)) return;
     if (!uid || !state.roomCode) return;
     await set(ref(db, `rooms/${state.roomCode}/damage/${uid}`), clampDamage(damage));
   }
@@ -9162,6 +9220,7 @@
       cur.damage = cur.damage || {};
       for (const pid of order){
         if (!pid || pid === uid) continue;
+        if (!canChangeHpWithGordonBarrier(pid, "")) continue;
         const add = applyIncomingDamageModifiers(pid, baseAdd);
         if (add <= 0) continue;
         cur.damage[pid] = clampDamage(Number(cur.damage[pid] || 0) + add);
@@ -9205,11 +9264,13 @@
     if (!state.roomCode || baseAdd <= 0) return;
     const targets = [...new Set((uids || []).map(uid => safeText(uid)).filter(Boolean))];
     if (!targets.length) return;
+    const source = safeText(options?.source || "");
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     await runTransaction(roomRef, (cur) => {
       if (!cur) return cur;
       cur.damage = cur.damage || {};
       for (const uid of targets){
+        if (!canChangeHpWithGordonBarrier(uid, source)) continue;
         const add = applyIncomingDamageModifiers(uid, baseAdd, options);
         if (add <= 0) continue;
         cur.damage[uid] = clampDamage(Number(cur.damage[uid] || 0) + add);
@@ -9229,7 +9290,7 @@
     try {
     if (name === "いやしの聖水"){
       await waitMs(1500);
-      await healDamageToPlayer(state.userId, 2);
+      await healDamageToPlayer(state.userId, 2, { source:"holywater_heal" });
       return;
     }
 
@@ -9254,7 +9315,7 @@
         onYes: async () => {
           await revealMyIdentityToEquipment();
           openIdentityRevealZoom(role, state.userId);
-          await fullRecoverPlayer(state.userId);
+          await fullRecoverPlayer(state.userId, { source:"korin_heal" });
         }
       });
       return;
@@ -9271,7 +9332,7 @@
         onYes: async () => {
           await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
           openIdentityRevealZoom(role, state.userId);
-          await fullRecoverPlayer(state.userId);
+          await fullRecoverPlayer(state.userId, { source:"korin_heal" });
         }
       });
       return;
@@ -9351,7 +9412,7 @@
       await waitMs(1500);
       const topUids = maxDamageAlivePlayerIds();
       for (const uid of topUids){
-        await healDamageToPlayer(uid, 3);
+        await healDamageToPlayer(uid, 3, { source:"mermaid_heal" });
       }
       return;
     }
@@ -9906,11 +9967,12 @@
           await updateTurnRoomActionState({ room3ActionUsed:true });
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
-          await healDamageToPlayer(uid, 1);
+          await healDamageToPlayer(uid, 1, { source:"room3_heal" });
           renderMarkers();
         }, {
           yesLabel: "1回復する",
           noLabel: "2ダメージ与える",
+          noDisabled: isGordonBarrierActive(uid),
           compactButtons: true,
           yOffset: -14,
           onNo: async () => {
@@ -9985,11 +10047,12 @@
           await updateTurnRoomActionState({ room3ActionUsed:true });
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
-          await healDamageToPlayer(uid, 1);
+          await healDamageToPlayer(uid, 1, { source:"room3_heal" });
           renderMarkers();
         }, {
           yesLabel: "1回復する",
           noLabel: "2ダメージ与える",
+          noDisabled: isGordonBarrierActive(uid),
           compactButtons: true,
           yOffset: -14,
           onNo: async () => {
@@ -11598,6 +11661,12 @@
       updates[`guardianAngelShield/${previousPlayerId}`] = null;
     }
 
+    const gordonBarrier = roomData.gordonBarrier || {};
+    if (Object.prototype.hasOwnProperty.call(gordonBarrier, previousPlayerId)){
+      updates[`gordonBarrier/${state.userId}`] = !!gordonBarrier[previousPlayerId];
+      updates[`gordonBarrier/${previousPlayerId}`] = null;
+    }
+
     const migrateGreenStateBySeatSteal = (room, fromUid, toUid, outUpdates) => {
       const prevUid = safeText(fromUid || "");
       const nextUid = safeText(toUid || "");
@@ -11909,6 +11978,7 @@
       hands,
       deckState: freshDeckState,
       guardianAngelShield: null,
+      gordonBarrier: null,
       gameStarted: true,
       startedAt: Date.now(),
       playerCountAtStart: n,
@@ -11981,6 +12051,7 @@
       remove(ref(db, `${base}/deckState`)),
       remove(ref(db, `${base}/equipment`)),
       remove(ref(db, `${base}/guardianAngelShield`)),
+      remove(ref(db, `${base}/gordonBarrier`)),
       remove(ref(db, `${base}/damage`)),
       remove(ref(db, `${base}/positionOrder`)),
       remove(ref(db, `${base}/startPlayerId`)),
@@ -12026,6 +12097,21 @@
     return true;
   }
 
+  function canAutoActivateGordonBarrier(){
+    if (!isMyRole("RAI_G1")) return false;
+    if (!isMyTurn()) return false;
+    if (!isMyIdentityRevealed()) return false;
+    if (!!state.room?.abilityUsage?.gordon?.[state.userId]) return false;
+    return true;
+  }
+
+  async function activateGordonBarrierIfAvailable(){
+    if (!state.roomCode || !state.userId) return;
+    if (!canAutoActivateGordonBarrier()) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/gordon/${state.userId}`), true);
+    await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
+  }
+
   async function doEndTurn(expectedCurrentPlayerId = ""){
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
@@ -12036,6 +12122,7 @@
     suppressEndTurnButton = false;
     resetAttackAbilityUsageTurnState();
     cachePendingAttackResolution(null);
+    await activateGordonBarrierIfAvailable();
     await advanceTurnToNextPlayer(expectedCurrentPlayerId);
     hideAttackPop();
     hideAttackResultPop();
