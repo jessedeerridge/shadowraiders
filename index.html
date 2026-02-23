@@ -2952,6 +2952,39 @@
     return removed;
   }
 
+  async function resolveVenomChoiceForTarget(entry){
+    if (!state.roomCode || !entry) return null;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    let removed = null;
+    await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const now = cur.venomCounterChoice;
+      if (!now) return cur;
+
+      const nowAt = Number(now.at || 0);
+      const nowTurnKey = safeText(now.turnKey || "");
+      const nowTarget = safeText(now.targetUid || "");
+      const nowVenom = safeText(now.venomUid || "");
+      const entryAt = Number(entry.at || 0);
+      const entryTurnKey = safeText(entry.turnKey || "");
+      const entryTarget = safeText(entry.targetUid || "");
+      const entryVenom = safeText(entry.venomUid || "");
+
+      const sameAt = entryAt > 0 && nowAt === entryAt;
+      const sameTurnTarget = !!entryTurnKey && !!entryTarget && nowTurnKey === entryTurnKey && nowTarget === entryTarget;
+      const samePair = !!entryTarget && !!entryVenom && nowTarget === entryTarget && nowVenom === entryVenom;
+      if (!sameAt && !sameTurnTarget && !samePair) return cur;
+
+      removed = {
+        targetUid: nowTarget,
+        turnKey: nowTurnKey
+      };
+      delete cur.venomCounterChoice;
+      return cur;
+    });
+    return removed;
+  }
+
 
   async function clearCounterPromptForMe(expectedAt = null){
     const uid = safeText(state.userId || "");
@@ -5973,7 +6006,7 @@
     venomChoiceBusy = true;
     try {
       await addDamageToPlayer(entry.targetUid, 1, { source:"venom_counter" });
-      const cleared = await clearVenomChoiceForEntry(entry);
+      const cleared = await resolveVenomChoiceForTarget(entry);
       if (!cleared) return;
       venomChoicePop?.classList.add("hidden");
       if (isVenomRevealZoomVisible()) closeZoom();
@@ -6022,7 +6055,7 @@
         try {
           const ok = await moveEquipmentCardBetweenPlayers(state.userId, entry.venomUid, sourceKey);
           if (!ok) return;
-          await clearVenomChoiceIfMatch(entry.at);
+          await resolveVenomChoiceForTarget(entry);
           closeEquipExpandIfOpen();
           hideRoomActionPop();
           closeZoom();
