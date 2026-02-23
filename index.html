@@ -2393,6 +2393,8 @@
   let seatEquipSelectionUnsubscribe = null;
   let subscribedSeatEquipSelectionIndex = null;
   let restoringSeatEquipSelection = false;
+  let venomRevealZoomPersistent = false;
+  let dismissedVenomPromptAt = 0;
 
   const IDENTITY_PROMPT_CARD_NAMES = new Set(["幸せのクッキー", "光臨", "戦慄の闇儀式"]);
   const IDENTITY_REVEAL_POP_BLOCK_CARD_NAMES = new Set([
@@ -2839,12 +2841,19 @@
 
   function ensureVenomRevealZoomVisible(){
     const prompt = activeVenomChoicePrompt();
-    if (!prompt) return;
+    if (!prompt){
+      if (venomRevealZoomPersistent && !zoomBackdrop?.classList.contains("hidden")){
+        closeZoom();
+      }
+      return;
+    }
+    if (Number(prompt.at || 0) > 0 && Number(prompt.at || 0) === Number(dismissedVenomPromptAt || 0)) return;
     if (!zoomBackdrop?.classList.contains("hidden")) return;
     const role = ROLE_BY_ID["SHA_V1"];
     if (!role) return;
     openIdentityRevealZoom(role, prompt.venomUid, { persist:true, showOwnerTag:true, ownerTagDurationMs:1200 });
     setZoomPassthrough(true);
+    venomRevealZoomPersistent = true;
   }
 
   async function clearCounterPromptForMe(expectedAt = null){
@@ -3085,6 +3094,7 @@
 
   async function activateVenomCounterChoice(entry){
     if (!state.roomCode || !entry) return;
+    dismissedVenomPromptAt = 0;
     const targetUid = safeText(entry.attackerUid || "");
     const venomUid = safeText(state.userId || "");
     const turnKey = safeText(entry.turnKey || turnCycleKey());
@@ -4679,6 +4689,7 @@
     pendingGreenAnswerMsg = null;
     zoomDismissHandler = null;
     greenZoomLocked = false;
+    venomRevealZoomPersistent = false;
     hideGreenShareDock();
     hideRevealPop();
     hideRoomActionPop();
@@ -5880,9 +5891,10 @@
       hideCounterAbilityPrompt();
       pendingEquipAction = null;
       await setSeatEquipSelectionState(null);
+      dismissedVenomPromptAt = Number(entry?.at || 0);
+      const resolvedEntry = await clearCounterPromptForMe(entry?.at || null);
       closeZoom();
       renderEquipmentDock();
-      const resolvedEntry = await clearCounterPromptForMe(entry?.at || null);
       await addDamageToPlayer(state.userId, 1);
       await tryAdvanceTurnAfterCounterChoice(resolvedEntry);
       return;
@@ -6039,10 +6051,15 @@
         closeEquipExpandIfOpen();
         const ok = await moveEquipmentCardBetweenPlayers(state.userId, venomUid, sourceKey);
         zoomDismissHandler = null;
+        if (!ok){
+          closeZoom();
+          renderEquipmentDock();
+          return;
+        }
+        dismissedVenomPromptAt = Number(currentEntry?.at || 0);
+        const resolvedEntry = await clearCounterPromptForMe(currentEntry?.at || null);
         closeZoom();
         renderEquipmentDock();
-        if (!ok) return;
-        const resolvedEntry = await clearCounterPromptForMe(currentEntry?.at || null);
         await tryAdvanceTurnAfterCounterChoice(resolvedEntry);
       }, {
         fixedLower:true,
@@ -6925,6 +6942,7 @@
       if (role){
         openIdentityRevealZoom(role, venomUid || state.userId, { persist:true, showOwnerTag:true, ownerTagDurationMs:1200 });
         setZoomPassthrough(true);
+        venomRevealZoomPersistent = true;
       }
       renderEquipmentDock();
       renderTurnEndButton();
