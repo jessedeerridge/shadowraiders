@@ -5374,6 +5374,7 @@
         showBonusLabel: false,
         zeroDamagePreview: false
       };
+      pending.rows = (pending.rows || []).map(item => ({ ...item, bonusLabelAmount: 0 }));
       pending.meta = normalizeAttackResultMeta(pendingAttackResultMeta);
       showAttackResultPop(pending.rows);
 
@@ -6448,7 +6449,8 @@
     const rows = Array.isArray(pending.rows)
       ? pending.rows.map(item => ({
           uid: safeText(item?.uid || ""),
-          damage: Math.max(0, Number(item?.damage || 0))
+          damage: Math.max(0, Number(item?.damage || 0)),
+          bonusLabelAmount: Math.max(0, Number(item?.bonusLabelAmount || 0))
         })).filter(item => item.uid)
       : [];
     if (!rows.length){
@@ -6464,7 +6466,11 @@
     const roomCode = safeText(state.roomCode || "");
     if (!uid || !roomCode) return;
     const normalizedRows = (rows || [])
-      .map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) }))
+      .map(item => ({
+        uid: safeText(item?.uid || ""),
+        damage: Math.max(0, Number(item?.damage || 0)),
+        bonusLabelAmount: Math.max(0, Number(item?.bonusLabelAmount || 0))
+      }))
       .filter(item => item.uid);
     const normalizedTurnKey = safeText(turnKey || "");
     const payload = normalizedRows.length ? {
@@ -6481,7 +6487,11 @@
     const roomPending = state.room?.attackResolutionPending || {};
     const mine = roomPending?.[state.userId] || null;
     const rows = Array.isArray(mine?.rows)
-      ? mine.rows.map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
+      ? mine.rows.map(item => ({
+          uid: safeText(item?.uid || ""),
+          damage: Math.max(0, Number(item?.damage || 0)),
+          bonusLabelAmount: Math.max(0, Number(item?.bonusLabelAmount || 0))
+        })).filter(item => item.uid)
       : [];
     const meta = normalizeAttackResultMeta(mine?.meta);
     const pendingTurnKey = safeText(mine?.turnKey || "");
@@ -6524,7 +6534,11 @@
       return false;
     }
     const rows = Array.isArray(parsed?.rows)
-      ? parsed.rows.map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
+      ? parsed.rows.map(item => ({
+          uid: safeText(item?.uid || ""),
+          damage: Math.max(0, Number(item?.damage || 0)),
+          bonusLabelAmount: Math.max(0, Number(item?.bonusLabelAmount || 0))
+        })).filter(item => item.uid)
       : [];
     const meta = normalizeAttackResultMeta(parsed?.meta);
     const pendingTurnKey = safeText(parsed?.turnKey || "");
@@ -6589,7 +6603,13 @@
       amount.textContent = `${damageValue}`;
 
       row.appendChild(amount);
-      if (exMeta.showBonusLabel){
+      const bonusAmount = Math.max(0, Number(item?.bonusLabelAmount || 0));
+      if (bonusAmount > 0){
+        const plus = document.createElement("span");
+        plus.className = "attack-result-plus-two";
+        plus.textContent = `(+${bonusAmount})`;
+        row.appendChild(plus);
+      } else if (exMeta.showBonusLabel){
         const plus = document.createElement("span");
         plus.className = "attack-result-plus-two";
         plus.textContent = "(+2)";
@@ -6625,7 +6645,11 @@
 
   async function addResolvedDamageToPlayers(rows = []){
     const entries = (rows || [])
-      .map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) }))
+      .map(item => ({
+        uid: safeText(item?.uid || ""),
+        damage: Math.max(0, Number(item?.damage || 0)),
+        bonusLabelAmount: Math.max(0, Number(item?.bonusLabelAmount || 0))
+      }))
       .filter(item => item.uid && item.damage > 0);
     if (!state.roomCode || !entries.length) return;
 
@@ -7862,6 +7886,11 @@
       damage -= 1;
     }
 
+    const targetUid = safeText(options.targetUid || "");
+    if (uid === state.userId && isMyRole("RAI_F3") && isMyIdentityRevealed() && targetUid && isIdentityRevealedFor(targetUid)){
+      damage += 2;
+    }
+
     if (options.excaliburRevealBoost){
       damage += 2;
     }
@@ -7892,14 +7921,11 @@
     const roleId = safeText(role.id || "");
     const success = !!attackSucceeded;
     const sameDice = (Number(d6) || 0) === (Number(d4) || 0);
-    const targetRevealed = isIdentityRevealedFor(targetUid);
-    const freddieAuto = roleId === "RAI_F3" && success && targetRevealed;
-
     return {
-      showBonusLabel: success || freddieAuto,
-      allowExcaliburButton: success && !freddieAuto && !sameDice,
-      autoBoost: freddieAuto,
-      freddieSpecial: freddieAuto
+      showBonusLabel: success,
+      allowExcaliburButton: success && !sameDice,
+      autoBoost: false,
+      freddieSpecial: false
     };
   }
 
@@ -8994,7 +9020,6 @@
         const attackSucceeded = didAttackRollSucceed(finalD6, finalD4, { masamuneMode, vendettaMode });
         setAttackRollResultLabel(attackSucceeded);
         if (!applyDamage) return;
-        const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, vendettaMode, excaliburRevealBoost: false });
         const gatlingTargets = Array.isArray(options.gatlingTargetUids)
           ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
           : [];
@@ -9002,19 +9027,43 @@
         const exMeta = d4OnlyMode
           ? null
           : buildExcaliburAttackMeta({ attackerUid:state.userId, targetUid, attackSucceeded, d6:finalD6, d4:finalD4 });
-        let resolvedRows = targetUids.map(uid => ({
-          uid,
-          damage: (attackSucceeded && damage > 0)
-            ? applyIncomingDamageModifiers(uid, damage, { source:"attack" })
-            : 0
-        }));
-        if (exMeta?.autoBoost){
-          resolvedRows = excaliburExtraDamageRows(resolvedRows, 2);
-        }
+        const hiddenFreddie = isMyRole("RAI_F3") && !isMyIdentityRevealed();
+        const hiddenExcaliburPreview = !!exMeta?.allowExcaliburButton;
+        const hasExcalibur = hasEquipmentByName(state.userId, "エクスカリバー");
+        let resolvedRows = targetUids.map(uid => {
+          const normalizedUid = safeText(uid);
+          const targetRevealed = isIdentityRevealedFor(normalizedUid);
+          const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, {
+            masamuneMode,
+            vendettaMode,
+            excaliburRevealBoost: false,
+            targetUid: normalizedUid
+          });
+          const damageAfterMods = (attackSucceeded && damage > 0)
+            ? applyIncomingDamageModifiers(normalizedUid, damage, { source:"attack" })
+            : 0;
+          let bonusLabelAmount = 0;
+          if (hiddenFreddie && targetRevealed){
+            bonusLabelAmount += 2;
+            if (hasExcalibur){
+              bonusLabelAmount += 2;
+            }
+          } else if (hiddenExcaliburPreview){
+            bonusLabelAmount += 2;
+          }
+          return {
+            uid: normalizedUid,
+            damage: damageAfterMods,
+            bonusLabelAmount
+          };
+        });
+        const freddieHiddenExcaliburRevealHit = hiddenFreddie
+          && hasExcalibur
+          && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 4);
         pendingAttackResultMeta = {
           showBonusLabel: !!exMeta?.showBonusLabel,
-          allowExcaliburButton: !!exMeta?.allowExcaliburButton,
-          freddieSpecial: !!exMeta?.freddieSpecial,
+          allowExcaliburButton: !!exMeta?.allowExcaliburButton && !freddieHiddenExcaliburRevealHit,
+          freddieSpecial: hiddenFreddie && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 2),
           zeroDamagePreview: false
         };
         const hasExcaliburPreviewZero = !!pendingAttackResultMeta.allowExcaliburButton
@@ -9023,7 +9072,6 @@
           && resolvedRows.some(row => Number(row.damage || 0) === 0);
         if (hasExcaliburPreviewZero){
           pendingAttackResultMeta.zeroDamagePreview = true;
-          pendingAttackResultMeta.showBonusLabel = true;
         }
         if (isMyRole("RAI_G2") && !isMyIdentityRevealed()){
           const hasZeroDamage = resolvedRows.some(row => Number(row.damage || 0) === 0);
