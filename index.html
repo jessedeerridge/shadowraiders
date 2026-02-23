@@ -89,10 +89,13 @@
   .btn.pop-white{background:#fff;color:#111;border-color:#d1d5db;}
 
   .attack-result-pop-rows{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;max-height:220px;overflow:auto;}
-  .attack-result-pop-row{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;line-height:1.4;text-align:center;}
-  .attack-result-pop-name{display:inline-flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;width:70px;max-width:70px;cursor:default;padding:4px 6px;}
-  .attack-result-pop-name-text{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;}
-  .attack-result-pop-row .chip16{flex:0 0 auto;}
+.attack-result-pop-row{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;line-height:1.4;text-align:center;}
+.attack-result-plus-two{font-size:12px;color:#d97878;}
+.attack-result-pop-name{display:inline-flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;width:70px;max-width:70px;cursor:default;padding:4px 6px;}
+.attack-result-pop-name-text{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;}
+.attack-result-pop-row .chip16{flex:0 0 auto;}
+.btn-excalibur{background:#c21d1d;color:#fff;border-color:#c21d1d;}
+.btn-excalibur:hover{filter:brightness(1.05);}
 
   #attackResultPop{
     min-width:min(92vw, 250px);
@@ -1694,6 +1697,7 @@
 <div id="attackResultPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="攻撃結果確認">
   <div id="attackResultRows" class="attack-result-pop-rows"></div>
   <div class="actions">
+    <button class="btn btn-excalibur hidden" id="btnAttackResultExcalibur">OK エクスカリバー</button>
     <button class="btn primary" id="btnAttackResultEnd">OKおわる</button>
     <button class="btn ghost" id="btnAttackResultKeep">OKおわらない</button>
   </div>
@@ -2307,6 +2311,7 @@
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
   let pendingAttackResolution = null;
+  let pendingAttackResultMeta = null;
   let attackResultChoiceBusy = false;
   let ulsterExtraAttackPending = 0;
   let attackFlowUiLockActive = false;
@@ -2329,6 +2334,7 @@
   const attackResultRows = document.getElementById("attackResultRows");
   const btnAttackResultEnd = document.getElementById("btnAttackResultEnd");
   const btnAttackResultKeep = document.getElementById("btnAttackResultKeep");
+  const btnAttackResultExcalibur = document.getElementById("btnAttackResultExcalibur");
   const roomActionPop = document.getElementById("roomActionPop");
   const roomActionMsg = document.getElementById("roomActionMsg");
   const btnRoomActionYes = document.getElementById("btnRoomActionYes");
@@ -2417,6 +2423,7 @@
     hideAttackResultPop();
     clearAttackResultDice();
     pendingAttackResolution = null;
+    pendingAttackResultMeta = null;
     attackTurnEndChoicePending = false;
     attackFlowUiLockActive = false;
     cachePendingAttackResolution(null);
@@ -2961,7 +2968,7 @@
     if (roleId === "CIT_B1" && maxDamage >= 2){
       return { abilityName:"念力の懐中時計", description:"ダメージの代わりに相手の装備カードを獲得しますか。" };
     }
-    if (roleId === "RAI_F3" && !isMyIdentityRevealed()){
+    if (roleId === "RAI_F3" && !isMyIdentityRevealed() && pendingAttackResultMeta?.freddieSpecial){
       return { abilityName:"ドラゴンアタック", description:"正体を公開している相手へのダメージが+2になります。" };
     }
     if (roleId === "RAI_G2" && hasMyEquipmentByName("エクスカリバー") && attackFailed){
@@ -5326,6 +5333,29 @@
     });
   });
 
+
+  btnAttackResultExcalibur?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (attackResultChoiceBusy) return;
+    const pending = pendingAttackResolution;
+    if (!pending || !pendingAttackResultMeta?.allowExcaliburButton) return;
+    attackResultChoiceBusy = true;
+    try {
+      await revealMyIdentityToEquipment({ revealedBy:"excalibur_attack" });
+      pending.rows = excaliburExtraDamageRows(pending.rows, 2);
+      pendingAttackResultMeta = {
+        ...(pendingAttackResultMeta || {}),
+        allowExcaliburButton: false,
+        showBonusLabel: false
+      };
+      cachePendingAttackResolution(pending);
+      await upsertPendingAttackResolution(pending.rows, pending.turnKey || turnCycleKey());
+      showAttackResultPop(pending.rows);
+    } finally {
+      attackResultChoiceBusy = false;
+    }
+  });
+
   btnAttackResultEnd?.addEventListener("click", async (e) => {
     e.stopPropagation();
     const pending = pendingAttackResolution;
@@ -5810,6 +5840,7 @@
     if (!hasMatchingPending){
       hideAttackResultPop();
       pendingAttackResolution = null;
+      pendingAttackResultMeta = null;
       attackTurnEndChoicePending = false;
       attackFlowUiLockActive = false;
       cachePendingAttackResolution(null);
@@ -6397,6 +6428,7 @@
     const canRestore = !!rows.length && currentTurnPlayerId() === state.userId && pendingTurnKey === turnCycleKey();
     if (!canRestore){
       pendingAttackResolution = null;
+      pendingAttackResultMeta = null;
       attackTurnEndChoicePending = false;
       cachePendingAttackResolution(null);
       hideAttackResultPop();
@@ -6404,6 +6436,7 @@
       return false;
     }
     pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey };
+    pendingAttackResultMeta = null;
     cachePendingAttackResolution(pendingAttackResolution);
     showAttackResultPop(rows);
     attackTurnEndChoicePending = true;
@@ -6439,6 +6472,7 @@
       return false;
     }
     pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey };
+    pendingAttackResultMeta = null;
     showAttackResultPop(rows);
     attackTurnEndChoicePending = true;
     attackFlowUiLockActive = true;
@@ -6468,6 +6502,7 @@
   function showAttackResultPop(rows = []){
     if (!attackResultPop || !attackResultRows) return;
     attackResultRows.innerHTML = "";
+    const exMeta = pendingAttackResultMeta || {};
     if (!rows.length){
       const row = document.createElement("div");
       row.className = "attack-result-pop-row";
@@ -6483,6 +6518,12 @@
       const damageValue = Math.max(0, Number(item?.damage || 0));
       amount.textContent = damageValue > 0 ? `${damageValue} Damege >` : "攻撃失敗 >";
       row.appendChild(amount);
+      if (exMeta.showBonusLabel){
+        const plus = document.createElement("span");
+        plus.className = "attack-result-plus-two";
+        plus.textContent = "(+2)";
+        row.appendChild(plus);
+      }
       row.appendChild(makeAttackResultNameNode(uid));
       attackResultRows.appendChild(row);
     }
@@ -6501,6 +6542,7 @@
     const shouldHideKeepAsSecondAttack = !spec
       && (roleId === "CIT_C1" || roleId === "SHA_U3")
       && isAttackAbilityUsedThisTurn(roleId);
+    btnAttackResultExcalibur?.classList.toggle("hidden", !exMeta.allowExcaliburButton);
     btnAttackResultEnd?.classList.remove("hidden");
     btnAttackResultKeep?.classList.toggle("hidden", shouldHideKeepAsSecondAttack);
     attackResultChoiceBusy = false;
@@ -6548,6 +6590,7 @@
   async function finalizePendingAttackResolution(endTurnAfterApply){
     const pending = pendingAttackResolution;
     pendingAttackResolution = null;
+    pendingAttackResultMeta = null;
     attackTurnEndChoicePending = false;
     suppressEndTurnButton = true;
     cachePendingAttackResolution(null);
@@ -7752,29 +7795,38 @@
     return Math.max(0, damage);
   }
 
-  async function maybePromptExcaliburReveal(attackerUid, d6, d4){
-    const uid = safeText(attackerUid);
-    if (uid !== state.userId) return false;
-    const role = myRoleInfo();
-    if (!role) return false;
-    if (!hasEquipmentByName(uid, "エクスカリバー")) return false;
-    if (isMyIdentityRevealed()) return false;
-    if ((Number(d6) || 0) === (Number(d4) || 0)) return false;
-
-    return await new Promise((resolve) => {
-      showIdentityPromptPop({
-        message: "正体を公開して、攻撃しますか。",
-        canReveal: role.faction === "レイダー",
-        openZoom: false,
-        onYes: async () => {
-          await revealMyIdentityToEquipment();
-          resolve(true);
-        },
-        onNo: async () => {
-          resolve(false);
-        }
-      });
+  function excaliburExtraDamageRows(rows = [], amount = 2){
+    const plus = Math.max(0, Number(amount) || 0);
+    if (plus <= 0) return rows;
+    return (rows || []).map(item => {
+      const uid = safeText(item?.uid || "");
+      const base = Math.max(0, Number(item?.damage || 0));
+      if (!uid) return { ...item, damage: base };
+      const add = applyIncomingDamageModifiers(uid, plus, { source:"attack" });
+      return { ...item, uid, damage: Math.max(0, base + add) };
     });
+  }
+
+  function buildExcaliburAttackMeta({ attackerUid, targetUid, attackSucceeded }){
+    const uid = safeText(attackerUid);
+    if (uid !== state.userId) return null;
+    const role = myRoleInfo();
+    if (!role || role.faction !== "レイダー") return null;
+    if (!hasEquipmentByName(uid, "エクスカリバー")) return null;
+    if (isMyIdentityRevealed()) return null;
+
+    const roleId = safeText(role.id || "");
+    const success = !!attackSucceeded;
+    const targetRevealed = isIdentityRevealedFor(targetUid);
+    const galahadAuto = roleId === "RAI_G2" && !success;
+    const freddieAuto = roleId === "RAI_F3" && success && targetRevealed;
+
+    return {
+      showBonusLabel: success || galahadAuto || freddieAuto,
+      allowExcaliburButton: success && !freddieAuto,
+      autoBoost: galahadAuto || freddieAuto,
+      freddieSpecial: freddieAuto
+    };
   }
 
   function applyIncomingDamageModifiers(uid, amount, options = {}){
@@ -8808,18 +8860,28 @@
         const attackSucceeded = didAttackRollSucceed(finalD6, finalD4, { masamuneMode, vendettaMode });
         setAttackRollResultLabel(attackSucceeded);
         if (!applyDamage) return;
-        const revealBoost = d4OnlyMode ? false : await maybePromptExcaliburReveal(state.userId, finalD6, finalD4);
-        const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, vendettaMode, excaliburRevealBoost: revealBoost });
+        const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, { masamuneMode, vendettaMode, excaliburRevealBoost: false });
         const gatlingTargets = Array.isArray(options.gatlingTargetUids)
           ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
           : [];
         const targetUids = (gatlingTargets.length > 0) ? gatlingTargets : [targetUid];
-        const resolvedRows = targetUids.map(uid => ({
+        const exMeta = d4OnlyMode
+          ? null
+          : buildExcaliburAttackMeta({ attackerUid:state.userId, targetUid, attackSucceeded });
+        let resolvedRows = targetUids.map(uid => ({
           uid,
           damage: (attackSucceeded && damage > 0)
             ? applyIncomingDamageModifiers(uid, damage, { source:"attack" })
             : 0
         }));
+        if (exMeta?.autoBoost){
+          resolvedRows = excaliburExtraDamageRows(resolvedRows, 2);
+        }
+        pendingAttackResultMeta = {
+          showBonusLabel: !!exMeta?.showBonusLabel,
+          allowExcaliburButton: !!exMeta?.allowExcaliburButton,
+          freddieSpecial: !!exMeta?.freddieSpecial
+        };
         const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
         const pendingTurnKey = turnCycleKey();
         pendingAttackResolution = { rows: resolvedRows, applied:false, turnKey: pendingTurnKey };
@@ -11286,6 +11348,7 @@
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
+    pendingAttackResultMeta = null;
     ulsterExtraAttackPending = 0;
     attackFlowUiLockActive = false;
     suppressEndTurnButton = false;
