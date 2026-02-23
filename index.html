@@ -2309,6 +2309,7 @@
   let attackFlowUiLockActive = false;
   let suppressEndTurnButton = false;
   let pendingHpSwapAnimation = null;
+  let attackAbilityUsedTurnByRole = {};
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -2930,7 +2931,7 @@
     const maxDamage = normalizedRows.reduce((max, item) => Math.max(max, Number(item.damage || 0)), 0);
     const attackFailed = normalizedRows.length > 0 && !hasSuccessDamage;
 
-    if (roleId === "CIT_C1"){
+    if (roleId === "CIT_C1" && !isAttackAbilityUsedThisTurn(roleId)){
       return { abilityName:"死の饗宴", description:"自分に2ダメージ与えて、もう一度攻撃しますか。" };
     }
     if (roleId === "CIT_B1" && maxDamage >= 2){
@@ -2942,13 +2943,31 @@
     if (roleId === "RAI_G2" && hasMyEquipmentByName("エクスカリバー") && attackFailed){
       return { abilityName:"魔剣の伝承者", description:"エクスカリバーを所有している時、攻撃が成功するまで振り直す。" };
     }
-    if (roleId === "SHA_U3"){
+    if (roleId === "SHA_U3" && !isAttackAbilityUsedThisTurn(roleId)){
       return { abilityName:"デル・フリス", description:"もう一度攻撃を行いますか。" };
     }
     if (roleId === "SHA_V2" && hasSuccessDamage){
+      if (isMyIdentityRevealed()){
+        return { abilityName:"吸血", description:"2ダメージ回復できます。", singleButtonOnly:true, hideEndButton:true, skipConfirmPrompt:true };
+      }
       return { abilityName:"吸血", description:"2ダメージ回復できます。" };
     }
     return null;
+  }
+
+  function isAttackAbilityUsedThisTurn(roleId){
+    const rid = safeText(roleId || "");
+    if (!rid) return false;
+    const usedTurnKey = safeText(attackAbilityUsedTurnByRole?.[rid] || "");
+    return !!usedTurnKey && usedTurnKey === currentTurnKey();
+  }
+
+  function markAttackAbilityUsedThisTurn(roleId){
+    const rid = safeText(roleId || "");
+    if (!rid) return;
+    const next = { ...(attackAbilityUsedTurnByRole || {}) };
+    next[rid] = currentTurnKey();
+    attackAbilityUsedTurnByRole = next;
   }
 
   function formatAttackAbilityPillLabel(name){
@@ -5209,30 +5228,51 @@
       await finalizePendingAttackResolution(false);
       return;
     }
+
+    const runKeepAbility = async () => {
+      const role = myRoleInfo();
+      const roleId = safeText(role?.id || "");
+      const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
+      await finalizePendingAttackResolution(false);
+      await resolveAttackAbilityReveal(role);
+
+      if (roleId === "CIT_C1"){
+        markAttackAbilityUsedThisTurn(roleId);
+        await addDamageToPlayer(state.userId, 2);
+        await runFollowupAttackToTarget(followupTargetUid, 1500);
+        return;
+      }
+      if (roleId === "RAI_G2"){
+        await runFollowupAttackToTarget(followupTargetUid, 0);
+        return;
+      }
+      if (roleId === "SHA_U3"){
+        markAttackAbilityUsedThisTurn(roleId);
+        await startUlsterExtraAttackSelection();
+        return;
+      }
+      if (roleId === "SHA_V2" && spec.hideEndButton){
+        await finalizePendingAttackResolution(true);
+      }
+    };
+
+    if (spec.skipConfirmPrompt){
+      if (attackResultChoiceBusy) return;
+      attackResultChoiceBusy = true;
+      try {
+        await runKeepAbility();
+      } finally {
+        attackResultChoiceBusy = false;
+      }
+      return;
+    }
+
     if (attackResultChoiceBusy) return;
     showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
       if (attackResultChoiceBusy) return;
       attackResultChoiceBusy = true;
       try {
-        const role = myRoleInfo();
-        const roleId = safeText(role?.id || "");
-        const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
-        await finalizePendingAttackResolution(false);
-        await resolveAttackAbilityReveal(role);
-
-        if (roleId === "CIT_C1"){
-          await addDamageToPlayer(state.userId, 2);
-          await runFollowupAttackToTarget(followupTargetUid, 1500);
-          return;
-        }
-        if (roleId === "RAI_G2"){
-          await runFollowupAttackToTarget(followupTargetUid, 0);
-          return;
-        }
-        if (roleId === "SHA_U3"){
-          await startUlsterExtraAttackSelection();
-          return;
-        }
+        await runKeepAbility();
       } finally {
         attackResultChoiceBusy = false;
       }
@@ -6410,6 +6450,12 @@
         btnAttackResultKeep.textContent = "OKおわらない";
       }
     }
+    const roleId = safeText(myRoleInfo()?.id || "");
+    const shouldHideKeepAsSecondAttack = !spec
+      && (roleId === "CIT_C1" || roleId === "SHA_U3")
+      && isAttackAbilityUsedThisTurn(roleId);
+    btnAttackResultEnd?.classList.toggle("hidden", !!spec?.hideEndButton);
+    btnAttackResultKeep?.classList.toggle("hidden", shouldHideKeepAsSecondAttack);
     attackResultChoiceBusy = false;
     attackResultPop.classList.remove("hidden");
   }
