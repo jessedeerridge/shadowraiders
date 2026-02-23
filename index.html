@@ -5348,8 +5348,9 @@
         allowExcaliburButton: false,
         showBonusLabel: false
       };
+      pending.meta = normalizeAttackResultMeta(pendingAttackResultMeta);
       cachePendingAttackResolution(pending);
-      await upsertPendingAttackResolution(pending.rows, pending.turnKey || turnCycleKey());
+      await upsertPendingAttackResolution(pending.rows, pending.turnKey || turnCycleKey(), pendingAttackResultMeta);
       showAttackResultPop(pending.rows);
     } finally {
       attackResultChoiceBusy = false;
@@ -6381,6 +6382,15 @@
     attackResultChoiceBusy = false;
   }
 
+  function normalizeAttackResultMeta(meta){
+    if (!meta || typeof meta !== "object") return null;
+    return {
+      showBonusLabel: !!meta.showBonusLabel,
+      allowExcaliburButton: !!meta.allowExcaliburButton,
+      freddieSpecial: !!meta.freddieSpecial
+    };
+  }
+
   function cachePendingAttackResolution(pending){
     if (!state.roomCode || !state.userId) return;
     const key = attackResolutionKey(state.roomCode);
@@ -6398,10 +6408,11 @@
       sessionStorage.removeItem(key);
       return;
     }
-    sessionStorage.setItem(key, JSON.stringify({ rows, turnKey: safeText(pending.turnKey || "") }));
+    const meta = normalizeAttackResultMeta(pending.meta);
+    sessionStorage.setItem(key, JSON.stringify({ rows, turnKey: safeText(pending.turnKey || ""), meta }));
   }
 
-  async function upsertPendingAttackResolution(rows = [], turnKey = ""){
+  async function upsertPendingAttackResolution(rows = [], turnKey = "", meta = null){
     const uid = safeText(state.userId || "");
     const roomCode = safeText(state.roomCode || "");
     if (!uid || !roomCode) return;
@@ -6413,6 +6424,7 @@
       uid,
       rows: normalizedRows,
       turnKey: normalizedTurnKey,
+      meta: normalizeAttackResultMeta(meta),
       at: Date.now()
     } : null;
     await set(ref(db, `rooms/${roomCode}/attackResolutionPending/${uid}`), payload);
@@ -6424,6 +6436,7 @@
     const rows = Array.isArray(mine?.rows)
       ? mine.rows.map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
       : [];
+    const meta = normalizeAttackResultMeta(mine?.meta);
     const pendingTurnKey = safeText(mine?.turnKey || "");
     const canRestore = !!rows.length && currentTurnPlayerId() === state.userId && pendingTurnKey === turnCycleKey();
     if (!canRestore){
@@ -6435,8 +6448,8 @@
       renderTurnEndButton();
       return false;
     }
-    pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey };
-    pendingAttackResultMeta = null;
+    pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey, meta };
+    pendingAttackResultMeta = meta;
     cachePendingAttackResolution(pendingAttackResolution);
     showAttackResultPop(rows);
     attackTurnEndChoicePending = true;
@@ -6466,13 +6479,14 @@
     const rows = Array.isArray(parsed?.rows)
       ? parsed.rows.map(item => ({ uid: safeText(item?.uid || ""), damage: Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
       : [];
+    const meta = normalizeAttackResultMeta(parsed?.meta);
     const pendingTurnKey = safeText(parsed?.turnKey || "");
     if (!rows.length || !pendingTurnKey){
       sessionStorage.removeItem(attackResolutionKey(state.roomCode));
       return false;
     }
-    pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey };
-    pendingAttackResultMeta = null;
+    pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey, meta };
+    pendingAttackResultMeta = meta;
     showAttackResultPop(rows);
     attackTurnEndChoicePending = true;
     attackFlowUiLockActive = true;
@@ -8884,9 +8898,9 @@
         };
         const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
         const pendingTurnKey = turnCycleKey();
-        pendingAttackResolution = { rows: resolvedRows, applied:false, turnKey: pendingTurnKey };
+        pendingAttackResolution = { rows: resolvedRows, applied:false, turnKey: pendingTurnKey, meta: normalizeAttackResultMeta(pendingAttackResultMeta) };
         cachePendingAttackResolution(pendingAttackResolution);
-        await upsertPendingAttackResolution(resolvedRows, pendingTurnKey);
+        await upsertPendingAttackResolution(resolvedRows, pendingTurnKey, pendingAttackResultMeta);
         showAttackResultPop(resolvedRows);
         if (dealtDamage && isMyRole("SHA_V2")){
           if (isMyIdentityRevealed()){
