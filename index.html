@@ -2304,6 +2304,7 @@
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
   let pendingAttackResolution = null;
+  let attackFollowupAbilityUsedTurnKey = "";
   let attackResultChoiceBusy = false;
   let ulsterExtraAttackPending = 0;
   let attackFlowUiLockActive = false;
@@ -2931,6 +2932,7 @@
     const attackFailed = normalizedRows.length > 0 && !hasSuccessDamage;
 
     if (roleId === "CIT_C1"){
+      if (safeText(attackFollowupAbilityUsedTurnKey || "") === turnCycleKey()) return null;
       return { abilityName:"死の饗宴", description:"自分に2ダメージ与えて、もう一度攻撃しますか。" };
     }
     if (roleId === "CIT_B1" && maxDamage >= 2){
@@ -2943,6 +2945,7 @@
       return { abilityName:"魔剣の伝承者", description:"エクスカリバーを所有している時、攻撃が成功するまで振り直す。" };
     }
     if (roleId === "SHA_U3"){
+      if (safeText(attackFollowupAbilityUsedTurnKey || "") === turnCycleKey()) return null;
       return { abilityName:"デル・フリス", description:"もう一度攻撃を行いますか。" };
     }
     if (roleId === "SHA_V2" && hasSuccessDamage){
@@ -5209,6 +5212,10 @@
       await finalizePendingAttackResolution(false);
       return;
     }
+    if (isMyRole("SHA_V2") && isMyIdentityRevealed()){
+      await finalizePendingAttackResolution(true);
+      return;
+    }
     if (attackResultChoiceBusy) return;
     showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
       if (attackResultChoiceBusy) return;
@@ -5221,6 +5228,7 @@
         await resolveAttackAbilityReveal(role);
 
         if (roleId === "CIT_C1"){
+          attackFollowupAbilityUsedTurnKey = turnCycleKey();
           await addDamageToPlayer(state.userId, 2);
           await runFollowupAttackToTarget(followupTargetUid, 1500);
           return;
@@ -5230,6 +5238,7 @@
           return;
         }
         if (roleId === "SHA_U3"){
+          attackFollowupAbilityUsedTurnKey = turnCycleKey();
           await startUlsterExtraAttackSelection();
           return;
         }
@@ -5718,6 +5727,7 @@
       && currentTurnPlayerId() === state.userId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
+    attackFollowupAbilityUsedTurnKey = "";
     walpurgisSwapUsed = false;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
@@ -6400,12 +6410,17 @@
       attackResultRows.appendChild(row);
     }
     const spec = attackAbilitySpecFromRows(rows);
+    const isVampireHealOnly = !!spec && isMyRole("SHA_V2") && isMyIdentityRevealed();
+    const isEndOnly = !spec && (isMyRole("CIT_C1") || isMyRole("SHA_U3"));
     if (btnAttackResultEnd){
+      btnAttackResultEnd.style.display = isVampireHealOnly ? "none" : "";
       btnAttackResultEnd.textContent = hasSealWisdomBonusThisTurn() ? "OKおわる(+1)" : "OKおわる";
     }
     if (btnAttackResultKeep){
+      btnAttackResultKeep.style.display = isEndOnly ? "none" : "";
       if (spec){
-        btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>`;
+        const abilityLabel = isVampireHealOnly ? "吸血" : formatAttackAbilityPillLabel(spec.abilityName);
+        btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(abilityLabel)}</span>`;
       } else {
         btnAttackResultKeep.textContent = "OKおわらない";
       }
