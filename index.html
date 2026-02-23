@@ -2852,13 +2852,19 @@
     const role = ROLE_BY_ID[roleId];
     if (!role) return;
     const key = `${venomUid}_${Number(row.at || 0)}`;
-    if (activeVenomRevealLockKey === key) return;
+    if (activeVenomRevealLockKey === key){
+      if (safeText(row.targetUid || "") === safeText(state.userId || "")) setZoomPassthrough(true);
+      return;
+    }
     activeVenomRevealLockKey = key;
     openIdentityRevealZoom(role, venomUid, {
       ownerTagDurationMs: 1200,
       showOwnerTag: true,
       persist: true
     });
+    if (safeText(row.targetUid || "") === safeText(state.userId || "")){
+      setZoomPassthrough(true);
+    }
   }
 
   function counterPromptEntryForMe(){
@@ -2981,8 +2987,8 @@
     const venomChoice = activeVenomCounterChoiceForMe();
     if (venomChoice){
       if (!counterAbilityPop || !counterAbilityMsg || !btnCounterAbilityUse || !btnCounterAbilitySkip) return;
-      counterAbilityMsg.textContent = "ヴェノムの猛毒：装備を渡すか、1ダメージを受けるか選んでください。";
-      counterAbilityMsg.classList.remove("hidden");
+      counterAbilityMsg.textContent = "";
+      counterAbilityMsg.classList.add("hidden");
       btnCounterAbilityUse.textContent = "装備を渡す(上から選ぶ)";
       btnCounterAbilityUse.disabled = true;
       btnCounterAbilityUse.classList.add("pop-disabled");
@@ -5875,8 +5881,8 @@
         hideCounterAbilityPrompt();
         resetVenomCounterSelectionUi();
         await addDamageToPlayer(state.userId, 1, { source:"venom_counter" });
-        await clearVenomCounterChoice(venomChoice.at);
-        await advanceTurnToNextPlayer(state.userId);
+        await clearVenomCounterChoice();
+        await advanceTurnToNextPlayer();
       } finally {
         venomCounterChoiceBusy = false;
       }
@@ -5947,7 +5953,7 @@
           await moveEquipmentCardBetweenPlayers(state.userId, venomUid, sourceKey);
           const choice = activeVenomCounterChoiceForMe();
           await clearVenomCounterChoice(choice?.at || null);
-          await advanceTurnToNextPlayer(state.userId);
+          await advanceTurnToNextPlayer();
         } finally {
           venomCounterChoiceBusy = false;
         }
