@@ -1697,7 +1697,7 @@
 <div id="attackResultPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="攻撃結果確認">
   <div id="attackResultRows" class="attack-result-pop-rows"></div>
   <div class="actions">
-    <button class="btn btn-excalibur hidden" id="btnAttackResultExcalibur">OK エクスカリバー</button>
+    <button class="btn btn-excalibur hidden" id="btnAttackResultExcalibur">OK 🗡️</button>
     <button class="btn primary" id="btnAttackResultEnd">OKおわる</button>
     <button class="btn ghost" id="btnAttackResultKeep">OKおわらない</button>
   </div>
@@ -5346,7 +5346,8 @@
       pendingAttackResultMeta = {
         ...(pendingAttackResultMeta || {}),
         allowExcaliburButton: false,
-        showBonusLabel: false
+        showBonusLabel: false,
+        zeroDamagePreview: false
       };
       pending.meta = normalizeAttackResultMeta(pendingAttackResultMeta);
       cachePendingAttackResolution(pending);
@@ -6387,7 +6388,8 @@
     return {
       showBonusLabel: !!meta.showBonusLabel,
       allowExcaliburButton: !!meta.allowExcaliburButton,
-      freddieSpecial: !!meta.freddieSpecial
+      freddieSpecial: !!meta.freddieSpecial,
+      zeroDamagePreview: !!meta.zeroDamagePreview
     };
   }
 
@@ -6530,7 +6532,8 @@
       row.className = "attack-result-pop-row";
       const amount = document.createElement("span");
       const damageValue = Math.max(0, Number(item?.damage || 0));
-      amount.textContent = damageValue > 0 ? `${damageValue} Damege >` : "攻撃失敗 >";
+      const treatZeroAsPreview = !!(exMeta.zeroDamagePreview && damageValue === 0);
+      amount.textContent = (damageValue > 0 || treatZeroAsPreview) ? `${damageValue} Damege >` : "攻撃失敗 >";
       row.appendChild(amount);
       if (exMeta.showBonusLabel){
         const plus = document.createElement("span");
@@ -7821,7 +7824,7 @@
     });
   }
 
-  function buildExcaliburAttackMeta({ attackerUid, targetUid, attackSucceeded }){
+  function buildExcaliburAttackMeta({ attackerUid, targetUid, attackSucceeded, d6, d4 }){
     const uid = safeText(attackerUid);
     if (uid !== state.userId) return null;
     const role = myRoleInfo();
@@ -7831,13 +7834,14 @@
 
     const roleId = safeText(role.id || "");
     const success = !!attackSucceeded;
+    const sameDice = (Number(d6) || 0) === (Number(d4) || 0);
     const targetRevealed = isIdentityRevealedFor(targetUid);
     const galahadAuto = roleId === "RAI_G2" && !success;
     const freddieAuto = roleId === "RAI_F3" && success && targetRevealed;
 
     return {
       showBonusLabel: success || galahadAuto || freddieAuto,
-      allowExcaliburButton: success && !freddieAuto,
+      allowExcaliburButton: success && !freddieAuto && !sameDice,
       autoBoost: galahadAuto || freddieAuto,
       freddieSpecial: freddieAuto
     };
@@ -8881,7 +8885,7 @@
         const targetUids = (gatlingTargets.length > 0) ? gatlingTargets : [targetUid];
         const exMeta = d4OnlyMode
           ? null
-          : buildExcaliburAttackMeta({ attackerUid:state.userId, targetUid, attackSucceeded });
+          : buildExcaliburAttackMeta({ attackerUid:state.userId, targetUid, attackSucceeded, d6:finalD6, d4:finalD4 });
         let resolvedRows = targetUids.map(uid => ({
           uid,
           damage: (attackSucceeded && damage > 0)
@@ -8894,8 +8898,17 @@
         pendingAttackResultMeta = {
           showBonusLabel: !!exMeta?.showBonusLabel,
           allowExcaliburButton: !!exMeta?.allowExcaliburButton,
-          freddieSpecial: !!exMeta?.freddieSpecial
+          freddieSpecial: !!exMeta?.freddieSpecial,
+          zeroDamagePreview: false
         };
+        const hasExcaliburPreviewZero = !!pendingAttackResultMeta.allowExcaliburButton
+          && hasEquipmentByName(state.userId, "賢者のローブ")
+          && Math.abs((Number(finalD6) || 0) - (Number(finalD4) || 0)) === 1
+          && resolvedRows.some(row => Number(row.damage || 0) === 0);
+        if (hasExcaliburPreviewZero){
+          pendingAttackResultMeta.zeroDamagePreview = true;
+          pendingAttackResultMeta.showBonusLabel = true;
+        }
         const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
         const pendingTurnKey = turnCycleKey();
         pendingAttackResolution = { rows: resolvedRows, applied:false, turnKey: pendingTurnKey, meta: normalizeAttackResultMeta(pendingAttackResultMeta) };
