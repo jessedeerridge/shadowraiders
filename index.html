@@ -2816,15 +2816,10 @@
       return;
     }
 
-    if (!entry.mustChoose && entry.attackerUid && currentTurnPlayerId() !== entry.attackerUid){
-      clearCounterPromptForMe(entry.at).catch(() => {});
-      hideCounterAbilityPrompt();
-      return;
-    }
-
     const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
     const ability = roleAbilityName(role || {});
-    counterAbilityMsg.textContent = "他プレイヤーから攻撃を受けました。能力を使いますか。";
+    counterAbilityMsg.textContent = "";
+    counterAbilityMsg.classList.add("hidden");
     btnCounterAbilitySkip.textContent = "使わない";
 
     const updateLabel = () => {
