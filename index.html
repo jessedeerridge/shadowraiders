@@ -95,6 +95,15 @@
     justify-content:center;
     flex-wrap:nowrap;
   }
+  #venomChoicePop{
+    min-width:0;
+    width:fit-content;
+    max-width:min(94vw, 520px);
+  }
+  #venomChoicePop .actions{
+    justify-content:center;
+    flex-wrap:nowrap;
+  }
   .btn.pop-dark{background:#111;color:#fff;border-color:#111;}
   .btn.pop-disabled{background:#bcbcbc;color:#fff;border-color:#bcbcbc;cursor:not-allowed;}
   .btn.pop-purple{background:#6d28d9;color:#fff;border-color:#6d28d9;}
@@ -5932,11 +5941,13 @@
     venomChoiceBusy = true;
     try {
       await addDamageToPlayer(entry.targetUid, 1, { source:"venom_counter" });
-      await clearVenomChoiceIfMatch(entry.at);
-      venomChoicePop?.classList.add("hidden");
-      if (currentTurnPlayerId() === entry.targetUid){
-        await advanceTurnToNextPlayer(entry.targetUid);
+      const cleared = await clearVenomChoiceIfMatch(entry.at);
+      if (!cleared){
+        await clearVenomChoiceIfMatch(null);
       }
+      venomChoicePop?.classList.add("hidden");
+      if (isVenomRevealZoomVisible()) closeZoom();
+      await advanceTurnToNextPlayer(entry.targetUid);
     } finally {
       venomChoiceBusy = false;
     }
