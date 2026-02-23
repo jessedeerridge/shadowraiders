@@ -3764,10 +3764,10 @@
       }
       pendingEquipAction = { type:"benjamin_give" };
       setSeatEquipSelectionState({ type:"benjamin_give" }).catch(() => {});
-      setGreenDockMeta({ title:"自分のパルス中の装備カードを選んでください。", subtitle:"装備を選ぶと同じroomの生存プレイヤー一覧が表示されます。" });
+      setGreenDockMeta({ title:"", subtitle:"" });
       if (greenShareList) greenShareList.innerHTML = "";
       greenShareActions?.classList.add("hidden");
-      greenShareDock?.classList.remove("hidden");
+      greenShareDock?.classList.add("hidden");
       cardPlayerSelectActive = true;
       updateCardInteractivity();
       renderEquipmentDock();
@@ -6676,10 +6676,10 @@
           ownerTagDurationMs: 1200
         });
       }
-      setGreenDockMeta({ title:"自分のパルス中の装備カードを選んでください。", subtitle:"装備を選ぶと同じroomの生存プレイヤー一覧が表示されます。" });
+      setGreenDockMeta({ title:"", subtitle:"" });
       if (greenShareList) greenShareList.innerHTML = "";
       greenShareActions?.classList.add("hidden");
-      greenShareDock?.classList.remove("hidden");
+      greenShareDock?.classList.add("hidden");
       setZoomPassthrough(true);
       renderEquipmentDock();
       renderTurnEndButton();
