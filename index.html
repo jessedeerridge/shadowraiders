@@ -2891,7 +2891,13 @@
     const turnKey = safeText(resolvedEntry.turnKey || "");
     if (!attackerUid || !turnKey) return;
 
-    const stillPending = Object.values(state.room?.counterPromptState || {}).some((entry) => {
+    let latestCounterMap = state.room?.counterPromptState || {};
+    try {
+      const snap = await get(ref(db, `rooms/${state.roomCode}/counterPromptState`));
+      latestCounterMap = snap.val() || {};
+    } catch (_) {}
+
+    const stillPending = Object.values(latestCounterMap || {}).some((entry) => {
       if (!entry) return false;
       return !!entry.advanceTurnOnResolve
         && safeText(entry.attackerUid || "") === attackerUid
@@ -5892,7 +5898,7 @@
       pendingEquipAction = null;
       await setSeatEquipSelectionState(null);
       dismissedVenomPromptAt = Number(entry?.at || 0);
-      const resolvedEntry = await clearCounterPromptForMe(entry?.at || null);
+      const resolvedEntry = await clearCounterPromptForMe(null);
       closeZoom();
       renderEquipmentDock();
       await addDamageToPlayer(state.userId, 1);
@@ -6057,7 +6063,7 @@
           return;
         }
         dismissedVenomPromptAt = Number(currentEntry?.at || 0);
-        const resolvedEntry = await clearCounterPromptForMe(currentEntry?.at || null);
+        const resolvedEntry = await clearCounterPromptForMe(null);
         closeZoom();
         renderEquipmentDock();
         await tryAdvanceTurnAfterCounterChoice(resolvedEntry);
