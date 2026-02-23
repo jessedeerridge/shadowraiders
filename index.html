@@ -769,9 +769,10 @@
 }
 .agatha-reveal-overlay.hidden{ display:none; }
 .agatha-reveal-overlay .id72{
-  transform:scale(2.1);
+  transform:translateZ(0) scale(2.1);
   transform-origin:center center;
   box-shadow:0 18px 50px rgba(0,0,0,.45);
+  will-change:transform;
   animation:none !important;
   transition:none !important;
 }
@@ -6686,6 +6687,7 @@
         });
       } else if (kind === "role_agatha"){
         showAgathaRevealCardOverlay(safeText(ev.uid || ""), {
+          eventAt: Number(ev.at || 0),
           closeAt: Number(ev.closeAt || 0),
           duration: 1200
         });
@@ -7388,13 +7390,18 @@
 
     const duration = Math.max(0, Number(options.duration || 1200));
     const requestedCloseAt = Number(options.closeAt || 0);
-    const closeAt = requestedCloseAt > 0 ? requestedCloseAt : (Date.now() + duration);
-    if (closeAt <= agathaRevealVisibleUntil) return;
+    const eventAt = Number(options.eventAt || 0);
+    const closeAt = requestedCloseAt > 0
+      ? requestedCloseAt
+      : (eventAt > 0 ? (eventAt + duration) : (Date.now() + duration));
+    const shouldRefreshCard = closeAt > agathaRevealVisibleUntil || agathaRevealOverlay.classList.contains('hidden');
 
     agathaRevealVisibleUntil = closeAt;
-    agathaRevealOverlay.innerHTML = '';
-    agathaRevealOverlay.appendChild(createIdentityCard(role));
-    agathaRevealOverlay.classList.remove('hidden');
+    if (shouldRefreshCard){
+      agathaRevealOverlay.innerHTML = '';
+      agathaRevealOverlay.appendChild(createIdentityCard(role));
+      agathaRevealOverlay.classList.remove('hidden');
+    }
 
     if (agathaRevealHideTimer) clearTimeout(agathaRevealHideTimer);
     const remainMs = Math.max(0, closeAt - Date.now());
