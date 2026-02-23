@@ -1077,6 +1077,16 @@
     stroke:#a855f7;
     stroke-width:2;
   }
+  .emi-room-choice-pulse{
+    transform-box:fill-box;
+    transform-origin:center;
+    animation:roomChoicePulse 1.2s ease-in-out infinite;
+  }
+  .shape.emi-room-choice-pulse{
+    stroke:#ef4444;
+    stroke-width:2;
+  }
+  .roomhit.emi-room-choice-pulse{cursor:pointer;}
   @keyframes roomChoicePulse{
     0%,100%{ transform:scale(1); }
     50%{ transform:scale(1.05); }
@@ -5048,6 +5058,11 @@
     }
 
     const moved = !!turnState()?.moveDone;
+    if (myRoleId === "RAI_E1" && !moved){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "今は使えません。" });
+      return;
+    }
     if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && moved){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "手番の初めにだけ正体を公開できます。" });
@@ -7883,6 +7898,66 @@
     }
   }
 
+  const EMI_TELEPORT_ROOM_NAMES = {
+    1: "大聖堂",
+    2: "地下通路",
+    3: "市庁舎",
+    4: "オリバーの隠れ場",
+    5: "探偵事務所",
+    6: "ブラックミスト地区",
+    7: "飛行船"
+  };
+
+  function adjacentOuterRoomIds(roomId){
+    const rid = Number(roomId || 0);
+    if (!Number.isFinite(rid) || rid < 1 || rid > 6) return [];
+    const left = rid === 1 ? 6 : (rid - 1);
+    const right = rid === 6 ? 1 : (rid + 1);
+    return [left, right];
+  }
+
+  function isMyIdentityRevealedThisTurn(){
+    if (!isMyIdentityRevealed()) return false;
+    const revealedAt = Number(equipCache?.[state.userId]?.identity?.revealedAt || 0);
+    const turnUpdatedAt = Number(turnState()?.updatedAt || 0);
+    if (!revealedAt || !turnUpdatedAt) return false;
+    return revealedAt >= turnUpdatedAt;
+  }
+
+  function emiTeleportChoiceRoomIds(){
+    if (!isGameStarted()) return [];
+    if (!isMyTurn()) return [];
+    if (!isMyRole("RAI_E1")) return [];
+    if (!isMyIdentityRevealed()) return [];
+    if (!turnState()?.moveDone || !!turnState()?.attackDone) return [];
+    if (!!turnState()?.emiTeleportUsed) return [];
+    const myMarker = markerCache?.[state.userId] || null;
+    const nowRoom = markerRoomId(myMarker);
+    return adjacentOuterRoomIds(nowRoom);
+  }
+
+  async function confirmAndMoveByEmiTeleport(roomId, clickX, clickY){
+    const rid = Number(roomId || 0);
+    if (!emiTeleportChoiceRoomIds().includes(rid)) return false;
+    const roomName = safeText(EMI_TELEPORT_ROOM_NAMES[rid] || `ROOM${rid}`);
+    showRoomActionPopAt(clickX, clickY, `「${roomName}」に移動しますか。`, async () => {
+      if (!isMyIdentityRevealedThisTurn()){
+        await emitRoleFlashEvent("RAI_E1", "emi_teleport", 1500);
+      }
+      await placeMarkerInRoom(rid);
+      if (state.roomCode && isMyTurn()){
+        await update(ref(db, `rooms/${state.roomCode}/turn`), {
+          emiTeleportUsed: true,
+          updatedAt: Date.now()
+        });
+      }
+    }, {
+      yesLabel: "はい",
+      noLabel: "いいえ"
+    });
+    return true;
+  }
+
   function bringRoomPulseToFront(roomId){
     const shape = roomShapeEls[roomId];
     const hit = roomHitEls[roomId];
@@ -9422,12 +9497,15 @@
 
   function updateRoomChoiceUi(){
     const choiceMode = canChooseOuterRoomDirectly();
+    const emiChoiceSet = new Set(emiTeleportChoiceRoomIds());
     for (let roomId = 1; roomId <= 6; roomId++){
       const pending = !!pendingMoveChoice && !pendingMoveChoice.consumed && pendingMoveChoice.roomIds.includes(roomId);
       roomShapeEls[roomId]?.classList.toggle('room-choice-pulse', choiceMode);
       roomHitEls[roomId]?.classList.toggle('room-choice-pulse', choiceMode);
+      roomShapeEls[roomId]?.classList.toggle('emi-room-choice-pulse', emiChoiceSet.has(roomId));
+      roomHitEls[roomId]?.classList.toggle('emi-room-choice-pulse', emiChoiceSet.has(roomId));
       if (roomHitEls[roomId]){
-        roomHitEls[roomId].style.cursor = (choiceMode || pending) ? 'pointer' : (isGameStarted() ? 'default' : 'pointer');
+        roomHitEls[roomId].style.cursor = (choiceMode || pending || emiChoiceSet.has(roomId)) ? 'pointer' : (isGameStarted() ? 'default' : 'pointer');
       }
     }
 
@@ -9441,7 +9519,8 @@
     for (let roomId = 1; roomId <= 7; roomId++){
       const pulsing =
         roomShapeEls[roomId]?.classList.contains('room-choice-pulse') ||
-        roomShapeEls[roomId]?.classList.contains('room-choice-once');
+        roomShapeEls[roomId]?.classList.contains('room-choice-once') ||
+        roomShapeEls[roomId]?.classList.contains('emi-room-choice-pulse');
       if (pulsing) bringRoomPulseToFront(roomId);
     }
   }
@@ -9629,6 +9708,7 @@
         if (isEquipSelectionLockActive()) return;
         if (isGameStarted()){
           if (await resolvePendingMoveChoice(roomId)) return;
+          if (await confirmAndMoveByEmiTeleport(roomId, ev.clientX, ev.clientY)) return;
           if (!canChooseOuterRoomDirectly()) return;
           await placeMarkerInRoom(roomId);
           if (state.roomCode && isMyTurn()){
@@ -9682,7 +9762,7 @@
     { id:"CIT_D1", name:"ダニエル",  en:"DANIEL",   initial:"D", faction:"シチズン", hp:13, win:"最初に脱落する、またはシャドウ全員脱落かつ生存", effect:"絶叫：最初に他PLが脱落した時、正体カードを公開" },
     { id:"CIT_D2", name:"デーヴィッド", en:"DAVID",  initial:"D", faction:"シチズン", hp:13, win:"「いにしえの聖杯」「神秘のコンパス」「幸運のブローチ」「銀のロザリオ」のうち3種を所持", effect:"グレイブディガー：手番初めに脱落者の装備カードから任意1枚獲得" },
     { id:"CIT_D3", name:"デボラ",    en:"DEBORAH",  initial:"D", faction:"シチズン", hp:13, win:"5人戦：終了時に最もダメージが多い／6人戦：自分以外のシチズンが勝利", effect:"献身的な愛：手番初めに勝利条件を「脱落する」に変更" },
-    { id:"RAI_E1", name:"エミ",      en:"EMI",      initial:"E", faction:"レイダー", hp:10, win:"シャドウ全員の脱落", effect:"テレポート：移動時、出目エリアまたは両隣エリアに移動可" },
+    { id:"RAI_E1", name:"エミ",      en:"EMI",      initial:"E", faction:"レイダー", hp:10, win:"シャドウ全員の脱落", effect:"テレポート：正体公開後、移動後かつ未攻撃なら現在地の両隣エリアへ移動可" },
     { id:"RAI_E2", name:"エリカ",    en:"ERIKA",    initial:"E", faction:"レイダー", hp:10, win:"シャドウ全員の脱落", effect:"癒しの光：手番終了時に4面ダイスを振り、出目分他PLを回復" },
     { id:"RAI_E3", name:"エマ",      en:"EMMA",     initial:"E", faction:"レイダー", hp:10, win:"シャドウ全員の脱落", effect:"封印の鎖：手番初めに他PL1人の特殊能力をゲーム終了まで封印（1回）" },
     { id:"RAI_F1", name:"フェリックス", en:"FELIX", initial:"F", faction:"レイダー", hp:12, win:"シャドウ全員の脱落", effect:"アストラル・メイス：手番初めに他PL1人へ6面ダイス攻撃（1回）" },
