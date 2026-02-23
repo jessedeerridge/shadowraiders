@@ -2889,7 +2889,8 @@
       if (!entry || safeText(entry.roleId || "") !== "SHA_V1" || !entry.mustChoose || !entry.revealLocked) return cur;
       const attackerUid = safeText(entry.attackerUid || "");
       const venomUid = safeText(entry.venomUid || "");
-      if (!attackerUid || !venomUid || safeText(cur.turn?.currentPlayerId || "") !== attackerUid) return cur;
+      if (!attackerUid || safeText(cur.turn?.currentPlayerId || "") !== attackerUid) return cur;
+      if (!takeDamage && !venomUid) return cur;
 
       if (takeDamage){
         cur.damage = cur.damage || {};
