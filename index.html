@@ -5053,6 +5053,11 @@
     }
 
     const moved = !!turnState()?.moveDone;
+    if (myRoleId === "RAI_E1" && !moved){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "今は使えません。" });
+      return;
+    }
     if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && moved){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "手番の初めにだけ正体を公開できます。" });
@@ -7920,6 +7925,7 @@
     if (!isMyRole("RAI_E1")) return [];
     if (!isMyIdentityRevealed()) return [];
     if (!turnState()?.moveDone || !!turnState()?.attackDone) return [];
+    if (!!turnState()?.emiTeleportUsed) return [];
     const myMarker = markerCache?.[state.userId] || null;
     const nowRoom = markerRoomId(myMarker);
     return adjacentOuterRoomIds(nowRoom);
@@ -7934,6 +7940,12 @@
         await emitRoleFlashEvent("RAI_E1", "emi_teleport", 1500);
       }
       await placeMarkerInRoom(rid);
+      if (state.roomCode && isMyTurn()){
+        await update(ref(db, `rooms/${state.roomCode}/turn`), {
+          emiTeleportUsed: true,
+          updatedAt: Date.now()
+        });
+      }
     }, {
       yesLabel: "はい",
       noLabel: "いいえ"
