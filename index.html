@@ -9057,9 +9057,12 @@
             bonusLabelAmount
           };
         });
+        const freddieHiddenExcaliburRevealHit = hiddenFreddie
+          && hasExcalibur
+          && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 4);
         pendingAttackResultMeta = {
           showBonusLabel: !!exMeta?.showBonusLabel,
-          allowExcaliburButton: !!exMeta?.allowExcaliburButton,
+          allowExcaliburButton: !!exMeta?.allowExcaliburButton && !freddieHiddenExcaliburRevealHit,
           freddieSpecial: hiddenFreddie && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 2),
           zeroDamagePreview: false
         };
