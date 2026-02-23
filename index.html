@@ -2818,7 +2818,12 @@
     const activeKey = active ? `${safeText(active.venomUid || "")}:${safeText(active.turnKey || "")}` : "";
     const currentKey = safeText(zoomStage?.dataset?.venomRevealKey || "");
     if (!active){
-      if (currentKey) delete zoomStage.dataset.venomRevealKey;
+      if (currentKey){
+        delete zoomStage.dataset.venomRevealKey;
+        if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")){
+          closeZoom();
+        }
+      }
       venomRevealRestorePending = false;
       return;
     }
