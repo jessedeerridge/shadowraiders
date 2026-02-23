@@ -2957,6 +2957,28 @@
     return Array.from(raw).length <= 2 ? ` ${raw} ` : raw;
   }
 
+  const ATTACK_RESULT_PER_TURN_ABILITY_KEYS = {
+    "CIT_C1": "craig_attack",
+    "SHA_U3": "ulster_attack"
+  };
+
+  function attackResultPerTurnUsageKey(roleId){
+    return ATTACK_RESULT_PER_TURN_ABILITY_KEYS[safeText(roleId || "")] || "";
+  }
+
+  function isAttackResultAbilityUsedThisTurn(roleId){
+    const usageKey = attackResultPerTurnUsageKey(roleId);
+    if (!usageKey || !state.userId) return false;
+    const usedTurn = safeText(state.room?.abilityUsage?.[usageKey]?.[state.userId] || "");
+    return !!usedTurn && usedTurn === currentTurnKey();
+  }
+
+  async function markAttackResultAbilityUsedThisTurn(roleId){
+    const usageKey = attackResultPerTurnUsageKey(roleId);
+    if (!usageKey || !state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/${usageKey}/${state.userId}`), currentTurnKey());
+  }
+
   function primaryAttackTargetUidFromRows(rows = []){
     const list = Array.isArray(rows) ? rows : [];
     for (const item of list){
@@ -5203,6 +5225,7 @@
 
   btnAttackResultKeep?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    if (btnAttackResultKeep?.disabled) return;
     const pending = pendingAttackResolution;
     const spec = attackAbilitySpecFromRows(pending?.rows || []);
     if (!spec){
@@ -5217,6 +5240,8 @@
         const role = myRoleInfo();
         const roleId = safeText(role?.id || "");
         const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
+        if (isAttackResultAbilityUsedThisTurn(roleId)) return;
+        await markAttackResultAbilityUsedThisTurn(roleId);
         await finalizePendingAttackResolution(false);
         await resolveAttackAbilityReveal(role);
 
@@ -6400,14 +6425,20 @@
       attackResultRows.appendChild(row);
     }
     const spec = attackAbilitySpecFromRows(rows);
+    const roleId = safeText(myRoleInfo()?.id || "");
+    const abilityDisabled = !!spec && isAttackResultAbilityUsedThisTurn(roleId);
     if (btnAttackResultEnd){
       btnAttackResultEnd.textContent = hasSealWisdomBonusThisTurn() ? "OKおわる(+1)" : "OKおわる";
     }
     if (btnAttackResultKeep){
       if (spec){
         btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>`;
+        btnAttackResultKeep.disabled = abilityDisabled;
+        btnAttackResultKeep.classList.toggle("pop-disabled", abilityDisabled);
       } else {
         btnAttackResultKeep.textContent = "OKおわらない";
+        btnAttackResultKeep.disabled = false;
+        btnAttackResultKeep.classList.remove("pop-disabled");
       }
     }
     attackResultChoiceBusy = false;
