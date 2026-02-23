@@ -4618,7 +4618,8 @@
     const eventAt = Date.now();
     const revealDuration = 1200;
     const revealCloseAt = eventAt + revealDuration;
-    showAgathaRevealCardOverlay(state.userId, { eventAt, closeAt: revealCloseAt, duration: revealDuration });
+    // 表示は全員（送信者含む）ともに card イベント受信側のみで開始し、
+    // 2重表示による「膨らみ」再描画を防ぐ。
     await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4, at:eventAt, closeAt: revealCloseAt, duration: revealDuration });
     await waitMs(1000);
     const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
