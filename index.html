@@ -7887,7 +7887,7 @@
     }
 
     const targetUid = safeText(options.targetUid || "");
-    if (uid === state.userId && isMyRole("RAI_F3") && targetUid && isIdentityRevealedFor(targetUid)){
+    if (uid === state.userId && isMyRole("RAI_F3") && isMyIdentityRevealed() && targetUid && isIdentityRevealedFor(targetUid)){
       damage += 2;
     }
 
