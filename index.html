@@ -4733,6 +4733,14 @@
     });
   }
 
+  async function removeEquipmentCardForTest(ownerUid, sourceKey){
+    if (!isTestPlayer()) return;
+    if (!state.roomCode) return;
+    if (!ownerUid || !sourceKey) return;
+    const eRef = ref(db, `rooms/${state.roomCode}/equipment/${ownerUid}/${sourceKey}`);
+    await set(eRef, null);
+  }
+
   async function revealMyIdentityToEquipment(options = {}){
     if (!state.roomCode) return;
     const my = state.hands?.[state.userId];
@@ -5645,6 +5653,23 @@
 
     openZoomFromCard(card);
   });
+
+  equipBody.addEventListener("dblclick", async (e) => {
+    const card = e.target.closest(".card72.wb-front");
+    if (!card) return;
+    if (!isTestPlayer()) return;
+    const ownerUid = safeText(card.dataset.ownerUid || "");
+    const sourceKey = safeText(card.dataset.sourceKey || "");
+    if (!ownerUid || !sourceKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    hideRoomActionPop();
+    await removeEquipmentCardForTest(ownerUid, sourceKey);
+    if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")){
+      closeZoom();
+    }
+  });
+
 
   attackLootBody?.addEventListener("click", async (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
@@ -10023,13 +10048,18 @@
       const grid = document.createElement('div');
       grid.className = 'help-card-grid';
       sortDeckForHelp(deck).forEach((cardData) => {
+        const cardObj = toCardObj(cardData);
         const card = document.createElement('div');
         card.className = `card72 wb-front ${theme === 'black' ? 'wb-black' : theme === 'green' ? 'wb-green' : 'wb-white'}`;
-        card.innerHTML = buildWbFrontHTML(toCardObj(cardData), theme);
+        card.innerHTML = buildWbFrontHTML(cardObj, theme);
         adjustCardNameFont(card);
         card.style.cursor = 'pointer';
-        card.addEventListener('click', (e) => {
+        card.addEventListener('click', async (e) => {
           e.stopPropagation();
+          if (isTestPlayer() && isEquipCard(cardObj)){
+            await grantEquipmentToMe(cardObj, theme);
+            return;
+          }
           const action = captureSelectionRestoreAction();
           openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
           setZoomOverPanel(true);
