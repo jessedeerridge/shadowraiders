@@ -1745,6 +1745,14 @@
   </div>
 </div>
 
+<div id="venomRevealChoicePop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="ヴェノム能力選択">
+  <p class="msg" id="venomRevealChoiceMsg">どちらかを選んでください。</p>
+  <div class="actions">
+    <button class="btn pop-disabled" id="btnVenomRevealGive" disabled>装備を渡す(上から選ぶ)</button>
+    <button class="btn pop-dark" id="btnVenomRevealDamage">1ダメージうける</button>
+  </div>
+</div>
+
 <div id="roomActionPop" class="confirm-pop hidden" role="dialog" aria-label="部屋効果確認">
   <div class="caret" aria-hidden="true"></div>
   <p class="msg" id="roomActionMsg"></p>
@@ -2383,6 +2391,10 @@
   const counterAbilityMsg = document.getElementById("counterAbilityMsg");
   const btnCounterAbilityUse = document.getElementById("btnCounterAbilityUse");
   const btnCounterAbilitySkip = document.getElementById("btnCounterAbilitySkip");
+  const venomRevealChoicePop = document.getElementById("venomRevealChoicePop");
+  const venomRevealChoiceMsg = document.getElementById("venomRevealChoiceMsg");
+  const btnVenomRevealGive = document.getElementById("btnVenomRevealGive");
+  const btnVenomRevealDamage = document.getElementById("btnVenomRevealDamage");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
   let counterAbilityCountdownTimer = null;
@@ -2488,6 +2500,7 @@
     "CIT_C3": { usageKey:"claire", abilityName:"キャスリングTYPE-G", prompt:"ダメージを入れ替えるプレイヤーを選んでください。" },
     "CIT_B2": { usageKey:"benjamin", abilityName:"ドラッグ移送", prompt:"装備を渡す相手を選んでください。", endTurnAfterResolve:true },
     "SHA_U2": { usageKey:"uranus", abilityName:"メテオストライク", prompt:"ダメージを与えるプレイヤーを選んでください。", perTurn:true },
+    "SHA_V1": { usageKey:"venom", abilityName:"反駁の猛毒", prompt:"対象プレイヤーを選んでください。" },
   };
 
   function roleSelectionSpec(roleId){ return ROLE_SELECTION_SPECS[safeText(roleId || "")] || null; }
@@ -2861,6 +2874,31 @@
     }
     activeCounterPromptAt = 0;
     counterAbilityPop?.classList.add("hidden");
+  }
+
+  function hideVenomRevealChoicePrompt(){
+    venomRevealChoicePop?.classList.add("hidden");
+  }
+
+  function renderVenomRevealChoicePrompt(){
+    if (!venomRevealChoicePop || !btnVenomRevealGive || !btnVenomRevealDamage) return;
+    const action = pendingEquipAction || null;
+    const active = action && safeText(action.type || "") === "venom_reveal_choice" && safeText(action.targetUid || "") === safeText(state.userId || "");
+    if (!active){
+      hideVenomRevealChoicePrompt();
+      return;
+    }
+    btnVenomRevealGive.disabled = true;
+    btnVenomRevealGive.classList.add("pop-disabled");
+    btnVenomRevealGive.classList.remove("pop-dark");
+    const hasEquip = hasAnyEquipment(state.userId);
+    if (venomRevealChoiceMsg){
+      venomRevealChoiceMsg.textContent = hasEquip ? "装備を渡すか、1ダメージうけるか選んでください。" : "装備がないため、1ダメージうけます。";
+    }
+    btnVenomRevealDamage.disabled = false;
+    btnVenomRevealDamage.classList.remove("pop-disabled");
+    btnVenomRevealDamage.classList.add("pop-dark");
+    venomRevealChoicePop.classList.remove("hidden");
   }
 
   async function runWerewolfCounterAttack(attackerUid){
@@ -3736,6 +3774,21 @@
         pendingHpSwapAnimation = null;
       }
       await emitHpSwapEvent(actorUid, selectedUid);
+    } else if (roleId === "SHA_V1"){
+      const targetSeat = seatIndexByUid(selectedUid);
+      if (!targetSeat){
+        await setRoleAbilitySelectionState(null);
+        return;
+      }
+      await set(ref(db, `rooms/${state.roomCode}/seatEquipSelectionState/${targetSeat}`), {
+        type: "venom_reveal_choice",
+        seat: targetSeat,
+        ownerUid: selectedUid,
+        venomUid: actorUid,
+        targetUid: selectedUid,
+        at: Date.now()
+      });
+      return;
     }
 
     await markRoleAbilityUsed(roleId);
@@ -3890,6 +3943,18 @@
       if (t && safeText(t.playerId || "") === safeText(state.userId || "")) return Number(seatIndex || 0);
     }
     return Number(state.seatedTable || 0);
+  }
+
+  function seatIndexByUid(uid){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return 0;
+    const fromPlayers = latestPlayers.find(p => safeText(p.id || "") === targetUid);
+    if (fromPlayers?.seatIndex) return Number(fromPlayers.seatIndex || 0);
+    const tables = state.room?.tables || {};
+    for (const [seatIndex, t] of Object.entries(tables)){
+      if (t && safeText(t.playerId || "") === targetUid) return Number(seatIndex || 0);
+    }
+    return 0;
   }
 
   function renderGreenWaitingSelection(toUid, toName="", toInitial="", toColor=""){
@@ -4831,7 +4896,7 @@
     syncRoomAbilityTurnState();
     equipDock?.classList.toggle("david-select-front", pendingEquipAction?.type === "david_select");
     refreshEquipDockLayer();
-    if (!state.roomCode) { equipDock.classList.remove("visible"); closeEquipExpand(); return; }
+    if (!state.roomCode) { equipDock.classList.remove("visible"); hideVenomRevealChoicePrompt(); closeEquipExpand(); return; }
 
     updateEquipDockTop();
 
@@ -4847,6 +4912,7 @@
 
     if (rows.length === 0){
       equipDock.classList.remove("visible");
+      hideVenomRevealChoicePrompt();
       closeEquipExpand();
       return;
     }
@@ -4876,12 +4942,13 @@
         const isBananaPulse = pendingEquipAction?.type === "banana_give" && p.id === state.userId && !isIdentityEquipItem(it);
         const isGreenGivePulse = pendingEquipAction?.type === "green_give" && p.id === state.userId && !isIdentityEquipItem(it);
         const isBenjaminPulse = pendingEquipAction?.type === "benjamin_give" && p.id === state.userId && !isIdentityEquipItem(it);
+        const isVenomPulse = pendingEquipAction?.type === "venom_reveal_choice" && p.id === state.userId && !isIdentityEquipItem(it);
         const isDavidPulse = pendingEquipAction?.type === "david_select"
           && pendingEquipAction.defeatedUids?.includes(p.id)
           && p.id !== state.userId
           && eliminated
           && !isIdentityEquipItem(it);
-        if (isNormalStealPulse || isOliverPulse || isBananaPulse || isGreenGivePulse || isBenjaminPulse){
+        if (isNormalStealPulse || isOliverPulse || isBananaPulse || isGreenGivePulse || isBenjaminPulse || isVenomPulse){
           cardEl.classList.add("equip-steal-pulse");
         }
         if (isDavidPulse){
@@ -4893,6 +4960,7 @@
       equipBody.appendChild(row);
     }
     refreshRoomAbilityHint();
+    renderVenomRevealChoicePrompt();
     ensureDavidIdentityZoomVisible();
     if (equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden')){
       renderEquipExpandBody();
@@ -5787,6 +5855,17 @@
     await tryAdvanceTurnAfterCounterChoice(resolvedEntry);
   });
 
+  btnVenomRevealDamage?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const action = pendingEquipAction;
+    if (safeText(action?.type || "") !== "venom_reveal_choice") return;
+    await resolveVenomRevealChoice(action, "damage");
+  });
+
+  btnVenomRevealGive?.addEventListener("click", (e) => {
+    e.stopPropagation();
+  });
+
   equipBody.addEventListener("click", (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
     const selectionAction = captureSelectionRestoreAction();
@@ -5839,6 +5918,47 @@
           restoreDavidAbilitySelection();
         }
       });
+      return;
+    }
+
+    if (pendingEquipAction?.type === "venom_reveal_choice"){
+      const action = { ...pendingEquipAction };
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      if (ownerUid !== state.userId || !sourceKey || !card.classList.contains("equip-steal-pulse")){
+        openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+        setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
+        setZoomPassthrough(false);
+        zoomDismissHandler = async () => {
+          restorePendingEquipSelection(action);
+        };
+        return;
+      }
+      const cardName = safeText(card.dataset.cardName || "この装備");
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `「${cardName}」をわたしますか。`, async () => {
+        zoomDismissHandler = null;
+        const ok = await moveEquipmentCardBetweenPlayers(state.userId, safeText(action.venomUid || ""), sourceKey);
+        if (ok){
+          closeZoom();
+          await resolveVenomRevealChoice(action, "give");
+        } else {
+          restorePendingEquipSelection(action);
+        }
+      }, {
+        fixedLower:true,
+        noCaret:true,
+        dismissOnOutside:true,
+        closeZoomOnNo:false,
+        onNo: () => {
+          zoomDismissHandler = null;
+          restorePendingEquipSelection(action);
+        }
+      });
+      zoomDismissHandler = async () => {
+        restorePendingEquipSelection(action);
+      };
       return;
     }
 
@@ -6666,8 +6786,28 @@
     renderTurnEndButton();
   }
 
+  async function resolveVenomRevealChoice(action, picked = ""){
+    const type = safeText(action?.type || "");
+    const venomUid = safeText(action?.venomUid || "");
+    const targetUid = safeText(action?.targetUid || "");
+    if (type !== "venom_reveal_choice" || !venomUid || !targetUid || !state.roomCode) return;
+    if (safeText(picked || "") === "damage"){
+      await addDamageToPlayer(targetUid, 1);
+    }
+    pendingEquipAction = null;
+    hideVenomRevealChoicePrompt();
+    await setSeatEquipSelectionState(null);
+    await markRoleAbilityUsed("SHA_V1");
+    await setRoleAbilitySelectionState(null);
+    if (safeText(currentTurnPlayerId() || "") === venomUid){
+      await advanceTurnToNextPlayer(venomUid);
+    }
+    renderEquipmentDock();
+    renderTurnEndButton();
+  }
+
   function isEquipSelectionLockActive(){
-    return pendingEquipAction?.type === "oliver_target" || pendingEquipAction?.type === "banana_give" || pendingEquipAction?.type === "benjamin_give";
+    return pendingEquipAction?.type === "oliver_target" || pendingEquipAction?.type === "banana_give" || pendingEquipAction?.type === "benjamin_give" || pendingEquipAction?.type === "venom_reveal_choice";
   }
 
   function captureSelectionRestoreAction(){
@@ -6710,7 +6850,7 @@
   function restorePendingEquipSelection(action = null){
     const next = action || pendingEquipAction;
     const type = safeText(next?.type || "");
-    if (!next || (type !== "oliver_target" && type !== "banana_give" && type !== "benjamin_give")) return;
+    if (!next || (type !== "oliver_target" && type !== "banana_give" && type !== "benjamin_give" && type !== "venom_reveal_choice")) return;
     if (type === "benjamin_give"){
       pendingEquipAction = { type:"benjamin_give", selectedSourceKey:safeText(next.selectedSourceKey || "") };
       const abilityEntry = (activeRoleAbilitySelection?.roleId === "CIT_B2")
@@ -6733,6 +6873,20 @@
       renderTurnEndButton();
       return;
     }
+    if (type === "venom_reveal_choice"){
+      const venomUid = safeText(next.venomUid || "");
+      const targetUid = safeText(next.targetUid || state.userId || "");
+      if (!venomUid || !targetUid) return;
+      pendingEquipAction = { type:"venom_reveal_choice", venomUid, targetUid };
+      const role = ROLE_BY_ID["SHA_V1"];
+      if (role){
+        openIdentityRevealZoom(role, venomUid, { persist:true, showOwnerTag:true, ownerTagDurationMs:1200 });
+      }
+      setZoomPassthrough(true);
+      renderEquipmentDock();
+      renderTurnEndButton();
+      return;
+    }
     const cardObj = next.cardObj || null;
     if (!cardObj) return;
     openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
@@ -6749,14 +6903,14 @@
   function restoreSeatEquipSelection(entry){
     const type = safeText(entry?.type || "");
     const cardObj = entry?.cardObj || null;
-    if ((type !== "banana_give" && type !== "oliver_target" && type !== "benjamin_give")){
+    if ((type !== "banana_give" && type !== "oliver_target" && type !== "benjamin_give" && type !== "venom_reveal_choice")){
       pendingEquipAction = null;
       renderTurnEndButton();
       return;
     }
     restoringSeatEquipSelection = true;
     try {
-      restorePendingEquipSelection({ type, cardObj, selectedSourceKey:safeText(entry?.selectedSourceKey || "") });
+      restorePendingEquipSelection({ type, cardObj, selectedSourceKey:safeText(entry?.selectedSourceKey || ""), venomUid:safeText(entry?.venomUid || ""), targetUid:safeText(entry?.targetUid || "") });
     } finally {
       restoringSeatEquipSelection = false;
     }
