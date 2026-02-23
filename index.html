@@ -3764,10 +3764,10 @@
       }
       pendingEquipAction = { type:"benjamin_give" };
       setSeatEquipSelectionState({ type:"benjamin_give" }).catch(() => {});
-      setGreenDockMeta({ title:"自分のパルス中の装備カードを選んでください。", subtitle:"" });
+      setGreenDockMeta({ title:"自分のパルス中の装備カードを選んでください。", subtitle:"装備を選ぶと同じroomの生存プレイヤー一覧が表示されます。" });
       if (greenShareList) greenShareList.innerHTML = "";
       greenShareActions?.classList.add("hidden");
-      greenShareDock?.classList.add("hidden");
+      greenShareDock?.classList.remove("hidden");
       cardPlayerSelectActive = true;
       updateCardInteractivity();
       renderEquipmentDock();
@@ -5876,40 +5876,32 @@
       setSeatEquipSelectionState({ type:"benjamin_give", selectedSourceKey:sourceKey }).catch(() => {});
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
-      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `「${cardName}」を誰かに渡しますか。`, async () => {
-        const actorRoom = markerRoomId(markerCache?.[state.userId]);
-        openTargetSelectDock({
-          title: `「${cardName}」を誰かに渡しますか。`,
-          includeSelf: false,
-          onlyAlive: true,
-          overEquipExpand: !equipExpandBackdrop?.classList.contains('hidden'),
-          filterPlayer: (p) => markerRoomId(markerCache?.[p.id]) === actorRoom,
-          lockEndTurnUntilResolved: true,
-          onSelect: async (uid) => {
-            const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
-            pendingEquipAction = null;
-            await setSeatEquipSelectionState(null);
-            closeEquipExpandIfOpen();
-            greenShareDock?.classList.add("hidden");
-            const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
-            if (!ok){
-              await setRoleAbilitySelectionState(null);
-              closeZoom();
-              renderEquipmentDock();
-              return;
-            }
-            await markRoleAbilityUsed("CIT_B2");
+      const actorRoom = markerRoomId(markerCache?.[state.userId]);
+      openTargetSelectDock({
+        title: `「${cardName}」を誰かに渡しますか。`,
+        includeSelf: false,
+        onlyAlive: true,
+        overEquipExpand: !equipExpandBackdrop?.classList.contains('hidden'),
+        filterPlayer: (p) => markerRoomId(markerCache?.[p.id]) === actorRoom,
+        lockEndTurnUntilResolved: true,
+        onSelect: async (uid) => {
+          const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
+          pendingEquipAction = null;
+          await setSeatEquipSelectionState(null);
+          closeEquipExpandIfOpen();
+          greenShareDock?.classList.add("hidden");
+          const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
+          if (!ok){
             await setRoleAbilitySelectionState(null);
             closeZoom();
             renderEquipmentDock();
-            await doEndTurn();
+            return;
           }
-        });
-      }, {
-        fixedLower:true,
-        closeZoomOnNo:false,
-        onNo: () => {
-          restorePendingEquipSelection(action);
+          await markRoleAbilityUsed("CIT_B2");
+          await setRoleAbilitySelectionState(null);
+          closeZoom();
+          renderEquipmentDock();
+          await doEndTurn();
         }
       });
       zoomDismissHandler = async () => {
@@ -6673,14 +6665,21 @@
     if (!next || (type !== "oliver_target" && type !== "banana_give" && type !== "benjamin_give")) return;
     if (type === "benjamin_give"){
       pendingEquipAction = { type:"benjamin_give", selectedSourceKey:safeText(next.selectedSourceKey || "") };
-      if (activeRoleAbilitySelection?.roleId === "CIT_B2"){
-        const role = ROLE_BY_ID["CIT_B2"];
-        if (role) openIdentityRevealZoom(role, safeText(activeRoleAbilitySelection?.actorUid || state.userId), {
+      const abilityEntry = (activeRoleAbilitySelection?.roleId === "CIT_B2")
+        ? activeRoleAbilitySelection
+        : (safeText(state.room?.roleAbilitySelection?.roleId || "") === "CIT_B2" ? state.room.roleAbilitySelection : null);
+      const role = ROLE_BY_ID["CIT_B2"];
+      if (role){
+        openIdentityRevealZoom(role, safeText(abilityEntry?.actorUid || state.userId), {
           persist:true,
-          showOwnerTag: !!activeRoleAbilitySelection?.justRevealed,
+          showOwnerTag: !!abilityEntry?.justRevealed,
           ownerTagDurationMs: 1200
         });
       }
+      setGreenDockMeta({ title:"自分のパルス中の装備カードを選んでください。", subtitle:"装備を選ぶと同じroomの生存プレイヤー一覧が表示されます。" });
+      if (greenShareList) greenShareList.innerHTML = "";
+      greenShareActions?.classList.add("hidden");
+      greenShareDock?.classList.remove("hidden");
       setZoomPassthrough(true);
       renderEquipmentDock();
       renderTurnEndButton();
