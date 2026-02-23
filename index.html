@@ -8006,7 +8006,7 @@
       if (aliveOrder.length === 0) return cur;
 
       const counterMap = cur.counterPromptState || {};
-      const hasBlockingCounterPrompt = Object.values(counterMap).some((entry) => !!entry && !!entry.mustChoose);
+      const hasBlockingCounterPrompt = Object.values(counterMap).some((entry) => !!entry && !!entry.advanceTurnOnResolve);
       if (hasBlockingCounterPrompt) return cur;
 
       const curTurn = cur.turn || {};
