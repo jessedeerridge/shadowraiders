@@ -95,7 +95,7 @@
   .attack-result-pop-row .chip16{flex:0 0 auto;}
 
   #attackResultPop{
-    min-width:unset;
+    min-width:min(92vw, 280px);
     width:fit-content;
     max-width:min(92vw, 320px);
   }
@@ -3683,6 +3683,7 @@
         theme:"white",
         title:"応急手当：対象プレイヤーを選択してください。",
         includeSelf:true,
+        instantCloseOnSelect:true,
         resolver: async (uid) => {
           await waitMs(1000);
           await setDamageToPlayer(uid, 7);
@@ -3761,6 +3762,20 @@
       await setCardTargetSessionState(null);
       return;
     }
+    if (spec.instantCloseOnSelect){
+      try {
+        await spec.resolver(targetUid);
+      } finally {
+        pendingCardTargetSelection = null;
+        cardPlayerSelectActive = false;
+        updateCardInteractivity();
+        renderTurnEndButton();
+        await setCardTargetSessionState(null);
+        greenShareDock?.classList.add("hidden");
+        closeZoom();
+      }
+      return;
+    }
     openZoomFromDeckCard(card, spec.theme, { closeOnBackdrop:false, showCloseButton:false });
     setGreenDockMeta({ title:`${safeText(card?.name || "") }：効果を処理中です。`, subtitle:"" });
     greenShareActions?.classList.add("hidden");
@@ -3795,6 +3810,13 @@
       onlyAlive: !!spec.onlyAlive,
       nameSuffixForUid: spec.nameSuffixForUid,
       onSelect: async (uid, player) => {
+        if (spec.instantCloseOnSelect){
+          greenShareDock?.classList.add("hidden");
+          cardPlayerSelectActive = false;
+          updateCardInteractivity();
+          renderTurnEndButton();
+          closeZoom();
+        }
         await setCardTargetSessionState({
           phase:"resolving",
           card: cardObj,
@@ -6039,7 +6061,8 @@
 
 
   async function runRosaryAutoLootFlow(defeatedUids = []){
-    const targets = [...new Set((defeatedUids || []).map(uid => safeText(uid)).filter(uid => uid && uid !== state.userId))];
+    const targets = [...new Set((defeatedUids || []).map(uid => safeText(uid)).filter(uid => uid && uid !== state.userId))]
+      .filter(uid => listEquipForUid(uid).some(it => !isIdentityEquipItem(it)));
     if (!targets.length) return;
 
     await waitUntilZoomClosed({ maxWaitMs:16000, pollMs:80 });
