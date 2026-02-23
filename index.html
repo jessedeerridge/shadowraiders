@@ -5964,7 +5964,7 @@
         setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
         setZoomPassthrough(false);
         zoomDismissHandler = async () => {
-          renderVenomChoicePrompt();
+          closeZoom();
         };
         return;
       }
@@ -5972,7 +5972,7 @@
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
       setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
       zoomDismissHandler = async () => {
-        renderVenomChoicePrompt();
+        closeZoom();
       };
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `「${cardName}」を渡しますか。`, async () => {
         const entry = venomChoiceEntry();
@@ -5996,7 +5996,7 @@
         fixedLower:true,
         closeZoomOnNo:false,
         onNo: () => {
-          renderVenomChoicePrompt();
+          closeZoom();
         }
       });
       return;
