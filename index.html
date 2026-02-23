@@ -1122,7 +1122,6 @@
 .mark-rect{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
 .mark-rect.guardian-shield{stroke:#d4af37;stroke-width:2;}
 .mark-rect.gordon-barrier{stroke:#dc2626;stroke-width:2;}
-.mark-rect.gordon-barrier-outline{fill:none;stroke:#dc2626;stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:none;}
 .mark-text{font-weight:1000;font-size:10px;dominant-baseline:middle;text-anchor:middle;user-select:none;pointer-events:none;}
 .mark-pulse-target{
   transform-box:fill-box;
@@ -10081,18 +10080,6 @@
   if (uid && hasGordonBarrier(uid)) rect.classList.add("gordon-barrier");
   rect.setAttribute("fill", String(color || "#ddd"));
 
-  const gordonOutline = (uid && hasGordonBarrier(uid))
-    ? document.createElementNS("http://www.w3.org/2000/svg","rect")
-    : null;
-  if (gordonOutline){
-    gordonOutline.setAttribute("x", String(x - size/2 - 1.5));
-    gordonOutline.setAttribute("y", String(y - size/2 - 1.5));
-    gordonOutline.setAttribute("width", String(size + 3));
-    gordonOutline.setAttribute("height", String(size + 3));
-    gordonOutline.setAttribute("rx", String(rx + 1));
-    gordonOutline.setAttribute("class", "mark-rect gordon-barrier-outline");
-  }
-
   const txt = document.createElementNS("http://www.w3.org/2000/svg","text");
   txt.setAttribute("x", String(x));
   txt.setAttribute("y", String(y+0.5));
@@ -10101,7 +10088,6 @@
   txt.textContent = String(initial || "").slice(0,1);
 
   g.appendChild(rect);
-  if (gordonOutline) g.appendChild(gordonOutline);
   g.appendChild(txt);
   markerLayer.appendChild(g);
 }
