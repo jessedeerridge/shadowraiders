@@ -2296,6 +2296,9 @@
   let pendingEquipAction = null;
   let pendingCardTargetSelection = null;
   let danielAutoRevealTimer = null;
+  let bruceAutoRevealTimer = null;
+  let carolTurnHealTimer = null;
+  let carolTurnHealKey = "";
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
   let zoomDismissHandler = null;
@@ -2908,6 +2911,26 @@
     if (!vampireHiddenAttackSuccess) return;
     if (!isMyTurn()) return;
     scheduleVampireHeal();
+  }
+
+  function clearCarolTurnHealTimer(){
+    if (!carolTurnHealTimer) return;
+    clearTimeout(carolTurnHealTimer);
+    carolTurnHealTimer = null;
+  }
+
+  function scheduleCarolTurnStartHeal(){
+    clearCarolTurnHealTimer();
+    const key = turnCycleKey();
+    if (!key || key === carolTurnHealKey) return;
+    if (!isMyTurn() || !isMyRole("CIT_C2") || !isMyIdentityRevealed()) return;
+    carolTurnHealKey = key;
+    carolTurnHealTimer = setTimeout(async () => {
+      carolTurnHealTimer = null;
+      if (!isMyTurn() || !isMyRole("CIT_C2") || !isMyIdentityRevealed()) return;
+      await emitRoleFlashEvent("CIT_C2", "carol_turn_heal", 1200);
+      await healDamageToPlayer(state.userId, 2);
+    }, 1000);
   }
 
   async function emitRoleFlashEvent(roleId, reason = "", durationMs = 1200){
@@ -4712,6 +4735,10 @@
       return next;
     });
     maybeResolveVampireHiddenHealOnReveal();
+    if (revealedNow && safeText(my.roleId) === "CIT_C2"){
+      await healDamageToPlayer(state.userId, 2);
+      scheduleCarolTurnStartHeal();
+    }
     if (revealedNow && safeText(my.roleId) === "CIT_A3" && useAgathaAbilityOnReveal){
       if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
       await triggerAgathaRevealAbility();
@@ -5786,6 +5813,8 @@
       cachePendingAttackResolution(null);
     }
     showTurnHint("");
+    clearCarolTurnHealTimer();
+    scheduleCarolTurnStartHeal();
     if (isMyTurn() && isMyIdentityRevealed() && isMyRole("SHA_U2") && !isRoleAbilityUsed("SHA_U2")){
       const check = uranusAbilityAvailability();
       if (check.ok){
@@ -6795,6 +6824,20 @@
       const justEliminatedUids = latestPlayers
         .map(p => p.id)
         .filter(uid => !!eliminatedNow[uid] && !previousEliminatedMap[uid]);
+
+      if (myRoleId === "CIT_B3" && attackDefeatedUids.length && !isMyIdentityRevealed() && !bruceAutoRevealTimer){
+        const hadHiddenRevealTarget = attackDefeatedUids.some(uid => justEliminatedUids.includes(uid) && !isIdentityRevealedFor(uid));
+        const revealDelayMs = hadHiddenRevealTarget ? 2200 : 0;
+        bruceAutoRevealTimer = setTimeout(async () => {
+          bruceAutoRevealTimer = null;
+          if (isMyIdentityRevealed()) return;
+          if (!isMyRole("CIT_B3")) return;
+          await waitUntilZoomClosed();
+          await revealMyIdentityToEquipment({ revealedBy:"bruce_ability" });
+          const role = myRoleInfo();
+          if (role) openIdentityRevealZoom(role, state.userId);
+        }, revealDelayMs);
+      }
 
       if (justEliminatedUids.includes(state.userId) && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3")){
         setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
@@ -9519,9 +9562,9 @@
     { id:"CIT_A3", name:"アガサ",    en:"AGATHA",   initial:"A", faction:"シチズン", hp:8,  win:"自分の手番でゲーム終了", effect:"完全犯罪：正体公開時にダイス2個を同時に振り、出目エリアのPL全員に3ダメージ（1回）" },
     { id:"CIT_B1", name:"バイロン",  en:"BYRON",    initial:"B", faction:"シチズン", hp:10, win:"装備カードを5枚以上所持", effect:"念力の懐中時計：2以上の攻撃ダメージ時、代わりに装備を1つ奪う" },
     { id:"CIT_B2", name:"ベンジャミン", en:"BENJAMIN", initial:"B", faction:"シチズン", hp:10, win:"他PLが装備を5つ以上所持", effect:"太鼓持ち：手番最後に同じエリアのPLへ装備を1つ渡せる" },
-    { id:"CIT_B3", name:"ブルース",  en:"BRUCE",    initial:"B", faction:"シチズン", hp:10, win:"攻撃でHP12以上のPLを脱落させる、または終了時にマス9にいる", effect:"国士無双：攻撃でHP11以下のPLを脱落させた時、自分の正体を公開" },
+    { id:"CIT_B3", name:"ブルース",  en:"BRUCE",    initial:"B", faction:"シチズン", hp:10, win:"攻撃でHP12以上のPLを脱落させる、または終了時にマス9にいる", effect:"国士無双：攻撃でPLを脱落させた時、自分の正体を公開" },
     { id:"CIT_C1", name:"クレイグ",  en:"CRAIG",    initial:"C", faction:"シチズン", hp:11, win:"2人脱落後に他PLを攻撃して脱落させる", effect:"死の饗宴：攻撃後、自分に2ダメージ与え再攻撃可" },
-    { id:"CIT_C2", name:"キャロル",  en:"CAROL",    initial:"C", faction:"シチズン", hp:11, win:"最初に脱落する、または自分ともう1人だけ生存", effect:"聖痕：手番初めに2ダメージ回復" },
+    { id:"CIT_C2", name:"キャロル",  en:"CAROL",    initial:"C", faction:"シチズン", hp:11, win:"最初に脱落する、または自分ともう1人だけ生存", effect:"聖痕：正体公開後に2回復。公開済みなら手番初めに2回復" },
     { id:"CIT_C3", name:"クレア",    en:"CLAIRE",   initial:"C", faction:"シチズン", hp:11, win:"ゲーム終了時、自分のダメージが6～8", effect:"キャスリング：手番初めに自分と他PLのHPを入れ替える（1回）" },
     { id:"CIT_D1", name:"ダニエル",  en:"DANIEL",   initial:"D", faction:"シチズン", hp:13, win:"最初に脱落する、またはシャドウ全員脱落かつ生存", effect:"絶叫：最初に他PLが脱落した時、正体カードを公開" },
     { id:"CIT_D2", name:"デーヴィッド", en:"DAVID",  initial:"D", faction:"シチズン", hp:13, win:"「いにしえの聖杯」「神秘のコンパス」「幸運のブローチ」「銀のロザリオ」のうち3種を所持", effect:"グレイブディガー：手番初めに脱落者の装備カードから任意1枚獲得" },
