@@ -4615,9 +4615,11 @@
       d6: 1 + Math.floor(Math.random() * 6),
       d4: 1 + Math.floor(Math.random() * 4)
     };
-    const revealCloseAt = Date.now() + 1200;
-    showAgathaRevealCardOverlay(state.userId, { closeAt: revealCloseAt });
-    await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4, closeAt: revealCloseAt });
+    const eventAt = Date.now();
+    const revealDuration = 1200;
+    const revealCloseAt = eventAt + revealDuration;
+    showAgathaRevealCardOverlay(state.userId, { eventAt, closeAt: revealCloseAt, duration: revealDuration });
+    await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4, at:eventAt, closeAt: revealCloseAt, duration: revealDuration });
     await waitMs(1000);
     const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
     await waitMs(1200);
@@ -6689,7 +6691,7 @@
         showAgathaRevealCardOverlay(safeText(ev.uid || ""), {
           eventAt: Number(ev.at || 0),
           closeAt: Number(ev.closeAt || 0),
-          duration: 1200
+          duration: Number(ev.duration || 1200)
         });
         runCornerD6D4Roll({
           d6: Number(ev.d6 || 1),
@@ -7363,6 +7365,8 @@
   let diceRollTimers = [];
   let agathaRevealHideTimer = null;
   let agathaRevealVisibleUntil = 0;
+  let agathaRevealCurrentKey = "";
+  let agathaRevealCardRoleId = "";
   let pendingMoveChoice = null;
 
   function clearDiceRollTimers(){
@@ -7376,10 +7380,20 @@
       agathaRevealHideTimer = null;
     }
     agathaRevealVisibleUntil = 0;
+    agathaRevealCurrentKey = "";
     if (agathaRevealOverlay){
-      agathaRevealOverlay.innerHTML = '';
       agathaRevealOverlay.classList.add('hidden');
     }
+  }
+
+  function ensureAgathaRevealCard(role){
+    if (!agathaRevealOverlay || !role) return;
+    if (agathaRevealCardRoleId === role.id && agathaRevealOverlay.firstElementChild){
+      return;
+    }
+    agathaRevealOverlay.innerHTML = '';
+    agathaRevealOverlay.appendChild(createIdentityCard(role));
+    agathaRevealCardRoleId = role.id;
   }
 
   function showAgathaRevealCardOverlay(uid, options = {}){
@@ -7394,18 +7408,18 @@
     const closeAt = requestedCloseAt > 0
       ? requestedCloseAt
       : (eventAt > 0 ? (eventAt + duration) : (Date.now() + duration));
-    const shouldRefreshCard = closeAt > agathaRevealVisibleUntil || agathaRevealOverlay.classList.contains('hidden');
+    const eventKey = `${safeText(uid)}:${Math.trunc(closeAt)}`;
+
+    ensureAgathaRevealCard(role);
+    agathaRevealOverlay.classList.remove('hidden');
 
     agathaRevealVisibleUntil = closeAt;
-    if (shouldRefreshCard){
-      agathaRevealOverlay.innerHTML = '';
-      agathaRevealOverlay.appendChild(createIdentityCard(role));
-      agathaRevealOverlay.classList.remove('hidden');
-    }
+    agathaRevealCurrentKey = eventKey;
 
     if (agathaRevealHideTimer) clearTimeout(agathaRevealHideTimer);
     const remainMs = Math.max(0, closeAt - Date.now());
     agathaRevealHideTimer = setTimeout(() => {
+      if (agathaRevealCurrentKey !== eventKey) return;
       hideAgathaRevealCardOverlay();
     }, remainMs);
   }
@@ -8119,9 +8133,10 @@
 
   async function emitCardDiceEvent(payload = {}){
     if (!state.roomCode) return;
+    const at = Number(payload?.at || 0) > 0 ? Number(payload.at) : Date.now();
     await set(ref(db, `rooms/${state.roomCode}/diceEvents/card`), {
       ...payload,
-      at: Date.now()
+      at
     });
   }
 
