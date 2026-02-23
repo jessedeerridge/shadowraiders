@@ -2785,6 +2785,12 @@
     return true;
   }
 
+  function isCounterAbilityBlockedByGuardianShield(entry){
+    if (!entry) return false;
+    if (safeText(entry.roleId || "") !== "SHA_W3") return false;
+    return hasGuardianAngelShield(entry.attackerUid);
+  }
+
   async function clearCounterPromptForMe(expectedAt = null){
     const uid = safeText(state.userId || "");
     if (!uid || !state.roomCode) return;
@@ -2826,9 +2832,13 @@
 
     const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
     const ability = roleAbilityName(role || {});
+    const blockedByGuardianShield = isCounterAbilityBlockedByGuardianShield(entry);
     counterAbilityMsg.textContent = "";
     counterAbilityMsg.classList.add("hidden");
     btnCounterAbilitySkip.textContent = "使わない";
+    btnCounterAbilityUse.disabled = blockedByGuardianShield;
+    btnCounterAbilityUse.classList.toggle("pop-disabled", blockedByGuardianShield);
+    btnCounterAbilityUse.classList.toggle("pop-dark", !blockedByGuardianShield);
 
     const updateLabel = () => {
       if (entry.mustChoose){
@@ -5596,6 +5606,7 @@
     e.stopPropagation();
     const entry = counterPromptEntryForMe();
     if (!entry) return;
+    if (isCounterAbilityBlockedByGuardianShield(entry)) return;
     const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
     if (!role) return;
 
