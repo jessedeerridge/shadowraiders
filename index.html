@@ -2303,6 +2303,7 @@
   let suppressOutsidePopCloseUntil = 0;
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
+  let pendingAttackAbilityPrompt = null;
   let pendingAttackResolution = null;
   let attackFlowUiLockActive = false;
   let suppressEndTurnButton = false;
@@ -4016,7 +4017,8 @@
     const cardEl = createIdentityCard(role);
     wrap.appendChild(cardEl);
 
-    if (revealerUid && revealerUid !== state.userId){
+    const showOwnerTag = options.showOwnerTag !== false;
+    if (showOwnerTag && revealerUid && revealerUid !== state.userId){
       const owner = playerById(revealerUid);
       if (owner){
         const chip = buildChipFor(revealerUid);
@@ -4033,10 +4035,11 @@
 
     openZoomContent(wrap, { closeOnBackdrop:false, showCloseButton:false });
     if (options.persist) return;
+    const durationMs = Math.max(200, Number(options.durationMs || 2000));
     setTimeout(() => {
       if (activeRoleAbilitySelection) return;
       if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
-    }, 2000);
+    }, durationMs);
   }
   function openMultiIdentityRevealZoom(entries = []){
     const targets = (entries || []).filter(v => v?.role && v?.uid);
@@ -5101,17 +5104,30 @@
 
   btnAttackResultKeep?.addEventListener("click", async (e) => {
     e.stopPropagation();
-    await finalizePendingAttackResolution(false);
+    const prompt = pendingAttackAbilityPrompt;
+    if (!prompt){
+      await finalizePendingAttackResolution(false);
+      return;
+    }
+    showRoomActionPopAt(window.innerWidth / 2, window.innerHeight / 2, "", async () => {
+      await triggerAttackAbilityIdentityRevealZoom();
+      await finalizePendingAttackResolution(false);
+    }, {
+      fixedLower: true,
+      messageHtml: prompt.detailMessageHtml
+    });
   });
 
   btnAttackResultEnd?.addEventListener("click", async (e) => {
     e.stopPropagation();
-    const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
-    if (openedEmma){
-      await finalizePendingAttackResolution(false);
-      return;
-    }
-    await finalizePendingAttackResolution(true);
+    showRoomActionPopAt(window.innerWidth / 2, window.innerHeight / 2, "本当に終了しますか。", async () => {
+      const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
+      if (openedEmma){
+        await finalizePendingAttackResolution(false);
+        return;
+      }
+      await finalizePendingAttackResolution(true);
+    }, { fixedLower:true });
   });
 
   btnIdentityPromptNo?.addEventListener("click", async (e) => {
@@ -6098,6 +6114,53 @@
 
   function hideAttackResultPop(){
     attackResultPop?.classList.add("hidden");
+    pendingAttackAbilityPrompt = null;
+  }
+
+  function buildAttackAbilityPrompt(rows = [], options = {}){
+    const role = myRoleInfo();
+    const roleId = safeText(role?.id || "");
+    if (!roleId) return null;
+    const maxDamage = (rows || []).reduce((mx, item) => Math.max(mx, Math.max(0, Number(item?.damage || 0))), 0);
+    const attackFailed = !options.attackSucceeded;
+    const abilityName = roleAbilityName(role);
+    const detailsByRoleId = {
+      "CIT_C1": `<span class="ability-pill">${abilityName}</span>自分に2ダメージ与えて、もう一度攻撃しますか。`,
+      "CIT_B1": `<span class="ability-pill">${abilityName}</span>ダメージの代わりに相手の装備カードを獲得しますか。`,
+      "RAI_F3": `<span class="ability-pill">${abilityName}</span>正体を公開している相手へのダメージが+2になります。`,
+      "RAI_G2": `<span class="ability-pill">${abilityName}</span>エクスカリバーを所有している時、攻撃が成功するまで振り直す。`,
+      "SHA_U3": `<span class="ability-pill">${abilityName}</span>もう一度攻撃を行いますか。`
+    };
+
+    const enabled = (
+      roleId === "CIT_C1"
+      || (roleId === "CIT_B1" && maxDamage >= 2)
+      || (roleId === "RAI_F3" && !isMyIdentityRevealed())
+      || (roleId === "RAI_G2" && hasMyEquipmentByName("エクスカリバー") && attackFailed)
+      || roleId === "SHA_U3"
+    );
+    if (!enabled) return null;
+
+    return {
+      roleId,
+      abilityName,
+      detailMessageHtml: detailsByRoleId[roleId] || `<span class="ability-pill">${abilityName}</span>を使いますか。`
+    };
+  }
+
+  async function triggerAttackAbilityIdentityRevealZoom(){
+    const role = myRoleInfo();
+    if (!role || !state.userId) return;
+    const firstReveal = !isMyIdentityRevealed();
+    if (firstReveal){
+      await revealMyIdentityToEquipment();
+    }
+    await emitCardDiceEvent({
+      kind: "role_reveal_zoom",
+      uid: state.userId,
+      showOwnerTag: firstReveal,
+      durationMs: 1500
+    });
   }
 
   function cachePendingAttackResolution(pending){
@@ -6155,6 +6218,7 @@
     }
     pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey };
     cachePendingAttackResolution(pendingAttackResolution);
+    pendingAttackAbilityPrompt = null;
     showAttackResultPop(rows);
     attackTurnEndChoicePending = true;
     attackFlowUiLockActive = true;
@@ -6189,6 +6253,7 @@
       return false;
     }
     pendingAttackResolution = { rows, applied:false, turnKey: pendingTurnKey };
+    pendingAttackAbilityPrompt = null;
     showAttackResultPop(rows);
     attackTurnEndChoicePending = true;
     attackFlowUiLockActive = true;
@@ -6240,7 +6305,11 @@
       btnAttackResultEnd.textContent = hasSealWisdomBonusThisTurn() ? "OKおわる(+1)" : "OKおわる";
     }
     if (btnAttackResultKeep){
-      btnAttackResultKeep.textContent = "OKおわらない";
+      if (pendingAttackAbilityPrompt?.abilityName){
+        btnAttackResultKeep.innerHTML = `OK<span class="ability-pill">${pendingAttackAbilityPrompt.abilityName}</span>`;
+      } else {
+        btnAttackResultKeep.textContent = "OKおわらない";
+      }
     }
     attackResultPop.classList.remove("hidden");
   }
@@ -6699,6 +6768,15 @@
         runCornerD6Roll(Number(ev.d6 || 1));
       } else if (kind === "role_emma"){
         runCornerD4Roll(Number(ev.d4 || 1));
+      } else if (kind === "role_reveal_zoom"){
+        const revealerUid = safeText(ev.uid || "");
+        const roleId = safeText(state.hands?.[revealerUid]?.roleId || "");
+        const role = ROLE_BY_ID[roleId] || null;
+        if (!role) return;
+        openIdentityRevealZoom(role, revealerUid, {
+          showOwnerTag: !!ev.showOwnerTag,
+          durationMs: Number(ev.durationMs || 1500)
+        });
       }
     });
   }
@@ -8540,6 +8618,7 @@
             ? applyIncomingDamageModifiers(uid, damage, { source:"attack" })
             : 0
         }));
+        pendingAttackAbilityPrompt = buildAttackAbilityPrompt(resolvedRows, { attackSucceeded });
         const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
         const pendingTurnKey = turnCycleKey();
         pendingAttackResolution = { rows: resolvedRows, applied:false, turnKey: pendingTurnKey };
