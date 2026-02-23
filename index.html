@@ -2484,6 +2484,7 @@
     "RAI_E3": { usageKey:"emma", abilityName:"癒しの光", prompt:"回復させるプレイヤーを選んでください。", perTurn:true },
     "RAI_G3": { usageKey:"godwin", abilityName:"蘇生装置TYPE-G", prompt:"復活させるプレイヤーを選んでください。" },
     "CIT_C3": { usageKey:"claire", abilityName:"キャスリングTYPE-G", prompt:"ダメージを入れ替えるプレイヤーを選んでください。" },
+    "CIT_B2": { usageKey:"benjamin", abilityName:"ドラッグ移送", prompt:"装備を渡す相手を選んでください。", endTurnAfterResolve:true },
     "SHA_U2": { usageKey:"uranus", abilityName:"メテオストライク", prompt:"ダメージを与えるプレイヤーを選んでください。", perTurn:true },
   };
 
@@ -3603,6 +3604,7 @@
     if (roleId === "RAI_E3") return alive.filter(p => p.id !== actorUid && markerRoomId(markerCache?.[p.id]) === actorRoom);
     if (roleId === "RAI_G3") return eliminated.filter(p => p.id !== actorUid);
     if (roleId === "SHA_U2") return alive.filter(p => p.id !== actorUid && [6,7].includes(markerRoomId(markerCache?.[p.id])));
+    if (roleId === "CIT_B2") return benjaminCandidates(actorUid);
     return alive.filter(p => p.id !== actorUid);
   }
 
@@ -3639,6 +3641,37 @@
     if (!isMyIdentityRevealed()) return { ok:false, message:"今は使えません。" };
     if (isRoleAbilityUsed("SHA_U2")) return { ok:false, message:"今は使えません。" };
     if (!canStartRoleSelection("SHA_U2", state.userId)) return { ok:false, message:"今は使えません。" };
+    return { ok:true };
+  }
+
+  function benjaminCandidates(actorUid = state.userId){
+    const uid = safeText(actorUid || "");
+    if (!uid) return [];
+    const actorRoom = markerRoomId(markerCache?.[uid]);
+    if (!actorRoom) return [];
+    return latestPlayers
+      .filter(p => p.id !== uid)
+      .filter(p => !isPlayerEliminated(p.id))
+      .filter(p => markerRoomId(markerCache?.[p.id]) === actorRoom);
+  }
+
+  function benjaminAbilityAvailability(){
+    if (!isMyRole("CIT_B2")) return { ok:false, message:"今は使えません。" };
+    if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
+    if (!isMyIdentityRevealed()) return { ok:false, message:"今は使えません。" };
+    if (!turnState()?.moveDone) return { ok:false, message:"今は使えません。" };
+    if (isRoleAbilityUsed("CIT_B2")) return { ok:false, message:"今は使えません。" };
+    if (!hasAnyEquipment(state.userId)) return { ok:false, message:"今は使えません。" };
+    if (benjaminCandidates(state.userId).length === 0) return { ok:false, message:"今は使えません。" };
+    return { ok:true };
+  }
+
+  function benjaminRevealAvailability(){
+    if (!isMyRole("CIT_B2")) return { ok:false, message:"今は使えません。" };
+    if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
+    if (!turnState()?.moveDone) return { ok:false, message:"今は使えません。" };
+    if (!hasAnyEquipment(state.userId)) return { ok:false, message:"今は使えません。" };
+    if (benjaminCandidates(state.userId).length === 0) return { ok:false, message:"今は使えません。" };
     return { ok:true };
   }
 
@@ -3695,7 +3728,7 @@
 
     await markRoleAbilityUsed(roleId);
     await setRoleAbilitySelectionState(null);
-    if (roleId === "RAI_E3" && !!entry?.endTurnAfterResolve){
+    if (!!entry?.endTurnAfterResolve){
       await doEndTurn();
     }
   }
@@ -3712,10 +3745,33 @@
       greenShareDock?.classList.add("hidden");
       return;
     }
-    openIdentityRevealZoom(role, actorUid, { persist:true });
+    openIdentityRevealZoom(role, actorUid, {
+      persist:true,
+      showOwnerTag: !!entry?.justRevealed,
+      ownerTagDurationMs: 1200
+    });
     setZoomPassthrough(true);
     if (!isActor){
       greenShareDock?.classList.add("hidden");
+      return;
+    }
+    if (roleId === "CIT_B2"){
+      const check = benjaminAbilityAvailability();
+      if (!check.ok){
+        setRoleAbilitySelectionState(null).catch(() => {});
+        showRevealPopAt(null, { mode:"notice", message:check.message || "今は使えません。" });
+        return;
+      }
+      pendingEquipAction = { type:"benjamin_give" };
+      setSeatEquipSelectionState({ type:"benjamin_give" }).catch(() => {});
+      setGreenDockMeta({ title:"自分のパルス中の装備カードを選んでください。", subtitle:"" });
+      if (greenShareList) greenShareList.innerHTML = "";
+      greenShareActions?.classList.add("hidden");
+      greenShareDock?.classList.add("hidden");
+      cardPlayerSelectActive = true;
+      updateCardInteractivity();
+      renderEquipmentDock();
+      renderTurnEndButton();
       return;
     }
     const candidates = roleSelectionTargetPlayers(entry);
@@ -3856,13 +3912,14 @@
     greenShareList.appendChild(selected);
   }
 
-  function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onlyAlive=false, onSelect=null, nameSuffixForUid=null, lockEndTurnUntilResolved=false, overEquipExpand=false } = {}){
+  function openTargetSelectDock({ title="対象プレイヤーを選択", includeSelf=false, onlyAlive=false, onSelect=null, nameSuffixForUid=null, lockEndTurnUntilResolved=false, overEquipExpand=false, filterPlayer=null } = {}){
     if (!greenShareDock || !greenShareList) return;
     const mySeat = currentMySeatIndex();
     const players = latestPlayers
       .filter(p => includeSelf || (p.id !== state.userId && Number(p.seatIndex || 0) !== mySeat))
       .filter(p => !isPlayerEliminated(p.id))
       .filter(p => !onlyAlive || !isPlayerEliminated(p.id))
+      .filter(p => (typeof filterPlayer === "function") ? !!filterPlayer(p) : true)
       .sort((a,b) => Number(a.seatIndex||999)-Number(b.seatIndex||999));
     if (players.length === 0){
       cardPlayerSelectActive = false;
@@ -4404,7 +4461,8 @@
     const cardEl = createIdentityCard(role);
     wrap.appendChild(cardEl);
 
-    if (revealerUid && revealerUid !== state.userId){
+    const showOwnerTag = (options.showOwnerTag !== false);
+    if (showOwnerTag && revealerUid && revealerUid !== state.userId){
       const owner = playerById(revealerUid);
       if (owner){
         const chip = buildChipFor(revealerUid);
@@ -4415,7 +4473,10 @@
         label.appendChild(chip);
         label.appendChild(name);
         wrap.appendChild(label);
-        setTimeout(() => { label.remove(); }, 3000);
+        const ownerTagDurationMs = Math.max(0, Number(options.ownerTagDurationMs || 1200));
+        if (ownerTagDurationMs > 0){
+          setTimeout(() => { label.remove(); }, ownerTagDurationMs);
+        }
       }
     }
 
@@ -4579,7 +4640,12 @@
           identityRevealSeenByUid[uid] = at;
           const rid = safeText(row?.identity?.roleId || "");
           const role = ROLE_BY_ID[rid];
-          if (role) openIdentityRevealZoom(role, uid);
+          if (role){
+            openIdentityRevealZoom(role, uid, {
+              ownerTagDurationMs: 1200,
+              showOwnerTag: true
+            });
+          }
         }
       }
       equipCache = next;
@@ -4797,12 +4863,13 @@
         const isOliverPulse = pendingEquipAction?.type === "oliver_target" && p.id !== state.userId && !eliminated && !isIdentityEquipItem(it);
         const isBananaPulse = pendingEquipAction?.type === "banana_give" && p.id === state.userId && !isIdentityEquipItem(it);
         const isGreenGivePulse = pendingEquipAction?.type === "green_give" && p.id === state.userId && !isIdentityEquipItem(it);
+        const isBenjaminPulse = pendingEquipAction?.type === "benjamin_give" && p.id === state.userId && !isIdentityEquipItem(it);
         const isDavidPulse = pendingEquipAction?.type === "david_select"
           && pendingEquipAction.defeatedUids?.includes(p.id)
           && p.id !== state.userId
           && eliminated
           && !isIdentityEquipItem(it);
-        if (isNormalStealPulse || isOliverPulse || isBananaPulse || isGreenGivePulse){
+        if (isNormalStealPulse || isOliverPulse || isBananaPulse || isGreenGivePulse || isBenjaminPulse){
           cardEl.classList.add("equip-steal-pulse");
         }
         if (isDavidPulse){
@@ -5179,6 +5246,14 @@
             showRevealPopAt(idCard, { mode:"notice", message:check.message || "今は使えません。" });
             return;
           }
+        } else if (myRoleId === "CIT_B2"){
+          if (isRoleAbilityUsed("CIT_B2")) return;
+          const check = benjaminAbilityAvailability();
+          if (!check.ok){
+            e.stopPropagation();
+            showRevealPopAt(idCard, { mode:"notice", message:check.message || "今は使えません。" });
+            return;
+          }
         } else {
           if (isRoleAbilityUsed(myRoleId)) return;
           if (!canStartRoleSelection(myRoleId, state.userId)){
@@ -5191,7 +5266,7 @@
         e.stopPropagation();
         showRevealPopAt(idCard, {
           action: `role_select:${myRoleId}`,
-          messageHtml: `<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>を使いますか。`
+          messageHtml: `<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>を使いますか。${spec.endTurnAfterResolve ? "<br>使用後に手番が終了します。" : ""}`
         });
         return;
       }
@@ -5282,6 +5357,14 @@
     }
 
     const moved = !!turnState()?.moveDone;
+    if (myRoleId === "CIT_B2"){
+      const check = benjaminRevealAvailability();
+      if (!check.ok){
+        e.stopPropagation();
+        showRevealPopAt(idCard, { mode:"notice", message:check.message || "今は使えません。" });
+        return;
+      }
+    }
     if (myRoleId === "RAI_E1" && !moved){
       e.stopPropagation();
       showRevealPopAt(idCard, { mode: "notice", message: "今は使えません。" });
@@ -5397,7 +5480,7 @@
       if (role && !isRoleAbilityUsed(roleId)){
         if (!canStartRoleSelection(roleId, state.userId)){
           hideRevealPop();
-          showRevealPopAt(null, { mode:"notice", message:((roleId === "RAI_E3" || roleId === "SHA_U2") ? "今は使えません。" : "今は公開できません。") });
+          showRevealPopAt(null, { mode:"notice", message:((["RAI_E3","SHA_U2","CIT_B2"].includes(roleId)) ? "今は使えません。" : "今は公開できません。") });
           return;
         }
         await setRoleAbilitySelectionState({ roleId, actorUid: state.userId, privateToActor: (roleId === "SHA_U2") });
@@ -5409,7 +5492,7 @@
     if (isRoleSelectionAbility(myRoleId) && !isRoleAbilityUsed(myRoleId)){
       if (!canStartRoleSelection(myRoleId, state.userId)){
         hideRevealPop();
-        showRevealPopAt(null, { mode:"notice", message:((myRoleId === "RAI_E3" || myRoleId === "SHA_U2") ? "今は使えません。" : "今は公開できません。") });
+        showRevealPopAt(null, { mode:"notice", message:((["RAI_E3","SHA_U2","CIT_B2"].includes(myRoleId)) ? "今は使えません。" : "今は公開できません。") });
         return;
       }
       await setRoleAbilitySelectionState({ roleId: myRoleId, actorUid: state.userId, justRevealed:true, privateToActor: (myRoleId === "RAI_E3" || myRoleId === "SHA_U2") });
@@ -5770,6 +5853,67 @@
       });
       zoomDismissHandler = async () => {
         restoreGreenGiveZoomSelection(action);
+      };
+      return;
+    }
+
+    if (pendingEquipAction?.type === "benjamin_give"){
+      const action = { ...pendingEquipAction };
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      const sourceKey = safeText(card.dataset.sourceKey || "");
+      if (ownerUid !== state.userId || !sourceKey || !card.classList.contains("equip-steal-pulse")){
+        greenShareDock?.classList.add("hidden");
+        openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+        setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
+        setZoomPassthrough(false);
+        zoomDismissHandler = async () => {
+          restorePendingEquipSelection(action);
+        };
+        return;
+      }
+      const cardName = safeText(card.dataset.cardName || "この装備");
+      pendingEquipAction.selectedSourceKey = sourceKey;
+      setSeatEquipSelectionState({ type:"benjamin_give", selectedSourceKey:sourceKey }).catch(() => {});
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `「${cardName}」を誰かに渡しますか。`, async () => {
+        const actorRoom = markerRoomId(markerCache?.[state.userId]);
+        openTargetSelectDock({
+          title: `「${cardName}」を誰かに渡しますか。`,
+          includeSelf: false,
+          onlyAlive: true,
+          overEquipExpand: !equipExpandBackdrop?.classList.contains('hidden'),
+          filterPlayer: (p) => markerRoomId(markerCache?.[p.id]) === actorRoom,
+          lockEndTurnUntilResolved: true,
+          onSelect: async (uid) => {
+            const chosenSource = safeText(pendingEquipAction?.selectedSourceKey || "");
+            pendingEquipAction = null;
+            await setSeatEquipSelectionState(null);
+            closeEquipExpandIfOpen();
+            greenShareDock?.classList.add("hidden");
+            const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
+            if (!ok){
+              await setRoleAbilitySelectionState(null);
+              closeZoom();
+              renderEquipmentDock();
+              return;
+            }
+            await markRoleAbilityUsed("CIT_B2");
+            await setRoleAbilitySelectionState(null);
+            closeZoom();
+            renderEquipmentDock();
+            await doEndTurn();
+          }
+        });
+      }, {
+        fixedLower:true,
+        closeZoomOnNo:false,
+        onNo: () => {
+          restorePendingEquipSelection(action);
+        }
+      });
+      zoomDismissHandler = async () => {
+        restorePendingEquipSelection(action);
       };
       return;
     }
@@ -6483,7 +6627,7 @@
   }
 
   function isEquipSelectionLockActive(){
-    return pendingEquipAction?.type === "oliver_target" || pendingEquipAction?.type === "banana_give";
+    return pendingEquipAction?.type === "oliver_target" || pendingEquipAction?.type === "banana_give" || pendingEquipAction?.type === "benjamin_give";
   }
 
   function captureSelectionRestoreAction(){
@@ -6526,7 +6670,22 @@
   function restorePendingEquipSelection(action = null){
     const next = action || pendingEquipAction;
     const type = safeText(next?.type || "");
-    if (!next || (type !== "oliver_target" && type !== "banana_give")) return;
+    if (!next || (type !== "oliver_target" && type !== "banana_give" && type !== "benjamin_give")) return;
+    if (type === "benjamin_give"){
+      pendingEquipAction = { type:"benjamin_give", selectedSourceKey:safeText(next.selectedSourceKey || "") };
+      if (activeRoleAbilitySelection?.roleId === "CIT_B2"){
+        const role = ROLE_BY_ID["CIT_B2"];
+        if (role) openIdentityRevealZoom(role, safeText(activeRoleAbilitySelection?.actorUid || state.userId), {
+          persist:true,
+          showOwnerTag: !!activeRoleAbilitySelection?.justRevealed,
+          ownerTagDurationMs: 1200
+        });
+      }
+      setZoomPassthrough(true);
+      renderEquipmentDock();
+      renderTurnEndButton();
+      return;
+    }
     const cardObj = next.cardObj || null;
     if (!cardObj) return;
     openZoomFromDeckCard(cardObj, "black", { closeOnBackdrop:false, showCloseButton:false });
@@ -6543,14 +6702,14 @@
   function restoreSeatEquipSelection(entry){
     const type = safeText(entry?.type || "");
     const cardObj = entry?.cardObj || null;
-    if (!cardObj || (type !== "banana_give" && type !== "oliver_target")){
+    if ((type !== "banana_give" && type !== "oliver_target" && type !== "benjamin_give")){
       pendingEquipAction = null;
       renderTurnEndButton();
       return;
     }
     restoringSeatEquipSelection = true;
     try {
-      restorePendingEquipSelection({ type, cardObj });
+      restorePendingEquipSelection({ type, cardObj, selectedSourceKey:safeText(entry?.selectedSourceKey || "") });
     } finally {
       restoringSeatEquipSelection = false;
     }
@@ -10933,6 +11092,11 @@
       }
       if (!data){
         activeRoleAbilitySelection = null;
+        if (pendingEquipAction?.type === "benjamin_give"){
+          pendingEquipAction = null;
+          setSeatEquipSelectionState(null).catch(() => {});
+          renderEquipmentDock();
+        }
         cardPlayerSelectActive = false;
         greenShareDock?.classList.add("hidden");
         renderTurnEndButton();
