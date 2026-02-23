@@ -2952,6 +2952,13 @@
     return removed;
   }
 
+  async function hasActiveVenomChoiceInRoom(){
+    if (!state.roomCode) return false;
+    const snap = await get(ref(db, `rooms/${state.roomCode}/venomCounterChoice`));
+    const raw = snap.val();
+    return !!raw && !raw.resolved;
+  }
+
 
   async function clearCounterPromptForMe(expectedAt = null){
     const uid = safeText(state.userId || "");
@@ -5974,7 +5981,10 @@
     try {
       await addDamageToPlayer(entry.targetUid, 1, { source:"venom_counter" });
       const cleared = await clearVenomChoiceForEntry(entry);
-      if (!cleared) return;
+      if (!cleared){
+        const stillPending = await hasActiveVenomChoiceInRoom();
+        if (stillPending) return;
+      }
       venomChoicePop?.classList.add("hidden");
       if (isVenomRevealZoomVisible()) closeZoom();
       await advanceTurnToNextPlayer(entry.targetUid);
@@ -6027,9 +6037,7 @@
           hideRoomActionPop();
           closeZoom();
           renderEquipmentDock();
-          if (currentTurnPlayerId() === entry.targetUid){
-            await advanceTurnToNextPlayer(entry.targetUid);
-          }
+          await advanceTurnToNextPlayer(entry.targetUid);
         } finally {
           venomChoiceBusy = false;
         }
