@@ -768,7 +768,7 @@
   position:fixed;
   inset:0;
   pointer-events:none;
-  z-index:287;
+  z-index:295;
 }
 .agatha-reveal-overlay{
   position:fixed;
@@ -6900,6 +6900,11 @@
         const uid = safeText(item?.uid || "");
         const roleId = safeText(item?.roleId || "");
         if (!uid || !isCounterRole(roleId)) continue;
+        const incomingDamage = Math.max(0, Number(item?.damage || 0));
+        const hp = Number(ROLE_BY_ID?.[cur.hands?.[uid]?.roleId || ""]?.hp || 0);
+        const beforeDamage = clampDamage(cur.damage?.[uid]);
+        const afterDamage = clampDamage(beforeDamage + incomingDamage);
+        if (hp > 0 && beforeDamage < hp && afterDamage >= hp) continue;
         const mustChoose = !!(cur.equipment?.[uid]?.identity?.roleId);
         const now = Date.now();
         map[uid] = {
