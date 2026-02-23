@@ -2921,6 +2921,77 @@
     return removed;
   }
 
+
+  async function resolveVenomTakeDamageChoice(entry){
+    if (!state.roomCode || !entry) return;
+    const targetUid = safeText(entry.targetUid || "");
+    if (!targetUid) return;
+
+    await addDamageToPlayer(targetUid, 1, { source:"venom_counter" });
+
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const active = cur.venomCounterChoice;
+      if (!active) return cur;
+      const activeTarget = safeText(active.targetUid || "");
+      if (activeTarget !== targetUid) return cur;
+
+      delete cur.venomCounterChoice;
+
+      const turn = cur.turn || {};
+      const curId = safeText(turn.currentPlayerId || "");
+      if (curId !== targetUid) return cur;
+
+      const counterMap = cur.counterPromptState || {};
+      const hasBlockingCounterPrompt = Object.values(counterMap).some((row) => !!row && !!row.mustChoose);
+      if (hasBlockingCounterPrompt) return cur;
+
+      const order = Array.isArray(cur.positionOrder) ? cur.positionOrder : [];
+      if (!order.length) return cur;
+
+      const isEliminatedInRoom = (uid) => {
+        if (!uid) return false;
+        const hand = cur.hands?.[uid];
+        const role = hand?.roleId ? ROLE_BY_ID[hand.roleId] : null;
+        const hp = Number(role?.hp || 0);
+        if (!hp) return false;
+        const dmg = clampDamage(cur.damage?.[uid]);
+        return dmg >= hp;
+      };
+
+      const aliveOrder = order.filter((uid) => !isEliminatedInRoom(uid));
+      if (!aliveOrder.length) return cur;
+
+      let idx = aliveOrder.indexOf(curId);
+      if (idx < 0) idx = 0;
+      let nextPlayerId = safeText(aliveOrder[(idx + 1) % aliveOrder.length] || aliveOrder[0] || "");
+      if (!nextPlayerId || isEliminatedInRoom(nextPlayerId)){
+        nextPlayerId = safeText(aliveOrder[0] || "");
+      }
+      if (!nextPlayerId) return cur;
+
+      cur.turn = {
+        currentPlayerId: nextPlayerId,
+        moveDone: false,
+        attackDone: false,
+        deckDrawDone: false,
+        drawnTypes: { green:false, white:false, black:false },
+        movedByDiceRoomId: null,
+        room3ActionUsed: false,
+        room4StealUsed: false,
+        repeatTurnRemaining: 0,
+        repeatTurnTotal: 0,
+        sealWisdomBonus: false,
+        updatedAt: Date.now()
+      };
+      if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
+        delete cur.guardianAngelShield[nextPlayerId];
+      }
+      return cur;
+    });
+  }
+
   async function clearCounterPromptForMe(expectedAt = null){
     const uid = safeText(state.userId || "");
     if (!uid || !state.roomCode) return;
@@ -5940,14 +6011,9 @@
     if (!entry || entry.resolved || entry.targetUid !== safeText(state.userId || "")) return;
     venomChoiceBusy = true;
     try {
-      await addDamageToPlayer(entry.targetUid, 1, { source:"venom_counter" });
-      const cleared = await clearVenomChoiceIfMatch(entry.at);
-      if (!cleared){
-        await clearVenomChoiceIfMatch(null);
-      }
+      await resolveVenomTakeDamageChoice(entry);
       venomChoicePop?.classList.add("hidden");
       if (isVenomRevealZoomVisible()) closeZoom();
-      await advanceTurnToNextPlayer(entry.targetUid);
     } finally {
       venomChoiceBusy = false;
     }
