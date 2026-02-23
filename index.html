@@ -1697,7 +1697,7 @@
 <div id="attackResultPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="攻撃結果確認">
   <div id="attackResultRows" class="attack-result-pop-rows"></div>
   <div class="actions">
-    <button class="btn btn-excalibur hidden" id="btnAttackResultExcalibur">OK 🗡️</button>
+    <button class="btn btn-excalibur hidden" id="btnAttackResultExcalibur">🗡️</button>
     <button class="btn primary" id="btnAttackResultEnd">OKおわる</button>
     <button class="btn ghost" id="btnAttackResultKeep">OKおわらない</button>
   </div>
@@ -5342,7 +5342,6 @@
     attackResultChoiceBusy = true;
     try {
       await revealMyIdentityToEquipment({ revealedBy:"excalibur_attack" });
-      pending.rows = excaliburExtraDamageRows(pending.rows, 2);
       pendingAttackResultMeta = {
         ...(pendingAttackResultMeta || {}),
         allowExcaliburButton: false,
@@ -5350,6 +5349,9 @@
         zeroDamagePreview: false
       };
       pending.meta = normalizeAttackResultMeta(pendingAttackResultMeta);
+      showAttackResultPop(pending.rows);
+
+      pending.rows = excaliburExtraDamageRows(pending.rows, 2);
       cachePendingAttackResolution(pending);
       await upsertPendingAttackResolution(pending.rows, pending.turnKey || turnCycleKey(), pendingAttackResultMeta);
       showAttackResultPop(pending.rows);
