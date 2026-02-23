@@ -2889,8 +2889,10 @@
       if (!entry || safeText(entry.roleId || "") !== "SHA_V1" || !entry.mustChoose || !entry.revealLocked) return cur;
       const attackerUid = safeText(entry.attackerUid || "");
       const venomUid = safeText(entry.venomUid || "");
-      if (!attackerUid || safeText(cur.turn?.currentPlayerId || "") !== attackerUid) return cur;
+      if (!attackerUid) return cur;
       if (!takeDamage && !venomUid) return cur;
+      const turnCurrentPlayerId = safeText(cur.turn?.currentPlayerId || "");
+      const turnMismatch = !!turnCurrentPlayerId && turnCurrentPlayerId !== attackerUid;
 
       if (takeDamage){
         cur.damage = cur.damage || {};
@@ -2940,7 +2942,8 @@
       };
       const aliveOrder = order.filter(uid => !isEliminatedInRoom(uid));
       if (!aliveOrder.length) return cur;
-      let nextIdx = aliveOrder.indexOf(attackerUid);
+      const turnBaseUid = turnMismatch ? turnCurrentPlayerId : attackerUid;
+      let nextIdx = aliveOrder.indexOf(turnBaseUid);
       if (nextIdx < 0) nextIdx = 0;
       let nextPlayerId = safeText(aliveOrder[(nextIdx + 1) % aliveOrder.length] || aliveOrder[0] || "");
       if (!nextPlayerId || isEliminatedInRoom(nextPlayerId)) nextPlayerId = safeText(aliveOrder[0] || "");
