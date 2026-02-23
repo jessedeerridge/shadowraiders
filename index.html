@@ -2433,7 +2433,9 @@
     "RAI_E3": { usageKey:"emma", abilityName:"癒しの光", prompt:"回復させるプレイヤーを選んでください。", perTurn:true },
     "RAI_G3": { usageKey:"godwin", abilityName:"蘇生装置TYPE-G", prompt:"復活させるプレイヤーを選んでください。" },
     "CIT_C3": { usageKey:"claire", abilityName:"キャスリングTYPE-G", prompt:"ダメージを入れ替えるプレイヤーを選んでください。" },
+    "CIT_C1": { usageKey:"craig_attack", abilityName:"死の饗宴", prompt:"", perTurn:true },
     "SHA_U2": { usageKey:"uranus", abilityName:"メテオストライク", prompt:"ダメージを与えるプレイヤーを選んでください。", perTurn:true },
+    "SHA_U3": { usageKey:"ulster_attack", abilityName:"デル・フリス", prompt:"", perTurn:true },
   };
 
   function roleSelectionSpec(roleId){ return ROLE_SELECTION_SPECS[safeText(roleId || "")] || null; }
@@ -2930,7 +2932,7 @@
     const maxDamage = normalizedRows.reduce((max, item) => Math.max(max, Number(item.damage || 0)), 0);
     const attackFailed = normalizedRows.length > 0 && !hasSuccessDamage;
 
-    if (roleId === "CIT_C1"){
+    if (roleId === "CIT_C1" && !isRoleAbilityUsed("CIT_C1")){
       return { abilityName:"死の饗宴", description:"自分に2ダメージ与えて、もう一度攻撃しますか。" };
     }
     if (roleId === "CIT_B1" && maxDamage >= 2){
@@ -2942,7 +2944,7 @@
     if (roleId === "RAI_G2" && hasMyEquipmentByName("エクスカリバー") && attackFailed){
       return { abilityName:"魔剣の伝承者", description:"エクスカリバーを所有している時、攻撃が成功するまで振り直す。" };
     }
-    if (roleId === "SHA_U3"){
+    if (roleId === "SHA_U3" && !isRoleAbilityUsed("SHA_U3")){
       return { abilityName:"デル・フリス", description:"もう一度攻撃を行いますか。" };
     }
     if (roleId === "SHA_V2" && hasSuccessDamage){
@@ -5221,6 +5223,7 @@
         await resolveAttackAbilityReveal(role);
 
         if (roleId === "CIT_C1"){
+          await markRoleAbilityUsed("CIT_C1");
           await addDamageToPlayer(state.userId, 2);
           await runFollowupAttackToTarget(followupTargetUid, 1500);
           return;
@@ -5230,6 +5233,7 @@
           return;
         }
         if (roleId === "SHA_U3"){
+          await markRoleAbilityUsed("SHA_U3");
           await startUlsterExtraAttackSelection();
           return;
         }
@@ -6400,14 +6404,22 @@
       attackResultRows.appendChild(row);
     }
     const spec = attackAbilitySpecFromRows(rows);
+    const singleVampireHealButton = !!(spec && safeText(spec.abilityName || "") === "吸血" && isMyRole("SHA_V2") && isMyIdentityRevealed());
+    const singleEndButton = !spec && ((isMyRole("CIT_C1") && isRoleAbilityUsed("CIT_C1")) || (isMyRole("SHA_U3") && isRoleAbilityUsed("SHA_U3")));
     if (btnAttackResultEnd){
       btnAttackResultEnd.textContent = hasSealWisdomBonusThisTurn() ? "OKおわる(+1)" : "OKおわる";
+      btnAttackResultEnd.classList.toggle("hidden", singleVampireHealButton);
     }
     if (btnAttackResultKeep){
-      if (spec){
+      if (singleVampireHealButton){
+        btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel("吸血"))}</span>`;
+        btnAttackResultKeep.classList.remove("hidden");
+      } else if (spec){
         btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>`;
+        btnAttackResultKeep.classList.remove("hidden");
       } else {
         btnAttackResultKeep.textContent = "OKおわらない";
+        btnAttackResultKeep.classList.toggle("hidden", singleEndButton);
       }
     }
     attackResultChoiceBusy = false;
