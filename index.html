@@ -2770,6 +2770,7 @@
       roleId: safeText(entry?.roleId || ""),
       attackerUid: safeText(entry?.attackerUid || ""),
       turnKey: safeText(entry?.turnKey || ""),
+      advanceTurnOnResolve: !!entry?.advanceTurnOnResolve,
       mustChoose: !!entry?.mustChoose,
       expiresAt: Number(entry?.expiresAt || 0),
       at: Number(entry?.at || 0)
@@ -2795,12 +2796,19 @@
     const uid = safeText(state.userId || "");
     if (!uid || !state.roomCode) return;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
+    let removedEntry = null;
     await runTransaction(roomRef, (cur) => {
       if (!cur) return cur;
       const map = cur.counterPromptState || {};
       const mine = map[uid];
       if (!mine) return cur;
       if (expectedAt != null && Number(mine.at || 0) !== Number(expectedAt || 0)) return cur;
+      removedEntry = {
+        roleId: safeText(mine.roleId || ""),
+        attackerUid: safeText(mine.attackerUid || ""),
+        turnKey: safeText(mine.turnKey || ""),
+        advanceTurnOnResolve: !!mine.advanceTurnOnResolve
+      };
       delete map[uid];
       if (Object.keys(map).length === 0){
         delete cur.counterPromptState;
@@ -2809,6 +2817,26 @@
       }
       return cur;
     });
+    return removedEntry;
+  }
+
+  async function tryAdvanceTurnAfterCounterChoice(resolvedEntry){
+    if (!resolvedEntry?.advanceTurnOnResolve) return;
+    if (!state.roomCode) return;
+    const attackerUid = safeText(resolvedEntry.attackerUid || "");
+    const turnKey = safeText(resolvedEntry.turnKey || "");
+    if (!attackerUid || !turnKey) return;
+
+    const stillPending = Object.values(state.room?.counterPromptState || {}).some((entry) => {
+      if (!entry) return false;
+      return !!entry.advanceTurnOnResolve
+        && safeText(entry.attackerUid || "") === attackerUid
+        && safeText(entry.turnKey || "") === turnKey;
+    });
+    if (stillPending) return;
+
+    if (currentTurnPlayerId() !== attackerUid) return;
+    await advanceTurnToNextPlayer();
   }
 
   function hideCounterAbilityPrompt(){
@@ -5477,7 +5505,7 @@
       const role = myRoleInfo();
       const roleId = safeText(role?.id || "");
       const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
-      await finalizePendingAttackResolution(false);
+      await finalizePendingAttackResolution(false, true);
       await resolveAttackAbilityReveal(role);
 
       if (roleId === "CIT_C1"){
@@ -5559,7 +5587,7 @@
             await finalizePendingAttackResolution(false);
             return;
           }
-          await finalizePendingAttackResolution(true);
+          await finalizePendingAttackResolution(true, true);
         } finally {
           attackResultChoiceBusy = false;
         }
@@ -5571,7 +5599,7 @@
       await finalizePendingAttackResolution(false);
       return;
     }
-    await finalizePendingAttackResolution(true);
+    await finalizePendingAttackResolution(true, true);
   });
 
   btnIdentityPromptNo?.addEventListener("click", async (e) => {
@@ -5599,7 +5627,8 @@
     e.stopPropagation();
     const entry = counterPromptEntryForMe();
     hideCounterAbilityPrompt();
-    await clearCounterPromptForMe(entry?.at || null);
+    const resolvedEntry = await clearCounterPromptForMe(entry?.at || null);
+    await tryAdvanceTurnAfterCounterChoice(resolvedEntry);
   });
 
   btnCounterAbilityUse?.addEventListener("click", async (e) => {
@@ -5617,7 +5646,8 @@
     }
 
     hideCounterAbilityPrompt();
-    await clearCounterPromptForMe(entry.at);
+    const resolvedEntry = await clearCounterPromptForMe(entry.at);
+    await tryAdvanceTurnAfterCounterChoice(resolvedEntry);
   });
 
   equipBody.addEventListener("click", (e) => {
@@ -6825,8 +6855,9 @@
     attackResultPop.classList.remove("hidden");
   }
 
-  async function queueCounterPromptsForDamagedPlayers(entries = []){
+  async function queueCounterPromptsForDamagedPlayers(entries = [], options = {}){
     if (!state.roomCode || !entries.length) return;
+    const advanceTurnOnResolve = !!options.advanceTurnOnResolve;
 
     const attackerUid = safeText(state.userId || "");
     const turnKey = turnCycleKey();
@@ -6845,6 +6876,7 @@
           roleId,
           attackerUid,
           turnKey,
+          advanceTurnOnResolve,
           mustChoose,
           expiresAt: mustChoose ? 0 : (now + 8000),
           at: now
@@ -6857,7 +6889,7 @@
     });
   }
 
-  async function addResolvedDamageToPlayers(rows = []){
+  async function addResolvedDamageToPlayers(rows = [], options = {}){
     const allEntries = (rows || [])
       .map(item => ({
         uid: safeText(item?.uid || ""),
@@ -6868,7 +6900,7 @@
       .filter(item => item.uid);
     if (!state.roomCode || !allEntries.length) return;
 
-    await queueCounterPromptsForDamagedPlayers(allEntries);
+    await queueCounterPromptsForDamagedPlayers(allEntries, options);
 
     const entries = allEntries.filter(item => item.damage > 0);
     if (!entries.length) return;
@@ -6905,7 +6937,7 @@
     }
   }
 
-  async function finalizePendingAttackResolution(endTurnAfterApply){
+  async function finalizePendingAttackResolution(endTurnAfterApply, advanceTurnOnCounterResolve = false){
     const pending = pendingAttackResolution;
     pendingAttackResolution = null;
     pendingAttackResultMeta = null;
@@ -6925,7 +6957,7 @@
       return;
     }
     pending.applied = true;
-    await addResolvedDamageToPlayers(pending.rows || []);
+    await addResolvedDamageToPlayers(pending.rows || [], { advanceTurnOnResolve: advanceTurnOnCounterResolve });
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
