@@ -2818,6 +2818,14 @@
     return removed;
   }
 
+
+  async function clearVenomCounterChoiceWithRetry(expectedAt = null){
+    const removed = await clearVenomCounterChoice(expectedAt);
+    if (removed) return removed;
+    if (expectedAt != null) return clearVenomCounterChoice(null);
+    return null;
+  }
+
   async function beginVenomCounterChoice(entry){
     if (!state.roomCode || !entry) return;
     const attackerUid = safeText(entry.attackerUid || "");
@@ -2828,6 +2836,7 @@
       cur.venomCounterChoice = {
         active: true,
         venomUid: safeText(state.userId || ""),
+        attackerUid,
         targetUid: attackerUid,
         turnKey: safeText(entry.turnKey || ""),
         at: Date.now()
@@ -2853,7 +2862,7 @@
     if (!role) return;
     const key = `${venomUid}_${Number(row.at || 0)}`;
     if (activeVenomRevealLockKey === key){
-      if (safeText(row.targetUid || "") === safeText(state.userId || "")) setZoomPassthrough(true);
+      setZoomPassthrough(true);
       return;
     }
     activeVenomRevealLockKey = key;
@@ -2862,9 +2871,7 @@
       showOwnerTag: true,
       persist: true
     });
-    if (safeText(row.targetUid || "") === safeText(state.userId || "")){
-      setZoomPassthrough(true);
-    }
+    setZoomPassthrough(true);
   }
 
   function counterPromptEntryForMe(){
@@ -4677,6 +4684,13 @@
     zoomPassthroughMode = false;
     pendingGreenAnswerMsg = null;
     zoomDismissHandler = null;
+    if (state.room?.venomCounterChoice?.active){
+      setTimeout(() => {
+        if (state.room?.venomCounterChoice?.active){
+          renderVenomRevealLock();
+        }
+      }, 0);
+    }
     greenZoomLocked = false;
     hideGreenShareDock();
     hideRevealPop();
@@ -5881,8 +5895,9 @@
         hideCounterAbilityPrompt();
         resetVenomCounterSelectionUi();
         await addDamageToPlayer(state.userId, 1, { source:"venom_counter" });
-        await clearVenomCounterChoice();
-        await advanceTurnToNextPlayer();
+        const removed = await clearVenomCounterChoiceWithRetry(venomChoice.at);
+        const attackerUid = safeText(venomChoice.attackerUid || removed?.targetUid || "");
+        await advanceTurnToNextPlayer(attackerUid);
       } finally {
         venomCounterChoiceBusy = false;
       }
@@ -5952,8 +5967,9 @@
         try {
           await moveEquipmentCardBetweenPlayers(state.userId, venomUid, sourceKey);
           const choice = activeVenomCounterChoiceForMe();
-          await clearVenomCounterChoice(choice?.at || null);
-          await advanceTurnToNextPlayer();
+          const removed = await clearVenomCounterChoiceWithRetry(choice?.at || null);
+          const attackerUid = safeText(choice?.attackerUid || removed?.targetUid || "");
+          await advanceTurnToNextPlayer(attackerUid);
         } finally {
           venomCounterChoiceBusy = false;
         }
