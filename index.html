@@ -83,6 +83,14 @@
     max-width:min(92vw, 420px);
   }
   .confirm-pop.bottom-fixed .caret{display:none;}
+  #counterAbilityPop{
+    min-width:0;
+    width:fit-content;
+  }
+  #counterAbilityPop .actions{
+    justify-content:center;
+    flex-wrap:nowrap;
+  }
   .btn.pop-dark{background:#111;color:#fff;border-color:#111;}
   .btn.pop-disabled{background:#bcbcbc;color:#fff;border-color:#bcbcbc;cursor:not-allowed;}
   .btn.pop-purple{background:#6d28d9;color:#fff;border-color:#6d28d9;}
@@ -760,7 +768,7 @@
   position:fixed;
   inset:0;
   pointer-events:none;
-  z-index:287;
+  z-index:400;
 }
 .agatha-reveal-overlay{
   position:fixed;
@@ -1724,6 +1732,14 @@
   </div>
 </div>
 
+<div id="counterAbilityPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="反撃能力確認">
+  <p class="msg" id="counterAbilityMsg"></p>
+  <div class="actions">
+    <button class="btn pop-dark" id="btnCounterAbilityUse">能力名(8)</button>
+    <button class="btn ghost" id="btnCounterAbilitySkip">使わない</button>
+  </div>
+</div>
+
 <div id="roomActionPop" class="confirm-pop hidden" role="dialog" aria-label="部屋効果確認">
   <div class="caret" aria-hidden="true"></div>
   <p class="msg" id="roomActionMsg"></p>
@@ -2357,8 +2373,14 @@
   const identityPromptMsg = document.getElementById("identityPromptMsg");
   const btnIdentityPromptYes = document.getElementById("btnIdentityPromptYes");
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
+  const counterAbilityPop = document.getElementById("counterAbilityPop");
+  const counterAbilityMsg = document.getElementById("counterAbilityMsg");
+  const btnCounterAbilityUse = document.getElementById("btnCounterAbilityUse");
+  const btnCounterAbilitySkip = document.getElementById("btnCounterAbilitySkip");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+  let counterAbilityCountdownTimer = null;
+  let activeCounterPromptAt = 0;
   let seatPromptUnsubscribe = null;
   let subscribedSeatPromptIndex = null;
   let restoringSeatIdentityPrompt = false;
@@ -2730,6 +2752,179 @@
 
   function canInteractWithMapPlayerIcons(){
     return !isIdentityPromptInteractionLockActive() && !cardPlayerSelectActive;
+  }
+
+  function isCounterRole(roleId){
+    const id = safeText(roleId || "");
+    return id === "SHA_W3" || id === "SHA_V1";
+  }
+
+  function counterPromptEntryForMe(){
+    const uid = safeText(state.userId || "");
+    if (!uid) return null;
+    const entry = state.room?.counterPromptState?.[uid];
+    if (!entry) return null;
+    return {
+      ...entry,
+      uid,
+      roleId: safeText(entry?.roleId || ""),
+      attackerUid: safeText(entry?.attackerUid || ""),
+      turnKey: safeText(entry?.turnKey || ""),
+      advanceTurnOnResolve: !!entry?.advanceTurnOnResolve,
+      mustChoose: !!entry?.mustChoose,
+      expiresAt: Number(entry?.expiresAt || 0),
+      at: Number(entry?.at || 0)
+    };
+  }
+
+  function isCounterPromptSilentIdentityClickWindow(){
+    const entry = counterPromptEntryForMe();
+    if (!entry) return false;
+    if (!isCounterRole(myRoleInfo()?.id || "")) return false;
+    if (isMyTurn()) return false;
+    if (!entry.attackerUid || currentTurnPlayerId() !== entry.attackerUid) return false;
+    return true;
+  }
+
+  function isCounterAbilityBlockedByGuardianShield(entry){
+    if (!entry) return false;
+    if (safeText(entry.roleId || "") !== "SHA_W3") return false;
+    return hasGuardianAngelShield(entry.attackerUid);
+  }
+
+  async function clearCounterPromptForMe(expectedAt = null){
+    const uid = safeText(state.userId || "");
+    if (!uid || !state.roomCode) return;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    let removedEntry = null;
+    await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const map = cur.counterPromptState || {};
+      const mine = map[uid];
+      if (!mine) return cur;
+      if (expectedAt != null && Number(mine.at || 0) !== Number(expectedAt || 0)) return cur;
+      removedEntry = {
+        roleId: safeText(mine.roleId || ""),
+        attackerUid: safeText(mine.attackerUid || ""),
+        turnKey: safeText(mine.turnKey || ""),
+        advanceTurnOnResolve: !!mine.advanceTurnOnResolve
+      };
+      delete map[uid];
+      if (Object.keys(map).length === 0){
+        delete cur.counterPromptState;
+      } else {
+        cur.counterPromptState = map;
+      }
+      return cur;
+    });
+    return removedEntry;
+  }
+
+  async function tryAdvanceTurnAfterCounterChoice(resolvedEntry){
+    if (!resolvedEntry?.advanceTurnOnResolve) return;
+    if (!state.roomCode) return;
+    const attackerUid = safeText(resolvedEntry.attackerUid || "");
+    const turnKey = safeText(resolvedEntry.turnKey || "");
+    if (!attackerUid || !turnKey) return;
+
+    const stillPending = Object.values(state.room?.counterPromptState || {}).some((entry) => {
+      if (!entry) return false;
+      return !!entry.advanceTurnOnResolve
+        && safeText(entry.attackerUid || "") === attackerUid
+        && safeText(entry.turnKey || "") === turnKey;
+    });
+    if (stillPending) return;
+
+    if (currentTurnPlayerId() !== attackerUid) return;
+    await advanceTurnToNextPlayer();
+  }
+
+  function hideCounterAbilityPrompt(){
+    if (counterAbilityCountdownTimer){
+      clearInterval(counterAbilityCountdownTimer);
+      counterAbilityCountdownTimer = null;
+    }
+    activeCounterPromptAt = 0;
+    counterAbilityPop?.classList.add("hidden");
+  }
+
+  async function runWerewolfCounterAttack(attackerUid){
+    const targetUid = safeText(attackerUid || "");
+    if (!targetUid || !state.roomCode) return;
+    const masamuneMode = hasEquipmentByName(state.userId, "妖刀マサムネ");
+    const rolled = {
+      d6: 1 + Math.floor(Math.random() * 6),
+      d4: 1 + Math.floor(Math.random() * 4)
+    };
+
+    await emitCardDiceEvent({
+      kind:"role_werewolf_counter",
+      uid: state.userId,
+      targetUid,
+      d6: rolled.d6,
+      d4: rolled.d4,
+      masamuneMode
+    });
+    await waitMs(1000);
+
+    const baseDamage = calcAttackDamageFromRoll(state.userId, rolled.d6, rolled.d4, {
+      masamuneMode,
+      targetUid
+    });
+    if (baseDamage <= 0) return;
+    await addDamageToPlayer(targetUid, baseDamage, { source:"attack" });
+  }
+
+  function renderCounterAbilityPrompt(){
+    const entry = counterPromptEntryForMe();
+    if (!counterAbilityPop || !counterAbilityMsg || !btnCounterAbilityUse || !btnCounterAbilitySkip){
+      return;
+    }
+    if (!entry || !isCounterRole(entry.roleId)){
+      hideCounterAbilityPrompt();
+      return;
+    }
+
+    const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
+    const ability = roleAbilityName(role || {});
+    const blockedByGuardianShield = isCounterAbilityBlockedByGuardianShield(entry);
+    counterAbilityMsg.textContent = "";
+    counterAbilityMsg.classList.add("hidden");
+    btnCounterAbilitySkip.textContent = "使わない";
+    btnCounterAbilityUse.disabled = blockedByGuardianShield;
+    btnCounterAbilityUse.classList.toggle("pop-disabled", blockedByGuardianShield);
+    btnCounterAbilityUse.classList.toggle("pop-dark", !blockedByGuardianShield);
+
+    const updateLabel = () => {
+      if (entry.mustChoose){
+        btnCounterAbilityUse.textContent = ability;
+        return false;
+      }
+      const remainSec = Math.max(0, Math.ceil((Number(entry.expiresAt || 0) - Date.now()) / 1000));
+      btnCounterAbilityUse.textContent = `${ability}(${remainSec})`;
+      if (remainSec <= 0){
+        clearCounterPromptForMe(entry.at).catch(() => {});
+        hideCounterAbilityPrompt();
+        return true;
+      }
+      return false;
+    };
+
+    counterAbilityPop.classList.remove("hidden");
+    if (activeCounterPromptAt !== entry.at){
+      if (counterAbilityCountdownTimer){
+        clearInterval(counterAbilityCountdownTimer);
+        counterAbilityCountdownTimer = null;
+      }
+      activeCounterPromptAt = entry.at;
+      if (!updateLabel() && !entry.mustChoose){
+        counterAbilityCountdownTimer = setInterval(updateLabel, 250);
+      } else if (entry.mustChoose){
+        updateLabel();
+      }
+    } else {
+      updateLabel();
+    }
   }
 
   function isIdentityRevealPopBlockedByEffectPop(){
@@ -4930,11 +5125,28 @@
     if (!my || !my.roleId) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if (myRoleId === "SHA_W3" || myRoleId === "SHA_V1"){
+      if (isMyIdentityRevealed()){
+        e.stopPropagation();
+        return;
+      }
+      if (isCounterPromptSilentIdentityClickWindow()){
+        e.stopPropagation();
+        return;
+      }
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
+      return;
+    }
     if (myRoleId === "CIT_A1" && isAliceAbilityUsed()){
       e.stopPropagation();
       return;
     }
     if (!isMyTurn()){
+      if (isCounterPromptSilentIdentityClickWindow()){
+        e.stopPropagation();
+        return;
+      }
       e.stopPropagation();
       showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
       return;
@@ -5320,7 +5532,7 @@
       const role = myRoleInfo();
       const roleId = safeText(role?.id || "");
       const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
-      await finalizePendingAttackResolution(false);
+      await finalizePendingAttackResolution(false, true);
       await resolveAttackAbilityReveal(role);
 
       if (roleId === "CIT_C1"){
@@ -5402,7 +5614,7 @@
             await finalizePendingAttackResolution(false);
             return;
           }
-          await finalizePendingAttackResolution(true);
+          await finalizePendingAttackResolution(true, true);
         } finally {
           attackResultChoiceBusy = false;
         }
@@ -5414,7 +5626,7 @@
       await finalizePendingAttackResolution(false);
       return;
     }
-    await finalizePendingAttackResolution(true);
+    await finalizePendingAttackResolution(true, true);
   });
 
   btnIdentityPromptNo?.addEventListener("click", async (e) => {
@@ -5436,6 +5648,37 @@
     await setSeatIdentityPromptState(null);
     if (closeZoomOnChoice) closeZoom();
     if (handler) await handler();
+  });
+
+  btnCounterAbilitySkip?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const entry = counterPromptEntryForMe();
+    hideCounterAbilityPrompt();
+    const resolvedEntry = await clearCounterPromptForMe(entry?.at || null);
+    await tryAdvanceTurnAfterCounterChoice(resolvedEntry);
+  });
+
+  btnCounterAbilityUse?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const entry = counterPromptEntryForMe();
+    if (!entry) return;
+    if (isCounterAbilityBlockedByGuardianShield(entry)) return;
+    const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
+    if (!role) return;
+
+    if (!isMyIdentityRevealed()){
+      await revealMyIdentityToEquipment({ revealedBy:"counter_attack" });
+    } else {
+      await emitRoleFlashEvent(role.id, 1500);
+    }
+
+    if (safeText(role.id || "") === "SHA_W3"){
+      await runWerewolfCounterAttack(entry.attackerUid);
+    }
+
+    hideCounterAbilityPrompt();
+    const resolvedEntry = await clearCounterPromptForMe(entry.at);
+    await tryAdvanceTurnAfterCounterChoice(resolvedEntry);
   });
 
   equipBody.addEventListener("click", (e) => {
@@ -6643,15 +6886,60 @@
     attackResultPop.classList.remove("hidden");
   }
 
-  async function addResolvedDamageToPlayers(rows = []){
-    const entries = (rows || [])
+  async function queueCounterPromptsForDamagedPlayers(entries = [], options = {}){
+    if (!state.roomCode || !entries.length) return;
+    const advanceTurnOnResolve = !!options.advanceTurnOnResolve;
+
+    const attackerUid = safeText(state.userId || "");
+    const turnKey = turnCycleKey();
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const map = cur.counterPromptState || {};
+      for (const item of entries){
+        const uid = safeText(item?.uid || "");
+        const roleId = safeText(item?.roleId || "");
+        if (!uid || !isCounterRole(roleId)) continue;
+        const incomingDamage = Math.max(0, Number(item?.damage || 0));
+        const hp = Number(ROLE_BY_ID?.[cur.hands?.[uid]?.roleId || ""]?.hp || 0);
+        const beforeDamage = clampDamage(cur.damage?.[uid]);
+        const afterDamage = clampDamage(beforeDamage + incomingDamage);
+        if (hp > 0 && beforeDamage < hp && afterDamage >= hp) continue;
+        const mustChoose = !!(cur.equipment?.[uid]?.identity?.roleId);
+        const now = Date.now();
+        map[uid] = {
+          uid,
+          roleId,
+          attackerUid,
+          turnKey,
+          advanceTurnOnResolve,
+          mustChoose,
+          expiresAt: mustChoose ? 0 : (now + 8000),
+          at: now
+        };
+      }
+      if (Object.keys(map).length){
+        cur.counterPromptState = map;
+      }
+      return cur;
+    });
+  }
+
+  async function addResolvedDamageToPlayers(rows = [], options = {}){
+    const allEntries = (rows || [])
       .map(item => ({
         uid: safeText(item?.uid || ""),
         damage: Math.max(0, Number(item?.damage || 0)),
-        bonusLabelAmount: Math.max(0, Number(item?.bonusLabelAmount || 0))
+        bonusLabelAmount: Math.max(0, Number(item?.bonusLabelAmount || 0)),
+        roleId: safeText(state.hands?.[safeText(item?.uid || "")]?.roleId || "")
       }))
-      .filter(item => item.uid && item.damage > 0);
-    if (!state.roomCode || !entries.length) return;
+      .filter(item => item.uid);
+    if (!state.roomCode || !allEntries.length) return;
+
+    await queueCounterPromptsForDamagedPlayers(allEntries, options);
+
+    const entries = allEntries.filter(item => item.damage > 0);
+    if (!entries.length) return;
 
     const expected = new Set();
     for (const item of entries){
@@ -6685,8 +6973,9 @@
     }
   }
 
-  async function finalizePendingAttackResolution(endTurnAfterApply){
+  async function finalizePendingAttackResolution(endTurnAfterApply, advanceTurnOnCounterResolve = false){
     const pending = pendingAttackResolution;
+    const attackTurnOwnerUid = currentTurnPlayerId();
     pendingAttackResolution = null;
     pendingAttackResultMeta = null;
     attackTurnEndChoicePending = false;
@@ -6705,11 +6994,13 @@
       return;
     }
     pending.applied = true;
-    await addResolvedDamageToPlayers(pending.rows || []);
+    await addResolvedDamageToPlayers(pending.rows || [], { advanceTurnOnResolve: advanceTurnOnCounterResolve });
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
-      await doEndTurn();
+      if (currentTurnPlayerId() === attackTurnOwnerUid){
+        await doEndTurn(attackTurnOwnerUid);
+      }
       attackFlowUiLockActive = false;
       suppressEndTurnButton = false;
       renderTurnEndButton();
@@ -7120,6 +7411,15 @@
         runCornerD6Roll(Number(ev.d6 || 1));
       } else if (kind === "role_emma"){
         runCornerD4Roll(Number(ev.d4 || 1));
+      } else if (kind === "role_werewolf_counter"){
+        if (!!ev.masamuneMode){
+          runCornerD4Roll(Number(ev.d4 || 1));
+        } else {
+          runCornerD6D4Roll({
+            d6: Number(ev.d6 || 1),
+            d4: Number(ev.d4 || 1)
+          });
+        }
       }
     });
   }
@@ -7242,8 +7542,9 @@
     });
   }
 
-  async function advanceTurnToNextPlayer(){
+  async function advanceTurnToNextPlayer(expectedCurrentPlayerId = ""){
     if (!state.roomCode) return;
+    const expectedUid = safeText(expectedCurrentPlayerId || "");
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     await runTransaction(roomRef, (cur) => {
       if (!cur || !(cur.gameStarted || cur.startedAt)) return cur;
@@ -7262,8 +7563,13 @@
       const aliveOrder = order.filter(uid => !isEliminatedInRoom(uid));
       if (aliveOrder.length === 0) return cur;
 
+      const counterMap = cur.counterPromptState || {};
+      const hasBlockingCounterPrompt = Object.values(counterMap).some((entry) => !!entry && !!entry.mustChoose);
+      if (hasBlockingCounterPrompt) return cur;
+
       const curTurn = cur.turn || {};
       const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || aliveOrder[0] || "");
+      if (expectedUid && curId !== expectedUid) return cur;
       const rest = Math.max(0, Number(curTurn.repeatTurnRemaining || 0));
       const total = Math.max(0, Number(curTurn.repeatTurnTotal || 0));
       const repeat = rest > 0 && !isEliminatedInRoom(curId);
@@ -10438,6 +10744,7 @@
       renderHpBoard();
       renderPositionLine();
       renderTurnEndButton();
+      renderCounterAbilityPrompt();
       renderMarkers();
       syncPendingMoveChoiceOwnership();
       restorePendingMoveChoiceFromSeat();
@@ -11519,6 +11826,7 @@
       remove(ref(db, `${base}/turn`)),
       remove(ref(db, `${base}/attackResolutionPending`)),
       remove(ref(db, `${base}/attackLootPending`)),
+      remove(ref(db, `${base}/counterPromptState`)),
     ]);
 
     deckCache = null;
@@ -11551,7 +11859,7 @@
     return true;
   }
 
-  async function doEndTurn(){
+  async function doEndTurn(expectedCurrentPlayerId = ""){
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
@@ -11561,7 +11869,7 @@
     suppressEndTurnButton = false;
     resetAttackAbilityUsageTurnState();
     cachePendingAttackResolution(null);
-    await advanceTurnToNextPlayer();
+    await advanceTurnToNextPlayer(expectedCurrentPlayerId);
     hideAttackPop();
     hideAttackResultPop();
     clearAttackResultDice();
