@@ -2878,6 +2878,7 @@
     const active = !!entry && !entry.resolved;
     if (!active){
       venomChoicePop?.classList.add("hidden");
+      if (isVenomRevealZoomVisible()) closeZoom();
       return;
     }
 
