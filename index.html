@@ -4614,12 +4614,12 @@
       d6: 1 + Math.floor(Math.random() * 6),
       d4: 1 + Math.floor(Math.random() * 4)
     };
-    const revealCloseAt = Date.now() + 1500;
+    const revealCloseAt = Date.now() + 1200;
     showAgathaRevealCardOverlay(state.userId, { closeAt: revealCloseAt });
     await emitCardDiceEvent({ kind:"role_agatha", uid:state.userId, d6:rolled.d6, d4:rolled.d4, closeAt: revealCloseAt });
     await waitMs(1000);
     const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
-    await waitMs(1500);
+    await waitMs(1200);
     await addDamageToPlayers(playerIdsInRoom(targetRoomId), 3);
     await waitMs(500);
     const cleanupTimer = setTimeout(() => {
@@ -6687,7 +6687,7 @@
       } else if (kind === "role_agatha"){
         showAgathaRevealCardOverlay(safeText(ev.uid || ""), {
           closeAt: Number(ev.closeAt || 0),
-          duration: 1500
+          duration: 1200
         });
         runCornerD6D4Roll({
           d6: Number(ev.d6 || 1),
@@ -7386,7 +7386,7 @@
     const role = ROLE_BY_ID[roleId] || ROLE_BY_ID.CIT_A3;
     if (!role) return;
 
-    const duration = Math.max(0, Number(options.duration || 1500));
+    const duration = Math.max(0, Number(options.duration || 1200));
     const requestedCloseAt = Number(options.closeAt || 0);
     const closeAt = requestedCloseAt > 0 ? requestedCloseAt : (Date.now() + duration);
     if (closeAt <= agathaRevealVisibleUntil) return;
