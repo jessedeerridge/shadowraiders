@@ -1724,6 +1724,14 @@
   </div>
 </div>
 
+<div id="counterAbilityPop" class="confirm-pop bottom-fixed hidden" role="dialog" aria-label="反撃能力確認">
+  <p class="msg" id="counterAbilityMsg"></p>
+  <div class="actions">
+    <button class="btn pop-dark" id="btnCounterAbilityUse">能力名(8)</button>
+    <button class="btn ghost" id="btnCounterAbilitySkip">使わない</button>
+  </div>
+</div>
+
 <div id="roomActionPop" class="confirm-pop hidden" role="dialog" aria-label="部屋効果確認">
   <div class="caret" aria-hidden="true"></div>
   <p class="msg" id="roomActionMsg"></p>
@@ -2357,8 +2365,14 @@
   const identityPromptMsg = document.getElementById("identityPromptMsg");
   const btnIdentityPromptYes = document.getElementById("btnIdentityPromptYes");
   const btnIdentityPromptNo = document.getElementById("btnIdentityPromptNo");
+  const counterAbilityPop = document.getElementById("counterAbilityPop");
+  const counterAbilityMsg = document.getElementById("counterAbilityMsg");
+  const btnCounterAbilityUse = document.getElementById("btnCounterAbilityUse");
+  const btnCounterAbilitySkip = document.getElementById("btnCounterAbilitySkip");
   let pendingAttackTargetUid = "";
   let pendingIdentityPrompt = null;
+  let counterAbilityCountdownTimer = null;
+  let activeCounterPromptAt = 0;
   let seatPromptUnsubscribe = null;
   let subscribedSeatPromptIndex = null;
   let restoringSeatIdentityPrompt = false;
@@ -2730,6 +2744,119 @@
 
   function canInteractWithMapPlayerIcons(){
     return !isIdentityPromptInteractionLockActive() && !cardPlayerSelectActive;
+  }
+
+  function isCounterRole(roleId){
+    const id = safeText(roleId || "");
+    return id === "SHA_W3" || id === "SHA_V1";
+  }
+
+  function counterPromptEntryForMe(){
+    const uid = safeText(state.userId || "");
+    if (!uid) return null;
+    const entry = state.room?.counterPromptState?.[uid];
+    if (!entry) return null;
+    return {
+      ...entry,
+      uid,
+      roleId: safeText(entry?.roleId || ""),
+      attackerUid: safeText(entry?.attackerUid || ""),
+      turnKey: safeText(entry?.turnKey || ""),
+      mustChoose: !!entry?.mustChoose,
+      expiresAt: Number(entry?.expiresAt || 0),
+      at: Number(entry?.at || 0)
+    };
+  }
+
+  function isCounterPromptSilentIdentityClickWindow(){
+    const entry = counterPromptEntryForMe();
+    if (!entry) return false;
+    if (!isCounterRole(myRoleInfo()?.id || "")) return false;
+    if (isMyTurn()) return false;
+    if (!entry.attackerUid || currentTurnPlayerId() !== entry.attackerUid) return false;
+    return true;
+  }
+
+  async function clearCounterPromptForMe(expectedAt = null){
+    const uid = safeText(state.userId || "");
+    if (!uid || !state.roomCode) return;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const map = cur.counterPromptState || {};
+      const mine = map[uid];
+      if (!mine) return cur;
+      if (expectedAt != null && Number(mine.at || 0) !== Number(expectedAt || 0)) return cur;
+      delete map[uid];
+      if (Object.keys(map).length === 0){
+        delete cur.counterPromptState;
+      } else {
+        cur.counterPromptState = map;
+      }
+      return cur;
+    });
+  }
+
+  function hideCounterAbilityPrompt(){
+    if (counterAbilityCountdownTimer){
+      clearInterval(counterAbilityCountdownTimer);
+      counterAbilityCountdownTimer = null;
+    }
+    activeCounterPromptAt = 0;
+    counterAbilityPop?.classList.add("hidden");
+  }
+
+  function renderCounterAbilityPrompt(){
+    const entry = counterPromptEntryForMe();
+    if (!counterAbilityPop || !counterAbilityMsg || !btnCounterAbilityUse || !btnCounterAbilitySkip){
+      return;
+    }
+    if (!entry || !isCounterRole(entry.roleId)){
+      hideCounterAbilityPrompt();
+      return;
+    }
+
+    if (!entry.mustChoose && entry.attackerUid && currentTurnPlayerId() !== entry.attackerUid){
+      clearCounterPromptForMe(entry.at).catch(() => {});
+      hideCounterAbilityPrompt();
+      return;
+    }
+
+    const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
+    const ability = roleAbilityName(role || {});
+    counterAbilityMsg.textContent = "他プレイヤーから攻撃を受けました。能力を使いますか。";
+    btnCounterAbilitySkip.textContent = "使わない";
+
+    const updateLabel = () => {
+      if (entry.mustChoose){
+        btnCounterAbilityUse.textContent = ability;
+        return false;
+      }
+      const remainSec = Math.max(0, Math.ceil((Number(entry.expiresAt || 0) - Date.now()) / 1000));
+      btnCounterAbilityUse.textContent = `${ability}(${remainSec})`;
+      if (remainSec <= 0){
+        clearCounterPromptForMe(entry.at).catch(() => {});
+        hideCounterAbilityPrompt();
+        return true;
+      }
+      return false;
+    };
+
+    counterAbilityPop.classList.remove("hidden");
+    if (activeCounterPromptAt !== entry.at){
+      if (counterAbilityCountdownTimer){
+        clearInterval(counterAbilityCountdownTimer);
+        counterAbilityCountdownTimer = null;
+      }
+      activeCounterPromptAt = entry.at;
+      if (!updateLabel() && !entry.mustChoose){
+        counterAbilityCountdownTimer = setInterval(updateLabel, 250);
+      } else if (entry.mustChoose){
+        updateLabel();
+      }
+    } else {
+      updateLabel();
+    }
   }
 
   function isIdentityRevealPopBlockedByEffectPop(){
@@ -4930,11 +5057,24 @@
     if (!my || !my.roleId) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if (myRoleId === "SHA_W3" || myRoleId === "SHA_V1"){
+      if (isCounterPromptSilentIdentityClickWindow()){
+        e.stopPropagation();
+        return;
+      }
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
+      return;
+    }
     if (myRoleId === "CIT_A1" && isAliceAbilityUsed()){
       e.stopPropagation();
       return;
     }
     if (!isMyTurn()){
+      if (isCounterPromptSilentIdentityClickWindow()){
+        e.stopPropagation();
+        return;
+      }
       e.stopPropagation();
       showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
       return;
@@ -5436,6 +5576,30 @@
     await setSeatIdentityPromptState(null);
     if (closeZoomOnChoice) closeZoom();
     if (handler) await handler();
+  });
+
+  btnCounterAbilitySkip?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const entry = counterPromptEntryForMe();
+    hideCounterAbilityPrompt();
+    await clearCounterPromptForMe(entry?.at || null);
+  });
+
+  btnCounterAbilityUse?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const entry = counterPromptEntryForMe();
+    if (!entry) return;
+    const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
+    if (!role) return;
+
+    if (!isMyIdentityRevealed()){
+      await revealMyIdentityToEquipment({ revealedBy:"counter_attack" });
+    } else {
+      await emitRoleFlashEvent(role.id, 1500);
+    }
+
+    hideCounterAbilityPrompt();
+    await clearCounterPromptForMe(entry.at);
   });
 
   equipBody.addEventListener("click", (e) => {
@@ -6643,15 +6807,53 @@
     attackResultPop.classList.remove("hidden");
   }
 
+  async function queueCounterPromptsForDamagedPlayers(entries = []){
+    if (!state.roomCode || !entries.length) return;
+
+    const attackerUid = safeText(state.userId || "");
+    const turnKey = turnCycleKey();
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      const map = cur.counterPromptState || {};
+      for (const item of entries){
+        const uid = safeText(item?.uid || "");
+        const roleId = safeText(item?.roleId || "");
+        if (!uid || !isCounterRole(roleId)) continue;
+        const mustChoose = !!(cur.equipment?.[uid]?.identity?.roleId);
+        const now = Date.now();
+        map[uid] = {
+          uid,
+          roleId,
+          attackerUid,
+          turnKey,
+          mustChoose,
+          expiresAt: mustChoose ? 0 : (now + 8000),
+          at: now
+        };
+      }
+      if (Object.keys(map).length){
+        cur.counterPromptState = map;
+      }
+      return cur;
+    });
+  }
+
   async function addResolvedDamageToPlayers(rows = []){
-    const entries = (rows || [])
+    const allEntries = (rows || [])
       .map(item => ({
         uid: safeText(item?.uid || ""),
         damage: Math.max(0, Number(item?.damage || 0)),
-        bonusLabelAmount: Math.max(0, Number(item?.bonusLabelAmount || 0))
+        bonusLabelAmount: Math.max(0, Number(item?.bonusLabelAmount || 0)),
+        roleId: safeText(state.hands?.[safeText(item?.uid || "")]?.roleId || "")
       }))
-      .filter(item => item.uid && item.damage > 0);
-    if (!state.roomCode || !entries.length) return;
+      .filter(item => item.uid);
+    if (!state.roomCode || !allEntries.length) return;
+
+    await queueCounterPromptsForDamagedPlayers(allEntries);
+
+    const entries = allEntries.filter(item => item.damage > 0);
+    if (!entries.length) return;
 
     const expected = new Set();
     for (const item of entries){
@@ -7261,6 +7463,10 @@
       };
       const aliveOrder = order.filter(uid => !isEliminatedInRoom(uid));
       if (aliveOrder.length === 0) return cur;
+
+      const counterMap = cur.counterPromptState || {};
+      const hasBlockingCounterPrompt = Object.values(counterMap).some((entry) => !!entry && !!entry.mustChoose);
+      if (hasBlockingCounterPrompt) return cur;
 
       const curTurn = cur.turn || {};
       const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || aliveOrder[0] || "");
@@ -10438,6 +10644,7 @@
       renderHpBoard();
       renderPositionLine();
       renderTurnEndButton();
+      renderCounterAbilityPrompt();
       renderMarkers();
       syncPendingMoveChoiceOwnership();
       restorePendingMoveChoiceFromSeat();
@@ -11519,6 +11726,7 @@
       remove(ref(db, `${base}/turn`)),
       remove(ref(db, `${base}/attackResolutionPending`)),
       remove(ref(db, `${base}/attackLootPending`)),
+      remove(ref(db, `${base}/counterPromptState`)),
     ]);
 
     deckCache = null;
