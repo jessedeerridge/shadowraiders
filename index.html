@@ -90,7 +90,20 @@
 
   .attack-result-pop-rows{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;max-height:220px;overflow:auto;}
 .attack-result-pop-row{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;line-height:1.4;text-align:center;}
-.attack-result-plus-two{font-size:12px;color:#d97878;}
+.attack-result-plus-two{
+  display:inline-block;
+  font-size:inherit;
+  line-height:inherit;
+  color:#d2b8c2;
+  font-family:"DotGothic16","MS Gothic","Courier New",monospace;
+  letter-spacing:.04em;
+  font-weight:500;
+  background-image:radial-gradient(circle, #d2b8c2 1px, transparent 1.2px);
+  background-size:4px 4px;
+  -webkit-background-clip:text;
+  background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
 .attack-result-pop-name{display:inline-flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;width:70px;max-width:70px;cursor:default;padding:4px 6px;}
 .attack-result-pop-name-text{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;}
 .attack-result-pop-row .chip16{flex:0 0 auto;}
