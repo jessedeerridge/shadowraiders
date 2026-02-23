@@ -2848,6 +2848,33 @@
     counterAbilityPop?.classList.add("hidden");
   }
 
+  async function runWerewolfCounterAttack(attackerUid){
+    const targetUid = safeText(attackerUid || "");
+    if (!targetUid || !state.roomCode) return;
+    const masamuneMode = hasEquipmentByName(state.userId, "妖刀マサムネ");
+    const rolled = {
+      d6: 1 + Math.floor(Math.random() * 6),
+      d4: 1 + Math.floor(Math.random() * 4)
+    };
+
+    await emitCardDiceEvent({
+      kind:"role_werewolf_counter",
+      uid: state.userId,
+      targetUid,
+      d6: rolled.d6,
+      d4: rolled.d4,
+      masamuneMode
+    });
+    await waitMs(1000);
+
+    const baseDamage = calcAttackDamageFromRoll(state.userId, rolled.d6, rolled.d4, {
+      masamuneMode,
+      targetUid
+    });
+    if (baseDamage <= 0) return;
+    await addDamageToPlayer(targetUid, baseDamage, { source:"attack" });
+  }
+
   function renderCounterAbilityPrompt(){
     const entry = counterPromptEntryForMe();
     if (!counterAbilityPop || !counterAbilityMsg || !btnCounterAbilityUse || !btnCounterAbilitySkip){
@@ -5645,6 +5672,10 @@
       await emitRoleFlashEvent(role.id, 1500);
     }
 
+    if (safeText(role.id || "") === "SHA_W3"){
+      await runWerewolfCounterAttack(entry.attackerUid);
+    }
+
     hideCounterAbilityPrompt();
     const resolvedEntry = await clearCounterPromptForMe(entry.at);
     await tryAdvanceTurnAfterCounterChoice(resolvedEntry);
@@ -7372,6 +7403,15 @@
         runCornerD6Roll(Number(ev.d6 || 1));
       } else if (kind === "role_emma"){
         runCornerD4Roll(Number(ev.d4 || 1));
+      } else if (kind === "role_werewolf_counter"){
+        if (!!ev.masamuneMode){
+          runCornerD4Roll(Number(ev.d4 || 1));
+        } else {
+          runCornerD6D4Roll({
+            d6: Number(ev.d6 || 1),
+            d4: Number(ev.d4 || 1)
+          });
+        }
       }
     });
   }
