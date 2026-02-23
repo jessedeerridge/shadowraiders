@@ -2947,9 +2947,6 @@
       return { abilityName:"デル・フリス", description:"もう一度攻撃を行いますか。" };
     }
     if (roleId === "SHA_V2" && hasSuccessDamage){
-      if (isMyIdentityRevealed()){
-        return { abilityName:"吸血", description:"2ダメージ回復できます。", singleButtonOnly:true, hideEndButton:true, skipConfirmPrompt:true };
-      }
       return { abilityName:"吸血", description:"2ダメージ回復できます。" };
     }
     return null;
@@ -5251,21 +5248,7 @@
         await startUlsterExtraAttackSelection();
         return;
       }
-      if (roleId === "SHA_V2" && spec.hideEndButton){
-        await finalizePendingAttackResolution(true);
-      }
     };
-
-    if (spec.skipConfirmPrompt){
-      if (attackResultChoiceBusy) return;
-      attackResultChoiceBusy = true;
-      try {
-        await runKeepAbility();
-      } finally {
-        attackResultChoiceBusy = false;
-      }
-      return;
-    }
 
     if (attackResultChoiceBusy) return;
     showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
@@ -6454,7 +6437,7 @@
     const shouldHideKeepAsSecondAttack = !spec
       && (roleId === "CIT_C1" || roleId === "SHA_U3")
       && isAttackAbilityUsedThisTurn(roleId);
-    btnAttackResultEnd?.classList.toggle("hidden", !!spec?.hideEndButton);
+    btnAttackResultEnd?.classList.remove("hidden");
     btnAttackResultKeep?.classList.toggle("hidden", shouldHideKeepAsSecondAttack);
     attackResultChoiceBusy = false;
     attackResultPop.classList.remove("hidden");
