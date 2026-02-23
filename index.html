@@ -768,7 +768,7 @@
   position:fixed;
   inset:0;
   pointer-events:none;
-  z-index:295;
+  z-index:400;
 }
 .agatha-reveal-overlay{
   position:fixed;
@@ -6975,6 +6975,7 @@
 
   async function finalizePendingAttackResolution(endTurnAfterApply, advanceTurnOnCounterResolve = false){
     const pending = pendingAttackResolution;
+    const attackTurnOwnerUid = currentTurnPlayerId();
     pendingAttackResolution = null;
     pendingAttackResultMeta = null;
     attackTurnEndChoicePending = false;
@@ -6997,7 +6998,9 @@
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
-      await doEndTurn();
+      if (currentTurnPlayerId() === attackTurnOwnerUid){
+        await doEndTurn();
+      }
       attackFlowUiLockActive = false;
       suppressEndTurnButton = false;
       renderTurnEndButton();
