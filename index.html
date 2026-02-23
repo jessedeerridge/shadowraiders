@@ -2304,6 +2304,8 @@
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
   let pendingAttackResolution = null;
+  let attackResultChoiceBusy = false;
+  let ulsterExtraAttackPending = 0;
   let attackFlowUiLockActive = false;
   let suppressEndTurnButton = false;
   let pendingHpSwapAnimation = null;
@@ -2906,14 +2908,136 @@
     scheduleVampireHeal();
   }
 
-  async function emitRoleFlashEvent(roleId, reason = ""){
+  async function emitRoleFlashEvent(roleId, reason = "", durationMs = 1200){
     const rid = safeText(roleId || "");
     if (!state.roomCode || !rid) return;
     await set(ref(db, `rooms/${state.roomCode}/effectEvents/roleFlash`), {
       roleId: rid,
       reason: safeText(reason || ""),
+      durationMs: Math.max(100, Number(durationMs) || 1200),
       at: Date.now()
     });
+  }
+
+  function attackAbilitySpecFromRows(rows = []){
+    const role = myRoleInfo();
+    const roleId = safeText(role?.id || "");
+    if (!roleId) return null;
+    const normalizedRows = Array.isArray(rows)
+      ? rows.map(item => ({ uid:safeText(item?.uid || ""), damage:Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
+      : [];
+    const hasSuccessDamage = normalizedRows.some(item => item.damage > 0);
+    const maxDamage = normalizedRows.reduce((max, item) => Math.max(max, Number(item.damage || 0)), 0);
+    const attackFailed = normalizedRows.length > 0 && !hasSuccessDamage;
+
+    if (roleId === "CIT_C1"){
+      return { abilityName:"死の饗宴", description:"自分に2ダメージ与えて、もう一度攻撃しますか。" };
+    }
+    if (roleId === "CIT_B1" && maxDamage >= 2){
+      return { abilityName:"念力の懐中時計", description:"ダメージの代わりに相手の装備カードを獲得しますか。" };
+    }
+    if (roleId === "RAI_F3" && !isMyIdentityRevealed()){
+      return { abilityName:"ドラゴンアタック", description:"正体を公開している相手へのダメージが+2になります。" };
+    }
+    if (roleId === "RAI_G2" && hasMyEquipmentByName("エクスカリバー") && attackFailed){
+      return { abilityName:"魔剣の伝承者", description:"エクスカリバーを所有している時、攻撃が成功するまで振り直す。" };
+    }
+    if (roleId === "SHA_U3"){
+      return { abilityName:"デル・フリス", description:"もう一度攻撃を行いますか。" };
+    }
+    if (roleId === "SHA_V2" && hasSuccessDamage){
+      return { abilityName:"吸血", description:"2ダメージ回復できます。" };
+    }
+    return null;
+  }
+
+  function formatAttackAbilityPillLabel(name){
+    const raw = safeText(name || "").trim();
+    if (!raw) return "";
+    return Array.from(raw).length <= 2 ? ` ${raw} ` : raw;
+  }
+
+  const ATTACK_RESULT_PER_TURN_ABILITY_KEYS = {
+    "CIT_C1": "craig_attack",
+    "SHA_U3": "ulster_attack"
+  };
+
+  function attackResultPerTurnUsageKey(roleId){
+    return ATTACK_RESULT_PER_TURN_ABILITY_KEYS[safeText(roleId || "")] || "";
+  }
+
+  function isAttackResultAbilityUsedThisTurn(roleId){
+    const usageKey = attackResultPerTurnUsageKey(roleId);
+    if (!usageKey || !state.userId) return false;
+    const usedTurn = safeText(state.room?.abilityUsage?.[usageKey]?.[state.userId] || "");
+    return !!usedTurn && usedTurn === currentTurnKey();
+  }
+
+  async function markAttackResultAbilityUsedThisTurn(roleId){
+    const usageKey = attackResultPerTurnUsageKey(roleId);
+    if (!usageKey || !state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/${usageKey}/${state.userId}`), currentTurnKey());
+  }
+
+  function primaryAttackTargetUidFromRows(rows = []){
+    const list = Array.isArray(rows) ? rows : [];
+    for (const item of list){
+      const uid = safeText(item?.uid || "");
+      if (uid) return uid;
+    }
+    return "";
+  }
+
+  function markerClientPointByUid(uid){
+    const marker = markerCache?.[safeText(uid || "")] || null;
+    const x = Number(marker?.x);
+    const y = Number(marker?.y);
+    if (!roomSvg || !Number.isFinite(x) || !Number.isFinite(y)){
+      return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    }
+    const ctm = roomSvg.getScreenCTM();
+    if (!ctm){
+      return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    }
+    const pt = roomSvg.createSVGPoint();
+    pt.x = x;
+    pt.y = y;
+    const out = pt.matrixTransform(ctm);
+    return { x: Number(out.x || (window.innerWidth / 2)), y: Number(out.y || (window.innerHeight / 2)) };
+  }
+
+  async function runFollowupAttackToTarget(uid, delayMs = 0){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return;
+    const wait = Math.max(0, Number(delayMs) || 0);
+    if (wait > 0) await waitMs(wait);
+    const point = markerClientPointByUid(targetUid);
+    attackTurnEndChoicePending = true;
+    attackFlowUiLockActive = true;
+    renderTurnEndButton();
+    await runAttackDiceAnimation(targetUid, point.x, point.y, { force:true, applyDamage:true });
+  }
+
+  async function resolveAttackAbilityReveal(role){
+    if (!role) return;
+    if (!isMyIdentityRevealed()){
+      await revealMyIdentityToEquipment({ revealedBy:"attack_ability" });
+    } else {
+      await emitRoleFlashEvent(role.id, "attack_ability_reveal_repeat", 1500);
+    }
+  }
+
+  async function startUlsterExtraAttackSelection(){
+    if (!state.roomCode) return;
+    ulsterExtraAttackPending = Math.max(ulsterExtraAttackPending, 1);
+    suppressEndTurnButton = true;
+    attackFlowUiLockActive = false;
+    await update(ref(db, `rooms/${state.roomCode}/turn`), {
+      attackDone: false,
+      updatedAt: Date.now()
+    });
+    showTurnHint("デル・フリス：もう一度攻撃対象を選んでください。", { clearRoom3Skip:true });
+    renderTurnEndButton();
   }
 
 
@@ -2963,7 +3087,7 @@
     overlay.style.display = "flex";
     overlay.style.alignItems = "center";
     overlay.style.justifyContent = "center";
-    overlay.style.background = "rgba(0,0,0,.35)";
+    overlay.style.background = "transparent";
     overlay.style.pointerEvents = "none";
 
     const card = createIdentityCard(role);
@@ -5101,11 +5225,74 @@
 
   btnAttackResultKeep?.addEventListener("click", async (e) => {
     e.stopPropagation();
-    await finalizePendingAttackResolution(false);
+    if (btnAttackResultKeep?.disabled) return;
+    const pending = pendingAttackResolution;
+    const spec = attackAbilitySpecFromRows(pending?.rows || []);
+    if (!spec){
+      await finalizePendingAttackResolution(false);
+      return;
+    }
+    if (attackResultChoiceBusy) return;
+    showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
+      if (attackResultChoiceBusy) return;
+      attackResultChoiceBusy = true;
+      try {
+        const role = myRoleInfo();
+        const roleId = safeText(role?.id || "");
+        const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
+        if (isAttackResultAbilityUsedThisTurn(roleId)) return;
+        await markAttackResultAbilityUsedThisTurn(roleId);
+        await finalizePendingAttackResolution(false);
+        await resolveAttackAbilityReveal(role);
+
+        if (roleId === "CIT_C1"){
+          await addDamageToPlayer(state.userId, 2);
+          await runFollowupAttackToTarget(followupTargetUid, 1500);
+          return;
+        }
+        if (roleId === "RAI_G2"){
+          await runFollowupAttackToTarget(followupTargetUid, 0);
+          return;
+        }
+        if (roleId === "SHA_U3"){
+          await startUlsterExtraAttackSelection();
+          return;
+        }
+      } finally {
+        attackResultChoiceBusy = false;
+      }
+    }, {
+      messageHtml: `<span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>${escapeHtml(spec.description)}`,
+      yesLabel: "はい",
+      noLabel: "いいえ",
+      fixedLower:true,
+      noCaret:true,
+      dismissOnOutside:true
+    });
   });
 
   btnAttackResultEnd?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    const pending = pendingAttackResolution;
+    const spec = attackAbilitySpecFromRows(pending?.rows || []);
+    if (spec){
+      if (attackResultChoiceBusy) return;
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "本当に終了しますか。", async () => {
+        if (attackResultChoiceBusy) return;
+        attackResultChoiceBusy = true;
+        try {
+          const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
+          if (openedEmma){
+            await finalizePendingAttackResolution(false);
+            return;
+          }
+          await finalizePendingAttackResolution(true);
+        } finally {
+          attackResultChoiceBusy = false;
+        }
+      }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
+      return;
+    }
     const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
     if (openedEmma){
       await finalizePendingAttackResolution(false);
@@ -6098,6 +6285,7 @@
 
   function hideAttackResultPop(){
     attackResultPop?.classList.add("hidden");
+    attackResultChoiceBusy = false;
   }
 
   function cachePendingAttackResolution(pending){
@@ -6236,12 +6424,24 @@
       row.appendChild(makeAttackResultNameNode(uid));
       attackResultRows.appendChild(row);
     }
+    const spec = attackAbilitySpecFromRows(rows);
+    const roleId = safeText(myRoleInfo()?.id || "");
+    const abilityDisabled = !!spec && isAttackResultAbilityUsedThisTurn(roleId);
     if (btnAttackResultEnd){
       btnAttackResultEnd.textContent = hasSealWisdomBonusThisTurn() ? "OKおわる(+1)" : "OKおわる";
     }
     if (btnAttackResultKeep){
-      btnAttackResultKeep.textContent = "OKおわらない";
+      if (spec){
+        btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>`;
+        btnAttackResultKeep.disabled = abilityDisabled;
+        btnAttackResultKeep.classList.toggle("pop-disabled", abilityDisabled);
+      } else {
+        btnAttackResultKeep.textContent = "OKおわらない";
+        btnAttackResultKeep.disabled = false;
+        btnAttackResultKeep.classList.remove("pop-disabled");
+      }
     }
+    attackResultChoiceBusy = false;
     attackResultPop.classList.remove("hidden");
   }
 
@@ -6296,7 +6496,7 @@
     if (!pending || pending.applied){
       if (!endTurnAfterApply){
         attackFlowUiLockActive = false;
-        suppressEndTurnButton = false;
+        suppressEndTurnButton = ulsterExtraAttackPending > 0;
         renderTurnEndButton();
       }
       return;
@@ -6304,6 +6504,7 @@
     pending.applied = true;
     await addResolvedDamageToPlayers(pending.rows || []);
     if (endTurnAfterApply){
+      ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
       await doEndTurn();
       attackFlowUiLockActive = false;
@@ -6314,8 +6515,11 @@
 
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await waitForHpBoardSwapAnimationEnd();
+    if (ulsterExtraAttackPending > 0){
+      ulsterExtraAttackPending = Math.max(0, ulsterExtraAttackPending - 1);
+    }
     attackFlowUiLockActive = false;
-    suppressEndTurnButton = false;
+    suppressEndTurnButton = ulsterExtraAttackPending > 0;
     renderTurnEndButton();
   }
 
@@ -6715,7 +6919,7 @@
       }
       if (!ev || !at || at <= roleFlashEventSeenAt) return;
       roleFlashEventSeenAt = at;
-      showRoleFlashOverlay(safeText(ev.roleId || ""), 1200);
+      showRoleFlashOverlay(safeText(ev.roleId || ""), Number(ev.durationMs || 1200));
     });
   }
 
@@ -11006,6 +11210,7 @@
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
+    ulsterExtraAttackPending = 0;
     attackFlowUiLockActive = false;
     suppressEndTurnButton = false;
     cachePendingAttackResolution(null);
