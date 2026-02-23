@@ -6999,7 +6999,7 @@
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
       if (currentTurnPlayerId() === attackTurnOwnerUid){
-        await doEndTurn();
+        await doEndTurn(attackTurnOwnerUid);
       }
       attackFlowUiLockActive = false;
       suppressEndTurnButton = false;
@@ -7542,8 +7542,9 @@
     });
   }
 
-  async function advanceTurnToNextPlayer(){
+  async function advanceTurnToNextPlayer(expectedCurrentPlayerId = ""){
     if (!state.roomCode) return;
+    const expectedUid = safeText(expectedCurrentPlayerId || "");
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     await runTransaction(roomRef, (cur) => {
       if (!cur || !(cur.gameStarted || cur.startedAt)) return cur;
@@ -7568,6 +7569,7 @@
 
       const curTurn = cur.turn || {};
       const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || aliveOrder[0] || "");
+      if (expectedUid && curId !== expectedUid) return cur;
       const rest = Math.max(0, Number(curTurn.repeatTurnRemaining || 0));
       const total = Math.max(0, Number(curTurn.repeatTurnTotal || 0));
       const repeat = rest > 0 && !isEliminatedInRoom(curId);
@@ -11857,7 +11859,7 @@
     return true;
   }
 
-  async function doEndTurn(){
+  async function doEndTurn(expectedCurrentPlayerId = ""){
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
@@ -11867,7 +11869,7 @@
     suppressEndTurnButton = false;
     resetAttackAbilityUsageTurnState();
     cachePendingAttackResolution(null);
-    await advanceTurnToNextPlayer();
+    await advanceTurnToNextPlayer(expectedCurrentPlayerId);
     hideAttackPop();
     hideAttackResultPop();
     clearAttackResultDice();
