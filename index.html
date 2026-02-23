@@ -1121,6 +1121,7 @@
 
 .mark-rect{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
 .mark-rect.guardian-shield{stroke:#d4af37;stroke-width:2;}
+.mark-rect.gordon-barrier{stroke:#dc2626;stroke-width:2;}
 .mark-text{font-weight:1000;font-size:10px;dominant-baseline:middle;text-anchor:middle;user-select:none;pointer-events:none;}
 .mark-pulse-target{
   transform-box:fill-box;
@@ -2336,6 +2337,7 @@
   let bruceAutoRevealTimer = null;
   let carolTurnHealTimer = null;
   let carolTurnHealKey = "";
+  let gordonBarrierClearTurnKey = "";
   let effectResolutionLocks = {};
   let zoomPassthroughMode = false;
   let zoomDismissHandler = null;
@@ -2680,11 +2682,13 @@
     roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret");
     if (btnRoomActionYes){
       btnRoomActionYes.textContent = "はい";
-      btnRoomActionYes.classList.remove("pop-purple","pop-white");
+      btnRoomActionYes.disabled = false;
+      btnRoomActionYes.classList.remove("pop-purple","pop-white","pop-disabled");
     }
     if (btnRoomActionNo){
       btnRoomActionNo.textContent = "いいえ";
-      btnRoomActionNo.classList.remove("pop-purple","pop-white");
+      btnRoomActionNo.disabled = false;
+      btnRoomActionNo.classList.remove("pop-purple","pop-white","pop-disabled");
     }
     if (pendingEquipAction?.type === "david_select") hideDavidSelectPreview();
   }
@@ -2709,14 +2713,20 @@
       roomActionMsg.textContent = safeText(message || "");
     }
     if (btnRoomActionYes){
+      const yesDisabled = !!options.yesDisabled;
       btnRoomActionYes.textContent = safeText(options.yesLabel || "はい");
-      btnRoomActionYes.classList.remove("pop-purple","pop-white");
+      btnRoomActionYes.disabled = yesDisabled;
+      btnRoomActionYes.classList.remove("pop-purple","pop-white","pop-disabled");
       if (yesBtnClass) btnRoomActionYes.classList.add(yesBtnClass);
+      if (yesDisabled) btnRoomActionYes.classList.add("pop-disabled");
     }
     if (btnRoomActionNo){
+      const noDisabled = !!options.noDisabled;
       btnRoomActionNo.textContent = safeText(options.noLabel || "いいえ");
-      btnRoomActionNo.classList.remove("pop-purple","pop-white");
+      btnRoomActionNo.disabled = noDisabled;
+      btnRoomActionNo.classList.remove("pop-purple","pop-white","pop-disabled");
       if (noBtnClass) btnRoomActionNo.classList.add(noBtnClass);
+      if (noDisabled) btnRoomActionNo.classList.add("pop-disabled");
     }
     roomActionPop.classList.remove("hidden");
     roomActionPop.classList.toggle("lower-mode", fixedLower);
@@ -2893,12 +2903,14 @@
     const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
     const ability = roleAbilityName(role || {});
     const blockedByGuardianShield = isCounterAbilityBlockedByGuardianShield(entry);
+    const blockedByGordonBarrier = hasGordonBarrier(entry.attackerUid);
+    const blocked = blockedByGuardianShield || blockedByGordonBarrier;
     counterAbilityMsg.textContent = "";
     counterAbilityMsg.classList.add("hidden");
     btnCounterAbilitySkip.textContent = "使わない";
-    btnCounterAbilityUse.disabled = blockedByGuardianShield;
-    btnCounterAbilityUse.classList.toggle("pop-disabled", blockedByGuardianShield);
-    btnCounterAbilityUse.classList.toggle("pop-dark", !blockedByGuardianShield);
+    btnCounterAbilityUse.disabled = blocked;
+    btnCounterAbilityUse.classList.toggle("pop-disabled", blocked);
+    btnCounterAbilityUse.classList.toggle("pop-dark", !blocked);
 
     const updateLabel = () => {
       if (entry.mustChoose){
@@ -3022,7 +3034,7 @@
       if (!role) return;
       await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
       openIdentityRevealZoom(role, state.userId);
-      await fullRecoverPlayer(state.userId);
+      await setDamageToPlayer(state.userId, 0, "card_kohrin_heal");
     };
   }
 
@@ -3122,7 +3134,7 @@
     vampireHealScheduled = true;
     setTimeout(async () => {
       await emitRoleFlashEvent("SHA_V2", "vampire_heal");
-      await healDamageToPlayer(state.userId, 2);
+      await healDamageToPlayer(state.userId, 2, "vampire_role_heal");
     }, 1500);
   }
 
@@ -3149,7 +3161,7 @@
       carolTurnHealTimer = null;
       if (!isMyTurn() || !isMyRole("CIT_C2") || !isMyIdentityRevealed()) return;
       await emitRoleFlashEvent("CIT_C2", "carol_turn_heal", 1200);
-      await healDamageToPlayer(state.userId, 2);
+      await healDamageToPlayer(state.userId, 2, "carol_role_heal");
     }, 1000);
   }
 
@@ -3682,7 +3694,7 @@
     if (!actorUid || !roleId || actorUid !== state.userId || !selectedUid) return;
 
     if (roleId === "RAI_F2"){
-      await setDamageToPlayer(selectedUid, 7);
+      await setDamageToPlayer(selectedUid, 7, "felicia_set");
     } else if (roleId === "RAI_F1"){
       const eye = 1 + Math.floor(Math.random() * 6);
       await emitCardDiceEvent({ kind:"role_felix", uid: actorUid, d6: eye });
@@ -3692,7 +3704,7 @@
       const eye = 1 + Math.floor(Math.random() * 4);
       await emitCardDiceEvent({ kind:"role_emma", uid: actorUid, d4: eye });
       await waitMs(1000);
-      await healDamageToPlayer(selectedUid, eye);
+      await healDamageToPlayer(selectedUid, eye, "emma_ability_heal");
       await update(ref(db, `rooms/${state.roomCode}/turn`), {
         attackDone: true,
         deckDrawDone: true,
@@ -3985,7 +3997,7 @@
         instantCloseOnSelect:true,
         resolver: async (uid) => {
           await waitMs(1000);
-          await setDamageToPlayer(uid, 7);
+          await setDamageToPlayer(uid, 7, "first_aid_set");
         }
       };
     }
@@ -3999,7 +4011,7 @@
           await emitCardDiceEvent({ kind:"blessing", uid:state.userId, d6:eye });
           await runCornerD6Roll(eye);
           await waitMs(1000);
-          await healDamageToPlayer(uid, eye);
+          await healDamageToPlayer(uid, eye, "card_blessing_heal");
         }
       };
     }
@@ -4013,7 +4025,7 @@
           if (!hasEquipmentByName(uid, "いにしえの聖杯")){
             await addDamageToPlayer(uid, 2);
           }
-          await healDamageToPlayer(state.userId, 1);
+          await healDamageToPlayer(state.userId, 1, "card_vampire_bat_heal");
         }
       };
     }
@@ -5030,7 +5042,7 @@
     });
     maybeResolveVampireHiddenHealOnReveal();
     if (revealedNow && safeText(my.roleId) === "CIT_C2"){
-      await healDamageToPlayer(state.userId, 2);
+      await healDamageToPlayer(state.userId, 2, "carol_reveal_heal");
       if (isMyTurn()){
         carolTurnHealKey = turnCycleKey();
       }
@@ -5470,7 +5482,7 @@
       }
       await markAliceAbilityUsed();
       setTimeout(() => {
-        setDamageToPlayer(state.userId, 0);
+        setDamageToPlayer(state.userId, 0, "alice_ability_heal");
       }, 1500);
       return;
     }
@@ -5489,6 +5501,9 @@
       return;
     }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
+    if (myRoleId === "RAI_G1" && state.roomCode){
+      await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
+    }
     if (isRoleSelectionAbility(myRoleId) && !isRoleAbilityUsed(myRoleId)){
       if (!canStartRoleSelection(myRoleId, state.userId)){
         hideRevealPop();
@@ -5500,7 +5515,7 @@
     if (myRoleId === "CIT_A1"){
       await markAliceAbilityUsed();
       setTimeout(() => {
-        setDamageToPlayer(state.userId, 0);
+        setDamageToPlayer(state.userId, 0, "alice_ability_heal");
       }, 1500);
     }
     hideRevealPop();
@@ -6132,8 +6147,32 @@
     return !!state.room?.guardianAngelShield?.[targetUid];
   }
 
+  function hasGordonBarrier(uid){
+    const targetUid = safeText(uid);
+    if (!targetUid) return false;
+    return !!state.room?.gordonBarrier?.[targetUid];
+  }
+
+  function isGordonBarrierHpChangeAllowed(uid, source = ""){
+    if (!hasGordonBarrier(uid)) return true;
+    const normalized = safeText(source || "").trim();
+    const allowed = new Set([
+      "room3_heal",
+      "card_kohrin_heal",
+      "card_blessing_heal",
+      "card_holy_water_heal",
+      "card_mermaid_tears_heal",
+      "emma_ability_heal",
+      "card_vampire_bat_heal",
+      "felicia_set",
+      "first_aid_set",
+      "claire_swap_set"
+    ]);
+    return allowed.has(normalized);
+  }
+
   function isAttackTargetProtected(uid){
-    return hasGuardianAngelShield(uid);
+    return hasGuardianAngelShield(uid) || hasGordonBarrier(uid);
   }
 
   function buildChipFor(uid){
@@ -6279,6 +6318,10 @@
     showTurnHint("");
     clearCarolTurnHealTimer();
     scheduleCarolTurnStartHeal();
+    if (isMyTurn() && hasGordonBarrier(state.userId) && gordonBarrierClearTurnKey !== key){
+      gordonBarrierClearTurnKey = key;
+      remove(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`)).catch(() => {});
+    }
     if (isMyTurn() && isMyIdentityRevealed() && isMyRole("SHA_U2") && !isRoleAbilityUsed("SHA_U2")){
       const check = uranusAbilityAvailability();
       if (check.ok){
@@ -8404,6 +8447,9 @@
     if (options.source === "attack" && hasGuardianAngelShield(targetUid)){
       return 0;
     }
+    if (!isGordonBarrierHpChangeAllowed(targetUid, options.source || "")){
+      return 0;
+    }
     if (hasEquipmentByName(targetUid, "賢者のローブ")){
       add -= 1;
     }
@@ -8934,9 +8980,10 @@
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) + add));
   }
 
-  async function healDamageToPlayer(uid, amount){
+  async function healDamageToPlayer(uid, amount, source = ""){
     const heal = Math.max(0, Number(amount) || 0);
     if (!uid || !state.roomCode || heal <= 0) return;
+    if (!isGordonBarrierHpChangeAllowed(uid, source)) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) - heal));
   }
@@ -8953,8 +9000,9 @@
   }
 
 
-  async function setDamageToPlayer(uid, damage){
+  async function setDamageToPlayer(uid, damage, source = ""){
     if (!uid || !state.roomCode) return;
+    if (!isGordonBarrierHpChangeAllowed(uid, source)) return;
     await set(ref(db, `rooms/${state.roomCode}/damage/${uid}`), clampDamage(damage));
   }
 
@@ -9229,7 +9277,7 @@
     try {
     if (name === "いやしの聖水"){
       await waitMs(1500);
-      await healDamageToPlayer(state.userId, 2);
+      await healDamageToPlayer(state.userId, 2, "card_holy_water_heal");
       return;
     }
 
@@ -9254,7 +9302,7 @@
         onYes: async () => {
           await revealMyIdentityToEquipment();
           openIdentityRevealZoom(role, state.userId);
-          await fullRecoverPlayer(state.userId);
+          await setDamageToPlayer(state.userId, 0, "card_kohrin_heal");
         }
       });
       return;
@@ -9271,7 +9319,7 @@
         onYes: async () => {
           await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
           openIdentityRevealZoom(role, state.userId);
-          await fullRecoverPlayer(state.userId);
+          await setDamageToPlayer(state.userId, 0, "card_kohrin_heal");
         }
       });
       return;
@@ -9351,7 +9399,7 @@
       await waitMs(1500);
       const topUids = maxDamageAlivePlayerIds();
       for (const uid of topUids){
-        await healDamageToPlayer(uid, 3);
+        await healDamageToPlayer(uid, 3, "card_mermaid_tears_heal");
       }
       return;
     }
@@ -9906,11 +9954,12 @@
           await updateTurnRoomActionState({ room3ActionUsed:true });
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
-          await healDamageToPlayer(uid, 1);
+          await healDamageToPlayer(uid, 1, "room3_heal");
           renderMarkers();
         }, {
           yesLabel: "1回復する",
           noLabel: "2ダメージ与える",
+          noDisabled: hasGordonBarrier(uid),
           compactButtons: true,
           yOffset: -14,
           onNo: async () => {
@@ -9985,11 +10034,12 @@
           await updateTurnRoomActionState({ room3ActionUsed:true });
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
-          await healDamageToPlayer(uid, 1);
+          await healDamageToPlayer(uid, 1, "room3_heal");
           renderMarkers();
         }, {
           yesLabel: "1回復する",
           noLabel: "2ダメージ与える",
+          noDisabled: hasGordonBarrier(uid),
           compactButtons: true,
           yOffset: -14,
           onNo: async () => {
@@ -10022,6 +10072,7 @@
   rect.setAttribute("rx", String(rx));
   rect.setAttribute("class", "mark-rect");
   if (uid && hasGuardianAngelShield(uid)) rect.classList.add("guardian-shield");
+  if (uid && hasGordonBarrier(uid)) rect.classList.add("gordon-barrier");
   rect.setAttribute("fill", String(color || "#ddd"));
 
   const txt = document.createElementNS("http://www.w3.org/2000/svg","text");
