@@ -1121,6 +1121,7 @@
 
 .mark-rect{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
 .mark-rect.guardian-shield{stroke:#d4af37;stroke-width:2;}
+.mark-rect.gordon-barrier{stroke:#dc2626;stroke-width:2;}
 .mark-text{font-weight:1000;font-size:10px;dominant-baseline:middle;text-anchor:middle;user-select:none;pointer-events:none;}
 .mark-pulse-target{
   transform-box:fill-box;
@@ -2811,6 +2812,7 @@
       uid,
       roleId: safeText(entry?.roleId || ""),
       attackerUid: safeText(entry?.attackerUid || ""),
+      attackerBarrierActive: !!entry?.attackerBarrierActive,
       turnKey: safeText(entry?.turnKey || ""),
       advanceTurnOnResolve: !!entry?.advanceTurnOnResolve,
       mustChoose: !!entry?.mustChoose,
@@ -2930,7 +2932,7 @@
     const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
     const ability = roleAbilityName(role || {});
     const blockedByGuardianShield = isCounterAbilityBlockedByGuardianShield(entry);
-    const blockedByGordonBarrier = isGordonBarrierActive(entry.attackerUid);
+    const blockedByGordonBarrier = !!entry.attackerBarrierActive || isGordonBarrierActive(entry.attackerUid);
     counterAbilityMsg.textContent = "";
     counterAbilityMsg.classList.add("hidden");
     btnCounterAbilitySkip.textContent = "使わない";
@@ -5792,7 +5794,8 @@
     e.stopPropagation();
     const entry = counterPromptEntryForMe();
     if (!entry) return;
-    if (isCounterAbilityBlockedByGuardianShield(entry) || isGordonBarrierActive(entry.attackerUid)) return;
+    if (isCounterAbilityBlockedByGuardianShield(entry)) return;
+    if (!!entry.attackerBarrierActive || isGordonBarrierActive(entry.attackerUid)) return;
     const role = ROLE_BY_ID[entry.roleId] || myRoleInfo();
     if (!role) return;
 
@@ -7116,6 +7119,7 @@
           uid,
           roleId,
           attackerUid,
+          attackerBarrierActive: !!(cur.gordonBarrier && cur.gordonBarrier[attackerUid]),
           turnKey,
           advanceTurnOnResolve,
           mustChoose,
@@ -10085,6 +10089,7 @@
   rect.setAttribute("rx", String(rx));
   rect.setAttribute("class", "mark-rect");
   if (uid && hasGuardianAngelShield(uid)) rect.classList.add("guardian-shield");
+  if (uid && uid === state.userId && isGordonBarrierActive(uid)) rect.classList.add("gordon-barrier");
   rect.setAttribute("fill", String(color || "#ddd"));
 
   const txt = document.createElementNS("http://www.w3.org/2000/svg","text");
