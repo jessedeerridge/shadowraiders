@@ -2304,6 +2304,7 @@
   let pendingRevealAction = "";
   let attackTurnEndChoicePending = false;
   let pendingAttackResolution = null;
+  let attackResultChoiceBusy = false;
   let attackFlowUiLockActive = false;
   let suppressEndTurnButton = false;
   let pendingHpSwapAnimation = null;
@@ -2906,14 +2907,47 @@
     scheduleVampireHeal();
   }
 
-  async function emitRoleFlashEvent(roleId, reason = ""){
+  async function emitRoleFlashEvent(roleId, reason = "", durationMs = 1200){
     const rid = safeText(roleId || "");
     if (!state.roomCode || !rid) return;
     await set(ref(db, `rooms/${state.roomCode}/effectEvents/roleFlash`), {
       roleId: rid,
       reason: safeText(reason || ""),
+      durationMs: Math.max(100, Number(durationMs) || 1200),
       at: Date.now()
     });
+  }
+
+  function attackAbilitySpecFromRows(rows = []){
+    const role = myRoleInfo();
+    const roleId = safeText(role?.id || "");
+    if (!roleId) return null;
+    const normalizedRows = Array.isArray(rows)
+      ? rows.map(item => ({ uid:safeText(item?.uid || ""), damage:Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
+      : [];
+    const hasSuccessDamage = normalizedRows.some(item => item.damage > 0);
+    const maxDamage = normalizedRows.reduce((max, item) => Math.max(max, Number(item.damage || 0)), 0);
+    const attackFailed = normalizedRows.length > 0 && !hasSuccessDamage;
+
+    if (roleId === "CIT_C1"){
+      return { abilityName:"死の饗宴", description:"自分に2ダメージ与えて、もう一度攻撃しますか。" };
+    }
+    if (roleId === "CIT_B1" && maxDamage >= 2){
+      return { abilityName:"念力の懐中時計", description:"ダメージの代わりに相手の装備カードを獲得しますか。" };
+    }
+    if (roleId === "RAI_F3" && !isMyIdentityRevealed()){
+      return { abilityName:"ドラゴンアタック", description:"正体を公開している相手へのダメージが+2になります。" };
+    }
+    if (roleId === "RAI_G2" && hasMyEquipmentByName("エクスカリバー") && attackFailed){
+      return { abilityName:"魔剣の伝承者", description:"エクスカリバーを所有している時、攻撃が成功するまで振り直す。" };
+    }
+    if (roleId === "SHA_U3"){
+      return { abilityName:"デル・フリス", description:"もう一度攻撃を行いますか。" };
+    }
+    if (roleId === "SHA_V2" && hasSuccessDamage){
+      return { abilityName:"吸血", description:"2ダメージ回復できます。" };
+    }
+    return null;
   }
 
 
@@ -5101,11 +5135,60 @@
 
   btnAttackResultKeep?.addEventListener("click", async (e) => {
     e.stopPropagation();
-    await finalizePendingAttackResolution(false);
+    const pending = pendingAttackResolution;
+    const spec = attackAbilitySpecFromRows(pending?.rows || []);
+    if (!spec){
+      await finalizePendingAttackResolution(false);
+      return;
+    }
+    if (attackResultChoiceBusy) return;
+    showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
+      if (attackResultChoiceBusy) return;
+      attackResultChoiceBusy = true;
+      try {
+        await finalizePendingAttackResolution(false);
+        const role = myRoleInfo();
+        if (!role) return;
+        if (!isMyIdentityRevealed()){
+          await revealMyIdentityToEquipment({ revealedBy:"attack_ability" });
+        } else {
+          await emitRoleFlashEvent(role.id, "attack_ability_reveal_repeat", 1500);
+        }
+      } finally {
+        attackResultChoiceBusy = false;
+      }
+    }, {
+      messageHtml: `<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>${escapeHtml(spec.description)}`,
+      yesLabel: "はい",
+      noLabel: "いいえ",
+      fixedLower:true,
+      noCaret:true,
+      dismissOnOutside:true
+    });
   });
 
   btnAttackResultEnd?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    const pending = pendingAttackResolution;
+    const spec = attackAbilitySpecFromRows(pending?.rows || []);
+    if (spec){
+      if (attackResultChoiceBusy) return;
+      showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "本当に終了しますか。", async () => {
+        if (attackResultChoiceBusy) return;
+        attackResultChoiceBusy = true;
+        try {
+          const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
+          if (openedEmma){
+            await finalizePendingAttackResolution(false);
+            return;
+          }
+          await finalizePendingAttackResolution(true);
+        } finally {
+          attackResultChoiceBusy = false;
+        }
+      }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
+      return;
+    }
     const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
     if (openedEmma){
       await finalizePendingAttackResolution(false);
@@ -6098,6 +6181,7 @@
 
   function hideAttackResultPop(){
     attackResultPop?.classList.add("hidden");
+    attackResultChoiceBusy = false;
   }
 
   function cachePendingAttackResolution(pending){
@@ -6236,12 +6320,18 @@
       row.appendChild(makeAttackResultNameNode(uid));
       attackResultRows.appendChild(row);
     }
+    const spec = attackAbilitySpecFromRows(rows);
     if (btnAttackResultEnd){
       btnAttackResultEnd.textContent = hasSealWisdomBonusThisTurn() ? "OKおわる(+1)" : "OKおわる";
     }
     if (btnAttackResultKeep){
-      btnAttackResultKeep.textContent = "OKおわらない";
+      if (spec){
+        btnAttackResultKeep.innerHTML = `OK<span class="ability-pill">${escapeHtml(spec.abilityName)}</span>`;
+      } else {
+        btnAttackResultKeep.textContent = "OKおわらない";
+      }
     }
+    attackResultChoiceBusy = false;
     attackResultPop.classList.remove("hidden");
   }
 
@@ -6715,7 +6805,7 @@
       }
       if (!ev || !at || at <= roleFlashEventSeenAt) return;
       roleFlashEventSeenAt = at;
-      showRoleFlashOverlay(safeText(ev.roleId || ""), 1200);
+      showRoleFlashOverlay(safeText(ev.roleId || ""), Number(ev.durationMs || 1200));
     });
   }
 
