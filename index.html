@@ -2379,6 +2379,8 @@
   let pendingAttackResultMeta = null;
   let attackResultChoiceBusy = false;
   let ulsterExtraAttackPending = 0;
+  let ulsterRevealPending = false;
+  let ulsterGuideShown = false;
   let attackFlowUiLockActive = false;
   let suppressEndTurnButton = false;
   let pendingHpSwapAnimation = null;
@@ -3449,13 +3451,18 @@
   async function startUlsterExtraAttackSelection(){
     if (!state.roomCode) return;
     ulsterExtraAttackPending = Math.max(ulsterExtraAttackPending, 1);
-    suppressEndTurnButton = true;
+    ulsterRevealPending = !isMyIdentityRevealed();
+    suppressEndTurnButton = false;
     attackFlowUiLockActive = false;
     await update(ref(db, `rooms/${state.roomCode}/turn`), {
       attackDone: false,
       updatedAt: Date.now()
     });
-    showTurnHint("デル・フリス：もう一度攻撃対象を選んでください。", { clearRoom3Skip:true });
+    const suffix = ulsterGuideShown
+      ? ""
+      : " 攻撃するプレイヤーを選んだ後に正体を公開します。公開をやめる場合は手番を終わる。";
+    showTurnHint(`デル・フリス：もう一度攻撃対象を選んでください。${suffix}`, { clearRoom3Skip:true });
+    ulsterGuideShown = true;
     renderTurnEndButton();
   }
 
@@ -6102,6 +6109,10 @@
       : null;
 
     hideAttackPop();
+    if (ulsterRevealPending && isMyRole("SHA_U3") && !isMyIdentityRevealed()){
+      await resolveAttackAbilityReveal(myRoleInfo());
+      ulsterRevealPending = false;
+    }
     attackTurnEndChoicePending = true;
     attackFlowUiLockActive = true;
     renderTurnEndButton();
@@ -6188,15 +6199,16 @@
       }
 
       await finalizePendingAttackResolution(false, true);
-      await resolveAttackAbilityReveal(role);
 
       if (roleId === "CIT_C1"){
+        await resolveAttackAbilityReveal(role);
         markAttackAbilityUsedThisTurn(roleId);
         await addDamageToPlayer(state.userId, 2);
         await runFollowupAttackToTarget(followupTargetUid, 1500);
         return;
       }
       if (roleId === "RAI_G2"){
+        await resolveAttackAbilityReveal(role);
         await runFollowupAttackToTarget(followupTargetUid, 0);
         return;
       }
@@ -6208,6 +6220,8 @@
     };
 
     if (attackResultChoiceBusy) return;
+    const isUlsterAbility = safeText(myRoleInfo()?.id || "") === "SHA_U3" && safeText(spec?.abilityName || "") === "デル・フリス";
+    const ulsterGuideText = "攻撃するプレイヤーを選んだ後に正体を公開します。公開をやめる場合は手番を終わる。";
     showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
       if (attackResultChoiceBusy) return;
       attackResultChoiceBusy = true;
@@ -6217,7 +6231,7 @@
         attackResultChoiceBusy = false;
       }
     }, {
-      messageHtml: `<span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>${escapeHtml(spec.description)}`,
+      messageHtml: `<span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>${escapeHtml(spec.description)}${(!ulsterGuideShown && isUlsterAbility) ? `<br>${escapeHtml(ulsterGuideText)}` : ""}`,
       yesLabel: "はい",
       noLabel: "いいえ",
       fixedLower:true,
@@ -7912,7 +7926,7 @@
     if (!pending || pending.applied){
       if (!endTurnAfterApply){
         attackFlowUiLockActive = false;
-        suppressEndTurnButton = ulsterExtraAttackPending > 0;
+        suppressEndTurnButton = false;
         renderTurnEndButton();
       }
       return;
@@ -7921,6 +7935,7 @@
     await addResolvedDamageToPlayers(pending.rows || [], { advanceTurnOnResolve: advanceTurnOnCounterResolve });
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
+      ulsterRevealPending = false;
       await new Promise(resolve => setTimeout(resolve, 2000));
       if (currentTurnPlayerId() === attackTurnOwnerUid){
         await doEndTurn(attackTurnOwnerUid);
@@ -7937,7 +7952,7 @@
       ulsterExtraAttackPending = Math.max(0, ulsterExtraAttackPending - 1);
     }
     attackFlowUiLockActive = false;
-    suppressEndTurnButton = ulsterExtraAttackPending > 0;
+    suppressEndTurnButton = false;
     renderTurnEndButton();
   }
 
@@ -12912,6 +12927,7 @@
     pendingAttackResolution = null;
     pendingAttackResultMeta = null;
     ulsterExtraAttackPending = 0;
+    ulsterRevealPending = false;
     attackFlowUiLockActive = false;
     suppressEndTurnButton = false;
     resetAttackAbilityUsageTurnState();
