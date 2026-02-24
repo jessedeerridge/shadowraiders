@@ -2351,6 +2351,7 @@
   const walpurgisSwapHiddenUids = new Set();
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
+  let suppressTurnButtonUntilNextTurnStart = false;
   let uranusMeteorResolved = false;
   let vampireHiddenAttackSuccess = false;
   let vampireHealScheduled = false;
@@ -2631,6 +2632,7 @@
   async function activateWightAbilityAndEndTurn(){
     const check = canUseWightAbilityNow();
     if (!check.ok) return false;
+    suppressTurnButtonUntilNextTurnStart = true;
     await markWightAbilityUsed();
     await update(ref(db, `rooms/${state.roomCode}/turn`), {
       repeatTurnRemaining: check.eliminated,
@@ -7480,6 +7482,15 @@
   function renderTurnEndButton(){
     syncRoomAbilityTurnState();
     if (!turnEndWrap) return;
+    if (suppressTurnButtonUntilNextTurnStart){
+      const moved = !!turnState()?.moveDone;
+      if (isMyTurn() && moved){
+        turnEndWrap.classList.add("hidden");
+        hideEndTurnConfirm();
+        return;
+      }
+      suppressTurnButtonUntilNextTurnStart = false;
+    }
     const visible = isGameStarted() && canShowEndTurnButton();
     turnEndWrap.classList.toggle("hidden", !visible);
     if (btnEndTurn){
