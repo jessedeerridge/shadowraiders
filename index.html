@@ -4749,6 +4749,7 @@
   function closeZoom(){
     zoomBackdrop.classList.add("hidden");
     zoomBackdrop.classList.remove("passthrough");
+    zoomBackdrop.classList.remove("david-overlay-global");
     zoomStage.innerHTML = "";
     hideGreenRevealPanel();
     zoomCloseOnBackdrop = true;
@@ -5510,7 +5511,15 @@
   function ensureDavidOverlayVisibleForAll(){
     syncDavidOverlayFloatingButtons();
     const actorUid = activeDavidOverlayActorUid();
-    if (!actorUid) return;
+    if (!actorUid){
+      const wasDavidOverlay = !!zoomBackdrop?.classList.contains("david-overlay-global");
+      zoomBackdrop?.classList.remove("david-overlay-global");
+      if (wasDavidOverlay && !zoomBackdrop?.classList.contains("hidden")){
+        closeZoom();
+      }
+      return;
+    }
+    zoomBackdrop?.classList.add("david-overlay-global");
     if (activeRoleAbilitySelection) return;
     if (!zoomBackdrop?.classList.contains("hidden")) return;
     const roleId = safeText(state.hands?.[actorUid]?.roleId || "");
