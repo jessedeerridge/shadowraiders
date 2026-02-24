@@ -771,8 +771,9 @@
   pointer-events:all;
 }
 
-#markerLayer.swap-animating{
+.marker-swap-hidden{
   opacity:0;
+  pointer-events:none;
 }
 
 .chip16.turn-pulse{
@@ -2348,6 +2349,7 @@
   let room4StealUsed = false;
   let room3ActionUsed = false;
   let walpurgisSwapUsed = false;
+  const walpurgisSwapHiddenUids = new Set();
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
   let uranusMeteorResolved = false;
@@ -6997,19 +6999,36 @@
     const aScr = aPt.matrixTransform(ctm);
     const bScr = bPt.matrixTransform(ctm);
 
-    const makeChip = (m) => {
+    const markerVisualByUid = (uid, marker) => {
+      const player = playerById(uid);
+      const color = safeText(player?.color || "") || String(marker?.color || "#ddd");
+      const initial = firstChar(player?.name || "") || String(marker?.initial || "").slice(0,1);
+      const size = (uid && uid === state.userId) ? 17 : 16;
+      return { color, initial, size, rx: 3 };
+    };
+
+    const makeChip = (uid, marker) => {
+      const visual = markerVisualByUid(uid, marker);
       const chip = document.createElement("div");
-      chip.className = "chip16";
       chip.style.position = "fixed";
       chip.style.left = "0";
       chip.style.top = "0";
       chip.style.zIndex = "11200";
       chip.style.pointerEvents = "none";
-      chip.style.background = String(m.color || "#ddd");
-      chip.style.color = textColorFor(String(m.color || "#ddd"));
+      chip.style.display = "grid";
+      chip.style.placeItems = "center";
+      chip.style.width = `${visual.size}px`;
+      chip.style.height = `${visual.size}px`;
+      chip.style.borderRadius = `${visual.rx}px`;
+      chip.style.border = "1px solid #111";
+      chip.style.fontWeight = "1000";
+      chip.style.fontSize = "10px";
+      chip.style.lineHeight = "1";
+      chip.style.userSelect = "none";
+      chip.style.background = visual.color;
+      chip.style.color = textColorFor(visual.color);
       chip.style.transform = "translate(-50%,-50%)";
-      chip.style.transition = `transform ${durationMs}ms cubic-bezier(.22,.78,.24,1)`;
-      chip.textContent = String(m.initial || "").slice(0,1);
+      chip.textContent = visual.initial;
       document.body.appendChild(chip);
       return chip;
     };
@@ -7026,12 +7045,14 @@
       };
     };
 
-    const chipA = makeChip(markerA);
-    const chipB = makeChip(markerB);
+    const chipA = makeChip(uidA, markerA);
+    const chipB = makeChip(uidB, markerB);
     setChipPos(chipA, aScr.x, aScr.y);
     setChipPos(chipB, bScr.x, bScr.y);
 
-    markerLayer?.classList.add("swap-animating");
+    walpurgisSwapHiddenUids.add(uidA);
+    walpurgisSwapHiddenUids.add(uidB);
+    renderMarkers();
 
     const mid = { x: (aScr.x + bScr.x) / 2, y: (aScr.y + bScr.y) / 2 };
     const dx = bScr.x - aScr.x;
@@ -7053,7 +7074,7 @@
       const step = (now) => {
         const elapsed = now - startedAt;
         const raw = Math.max(0, Math.min(1, elapsed / durationMs));
-        const eased = 1 - Math.pow(1 - raw, 3);
+        const eased = raw;
         const pa = bezierPoint(pA0, pA1, pA2, eased);
         const pb = bezierPoint(pB0, pB1, pB2, eased);
         setChipPos(chipA, pa.x, pa.y);
@@ -7067,9 +7088,30 @@
       requestAnimationFrame(step);
     });
 
+    const waitSwapCommit = async () => {
+      const started = Date.now();
+      const epsilon = 0.01;
+      while ((Date.now() - started) < 1500){
+        const currentA = markerCache?.[uidA] || null;
+        const currentB = markerCache?.[uidB] || null;
+        const axNow = Number(currentA?.x);
+        const ayNow = Number(currentA?.y);
+        const bxNow = Number(currentB?.x);
+        const byNow = Number(currentB?.y);
+        const aReached = Number.isFinite(axNow) && Number.isFinite(ayNow) && Math.abs(axNow - bx) <= epsilon && Math.abs(ayNow - by) <= epsilon;
+        const bReached = Number.isFinite(bxNow) && Number.isFinite(byNow) && Math.abs(bxNow - ax) <= epsilon && Math.abs(byNow - ay) <= epsilon;
+        if (aReached && bReached) break;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    };
+
+    await waitSwapCommit();
+    walpurgisSwapHiddenUids.delete(uidA);
+    walpurgisSwapHiddenUids.delete(uidB);
+    renderMarkers();
+    await new Promise(resolve => requestAnimationFrame(resolve));
     chipA.remove();
     chipB.remove();
-    markerLayer?.classList.remove("swap-animating");
   }
 
   async function swapMarkerPositionWithPlayer(targetUid){
@@ -7120,7 +7162,6 @@
         await new Promise(resolve => setTimeout(resolve, 620));
         await swapMarkerPositionWithPlayer(uid);
       } finally {
-        markerLayer?.classList.remove("swap-animating");
         renderMarkers();
       }
     }, {
@@ -10665,6 +10706,7 @@
  function drawMarker({x,y,color,initial,uid,pulse=false,eliminated=false}){
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
+  if (uid && walpurgisSwapHiddenUids.has(uid)) g.classList.add("marker-swap-hidden");
   if (pulse) g.classList.add("mark-pulse-target");
   if (eliminated) g.classList.add("marker-eliminated");
 
