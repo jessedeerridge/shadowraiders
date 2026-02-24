@@ -138,6 +138,10 @@
   .room-guide-btn.host-position{bottom:124px;}
   .room-guide-btn.visible{display:flex;}
  .room-guide-btn.active{background:#111;color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.35), 0 8px 20px rgba(0,0,0,.25);}
+  body.david-overlay-active .help-btn.visible,
+  body.david-overlay-active .room-guide-btn.visible{
+    z-index:295;
+  }
   .room-guide-btn img{width:22px;height:22px;display:block;object-fit:contain;pointer-events:none;}
 
 
@@ -5433,6 +5437,7 @@
     const overlayRef = ref(db, `rooms/${state.roomCode}/davidAbilityOverlay`);
     if (!payload || !payload.actorUid){
       await remove(overlayRef).catch(() => {});
+      syncDavidOverlayFloatingButtons();
       return;
     }
     await set(overlayRef, {
@@ -5440,6 +5445,7 @@
       active: payload.active !== false,
       at: Date.now()
     });
+    syncDavidOverlayFloatingButtons();
   }
 
   function isAgathaAbilityUsed(){
@@ -5495,7 +5501,13 @@
     return safeText(entry.actorUid || "");
   }
 
+  function syncDavidOverlayFloatingButtons(){
+    const active = !!activeDavidOverlayActorUid();
+    document.body?.classList.toggle("david-overlay-active", active);
+  }
+
   function ensureDavidOverlayVisibleForAll(){
+    syncDavidOverlayFloatingButtons();
     const actorUid = activeDavidOverlayActorUid();
     if (!actorUid) return;
     if (activeRoleAbilitySelection) return;
@@ -11464,6 +11476,7 @@
       renderTurnEndButton();
       renderCounterAbilityPrompt();
       syncPersistentVenomOverlay();
+      syncDavidOverlayFloatingButtons();
       ensureDavidOverlayVisibleForAll();
       renderMarkers();
       syncPendingMoveChoiceOwnership();
