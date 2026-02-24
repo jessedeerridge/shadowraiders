@@ -768,8 +768,6 @@
   pointer-events:all;
 }
 
-.marker-swapping{ opacity:0; }
-
 .chip16.turn-pulse{
   animation:markerPulse 1.2s ease-in-out infinite;
 }
@@ -2338,7 +2336,6 @@
   let room4StealUsed = false;
   let room3ActionUsed = false;
   let walpurgisSwapUsed = false;
-  let walpurgisSwapVisualHiddenUids = new Set();
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
   let uranusMeteorResolved = false;
@@ -7012,40 +7009,14 @@
   async function animateMarkerSwapVisual(uidA, uidB, durationMs = 560){
     const markerA = markerCache?.[uidA] || null;
     const markerB = markerCache?.[uidB] || null;
-    if (!markerA || !markerB) return;
+    if (!markerA || !markerB || !markerLayer) return;
     const ax = Number(markerA.x), ay = Number(markerA.y);
     const bx = Number(markerB.x), by = Number(markerB.y);
     if (![ax, ay, bx, by].every(Number.isFinite)) return;
 
-    const ctm = roomSvg?.getScreenCTM();
-    if (!roomSvg || !ctm) return;
-    const aPt = roomSvg.createSVGPoint();
-    aPt.x = ax; aPt.y = ay;
-    const bPt = roomSvg.createSVGPoint();
-    bPt.x = bx; bPt.y = by;
-    const aScr = aPt.matrixTransform(ctm);
-    const bScr = bPt.matrixTransform(ctm);
-
-    const makeChip = (m) => {
-      const chip = document.createElement("div");
-      chip.className = "chip16";
-      chip.style.position = "fixed";
-      chip.style.left = "0";
-      chip.style.top = "0";
-      chip.style.zIndex = "11200";
-      chip.style.pointerEvents = "none";
-      chip.style.background = String(m.color || "#ddd");
-      chip.style.color = textColorFor(String(m.color || "#ddd"));
-      chip.style.transform = "translate(-50%,-50%)";
-      chip.style.transition = `transform ${durationMs}ms cubic-bezier(.22,.78,.24,1)`;
-      chip.textContent = String(m.initial || "").slice(0,1);
-      document.body.appendChild(chip);
-      return chip;
-    };
-
-    const setChipPos = (chip, x, y) => {
-      chip.style.transform = `translate(${x}px, ${y}px) translate(-50%,-50%)`;
-    };
+    const markerAEl = markerLayer.querySelector(`[data-uid="${uidA}"]`);
+    const markerBEl = markerLayer.querySelector(`[data-uid="${uidB}"]`);
+    if (!markerAEl || !markerBEl) return;
 
     const bezierPoint = (p0, p1, p2, t) => {
       const it = 1 - t;
@@ -7055,33 +7026,23 @@
       };
     };
 
-    const chipA = makeChip(markerA);
-    const chipB = makeChip(markerB);
-    setChipPos(chipA, aScr.x, aScr.y);
-    setChipPos(chipB, bScr.x, bScr.y);
-
-    walpurgisSwapVisualHiddenUids = new Set([uidA, uidB]);
-    renderMarkers();
-
-    const markerAEl = markerLayer?.querySelector(`[data-uid="${uidA}"]`) || null;
-    const markerBEl = markerLayer?.querySelector(`[data-uid="${uidB}"]`) || null;
-    markerAEl?.classList.add("marker-swapping");
-    markerBEl?.classList.add("marker-swapping");
-
-    const mid = { x: (aScr.x + bScr.x) / 2, y: (aScr.y + bScr.y) / 2 };
-    const dx = bScr.x - aScr.x;
-    const dy = bScr.y - aScr.y;
+    const mid = { x: (ax + bx) / 2, y: (ay + by) / 2 };
+    const dx = bx - ax;
+    const dy = by - ay;
     const dist = Math.hypot(dx, dy) || 1;
     const nx = -dy / dist;
     const ny = dx / dist;
     const arc = Math.max(26, Math.min(96, dist * 0.34));
 
-    const pA0 = { x: aScr.x, y: aScr.y };
+    const pA0 = { x: ax, y: ay };
     const pA1 = { x: mid.x + nx * arc, y: mid.y + ny * arc };
-    const pA2 = { x: bScr.x, y: bScr.y };
-    const pB0 = { x: bScr.x, y: bScr.y };
+    const pA2 = { x: bx, y: by };
+    const pB0 = { x: bx, y: by };
     const pB1 = { x: mid.x - nx * arc, y: mid.y - ny * arc };
-    const pB2 = { x: aScr.x, y: aScr.y };
+    const pB2 = { x: ax, y: ay };
+
+    markerAEl.style.pointerEvents = "none";
+    markerBEl.style.pointerEvents = "none";
 
     await new Promise(resolve => {
       const startedAt = performance.now();
@@ -7091,8 +7052,8 @@
         const eased = 1 - Math.pow(1 - raw, 3);
         const pa = bezierPoint(pA0, pA1, pA2, eased);
         const pb = bezierPoint(pB0, pB1, pB2, eased);
-        setChipPos(chipA, pa.x, pa.y);
-        setChipPos(chipB, pb.x, pb.y);
+        markerAEl.setAttribute("transform", `translate(${(pa.x - ax).toFixed(2)} ${(pa.y - ay).toFixed(2)})`);
+        markerBEl.setAttribute("transform", `translate(${(pb.x - bx).toFixed(2)} ${(pb.y - by).toFixed(2)})`);
         if (raw < 1){
           requestAnimationFrame(step);
           return;
@@ -7102,12 +7063,26 @@
       requestAnimationFrame(step);
     });
 
-    chipA.remove();
-    chipB.remove();
-    markerAEl?.classList.remove("marker-swapping");
-    markerBEl?.classList.remove("marker-swapping");
-    walpurgisSwapVisualHiddenUids = new Set();
-    renderMarkers();
+    const isSwappedInCache = () => {
+      const curA = markerCache?.[uidA] || null;
+      const curB = markerCache?.[uidB] || null;
+      if (!curA || !curB) return false;
+      const curAx = Number(curA.x), curAy = Number(curA.y);
+      const curBx = Number(curB.x), curBy = Number(curB.y);
+      if (![curAx, curAy, curBx, curBy].every(Number.isFinite)) return false;
+      return Math.hypot(curAx - bx, curAy - by) <= 1.2 && Math.hypot(curBx - ax, curBy - ay) <= 1.2;
+    };
+
+    const waitLimit = Math.max(260, durationMs + 520);
+    const waitStarted = performance.now();
+    while (!isSwappedInCache() && performance.now() - waitStarted < waitLimit){
+      await new Promise(resolve => setTimeout(resolve, 34));
+    }
+
+    markerAEl.removeAttribute("transform");
+    markerBEl.removeAttribute("transform");
+    markerAEl.style.pointerEvents = "";
+    markerBEl.style.pointerEvents = "";
   }
 
   async function swapMarkerPositionWithPlayer(targetUid){
@@ -10672,7 +10647,6 @@
  function drawMarker({x,y,color,initial,uid,pulse=false,eliminated=false}){
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
-  if (uid && walpurgisSwapVisualHiddenUids.has(uid)) g.classList.add("marker-swapping");
   if (pulse) g.classList.add("mark-pulse-target");
   if (eliminated) g.classList.add("marker-eliminated");
 
