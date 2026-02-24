@@ -772,6 +772,10 @@
   animation:markerPulse 1.2s ease-in-out infinite;
 }
 
+.marker-swap-ghost{
+  pointer-events:none;
+}
+
 
 .dice-roll-overlay{
   position:fixed;
@@ -7041,8 +7045,15 @@
     const pB1 = { x: mid.x - nx * arc, y: mid.y - ny * arc };
     const pB2 = { x: ax, y: ay };
 
-    markerAEl.style.pointerEvents = "none";
-    markerBEl.style.pointerEvents = "none";
+    const ghostA = markerAEl.cloneNode(true);
+    const ghostB = markerBEl.cloneNode(true);
+    ghostA.classList.add("marker-swap-ghost");
+    ghostB.classList.add("marker-swap-ghost");
+    markerLayer.appendChild(ghostA);
+    markerLayer.appendChild(ghostB);
+
+    markerAEl.style.visibility = "hidden";
+    markerBEl.style.visibility = "hidden";
 
     await new Promise(resolve => {
       const startedAt = performance.now();
@@ -7052,8 +7063,8 @@
         const eased = 1 - Math.pow(1 - raw, 3);
         const pa = bezierPoint(pA0, pA1, pA2, eased);
         const pb = bezierPoint(pB0, pB1, pB2, eased);
-        markerAEl.setAttribute("transform", `translate(${(pa.x - ax).toFixed(2)} ${(pa.y - ay).toFixed(2)})`);
-        markerBEl.setAttribute("transform", `translate(${(pb.x - bx).toFixed(2)} ${(pb.y - by).toFixed(2)})`);
+        ghostA.setAttribute("transform", `translate(${(pa.x - ax).toFixed(2)} ${(pa.y - ay).toFixed(2)})`);
+        ghostB.setAttribute("transform", `translate(${(pb.x - bx).toFixed(2)} ${(pb.y - by).toFixed(2)})`);
         if (raw < 1){
           requestAnimationFrame(step);
           return;
@@ -7079,10 +7090,10 @@
       await new Promise(resolve => setTimeout(resolve, 34));
     }
 
-    markerAEl.removeAttribute("transform");
-    markerBEl.removeAttribute("transform");
-    markerAEl.style.pointerEvents = "";
-    markerBEl.style.pointerEvents = "";
+    ghostA.remove();
+    ghostB.remove();
+    if (markerAEl.isConnected) markerAEl.style.visibility = "";
+    if (markerBEl.isConnected) markerBEl.style.visibility = "";
   }
 
   async function swapMarkerPositionWithPlayer(targetUid){
