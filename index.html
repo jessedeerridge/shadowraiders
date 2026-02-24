@@ -3916,9 +3916,20 @@
     } else if (roleId === "RAI_E2"){
       await set(ref(db, `rooms/${state.roomCode}/erikaSealedTargets/${selectedUid}`), true);
     } else if (roleId === "RAI_G3"){
-      await setDamageToPlayer(selectedUid, 7);
-      await update(ref(db, `rooms/${state.roomCode}`), {
-        [`markers/${selectedUid}`]: null
+      const roomRef = ref(db, `rooms/${state.roomCode}`);
+      await runTransaction(roomRef, (cur) => {
+        if (!cur) return cur;
+        cur.damage = cur.damage || {};
+        cur.damage[selectedUid] = clampDamage(7);
+        recycleRevivedPlayerEquipIntoDeck(cur, selectedUid);
+        cur.markers = cur.markers || {};
+        cur.markers[selectedUid] = null;
+        cur.godwinRevivePendingMove = cur.godwinRevivePendingMove || {};
+        cur.godwinRevivePendingMove[selectedUid] = true;
+        if (cur.deckState && typeof cur.deckState === "object"){
+          cur.deckState.updatedAt = Date.now();
+        }
+        return cur;
       });
     } else if (roleId === "SHA_U2"){
       await addDamageToPlayer(selectedUid, 3);
@@ -7431,8 +7442,9 @@
     if (!canUseMoveDice()) return;
     if (!state.userId) return;
 
+    const pendingGodwinReviveMove = !!state.room?.godwinRevivePendingMove?.[state.userId];
     const myMarker = markerCache?.[state.userId] || null;
-    if (myMarker) return;
+    if (!pendingGodwinReviveMove && myMarker) return;
 
     const key = turnCycleKey();
     if (!key || key === autoMoveTriggeredTurnKey) return;
@@ -8554,6 +8566,44 @@
     if (type === "white") return toWhiteOrder().filter(card => !isEquipCard(card));
     if (type === "black") return toBlackOrder().filter(card => !isEquipCard(card));
     return [];
+  }
+
+  function recycleRevivedPlayerEquipIntoDeck(cur, uid){
+    const targetUid = safeText(uid || "");
+    if (!cur || !targetUid) return;
+    const equipRow = cur?.equipment?.[targetUid];
+    if (!equipRow || typeof equipRow !== "object") return;
+
+    const returnedByType = { white: [], black: [] };
+
+    for (const [key, item] of Object.entries(equipRow)){
+      if (!item || item.kind === "identity") continue;
+      if (!isEquipCard(item)) continue;
+      const theme = safeText(item.theme || "");
+      if (theme !== "white" && theme !== "black") continue;
+      returnedByType[theme].push({
+        name: safeText(item.name || ""),
+        effect: safeText(item.effect || "")
+      });
+      delete equipRow[key];
+    }
+
+    if (Object.keys(equipRow).length === 0){
+      delete cur.equipment[targetUid];
+    }
+
+    for (const type of ["white", "black"]){
+      const returned = returnedByType[type];
+      if (!returned.length) continue;
+      const deck = cur?.deckState?.[type];
+      if (!deck || typeof deck !== "object") continue;
+      const order = Array.isArray(deck.order) ? deck.order : [];
+      const idx = Math.max(0, Math.min(Number(deck.idx || 0), order.length));
+      const remaining = order.slice(idx);
+      deck.order = shuffle([...remaining, ...returned]);
+      deck.idx = 0;
+      delete deck.rebuildPendingAt;
+    }
   }
 
   function isEliminatedInRoomState(cur, uid){
@@ -10343,6 +10393,7 @@
             moveDone: true,
             moveAt: Date.now()
           });
+          remove(ref(db, `rooms/${state.roomCode}/godwinRevivePendingMove/${state.userId}`)).catch(() => {});
         }
       }, 1900);
       diceRollTimers.push(placeMarkerTimer);
