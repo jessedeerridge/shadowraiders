@@ -101,7 +101,8 @@
   }
   .btn.pop-dark{background:#111;color:#fff;border-color:#111;}
   .btn.pop-disabled{background:#bcbcbc;color:#fff;border-color:#bcbcbc;cursor:not-allowed;}
-  .btn.pop-light-gray{background:#d1d5db;color:#fff;border-color:#d1d5db;}
+  .btn.pop-light-gray{background:#d1d5db;color:#fff;border-color:#d1d5db;cursor:not-allowed;}
+  .btn.pop-light-gray .ability-pill{background:rgba(255,255,255,.45);color:#f8fafc;border:1px solid rgba(255,255,255,.65);}
   .btn.pop-purple{background:#6d28d9;color:#fff;border-color:#6d28d9;}
   .btn.pop-white{background:#fff;color:#111;border-color:#d1d5db;}
 
@@ -6208,6 +6209,9 @@
       await finalizePendingAttackResolution(false);
       return;
     }
+    if (safeText(myRoleInfo()?.id || "") === "CIT_C1" && shouldDisableCraigAbilityByDamage()){
+      return;
+    }
 
     const runKeepAbility = async () => {
       const role = myRoleInfo();
@@ -7796,14 +7800,11 @@
     return wrap;
   }
 
-  function shouldUseCraigAbilityGrayButton(){
+  function shouldDisableCraigAbilityByDamage(){
     if (!isMyRole("CIT_C1")) return false;
     if (isMyAbilitySealed()) return false;
-    const hp = Number(myRoleInfo()?.hp || 0);
-    if (hp <= 0) return false;
     const damage = clampDamage(damageCache?.[state.userId]);
-    const remainingHp = hp - damage;
-    return remainingHp >= 9;
+    return damage >= 9;
   }
 
   function showAttackResultPop(rows = []){
@@ -7864,12 +7865,16 @@
     }
     if (btnAttackResultKeep){
       btnAttackResultKeep.classList.remove("pop-light-gray");
+      btnAttackResultKeep.disabled = false;
+      btnAttackResultKeep.removeAttribute("aria-disabled");
       if (sealedVictim){
         btnAttackResultKeep.textContent = `OKおわる${repeatTurnSuffixLabel()}`;
       } else if (spec){
         btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>`;
-        if (safeText(myRoleInfo()?.id || "") === "CIT_C1" && shouldUseCraigAbilityGrayButton()){
+        if (safeText(myRoleInfo()?.id || "") === "CIT_C1" && shouldDisableCraigAbilityByDamage()){
           btnAttackResultKeep.classList.add("pop-light-gray");
+          btnAttackResultKeep.disabled = true;
+          btnAttackResultKeep.setAttribute("aria-disabled", "true");
         }
       } else {
         btnAttackResultKeep.textContent = "OKおわらない";
