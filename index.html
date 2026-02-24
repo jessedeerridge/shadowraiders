@@ -1173,6 +1173,8 @@
   margin:0;
   width:max-content;
   white-space:nowrap;
+  word-break:keep-all;
+  overflow-wrap:normal;
   font-size:13px;
   color:#fff !important;
   border-color:rgba(255,255,255,.78) !important;
@@ -2646,7 +2648,7 @@
       if (showSkip){
         const btn = document.createElement("button");
         btn.className = "btn ghost turn-hint-action";
-        btn.textContent = "スキップ(して攻撃)";
+        btn.textContent = "スキップして攻撃";
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           skipRoom3ActionAndStartAttack();
