@@ -2348,7 +2348,6 @@
   let roomAbilityTurnKey = "";
   let room4StealUsed = false;
   let room3ActionUsed = false;
-  let walpurgisSwapUsed = false;
   const walpurgisSwapHiddenUids = new Set();
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
@@ -2512,6 +2511,7 @@
     "CIT_C3": { usageKey:"claire", abilityName:"キャスリングTYPE-G", prompt:"ダメージを入れ替えるプレイヤーを選んでください。" },
     "CIT_B2": { usageKey:"benjamin", abilityName:"ドラッグ移送", prompt:"装備を渡す相手を選んでください。", endTurnAfterResolve:true },
     "SHA_U2": { usageKey:"uranus", abilityName:"メテオストライク", prompt:"ダメージを与えるプレイヤーを選んでください。", perTurn:true },
+    "SHA_W2": { usageKey:"walpurgis", abilityName:"重力の虹", prompt:"位置を交換するプレイヤーを選んでください。", perTurn:true },
   };
 
   function roleSelectionSpec(roleId){ return ROLE_SELECTION_SPECS[safeText(roleId || "")] || null; }
@@ -6928,7 +6928,6 @@
       && currentTurnPlayerId() === state.userId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
-    walpurgisSwapUsed = false;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
     vampireHealScheduled = false;
@@ -6978,7 +6977,7 @@
     if (!isMyRole("SHA_W2")) return false;
     if (isMyAbilitySealed()) return false;
     if (!isMyIdentityRevealed()) return false;
-    if (walpurgisSwapUsed) return false;
+    if (isRoleAbilityUsed("SHA_W2")) return false;
     return true;
   }
 
@@ -7154,7 +7153,7 @@
     suppressOutsidePopCloseUntil = Date.now() + 700;
     showRoomActionPopAt(clientX, clientY, "", async () => {
       if (!canUseWalpurgisSwap()) return;
-      walpurgisSwapUsed = true;
+      await markRoleAbilityUsed("SHA_W2");
       await emitRoleFlashEvent("SHA_W2", "walpurgis_swap");
       await new Promise(resolve => setTimeout(resolve, 1800));
       try {
