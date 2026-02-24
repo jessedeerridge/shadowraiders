@@ -9280,7 +9280,7 @@
     }
     if (canUseRoom3Action()){
       return new Set(
-        Object.keys(markerCache || {}).filter(uid => !!uid && !isPlayerEliminated(uid) && !hasEquipmentByName(uid, "幸運のブローチ"))
+        Object.keys(markerCache || {}).filter(uid => !!uid && !isPlayerEliminated(uid))
       );
     }
     if (!canUseAttackDice()) return new Set();
@@ -10399,10 +10399,10 @@
       if (!canInteractWithMapPlayerIcons()) return;
       if (cardPlayerSelectActive) return;
       if (canUseRoom3Action()){
-        if (hasEquipmentByName(uid, "幸運のブローチ")) return;
         e.stopPropagation();
         const p = playerById(uid);
         const nm = safeText(p?.name || "このプレイヤー");
+        const room3DamageBlocked = hasGordonBarrier(uid) || hasEquipmentByName(uid, "幸運のブローチ");
         showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
           room3ActionUsed = true;
           await updateTurnRoomActionState({ room3ActionUsed:true });
@@ -10413,7 +10413,7 @@
         }, {
           yesLabel: "1回復する",
           noLabel: "2ダメージ与える",
-          noDisabled: hasGordonBarrier(uid),
+          noDisabled: room3DamageBlocked,
           compactButtons: true,
           yOffset: -14,
           onNo: async () => {
@@ -10480,9 +10480,9 @@
       if (!pulse) return;
       e.stopPropagation();
       if (canUseRoom3Action()){
-        if (hasEquipmentByName(uid, "幸運のブローチ")) return;
         const p = playerById(uid);
         const nm = safeText(p?.name || "このプレイヤー");
+        const room3DamageBlocked = hasGordonBarrier(uid) || hasEquipmentByName(uid, "幸運のブローチ");
         showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
           room3ActionUsed = true;
           await updateTurnRoomActionState({ room3ActionUsed:true });
@@ -10493,7 +10493,7 @@
         }, {
           yesLabel: "1回復する",
           noLabel: "2ダメージ与える",
-          noDisabled: hasGordonBarrier(uid),
+          noDisabled: room3DamageBlocked,
           compactButtons: true,
           yOffset: -14,
           onNo: async () => {
