@@ -7118,6 +7118,45 @@
     });
   }
 
+  function hasWalpurgisAttackTargetAfterSwap(targetUid){
+    const attackerUid = safeText(state.userId || "");
+    const otherUid = safeText(targetUid || "");
+    if (!attackerUid || !otherUid || attackerUid === otherUid) return false;
+
+    const attackerMarker = markerCache?.[attackerUid] || null;
+    const otherMarker = markerCache?.[otherUid] || null;
+    const attackerRoomBefore = markerRoomId(attackerMarker);
+    const attackerRoomAfter = markerRoomId(otherMarker);
+    if (!attackerRoomBefore || !attackerRoomAfter) return false;
+
+    const deadScopeCount = countEquipmentByNames(attackerUid, ["死神スコープ"]);
+    const attackRooms = attackTargetRoomIdsFromRoom(attackerRoomAfter, deadScopeCount);
+    if (!attackRooms.size) return false;
+
+    for (const player of (latestPlayers || [])){
+      const uid = safeText(player?.id || "");
+      if (!uid || uid === attackerUid) continue;
+      if (isPlayerEliminated(uid)) continue;
+
+      const marker = markerCache?.[uid] || null;
+      if (!marker) continue;
+      const roomAfterSwap = (uid === otherUid) ? attackerRoomBefore : markerRoomId(marker);
+      if (!roomAfterSwap) continue;
+      if (attackRooms.has(roomAfterSwap)) return true;
+    }
+    return false;
+  }
+
+  function showWalpurgisCannotAttackNotice(clientX, clientY){
+    showRoomActionPopAt(clientX, clientY, "この後、攻撃できません。", null, {
+      yesLabel: "OK",
+      noLabel: "",
+      noDisabled: true,
+      noBtnClass: "pop-disabled",
+      noCaret: true
+    });
+  }
+
   function refreshRoomAbilityHint(){
     if (canUseRoom4Steal()){
       showTurnHint("他プレイヤーの装備を奪うことができます。");
@@ -10690,6 +10729,10 @@
       if (uid === state.userId) return;
       markerLongPressTimer = setTimeout(() => {
         markerLongPressDone = true;
+        if (!hasWalpurgisAttackTargetAfterSwap(uid)){
+          showWalpurgisCannotAttackNotice(e.clientX, e.clientY);
+          return;
+        }
         showWalpurgisSwapConfirm(e.clientX, e.clientY, uid);
       }, longPressMs);
     });
