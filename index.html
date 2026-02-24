@@ -5912,7 +5912,6 @@
         await finalizePendingAttackResolution(false, true);
         await resolveAttackAbilityReveal(role);
         if (hasMyEquipmentByName("銀のロザリオ")){
-          closeEquipmentDockBeforeLootResolve();
           await runRosaryAutoLootFlow(byronTargets);
           return;
         }
