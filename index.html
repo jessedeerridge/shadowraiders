@@ -4576,7 +4576,9 @@
     zoomPassthroughMode = false;
     zoomDismissHandler = null;
     zoomBackdrop.classList.remove("passthrough");
-    zoomBackdrop.classList.remove("over-panel");
+    const equipExpandEl = document.getElementById("equipExpandBackdrop");
+    const equipExpandOpen = !!equipExpandEl && !equipExpandEl.classList.contains("hidden");
+    zoomBackdrop.classList.toggle("over-panel", equipExpandOpen);
     greenZoomLocked = !showCloseButton;
     zoomStage.appendChild(contentEl);
     zoomBackdrop.classList.remove("hidden");
@@ -4723,12 +4725,28 @@
   zoomBackdrop.addEventListener("click", async (e) => {
     const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
     if (canClose){
+      const equipExpandOpen = !!equipExpandBackdrop && !equipExpandBackdrop.classList.contains("hidden");
+      let shouldCloseEquipExpand = false;
+      if (equipExpandOpen && e.target === zoomBackdrop){
+        const popEl = equipExpandBackdrop.querySelector(".equip-expand-pop");
+        if (popEl){
+          const rect = popEl.getBoundingClientRect();
+          const x = Number(e.clientX || 0);
+          const y = Number(e.clientY || 0);
+          shouldCloseEquipExpand = x < rect.left || x > rect.right || y < rect.top || y > rect.bottom;
+        } else {
+          shouldCloseEquipExpand = true;
+        }
+      }
       if (typeof zoomDismissHandler === "function"){
         await zoomDismissHandler();
         return;
       }
       await clearPendingGreenBubble();
       closeZoom();
+      if (shouldCloseEquipExpand){
+        closeEquipExpand();
+      }
     }
   });
 
