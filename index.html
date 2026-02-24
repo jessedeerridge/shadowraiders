@@ -3923,7 +3923,7 @@
         cur.damage[selectedUid] = clampDamage(7);
         recycleRevivedPlayerEquipIntoDeck(cur, selectedUid);
         cur.markers = cur.markers || {};
-        cur.markers[selectedUid] = null;
+        delete cur.markers[selectedUid];
         cur.godwinRevivePendingMove = cur.godwinRevivePendingMove || {};
         cur.godwinRevivePendingMove[selectedUid] = true;
         if (cur.deckState && typeof cur.deckState === "object"){
@@ -8096,6 +8096,15 @@
 
       if (justEliminatedUids.includes(state.userId) && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3")){
         setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+      }
+
+      if (activeRoleAbilitySelection?.roleId === "RAI_G3" && isRoleAbilityUsed("RAI_G3")){
+        activeRoleAbilitySelection = null;
+        cardPlayerSelectActive = false;
+        greenShareDock?.classList.add("hidden");
+        renderTurnEndButton();
+        updateCardInteractivity();
+        if (!zoomBackdrop?.classList.contains("hidden")) closeZoom();
       }
 
       previousEliminatedMap = eliminatedNow;
