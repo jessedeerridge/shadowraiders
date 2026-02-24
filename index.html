@@ -1181,6 +1181,13 @@
   z-index:286;
   box-shadow:0 8px 18px rgba(0,0,0,.28);
 }
+.turn-hint-pop.multi-line{
+  white-space:normal;
+  max-width:min(92vw, 560px);
+  align-items:flex-start;
+  flex-direction:column;
+  gap:4px;
+}
 .turn-hint-pop.hidden{ display:none; }
 .turn-hint-action{
   display:inline-block;
@@ -2379,6 +2386,7 @@
   let pendingAttackResultMeta = null;
   let attackResultChoiceBusy = false;
   let ulsterExtraAttackPending = 0;
+  let ulsterExtraHintShown = false;
   let attackFlowUiLockActive = false;
   let suppressEndTurnButton = false;
   let pendingHpSwapAnimation = null;
@@ -2667,14 +2675,24 @@
 
   function showTurnHint(message){
     if (!turnHintPop) return;
+    turnHintPop.classList.remove("multi-line");
     if (message && typeof message === "object"){
       const text = safeText(message.text || "");
       const showSkip = !!message.showRoom3Skip;
+      const noteText = safeText(message.noteText || "");
       turnHintPop.innerHTML = "";
       if (text){
         const textWrap = document.createElement("span");
         textWrap.textContent = text;
         turnHintPop.appendChild(textWrap);
+      }
+      if (noteText){
+        const noteWrap = document.createElement("span");
+        noteWrap.textContent = noteText;
+        noteWrap.style.whiteSpace = "pre-line";
+        noteWrap.style.fontWeight = "700";
+        turnHintPop.appendChild(noteWrap);
+        turnHintPop.classList.add("multi-line");
       }
       if (showSkip){
         const btn = document.createElement("button");
@@ -2686,7 +2704,7 @@
         });
         turnHintPop.appendChild(btn);
       }
-      turnHintPop.classList.toggle("hidden", !text && !showSkip);
+      turnHintPop.classList.toggle("hidden", !text && !noteText && !showSkip);
       return;
     }
     turnHintPop.textContent = safeText(message || "");
@@ -3449,13 +3467,20 @@
   async function startUlsterExtraAttackSelection(){
     if (!state.roomCode) return;
     ulsterExtraAttackPending = Math.max(ulsterExtraAttackPending, 1);
-    suppressEndTurnButton = true;
+    suppressEndTurnButton = false;
     attackFlowUiLockActive = false;
     await update(ref(db, `rooms/${state.roomCode}/turn`), {
       attackDone: false,
       updatedAt: Date.now()
     });
-    showTurnHint("デル・フリス：もう一度攻撃対象を選んでください。", { clearRoom3Skip:true });
+    const shouldShowExtra = !ulsterExtraHintShown;
+    ulsterExtraHintShown = true;
+    showTurnHint({
+      text:"デル・フリス：もう一度攻撃対象を選んでください。",
+      noteText: shouldShowExtra
+        ? "※攻撃するプレイヤーを選んだ後に正体を公開します。\n公開をやめる場合は手番を終わる。"
+        : ""
+    }, { clearRoom3Skip:true });
     renderTurnEndButton();
   }
 
@@ -6102,6 +6127,9 @@
       : null;
 
     hideAttackPop();
+    if (ulsterExtraAttackPending > 0 && isMyRole("SHA_U3") && !isMyIdentityRevealed()){
+      await revealMyIdentityToEquipment({ revealedBy:"attack_ability" });
+    }
     attackTurnEndChoicePending = true;
     attackFlowUiLockActive = true;
     renderTurnEndButton();
@@ -6951,6 +6979,7 @@
       && currentTurnPlayerId() === state.userId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
+    ulsterExtraHintShown = false;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
     vampireHealScheduled = false;
@@ -7912,7 +7941,7 @@
     if (!pending || pending.applied){
       if (!endTurnAfterApply){
         attackFlowUiLockActive = false;
-        suppressEndTurnButton = ulsterExtraAttackPending > 0;
+        suppressEndTurnButton = false;
         renderTurnEndButton();
       }
       return;
@@ -7937,7 +7966,7 @@
       ulsterExtraAttackPending = Math.max(0, ulsterExtraAttackPending - 1);
     }
     attackFlowUiLockActive = false;
-    suppressEndTurnButton = ulsterExtraAttackPending > 0;
+    suppressEndTurnButton = false;
     renderTurnEndButton();
   }
 
@@ -12912,6 +12941,7 @@
     pendingAttackResolution = null;
     pendingAttackResultMeta = null;
     ulsterExtraAttackPending = 0;
+    ulsterExtraHintShown = false;
     attackFlowUiLockActive = false;
     suppressEndTurnButton = false;
     resetAttackAbilityUsageTurnState();
