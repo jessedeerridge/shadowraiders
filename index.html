@@ -1198,6 +1198,12 @@
 }
 #roomActionPop.lower-mode .caret{ display:none; }
 #roomActionPop.no-caret .caret{ display:none; }
+#roomActionPop.message-only{
+  min-width:0;
+  width:max-content;
+  max-width:calc(100vw - 20px);
+}
+#roomActionPop.message-only .msg{ margin:0; }
 #roomActionPop.message-only .actions{ display:none; }
 #roomActionPop.room3-mode .actions{
   flex-wrap:nowrap;
