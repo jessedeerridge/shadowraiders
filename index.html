@@ -6590,7 +6590,9 @@
   function hasGuardianAngelShield(uid){
     const targetUid = safeText(uid);
     if (!targetUid) return false;
-    return !!state.room?.guardianAngelShield?.[targetUid];
+    if (!state.room?.guardianAngelShield?.[targetUid]) return false;
+    const turnOwnerUid = safeText(state.room?.turn?.currentPlayerId || "");
+    return turnOwnerUid !== targetUid;
   }
 
   function hasGordonBarrier(uid){
