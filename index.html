@@ -7025,7 +7025,6 @@
       chip.style.fontSize = "10px";
       chip.style.lineHeight = "1";
       chip.style.userSelect = "none";
-      chip.style.boxSizing = "border-box";
       chip.style.background = visual.color;
       chip.style.color = textColorFor(visual.color);
       chip.style.transform = "translate(-50%,-50%)";
@@ -7075,7 +7074,7 @@
       const step = (now) => {
         const elapsed = now - startedAt;
         const raw = Math.max(0, Math.min(1, elapsed / durationMs));
-        const eased = 1 - Math.pow(1 - raw, 3);
+        const eased = raw;
         const pa = bezierPoint(pA0, pA1, pA2, eased);
         const pb = bezierPoint(pB0, pB1, pB2, eased);
         setChipPos(chipA, pa.x, pa.y);
