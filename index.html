@@ -3415,6 +3415,26 @@
     return "";
   }
 
+  function attackEliminationPreview(rows = []){
+    const normalizedRows = Array.isArray(rows)
+      ? rows.map(item => ({ uid:safeText(item?.uid || ""), damage:Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
+      : [];
+    const eliminatedUids = [];
+    for (const item of normalizedRows){
+      const roleId = safeText(state.hands?.[item.uid]?.roleId || "");
+      const hp = Number(ROLE_BY_ID?.[roleId]?.hp || 0);
+      if (hp <= 0) continue;
+      const before = clampDamage(damageCache?.[item.uid]);
+      const after = clampDamage(before + item.damage);
+      if (before < hp && after >= hp){
+        eliminatedUids.push(item.uid);
+      }
+    }
+    const allAttackedEliminated = normalizedRows.length > 0
+      && normalizedRows.every(item => eliminatedUids.includes(item.uid));
+    return { normalizedRows, eliminatedUids, allAttackedEliminated };
+  }
+
   function markerClientPointByUid(uid){
     const marker = markerCache?.[safeText(uid || "")] || null;
     const x = Number(marker?.x);
@@ -6188,6 +6208,7 @@
       const role = myRoleInfo();
       const roleId = safeText(role?.id || "");
       const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
+      const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
       if (roleId === "CIT_B1"){
         const byronTargets = (pending?.rows || [])
@@ -6211,6 +6232,22 @@
       if (roleId !== "SHA_U3") await resolveAttackAbilityReveal(role);
 
       if (roleId === "CIT_C1"){
+        if (eliminationPreview.allAttackedEliminated){
+          const attackTurnOwnerUid = currentTurnPlayerId();
+          showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この結果プレイヤーは脱落するため、能力を使用しません。", null, {
+            fixedLower:true,
+            noCaret:true,
+            hideActions:true,
+            dismissOnOutside:false
+          });
+          await finalizePendingAttackResolution(false, true);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          hideRoomActionPop();
+          if (currentTurnPlayerId() === attackTurnOwnerUid){
+            await doEndTurn(attackTurnOwnerUid);
+          }
+          return;
+        }
         markAttackAbilityUsedThisTurn(roleId);
         await addDamageToPlayer(state.userId, 2);
         await runFollowupAttackToTarget(followupTargetUid, 1500);
