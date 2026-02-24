@@ -1434,6 +1434,9 @@
   .zoom-stage .id72{
     box-shadow:0 18px 50px rgba(0,0,0,.45);
   }
+  .zoom-stage .id72.no-zoom-shadow{
+    box-shadow:none;
+  }
   .zoom-stage .equip-steal-pulse{
     animation:none;
   }
@@ -2510,7 +2513,7 @@
     "RAI_E3": { usageKey:"emma", abilityName:"癒しの光", prompt:"回復させるプレイヤーを選んでください。", perTurn:true },
     "RAI_G3": { usageKey:"godwin", abilityName:"蘇生装置TYPE-G", prompt:"復活させるプレイヤーを選んでください。" },
     "CIT_C3": { usageKey:"claire", abilityName:"キャスリングTYPE-G", prompt:"ダメージを入れ替えるプレイヤーを選んでください。" },
-    "CIT_B2": { usageKey:"benjamin", abilityName:"ドラッグ移送", prompt:"装備を渡す相手を選んでください。", endTurnAfterResolve:true },
+    "CIT_B2": { usageKey:"benjamin", abilityName:"ドラッグ移送", prompt:"装備を渡す相手を選んでください。", endTurnAfterResolve:true, perTurn:true },
     "SHA_U2": { usageKey:"uranus", abilityName:"メテオストライク", prompt:"ダメージを与えるプレイヤーを選んでください。", perTurn:true },
     "SHA_W2": { usageKey:"walpurgis", abilityName:"重力の虹", prompt:"位置を交換するプレイヤーを選んでください。", perTurn:true },
   };
@@ -3953,6 +3956,7 @@
       await addDamageToPlayer(selectedUid, 3);
       uranusMeteorResolved = true;
     } else if (roleId === "CIT_C3"){
+      await emitRoleFlashEvent("CIT_C3", "claire_swap", 1800);
       const me = clampDamage(damageCache?.[actorUid]);
       const target = clampDamage(damageCache?.[selectedUid]);
       pendingHpSwapAnimation = { aUid: actorUid, bUid: selectedUid, at: Date.now() };
@@ -5666,6 +5670,10 @@
     if (!my || !my.roleId) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if ((myRoleId === "CIT_C1" || myRoleId === "SHA_U3") && isMyTurn()){
+      e.stopPropagation();
+      return;
+    }
     if (myRoleId === "CIT_B3" && isMyTurn()){
       e.stopPropagation();
       return;
@@ -6366,6 +6374,14 @@
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (ownerUid !== state.userId || !sourceKey || !card.classList.contains("equip-defeat-pulse")) return;
+      if (equipSelectionStartedFromExpand){
+        equipSelectionStartedFromExpand = false;
+        if (!zoomBackdrop?.classList.contains('hidden')) closeZoom();
+        closeEquipExpandIfOpen();
+        hideRoomActionPop();
+        resolveVenomCounterChoice("give", sourceKey);
+        return;
+      }
       const name = safeText(card.dataset.cardName || "このカード");
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `${name}を渡しますか？`, async () => {
         hideRoomActionPop();
@@ -7470,9 +7486,8 @@
 
   function repeatTurnLabel(){
     const rest = Math.max(0, Number(turnState()?.repeatTurnRemaining || 0));
-    const total = Math.max(0, Number(turnState()?.repeatTurnTotal || 0));
-    if (rest <= 0 || total <= 0) return "もう一度手番を行う";
-    return `もう一度手番を行う(${rest}/${total})`;
+    if (rest <= 0) return "もう一度手番を行う";
+    return `もう一度手番を行う(あと${rest}回)`;
   }
 
   function hasSealWisdomBonusThisTurn(){
@@ -10217,7 +10232,7 @@
 
     if (vendettaMode){
       showRoleFlashOverlay("SHA_V3", 1800);
-      await new Promise(resolve => setTimeout(resolve, 1800));
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     clearDiceRollTimers();
@@ -11294,6 +11309,10 @@
 
     const card = document.createElement('div');
     card.className = 'id72';
+    const roleId = safeText(role?.id || "");
+    if (roleId === "CIT_A3" || roleId === "SHA_V2"){
+      card.classList.add("no-zoom-shadow");
+    }
     card.style.setProperty('--team', team);
     card.style.backgroundImage = cardImageUrl(role);
 
