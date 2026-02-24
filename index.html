@@ -2343,8 +2343,6 @@
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
   let uranusMeteorResolved = false;
-  let vampireHiddenAttackSuccess = false;
-  let vampireHealScheduled = false;
   let pendingEquipAction = null;
   let pendingCardTargetSelection = null;
   let danielAutoRevealTimer = null;
@@ -3264,22 +3262,12 @@
     return false;
   }
 
-  function scheduleVampireHeal(){
+  async function resolveVampireAttackHealByAbilityButton(){
     if (!isMyRole("SHA_V2")) return;
     if (isMyAbilitySealed()) return;
-    if (vampireHealScheduled) return;
-    vampireHealScheduled = true;
-    setTimeout(async () => {
-      await emitRoleFlashEvent("SHA_V2", "vampire_heal");
-      await healDamageToPlayer(state.userId, 2, "vampire_role_heal");
-    }, 1500);
-  }
-
-  function maybeResolveVampireHiddenHealOnReveal(){
-    if (!isMyRole("SHA_V2")) return;
-    if (!vampireHiddenAttackSuccess) return;
-    if (!isMyTurn()) return;
-    scheduleVampireHeal();
+    await waitMs(1000);
+    await emitRoleFlashEvent("SHA_V2", "vampire_heal");
+    await healDamageToPlayer(state.userId, 2, "vampire_role_heal");
   }
 
   function clearCarolTurnHealTimer(){
@@ -5428,7 +5416,6 @@
       if (revealedBy) next.revealedBy = revealedBy;
       return next;
     });
-    maybeResolveVampireHiddenHealOnReveal();
     if (revealedNow && safeText(my.roleId) === "CIT_C2" && !isMyAbilitySealed()){
       await healDamageToPlayer(state.userId, 2, "carol_reveal_heal");
       if (isMyTurn()){
@@ -6175,6 +6162,14 @@
         await startUlsterExtraAttackSelection();
         return;
       }
+      if (roleId === "SHA_V2"){
+        await resolveVampireAttackHealByAbilityButton();
+        const turnOwnerUid = currentTurnPlayerId();
+        if (turnOwnerUid){
+          await doEndTurn(turnOwnerUid);
+        }
+        return;
+      }
     };
 
     if (attackResultChoiceBusy) return;
@@ -6914,8 +6909,6 @@
     roomAbilityTurnKey = key;
     walpurgisSwapUsed = false;
     uranusMeteorResolved = false;
-    vampireHiddenAttackSuccess = false;
-    vampireHealScheduled = false;
     hideRoomActionPop();
     if (!hasMatchingPending){
       hideAttackResultPop();
@@ -7699,8 +7692,9 @@
     const shouldHideKeepAsSecondAttack = !spec
       && (roleId === "CIT_C1" || roleId === "SHA_U3")
       && isAttackAbilityUsedThisTurn(roleId);
+    const revealedVampireAbilityOnly = roleId === "SHA_V2" && !!spec && isMyIdentityRevealed() && !sealedVictim;
     btnAttackResultExcalibur?.classList.toggle("hidden", !exMeta.allowExcaliburButton);
-    btnAttackResultEnd?.classList.remove("hidden");
+    btnAttackResultEnd?.classList.toggle("hidden", revealedVampireAbilityOnly);
     btnAttackResultKeep?.classList.toggle("hidden", sealedVictim || shouldHideKeepAsSecondAttack);
     attackResultChoiceBusy = false;
     attackResultPop.classList.remove("hidden");
@@ -10279,19 +10273,11 @@
             pendingAttackResultMeta.allowExcaliburButton = false;
           }
         }
-        const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
         const pendingTurnKey = turnCycleKey();
         pendingAttackResolution = { rows: resolvedRows, applied:false, turnKey: pendingTurnKey, meta: normalizeAttackResultMeta(pendingAttackResultMeta) };
         cachePendingAttackResolution(pendingAttackResolution);
         await upsertPendingAttackResolution(resolvedRows, pendingTurnKey, pendingAttackResultMeta);
         showAttackResultPop(resolvedRows);
-        if (dealtDamage && isMyRole("SHA_V2") && !isMyAbilitySealed()){
-          if (isMyIdentityRevealed()){
-            scheduleVampireHeal();
-          } else {
-            vampireHiddenAttackSuccess = true;
-          }
-        }
       });
     }, stopDelayMs);
     diceRollTimers.push(stopTimer);
