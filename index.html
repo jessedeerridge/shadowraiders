@@ -3415,6 +3415,24 @@
     return "";
   }
 
+  function allAttackTargetsEliminatedByRows(rows = []){
+    const normalizedRows = Array.isArray(rows)
+      ? rows.map(item => ({
+          uid: safeText(item?.uid || ""),
+          damage: Math.max(0, Number(item?.damage || 0))
+        })).filter(item => item.uid)
+      : [];
+    if (!normalizedRows.length) return false;
+    return normalizedRows.every(item => {
+      const roleId = safeText(state.hands?.[item.uid]?.roleId || "");
+      const hp = Number(ROLE_BY_ID?.[roleId]?.hp || 0);
+      if (hp <= 0) return false;
+      const before = clampDamage(damageCache?.[item.uid]);
+      const after = clampDamage(before + item.damage);
+      return before < hp && after >= hp;
+    });
+  }
+
   function markerClientPointByUid(uid){
     const marker = markerCache?.[safeText(uid || "")] || null;
     const x = Number(marker?.x);
@@ -6205,6 +6223,21 @@
         }
         await createByronAttackLootPending(byronTargets);
         return;
+      }
+
+      if (roleId === "CIT_C1"){
+        const willEliminateAllTargets = allAttackTargetsEliminatedByRows(pending?.rows || []);
+        if (willEliminateAllTargets){
+          showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この結果プレイヤーは脱落するため、能力を使用しません。", null, {
+            fixedLower:true,
+            noCaret:true,
+            hideActions:true,
+            dismissOnOutside:false
+          });
+          await finalizePendingAttackResolution(true, true);
+          hideRoomActionPop();
+          return;
+        }
       }
 
       await finalizePendingAttackResolution(false, true);
