@@ -3896,6 +3896,11 @@
     const selectedUid = safeText(targetUid || "");
     if (!actorUid || !roleId || actorUid !== state.userId || !selectedUid) return;
 
+    const closeSelectionEarly = roleId === "RAI_G3";
+    if (closeSelectionEarly){
+      await setRoleAbilitySelectionState(null);
+    }
+
     if (roleId === "RAI_F2"){
       await setDamageToPlayer(selectedUid, 7, "felicia_set");
     } else if (roleId === "RAI_F1"){
@@ -3955,7 +3960,9 @@
     }
 
     await markRoleAbilityUsed(roleId);
-    await setRoleAbilitySelectionState(null);
+    if (!closeSelectionEarly){
+      await setRoleAbilitySelectionState(null);
+    }
     if (!!entry?.endTurnAfterResolve){
       await doEndTurn();
     }
