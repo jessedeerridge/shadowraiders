@@ -2338,6 +2338,7 @@
   let room4StealUsed = false;
   let room3ActionUsed = false;
   let walpurgisSwapUsed = false;
+  let walpurgisSwapVisualHiddenUids = new Set();
   let movedByDiceRoomId = null;
   let pendingRoomAction = null;
   let uranusMeteorResolved = false;
@@ -7059,6 +7060,9 @@
     setChipPos(chipA, aScr.x, aScr.y);
     setChipPos(chipB, bScr.x, bScr.y);
 
+    walpurgisSwapVisualHiddenUids = new Set([uidA, uidB]);
+    renderMarkers();
+
     const markerAEl = markerLayer?.querySelector(`[data-uid="${uidA}"]`) || null;
     const markerBEl = markerLayer?.querySelector(`[data-uid="${uidB}"]`) || null;
     markerAEl?.classList.add("marker-swapping");
@@ -7102,6 +7106,8 @@
     chipB.remove();
     markerAEl?.classList.remove("marker-swapping");
     markerBEl?.classList.remove("marker-swapping");
+    walpurgisSwapVisualHiddenUids = new Set();
+    renderMarkers();
   }
 
   async function swapMarkerPositionWithPlayer(targetUid){
@@ -10666,6 +10672,7 @@
  function drawMarker({x,y,color,initial,uid,pulse=false,eliminated=false}){
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
+  if (uid && walpurgisSwapVisualHiddenUids.has(uid)) g.classList.add("marker-swapping");
   if (pulse) g.classList.add("mark-pulse-target");
   if (eliminated) g.classList.add("marker-eliminated");
 
