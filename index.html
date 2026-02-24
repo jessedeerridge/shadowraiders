@@ -2374,6 +2374,7 @@
   let ulsterExtraAttackPending = 0;
   let attackFlowUiLockActive = false;
   let suppressEndTurnButton = false;
+  let wightTurnStartButtonLocked = false;
   let pendingHpSwapAnimation = null;
   let attackAbilityUsedTurnByRole = {};
   let attackAbilityUsageTurnOwnerUid = "";
@@ -2631,6 +2632,7 @@
   async function activateWightAbilityAndEndTurn(){
     const check = canUseWightAbilityNow();
     if (!check.ok) return false;
+    wightTurnStartButtonLocked = true;
     await markWightAbilityUsed();
     await update(ref(db, `rooms/${state.roomCode}/turn`), {
       repeatTurnRemaining: check.eliminated,
@@ -7432,6 +7434,7 @@
 
   function canShowEndTurnButton(){
     if (!isMyTurn()) return false;
+    if (wightTurnStartButtonLocked) return false;
     if (!identityPromptPop?.classList.contains("hidden")) return false;
     if (cardPlayerSelectActive) return false;
     if (isEquipSelectionLockActive()) return false;
@@ -7479,6 +7482,9 @@
 
   function renderTurnEndButton(){
     syncRoomAbilityTurnState();
+    if (wightTurnStartButtonLocked && isMyTurn() && !turnState()?.moveDone){
+      wightTurnStartButtonLocked = false;
+    }
     if (!turnEndWrap) return;
     const visible = isGameStarted() && canShowEndTurnButton();
     turnEndWrap.classList.toggle("hidden", !visible);
