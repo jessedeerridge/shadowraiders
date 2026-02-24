@@ -6999,19 +6999,37 @@
     const aScr = aPt.matrixTransform(ctm);
     const bScr = bPt.matrixTransform(ctm);
 
-    const makeChip = (m) => {
+    const markerVisualByUid = (uid, marker) => {
+      const player = playerById(uid);
+      const color = safeText(player?.color || "") || String(marker?.color || "#ddd");
+      const initial = firstChar(player?.name || "") || String(marker?.initial || "").slice(0,1);
+      const size = (uid && uid === state.userId) ? 17 : 16;
+      return { color, initial, size, rx: 3 };
+    };
+
+    const makeChip = (uid, marker) => {
+      const visual = markerVisualByUid(uid, marker);
       const chip = document.createElement("div");
-      chip.className = "chip16";
       chip.style.position = "fixed";
       chip.style.left = "0";
       chip.style.top = "0";
       chip.style.zIndex = "11200";
       chip.style.pointerEvents = "none";
-      chip.style.background = String(m.color || "#ddd");
-      chip.style.color = textColorFor(String(m.color || "#ddd"));
+      chip.style.display = "grid";
+      chip.style.placeItems = "center";
+      chip.style.width = `${visual.size}px`;
+      chip.style.height = `${visual.size}px`;
+      chip.style.borderRadius = `${visual.rx}px`;
+      chip.style.border = "1px solid #111";
+      chip.style.fontWeight = "1000";
+      chip.style.fontSize = "10px";
+      chip.style.lineHeight = "1";
+      chip.style.userSelect = "none";
+      chip.style.boxSizing = "border-box";
+      chip.style.background = visual.color;
+      chip.style.color = textColorFor(visual.color);
       chip.style.transform = "translate(-50%,-50%)";
-      chip.style.transition = `transform ${durationMs}ms cubic-bezier(.22,.78,.24,1)`;
-      chip.textContent = String(m.initial || "").slice(0,1);
+      chip.textContent = visual.initial;
       document.body.appendChild(chip);
       return chip;
     };
@@ -7028,8 +7046,8 @@
       };
     };
 
-    const chipA = makeChip(markerA);
-    const chipB = makeChip(markerB);
+    const chipA = makeChip(uidA, markerA);
+    const chipB = makeChip(uidB, markerB);
     setChipPos(chipA, aScr.x, aScr.y);
     setChipPos(chipB, bScr.x, bScr.y);
 
@@ -7071,9 +7089,6 @@
       requestAnimationFrame(step);
     });
 
-    chipA.remove();
-    chipB.remove();
-
     const waitSwapCommit = async () => {
       const started = Date.now();
       const epsilon = 0.01;
@@ -7095,6 +7110,9 @@
     walpurgisSwapHiddenUids.delete(uidA);
     walpurgisSwapHiddenUids.delete(uidB);
     renderMarkers();
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    chipA.remove();
+    chipB.remove();
   }
 
   async function swapMarkerPositionWithPlayer(targetUid){
