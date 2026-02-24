@@ -5955,6 +5955,7 @@
         await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
         await markGordonAbilityUsed();
       }
+      if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
       await doEndTurn();
       return;
     }
@@ -5978,6 +5979,7 @@
         await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
         await markGordonAbilityUsed();
         hideRevealPop();
+        if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
         await doEndTurn();
         return;
       }
