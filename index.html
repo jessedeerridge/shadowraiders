@@ -2425,7 +2425,8 @@
     return {
       movedByDiceRoomId: Number(t.movedByDiceRoomId || 0) || null,
       room3ActionUsed: !!t.room3ActionUsed,
-      room4StealUsed: !!t.room4StealUsed
+      room4StealUsed: !!t.room4StealUsed,
+      walpurgisSwapUsed: !!t.walpurgisSwapUsed
     };
   }
 
@@ -2441,6 +2442,9 @@
     }
     if (Object.prototype.hasOwnProperty.call(patch, "room4StealUsed")){
       next.room4StealUsed = !!patch.room4StealUsed;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "walpurgisSwapUsed")){
+      next.walpurgisSwapUsed = !!patch.walpurgisSwapUsed;
     }
     if (!Object.keys(next).length) return;
     await update(ref(db, `rooms/${state.roomCode}/turn`), next);
@@ -2950,6 +2954,7 @@
               movedByDiceRoomId: null,
               room3ActionUsed: false,
               room4StealUsed: false,
+              walpurgisSwapUsed: false,
               repeatTurnRemaining: 0,
               repeatTurnTotal: 0,
               sealWisdomBonus: false,
@@ -6906,13 +6911,13 @@
     const roomActionState = turnRoomActionState();
     room4StealUsed = roomActionState.room4StealUsed;
     room3ActionUsed = roomActionState.room3ActionUsed;
+    walpurgisSwapUsed = roomActionState.walpurgisSwapUsed;
     movedByDiceRoomId = roomActionState.movedByDiceRoomId;
     const hasMatchingPending = !!pendingAttackResolution
       && safeText(pendingAttackResolution.turnKey || "") === key
       && currentTurnPlayerId() === state.userId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
-    walpurgisSwapUsed = false;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
     vampireHealScheduled = false;
@@ -6962,7 +6967,8 @@
     if (!isMyRole("SHA_W2")) return false;
     if (isMyAbilitySealed()) return false;
     if (!isMyIdentityRevealed()) return false;
-    if (walpurgisSwapUsed) return false;
+    const roomActionState = turnRoomActionState();
+    if (roomActionState.walpurgisSwapUsed || walpurgisSwapUsed) return false;
     return true;
   }
 
@@ -7093,12 +7099,14 @@
   function showWalpurgisSwapConfirm(clientX, clientY, targetUid){
     const uid = safeText(targetUid || "");
     if (!uid || !canUseWalpurgisSwap()) return;
+    if (!canWalpurgisSwapToTarget(uid)) return;
     const player = playerById(uid);
     const name = safeText(player?.name || "このプレイヤー");
     suppressOutsidePopCloseUntil = Date.now() + 700;
     showRoomActionPopAt(clientX, clientY, "", async () => {
       if (!canUseWalpurgisSwap()) return;
       walpurgisSwapUsed = true;
+      await updateTurnRoomActionState({ walpurgisSwapUsed:true });
       await emitRoleFlashEvent("SHA_W2", "walpurgis_swap");
       await new Promise(resolve => setTimeout(resolve, 1800));
       try {
@@ -8383,6 +8391,7 @@
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        walpurgisSwapUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         sealWisdomBonus: false,
@@ -8448,6 +8457,7 @@
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        walpurgisSwapUsed: false,
         repeatTurnRemaining: nextRepeatRemaining,
         repeatTurnTotal: nextRepeatTotal,
         sealWisdomBonus: false,
@@ -9473,6 +9483,31 @@
     return targets;
   }
 
+  function canWalpurgisSwapToTarget(targetUid){
+    const attackerUid = safeText(state.userId || "");
+    const otherUid = safeText(targetUid || "");
+    if (!attackerUid || !otherUid || attackerUid === otherUid) return false;
+    const attackerMarker = markerCache?.[attackerUid] || null;
+    const targetMarker = markerCache?.[otherUid] || null;
+    if (!attackerMarker || !targetMarker) return false;
+
+    const attackerRoomIdAfterSwap = markerRoomId(targetMarker);
+    if (!attackerRoomIdAfterSwap) return false;
+
+    const deadScopeCount = countEquipmentByNames(attackerUid, ["死神スコープ"]);
+    const attackRooms = attackTargetRoomIdsFromRoom(attackerRoomIdAfterSwap, deadScopeCount);
+    for (const [uid, marker] of Object.entries(markerCache || {})){
+      if (!marker || uid === attackerUid) continue;
+      if (isPlayerEliminated(uid)) continue;
+      const markerToCheck = uid === otherUid ? attackerMarker : marker;
+      const rid = markerRoomId(markerToCheck);
+      if (!rid || !attackRooms.has(rid)) continue;
+      if (isAttackTargetProtected(uid)) continue;
+      return true;
+    }
+    return false;
+  }
+
   function inferRoomIdFromPoint(x, y){
     for (const [ridText, pts] of Object.entries(roomPolygons)){
       const rid = Number(ridText);
@@ -9551,7 +9586,7 @@
     if (!roomId || !state.roomCode || !state.userId) return;
 
     movedByDiceRoomId = roomId;
-    updateTurnRoomActionState({ movedByDiceRoomId:roomId, room3ActionUsed:false, room4StealUsed:false });
+    updateTurnRoomActionState({ movedByDiceRoomId:roomId, room3ActionUsed:false, room4StealUsed:false, walpurgisSwapUsed:false });
 
     let target = null;
     for (let i = 0; i < 120; i++){
@@ -10690,6 +10725,10 @@
       if (uid === state.userId) return;
       markerLongPressTimer = setTimeout(() => {
         markerLongPressDone = true;
+        if (!canWalpurgisSwapToTarget(uid)){
+          showRevealPopAt(null, { mode:"notice", message:"この後、攻撃できません。" });
+          return;
+        }
         showWalpurgisSwapConfirm(e.clientX, e.clientY, uid);
       }, longPressMs);
     });
@@ -12669,6 +12708,7 @@
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        walpurgisSwapUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         sealWisdomBonus: false,
