@@ -138,6 +138,10 @@
   .room-guide-btn.host-position{bottom:124px;}
   .room-guide-btn.visible{display:flex;}
  .room-guide-btn.active{background:#111;color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.35), 0 8px 20px rgba(0,0,0,.25);}
+  body.david-overlay-active .help-btn.visible,
+  body.david-overlay-active .room-guide-btn.visible{
+    z-index:295;
+  }
   .room-guide-btn img{width:22px;height:22px;display:block;object-fit:contain;pointer-events:none;}
 
 
@@ -2315,6 +2319,7 @@
   let cardDiceEventSeenAt = 0;
   let cardDiceEventInitialized = false;
   const deckRebuildTimers = { green:null, white:null, black:null };
+  let equipSelectionStartedFromExpand = false;
   let roleFlashEventSeenAt = 0;
   let roleFlashEventInitialized = false;
   let hpSwapEventSeenAt = 0;
@@ -4744,6 +4749,7 @@
   function closeZoom(){
     zoomBackdrop.classList.add("hidden");
     zoomBackdrop.classList.remove("passthrough");
+    zoomBackdrop.classList.remove("david-overlay-global");
     zoomStage.innerHTML = "";
     hideGreenRevealPanel();
     zoomCloseOnBackdrop = true;
@@ -4760,6 +4766,7 @@
     equipDock?.classList.remove("david-select-front");
     refreshEquipDockLayer();
     syncPersistentVenomOverlay();
+    ensureDavidOverlayVisibleForAll();
   }
   zoomBackdrop.addEventListener("click", async (e) => {
     const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
@@ -5427,6 +5434,22 @@
     await set(ref(db, `rooms/${state.roomCode}/abilityUsage/david/${state.userId}`), true);
   }
 
+  async function setDavidAbilityOverlayState(payload){
+    if (!state.roomCode) return;
+    const overlayRef = ref(db, `rooms/${state.roomCode}/davidAbilityOverlay`);
+    if (!payload || !payload.actorUid){
+      await remove(overlayRef).catch(() => {});
+      syncDavidOverlayFloatingButtons();
+      return;
+    }
+    await set(overlayRef, {
+      actorUid: safeText(payload.actorUid || ""),
+      active: payload.active !== false,
+      at: Date.now()
+    });
+    syncDavidOverlayFloatingButtons();
+  }
+
   function isAgathaAbilityUsed(){
     return !!state.room?.abilityUsage?.agatha?.[state.userId];
   }
@@ -5469,9 +5492,44 @@
     const role = my?.roleId ? ROLE_BY_ID[my.roleId] : null;
     if (!role) return;
     openZoomFromRole(role, { closeOnBackdrop:false, showCloseButton:false });
-    setZoomPassthrough(false);
+    setZoomPassthrough(true);
     hideDavidSelectPreview();
     zoomDismissHandler = null;
+  }
+
+  function activeDavidOverlayActorUid(){
+    const entry = state.room?.davidAbilityOverlay;
+    if (!entry || entry.active === false) return "";
+    return safeText(entry.actorUid || "");
+  }
+
+  function syncDavidOverlayFloatingButtons(){
+    const active = !!activeDavidOverlayActorUid();
+    document.body?.classList.toggle("david-overlay-active", active);
+  }
+
+  function ensureDavidOverlayVisibleForAll(){
+    syncDavidOverlayFloatingButtons();
+    const actorUid = activeDavidOverlayActorUid();
+    if (!actorUid){
+      const wasDavidOverlay = !!zoomBackdrop?.classList.contains("david-overlay-global");
+      zoomBackdrop?.classList.remove("david-overlay-global");
+      if (wasDavidOverlay && !zoomBackdrop?.classList.contains("hidden")){
+        closeZoom();
+      }
+      return;
+    }
+    zoomBackdrop?.classList.add("david-overlay-global");
+    if (activeRoleAbilitySelection) return;
+    if (!zoomBackdrop?.classList.contains("hidden")) return;
+    const roleId = safeText(state.hands?.[actorUid]?.roleId || "");
+    const role = ROLE_BY_ID[roleId];
+    if (!role || role.id !== "CIT_D2") return;
+    openIdentityRevealZoom(role, actorUid, {
+      persist:true,
+      showOwnerTag:false
+    });
+    setZoomPassthrough(true);
   }
 
   function restoreDavidAbilitySelection(){
@@ -5497,6 +5555,7 @@
       return;
     }
     await revealMyIdentityToEquipment({ revealedBy:"david_ability" });
+    await setDavidAbilityOverlayState({ actorUid:state.userId, active:true });
     pendingEquipAction = { type:"david_select", defeatedUids };
     restoreDavidIdentityZoom();
     renderEquipmentDock();
@@ -6204,11 +6263,7 @@
     const card = e.target.closest(".card72.wb-front, .id72");
     const selectionAction = captureSelectionRestoreAction();
     if (!card){
-      if (pendingEquipAction?.type === "david_select"){
-        hideRoomActionPop();
-        restoreDavidAbilitySelection();
-        return;
-      }
+      if (pendingEquipAction?.type === "david_select") hideRoomActionPop();
       openEquipExpand();
       return;
     }
@@ -6231,7 +6286,13 @@
       const isPulseCard = card.classList.contains("equip-defeat-pulse");
       const canPick = isPulseCard && pendingEquipAction.defeatedUids?.includes(ownerUid) && !!sourceKey;
       if (!canPick){
-        restoreDavidAbilitySelection();
+        openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+        setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
+        setZoomPassthrough(false);
+        zoomDismissHandler = async () => {
+          equipSelectionStartedFromExpand = false;
+          restoreDavidAbilitySelection();
+        };
         return;
       }
       pendingEquipAction = {
@@ -6252,15 +6313,24 @@
         const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
         if (ok){
           await markDavidAbilityUsed();
+          await setDavidAbilityOverlayState(null);
           pendingEquipAction = null;
           hideDavidSelectPreview();
+          if (equipSelectionStartedFromExpand){
+            closeEquipExpandIfOpen();
+          }
+          equipSelectionStartedFromExpand = false;
           closeZoom();
           renderEquipmentDock();
+          renderMarkers();
+        } else {
+          equipSelectionStartedFromExpand = false;
         }
       }, {
         fixedLower:true,
         closeZoomOnNo:false,
         onNo: () => {
+          equipSelectionStartedFromExpand = false;
           restoreDavidAbilitySelection();
         }
       });
@@ -11217,6 +11287,7 @@
 
     const linked = findEquipBodyCardFromDataset(card);
     if (linked){
+      equipSelectionStartedFromExpand = true;
       linked.click();
       return;
     }
@@ -11425,6 +11496,8 @@
       renderTurnEndButton();
       renderCounterAbilityPrompt();
       syncPersistentVenomOverlay();
+      syncDavidOverlayFloatingButtons();
+      ensureDavidOverlayVisibleForAll();
       renderMarkers();
       syncPendingMoveChoiceOwnership();
       restorePendingMoveChoiceFromSeat();
