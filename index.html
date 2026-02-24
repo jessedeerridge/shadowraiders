@@ -7491,9 +7491,14 @@
 
   function repeatTurnLabel(){
     const rest = Math.max(0, Number(turnState()?.repeatTurnRemaining || 0));
-    const total = Math.max(0, Number(turnState()?.repeatTurnTotal || 0));
-    if (rest <= 0 || total <= 0) return "もう一度手番を行う";
-    return `もう一度手番を行う(${rest}/${total})`;
+    if (rest <= 0) return "もう一度手番を行う";
+    return `もう一度手番を行う(あと${rest}回)`;
+  }
+
+  function repeatTurnSuffixLabel(){
+    const rest = Math.max(0, Number(turnState()?.repeatTurnRemaining || 0));
+    if (rest <= 0) return "";
+    return `(あと${rest}回)`;
   }
 
   function hasSealWisdomBonusThisTurn(){
@@ -7778,11 +7783,15 @@
     const spec = attackAbilitySpecFromRows(rows);
     const sealedVictim = isErikaSealedPlayer(state.userId);
     if (btnAttackResultEnd){
-      btnAttackResultEnd.textContent = hasSealWisdomBonusThisTurn() ? "OKおわる(+1)" : "OKおわる";
+      if (hasSealWisdomBonusThisTurn()){
+        btnAttackResultEnd.textContent = "OKおわる(+1)";
+      } else {
+        btnAttackResultEnd.textContent = `OKおわる${repeatTurnSuffixLabel()}`;
+      }
     }
     if (btnAttackResultKeep){
       if (sealedVictim){
-        btnAttackResultKeep.textContent = "OKおわる";
+        btnAttackResultKeep.textContent = `OKおわる${repeatTurnSuffixLabel()}`;
       } else if (spec){
         btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>`;
       } else {
