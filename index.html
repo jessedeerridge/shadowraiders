@@ -5334,6 +5334,32 @@
     });
   }
 
+  async function setDeckToSingleCardForTest(theme, cardObj){
+    if (!isTestPlayer()) return;
+    if (!state.roomCode) return;
+    if (!cardObj || (theme !== "white" && theme !== "black")) return;
+
+    const deckRef = ref(db, `rooms/${state.roomCode}/deckState/${theme}`);
+    await runTransaction(deckRef, (cur) => {
+      if (!cur || !Array.isArray(cur.order)) return cur;
+      const idx = Number(cur.idx || 0);
+      const total = cur.order.length;
+      if (idx >= total) return cur;
+      const fixedCard = {
+        name: safeText(cardObj.name),
+        effect: safeText(cardObj.effect)
+      };
+      const nextOrder = [...cur.order];
+      for (let i = idx; i < total; i++){
+        nextOrder[i] = fixedCard;
+      }
+      return {
+        ...cur,
+        order: nextOrder,
+      };
+    });
+  }
+
   async function removeEquipmentCardForTest(ownerUid, sourceKey){
     if (!isTestPlayer()) return;
     if (!state.roomCode) return;
@@ -11051,6 +11077,10 @@
         card.style.cursor = 'pointer';
         card.addEventListener('click', async (e) => {
           e.stopPropagation();
+          if (isTestPlayer() && (theme === 'white' || theme === 'black')){
+            await setDeckToSingleCardForTest(theme, cardObj);
+            return;
+          }
           if (isTestPlayer() && isEquipCard(cardObj)){
             await grantEquipmentToMe(cardObj, theme);
             return;
