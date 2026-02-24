@@ -2304,6 +2304,7 @@
     "RAI_F2", // フェリシア
     "SHA_U2", // ウラヌス
   ]);
+  const START_ONLY_ABILITY_ROLE_IDS = new Set(["RAI_E2", "RAI_F1", "RAI_F2"]);
   const REVEAL_ENDS_TURN_ROLE_IDS = new Set([
     "CIT_B2", // ベンジャミン
     "RAI_E3", // エマ
@@ -3146,12 +3147,6 @@
       await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
       openIdentityRevealZoom(role, state.userId);
       await setDamageToPlayer(state.userId, 0, "card_kohrin_heal");
-      if (name === "光臨" && safeText(role.id) === "RAI_G1" && state.roomCode){
-        await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
-        if (isMyTurn()){
-          await doEndTurn();
-        }
-      }
     };
   }
 
@@ -5704,6 +5699,11 @@
             return;
           }
         } else {
+          if (START_ONLY_ABILITY_ROLE_IDS.has(myRoleId) && !!turnState()?.moveDone){
+            e.stopPropagation();
+            showRevealPopAt(idCard, { mode:"notice", message:"手番の初めにだけ使えます。" });
+            return;
+          }
           if (isRoleAbilityUsed(myRoleId)) return;
           if (!canStartRoleSelection(myRoleId, state.userId)){
             e.stopPropagation();
@@ -5748,6 +5748,20 @@
         showRevealPopAt(idCard, {
           action: "alice_ability",
           messageHtml: `<span class="ability-pill">うさぎさんヒール</span>を使いますか。`
+        });
+        return;
+      }
+      if (myRoleId === "RAI_G1"){
+        if (isGordonAbilityUsed()) return;
+        if (!isMyTurn() || !turnState()?.moveDone || !!turnState()?.attackDone){
+          e.stopPropagation();
+          showRevealPopAt(idCard, { mode:"notice", message:"手番の最後にだけ使えます。" });
+          return;
+        }
+        e.stopPropagation();
+        showRevealPopAt(idCard, {
+          action: "gordon_barrier",
+          messageHtml: `<span class="ability-pill">絶対無敵バリア</span>を使いますか。<br>使用後に手番が終了します。`
         });
         return;
       }
@@ -5825,8 +5839,7 @@
       return;
     }
     if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && moved){
-      const startOnlyAbilityRoleIds = new Set(["RAI_E2", "RAI_F1", "RAI_F2"]);
-      const message = startOnlyAbilityRoleIds.has(myRoleId)
+      const message = START_ONLY_ABILITY_ROLE_IDS.has(myRoleId)
         ? "手番の初めにだけ使えます。"
         : "手番の初めにだけ正体を公開できます。";
       e.stopPropagation();
@@ -5932,6 +5945,19 @@
       }, 1500);
       return;
     }
+    if (pendingRevealAction === "gordon_barrier"){
+      hideRevealPop();
+      if (!isMyTurn() || !turnState()?.moveDone || !!turnState()?.attackDone || isGordonAbilityUsed()){
+        showRevealPopAt(null, { mode:"notice", message:"手番の最後にだけ使えます。" });
+        return;
+      }
+      if (state.roomCode){
+        await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
+        await markGordonAbilityUsed();
+      }
+      await doEndTurn();
+      return;
+    }
     if (pendingRevealAction.startsWith("role_select:")){
       const roleId = safeText(pendingRevealAction.split(":")[1] || "");
       const role = ROLE_BY_ID[roleId];
@@ -5947,9 +5973,6 @@
       return;
     }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
-    if (myRoleId === "RAI_G1" && state.roomCode){
-      await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
-    }
     if (isRoleSelectionAbility(myRoleId) && !isRoleAbilityUsed(myRoleId)){
       if (!canStartRoleSelection(myRoleId, state.userId)){
         hideRevealPop();
@@ -5965,10 +5988,6 @@
       }, 1500);
     }
     hideRevealPop();
-    if (myRoleId === "RAI_G1" && isMyTurn()){
-      await doEndTurn();
-      return;
-    }
     if (myRoleId === "CIT_A3" && isAgathaAbilityUsed() && isMyTurn()){
       await doEndTurn();
     }
@@ -6697,6 +6716,15 @@
     const targetUid = safeText(uid);
     if (!targetUid) return false;
     return !!state.room?.gordonBarrier?.[targetUid];
+  }
+
+  function isGordonAbilityUsed(){
+    return !!state.room?.abilityUsage?.gordon?.[state.userId];
+  }
+
+  async function markGordonAbilityUsed(){
+    if (!state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/gordon/${state.userId}`), true);
   }
 
   function isGordonBarrierHpChangeAllowed(uid, source = ""){
