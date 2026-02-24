@@ -6164,6 +6164,10 @@
       }
       if (roleId === "SHA_V2"){
         await resolveVampireAttackHealByAbilityButton();
+        const turnOwnerUid = currentTurnPlayerId();
+        if (turnOwnerUid){
+          await doEndTurn(turnOwnerUid);
+        }
         return;
       }
     };
