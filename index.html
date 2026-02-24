@@ -6378,6 +6378,10 @@
       const name = safeText(card.dataset.cardName || "このカード");
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `${name}を渡しますか？`, async () => {
         hideRoomActionPop();
+        closeEquipExpandIfOpen();
+        if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")){
+          closeZoom();
+        }
         await resolveVenomCounterChoice("give", sourceKey);
       }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
       return;
@@ -11552,16 +11556,6 @@
 
     const linked = findEquipBodyCardFromDataset(card);
     if (linked){
-      const shouldCloseOnVenomGiveSelect = isVenomSelectionEntry(counterPromptEntryForMe())
-        && ownerUid === state.userId
-        && !!sourceKey
-        && card.classList.contains("equip-defeat-pulse");
-      if (shouldCloseOnVenomGiveSelect){
-        closeEquipExpandIfOpen();
-        if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")){
-          closeZoom();
-        }
-      }
       equipSelectionStartedFromExpand = true;
       linked.click();
       return;
