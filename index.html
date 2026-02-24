@@ -7439,11 +7439,12 @@
 
     autoMoveTriggeredTurnKey = key;
     hideAttackPop();
-    setTimeout(() => triggerMoveDiceForAll(), 80);
+    setTimeout(() => triggerMoveDiceForAll({ autoPlaceWithoutChoice:true }), 80);
   }
 
-  async function triggerMoveDiceForAll(){
+  async function triggerMoveDiceForAll(options = {}){
     if (!state.roomCode || !canUseMoveDice()) return;
+    const autoPlaceWithoutChoice = !!options.autoPlaceWithoutChoice;
     const selectedSum = chooseSumForTestPlayer("移動");
     if (isTestPlayer() && selectedSum == null) return;
     const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
@@ -7460,6 +7461,7 @@
       d6,
       d4,
       compass,
+      autoPlaceWithoutChoice,
       secondD6,
       secondD4,
       motion,
@@ -8157,6 +8159,7 @@
         secondD6:Number(ev.secondD6 || 1),
         secondD4:Number(ev.secondD4 || 1),
         compass: !!ev.compass,
+        autoPlaceWithoutChoice: !!ev.autoPlaceWithoutChoice,
         applyMove: safeText(ev.uid || "") === state.userId,
         motion: ev.motion || null
       });
@@ -10251,6 +10254,7 @@
     if (!force && !canUseMoveDice()) return;
     const applyMove = options.applyMove !== false;
     const compass = !!options.compass;
+    const autoPlaceWithoutChoice = !!options.autoPlaceWithoutChoice;
     if (!diceRollOverlay) return;
     pendingMoveChoice = null;
     clearPendingMoveChoiceUi();
@@ -10361,10 +10365,22 @@
       finalD6: secondD6,
       finalD4: secondD4,
       startAfterMs: 2980,
-      onStop: () => {
+      onStop: async () => {
         if (!applyMove) return;
         const roomA = diceTotalToRoomId(finalD6 + finalD4);
         const roomB = diceTotalToRoomId(secondD6 + secondD4);
+        if (autoPlaceWithoutChoice){
+          const pickedRoom = Math.random() < 0.5 ? roomA : roomB;
+          await placeMarkerInRoom(pickedRoom);
+          await saveMySeatMoveChoice(null);
+          if (state.roomCode && isMyTurn()){
+            await update(ref(db, `rooms/${state.roomCode}/turn`), {
+              moveDone: true,
+              moveAt: Date.now()
+            });
+          }
+          return;
+        }
         saveMySeatMoveChoice({
           roomIds: [roomA, roomB],
           d6: finalD6,
