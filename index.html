@@ -5557,6 +5557,10 @@
     if (!my || !my.roleId) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if (myRoleId === "CIT_B3" && isMyTurn()){
+      e.stopPropagation();
+      return;
+    }
     if (isErikaSealedPlayer(state.userId) && !isMyIdentityRevealed()){
       e.stopPropagation();
       return;
@@ -5583,6 +5587,10 @@
       return;
     }
     if (!isMyTurn()){
+      if (isMyIdentityRevealed()){
+        e.stopPropagation();
+        return;
+      }
       if (isCounterPromptSilentIdentityClickWindow()){
         e.stopPropagation();
         return;
