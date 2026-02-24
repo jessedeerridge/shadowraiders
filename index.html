@@ -1198,6 +1198,7 @@
 }
 #roomActionPop.lower-mode .caret{ display:none; }
 #roomActionPop.no-caret .caret{ display:none; }
+#roomActionPop.message-only .actions{ display:none; }
 #roomActionPop.room3-mode .actions{
   flex-wrap:nowrap;
   justify-content:center;
@@ -2695,7 +2696,7 @@
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
-    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret");
+    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret", "message-only");
     if (btnRoomActionYes){
       btnRoomActionYes.textContent = "はい";
       btnRoomActionYes.disabled = false;
@@ -2715,6 +2716,7 @@
     const compactButtons = !!options.compactButtons;
     const yOffset = Number(options.yOffset) || 0;
     const noCaret = !!options.noCaret;
+    const messageOnly = !!options.messageOnly;
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
       onNo: (typeof options.onNo === "function") ? options.onNo : null,
@@ -2748,6 +2750,7 @@
     roomActionPop.classList.toggle("lower-mode", fixedLower);
     roomActionPop.classList.toggle("room3-mode", compactButtons);
     roomActionPop.classList.toggle("no-caret", noCaret);
+    roomActionPop.classList.toggle("message-only", messageOnly);
 
     if (fixedLower){
       roomActionPop.style.left = "";
@@ -7149,11 +7152,8 @@
 
   function showWalpurgisCannotAttackNotice(clientX, clientY){
     showRoomActionPopAt(clientX, clientY, "この後、攻撃できません。", null, {
-      yesLabel: "OK",
-      noLabel: "",
-      noDisabled: true,
-      noBtnClass: "pop-disabled",
-      noCaret: true
+      noCaret: true,
+      messageOnly: true
     });
   }
 
