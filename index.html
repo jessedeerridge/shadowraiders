@@ -7013,14 +7013,58 @@
   async function animateMarkerSwapVisual(uidA, uidB, durationMs = 560){
     const markerA = markerCache?.[uidA] || null;
     const markerB = markerCache?.[uidB] || null;
-    if (!markerA || !markerB || !markerLayer) return;
+    if (!markerA || !markerB) return;
     const ax = Number(markerA.x), ay = Number(markerA.y);
     const bx = Number(markerB.x), by = Number(markerB.y);
     if (![ax, ay, bx, by].every(Number.isFinite)) return;
 
-    const markerAEl = markerLayer.querySelector(`[data-uid="${uidA}"]`);
-    const markerBEl = markerLayer.querySelector(`[data-uid="${uidB}"]`);
-    if (!markerAEl || !markerBEl) return;
+    const playerA = playerById(uidA);
+    const playerB = playerById(uidB);
+    const colorA = safeText(playerA?.color || "") || String(markerA.color || "#ddd");
+    const colorB = safeText(playerB?.color || "") || String(markerB.color || "#ddd");
+    const initialA = firstChar(playerA?.name || "") || String(markerA.initial || "");
+    const initialB = firstChar(playerB?.name || "") || String(markerB.initial || "");
+    const sizeA = uidA === state.userId ? 17 : 16;
+    const sizeB = uidB === state.userId ? 17 : 16;
+    const rx = 3;
+
+    const makeGhost = (uid, x, y, color, initial, size) => {
+      const g = document.createElementNS("http://www.w3.org/2000/svg","g");
+      g.setAttribute("data-uid", uid);
+      g.classList.add("marker-swap-ghost");
+
+      const rect = document.createElementNS("http://www.w3.org/2000/svg","rect");
+      rect.setAttribute("x", String(x-size/2));
+      rect.setAttribute("y", String(y-size/2));
+      rect.setAttribute("width", String(size));
+      rect.setAttribute("height", String(size));
+      rect.setAttribute("rx", String(rx));
+      rect.setAttribute("ry", String(rx));
+      rect.setAttribute("class","mark-rect");
+      rect.setAttribute("fill", color || "#ddd");
+      rect.setAttribute("stroke", borderColorFor(color || "#ddd"));
+
+      const txt = document.createElementNS("http://www.w3.org/2000/svg","text");
+      txt.setAttribute("x", String(x));
+      txt.setAttribute("y", String(y+0.5));
+      txt.setAttribute("class","mark-text");
+      txt.setAttribute("fill", textColorFor(color || "#ddd"));
+      txt.textContent = String(initial || "").slice(0,1);
+
+      g.appendChild(rect);
+      g.appendChild(txt);
+      return g;
+    };
+
+    walpurgisAnimatingUids = new Set([uidA, uidB]);
+    renderMarkers();
+
+    const ghostLayer = ensureSwapGhostLayer();
+    clearSwapGhostLayer();
+    const ghostA = makeGhost(uidA, ax, ay, colorA, initialA, sizeA);
+    const ghostB = makeGhost(uidB, bx, by, colorB, initialB, sizeB);
+    ghostLayer.appendChild(ghostA);
+    ghostLayer.appendChild(ghostB);
 
     const bezierPoint = (p0, p1, p2, t) => {
       const it = 1 - t;
@@ -7044,16 +7088,6 @@
     const pB0 = { x: bx, y: by };
     const pB1 = { x: mid.x - nx * arc, y: mid.y - ny * arc };
     const pB2 = { x: ax, y: ay };
-
-    const ghostA = markerAEl.cloneNode(true);
-    const ghostB = markerBEl.cloneNode(true);
-    ghostA.classList.add("marker-swap-ghost");
-    ghostB.classList.add("marker-swap-ghost");
-    markerLayer.appendChild(ghostA);
-    markerLayer.appendChild(ghostB);
-
-    markerAEl.style.visibility = "hidden";
-    markerBEl.style.visibility = "hidden";
 
     await new Promise(resolve => {
       const startedAt = performance.now();
@@ -7090,10 +7124,9 @@
       await new Promise(resolve => setTimeout(resolve, 34));
     }
 
-    ghostA.remove();
-    ghostB.remove();
-    if (markerAEl.isConnected) markerAEl.style.visibility = "";
-    if (markerBEl.isConnected) markerBEl.style.visibility = "";
+    walpurgisAnimatingUids = new Set();
+    clearSwapGhostLayer();
+    renderMarkers();
   }
 
   async function swapMarkerPositionWithPlayer(targetUid){
@@ -8997,7 +9030,9 @@
 
   let markerLayer = null;
   let attackRangeLayer = null;
+  let swapGhostLayer = null;
   let roomGuideLayer = null;
+  let walpurgisAnimatingUids = new Set();
   let markerCache = {};
   const roomShapeEls = {};
   const roomHitEls = {};
@@ -10494,6 +10529,20 @@
     while(markerLayer.firstChild) markerLayer.removeChild(markerLayer.firstChild);
   }
 
+  function ensureSwapGhostLayer(){
+    if (swapGhostLayer && swapGhostLayer.isConnected){
+      roomG.appendChild(swapGhostLayer);
+      return swapGhostLayer;
+    }
+    swapGhostLayer = svgEl('g', { id:"swapGhostLayer" }, roomG);
+    return swapGhostLayer;
+  }
+
+  function clearSwapGhostLayer(){
+    if (!swapGhostLayer) return;
+    while (swapGhostLayer.firstChild) swapGhostLayer.removeChild(swapGhostLayer.firstChild);
+  }
+
   function ensureAttackRangeLayer(){
     if (attackRangeLayer && attackRangeLayer.isConnected){
       if (markerLayer && markerLayer.parentNode === roomG){
@@ -10658,6 +10707,7 @@
  function drawMarker({x,y,color,initial,uid,pulse=false,eliminated=false}){
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
+  if (uid && walpurgisAnimatingUids.has(uid)) return;
   if (pulse) g.classList.add("mark-pulse-target");
   if (eliminated) g.classList.add("marker-eliminated");
 
@@ -11001,6 +11051,8 @@
     ensureRoomPatterns();
     while(roomG.firstChild) roomG.removeChild(roomG.firstChild);
     roomGuideLayer = null;
+    swapGhostLayer = null;
+    walpurgisAnimatingUids = new Set();
     Object.keys(roomPolygons).forEach(k => delete roomPolygons[k]);
     for (const k of Object.keys(roomShapeEls)) delete roomShapeEls[k];
     for (const k of Object.keys(roomHitEls)) delete roomHitEls[k];
