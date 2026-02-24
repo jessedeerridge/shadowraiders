@@ -8098,6 +8098,15 @@
         setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
       }
 
+      if (activeRoleAbilitySelection?.roleId === "RAI_G3" && isRoleAbilityUsed("RAI_G3")){
+        activeRoleAbilitySelection = null;
+        cardPlayerSelectActive = false;
+        greenShareDock?.classList.add("hidden");
+        renderTurnEndButton();
+        updateCardInteractivity();
+        if (!zoomBackdrop?.classList.contains("hidden")) closeZoom();
+      }
+
       previousEliminatedMap = eliminatedNow;
 
       renderHpBoard();
