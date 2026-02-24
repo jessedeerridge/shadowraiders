@@ -3146,6 +3146,12 @@
       await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
       openIdentityRevealZoom(role, state.userId);
       await setDamageToPlayer(state.userId, 0, "card_kohrin_heal");
+      if (name === "光臨" && safeText(role.id) === "RAI_G1" && state.roomCode){
+        await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
+        if (isMyTurn()){
+          await doEndTurn();
+        }
+      }
     };
   }
 
@@ -3330,7 +3336,7 @@
     if (roleId === "CIT_B1" && maxDamage >= 2){
       return { abilityName:"念力の懐中時計", description:"ダメージの代わりに相手の装備カードを獲得しますか。" };
     }
-    if (roleId === "RAI_F3" && !isMyIdentityRevealed() && pendingAttackResultMeta?.freddieSpecial){
+    if (roleId === "RAI_F3" && !isMyIdentityRevealed() && pendingAttackResultMeta?.freddieSpecial && hasRevealedTargetInRows(normalizedRows)){
       return { abilityName:"ドラゴンアタック", description:"正体を公開している相手へのダメージが+2になります。" };
     }
     if (roleId === "RAI_G2" && hasMyEquipmentByName("エクスカリバー") && attackFailed){
@@ -3824,6 +3830,13 @@
     if (isRoleAbilityUsed("RAI_E3")) return { ok:false, message:"今は使えません。" };
     if (!canStartRoleSelection("RAI_E3", state.userId)) return { ok:false, message:"今は使えません。" };
     return { ok:true };
+  }
+
+  function hasRevealedTargetInRows(rows = []){
+    const normalizedRows = Array.isArray(rows)
+      ? rows.map(item => safeText(item?.uid || "")).filter(Boolean)
+      : [];
+    return normalizedRows.some(uid => isIdentityRevealedFor(uid));
   }
 
   function uranusAbilityAvailability(){
@@ -5791,6 +5804,11 @@
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
       return;
     }
+    if (myRoleId === "RAI_E3" && !canStartRoleSelection(myRoleId, state.userId)){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "今は使えません。" });
+      return;
+    }
 
     const moved = !!turnState()?.moveDone;
     if (myRoleId === "CIT_B2"){
@@ -5807,8 +5825,12 @@
       return;
     }
     if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && moved){
+      const startOnlyAbilityRoleIds = new Set(["RAI_E2", "RAI_F1", "RAI_F2"]);
+      const message = startOnlyAbilityRoleIds.has(myRoleId)
+        ? "手番の初めにだけ使えます。"
+        : "手番の初めにだけ正体を公開できます。";
       e.stopPropagation();
-      showRevealPopAt(idCard, { mode: "notice", message: "手番の初めにだけ正体を公開できます。" });
+      showRevealPopAt(idCard, { mode: "notice", message });
       return;
     }
     if (myRoleId === "SHA_W1"){
@@ -9027,6 +9049,9 @@
     if (!isMyRole("RAI_E1")) return [];
     if (!isMyIdentityRevealed()) return [];
     if (!turnState()?.moveDone || !!turnState()?.attackDone) return [];
+    if (!!turnState()?.deckDrawDone) return [];
+    const roomActionState = turnRoomActionState();
+    if (roomActionState.room3ActionUsed || roomActionState.room4StealUsed) return [];
     if (!!turnState()?.emiTeleportUsed) return [];
     const myMarker = markerCache?.[state.userId] || null;
     const nowRoom = markerRoomId(myMarker);
