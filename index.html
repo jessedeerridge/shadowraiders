@@ -6356,6 +6356,7 @@
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
         room4StealUsed = true;
         await updateTurnRoomActionState({ room4StealUsed:true });
@@ -6381,6 +6382,7 @@
     if (isDeductionZoomActive()) return;
 
     openZoomFromCard(card);
+    setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
   });
 
   equipBody.addEventListener("dblclick", async (e) => {
