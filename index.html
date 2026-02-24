@@ -1067,6 +1067,41 @@
     padding:0;
   }
 
+  @media (max-width: 768px){
+    .top-row{
+      gap:8px;
+      margin-top:-16px;
+    }
+    .left-panel{
+      width:140px;
+    }
+    .right-panel{
+      width:min(58vw, 300px);
+      gap:4px;
+    }
+    .map-panel{
+      width:100%;
+      height:min(46vh, 250px);
+    }
+    .cards-panel{
+      width:100%;
+      max-width:calc(100vw - 12px);
+      padding:6px 8px;
+    }
+  }
+
+  @media (max-width: 480px){
+    .left-panel{
+      width:126px;
+    }
+    .right-panel{
+      width:min(56vw, 250px);
+    }
+    .map-panel{
+      height:min(42vh, 220px);
+    }
+  }
+
   .room-svg{width:100%;height:100%;display:block;}
   .shape{stroke:#111;stroke-width:1;vector-effect:non-scaling-stroke;}
   .attack-range-layer{pointer-events:none;}
