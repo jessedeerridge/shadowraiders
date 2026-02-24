@@ -8118,7 +8118,12 @@
         autoDamageRevealLock[uid] = true;
         const alreadyRevealed = isIdentityRevealedFor(uid);
         if (!alreadyRevealed && justEliminatedUids.includes(uid)){
-          justEliminatedUnrevealed.push({ uid, role });
+          const roleId = safeText(role?.id || myHand?.roleId || "");
+          const godwinAbilityUsed = !!state.room?.abilityUsage?.godwin?.[uid];
+          const shouldSkipAutoRevealZoom = (roleId === "RAI_G3" && !godwinAbilityUsed);
+          if (!shouldSkipAutoRevealZoom){
+            justEliminatedUnrevealed.push({ uid, role });
+          }
         }
         revealIdentityByDamage(uid).catch(() => {});
       }
