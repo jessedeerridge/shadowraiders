@@ -4721,7 +4721,8 @@
     syncPersistentVenomOverlay();
   }
   zoomBackdrop.addEventListener("click", async (e) => {
-    const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
+    const clickedBackdrop = (e.target === zoomBackdrop);
+    const canClose = zoomCloseOnAnyClick || (clickedBackdrop && zoomCloseOnBackdrop);
     if (canClose){
       if (typeof zoomDismissHandler === "function"){
         await zoomDismissHandler();
@@ -4729,6 +4730,9 @@
       }
       await clearPendingGreenBubble();
       closeZoom();
+      if (clickedBackdrop && equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden')){
+        closeEquipExpand();
+      }
     }
   });
 
