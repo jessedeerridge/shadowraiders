@@ -69,6 +69,7 @@
   .confirm-pop .msg .ability-pill{display:inline-block;padding:1px 6px;border-radius:999px;background:#111;color:#fff;font-weight:700;}
   .ability-pill{display:inline-block;padding:1px 6px;border-radius:999px;background:#111;color:#fff;font-weight:700;}
   .confirm-pop .actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
+  .confirm-pop.hide-actions .actions{display:none;}
   .confirm-pop .caret{
     position:absolute;
     left:50%; top:-7px;
@@ -2695,7 +2696,7 @@
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
-    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret");
+    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret", "hide-actions");
     if (btnRoomActionYes){
       btnRoomActionYes.textContent = "はい";
       btnRoomActionYes.disabled = false;
@@ -2715,6 +2716,7 @@
     const compactButtons = !!options.compactButtons;
     const yOffset = Number(options.yOffset) || 0;
     const noCaret = !!options.noCaret;
+    const hideActions = !!options.hideActions;
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
       onNo: (typeof options.onNo === "function") ? options.onNo : null,
@@ -2748,6 +2750,7 @@
     roomActionPop.classList.toggle("lower-mode", fixedLower);
     roomActionPop.classList.toggle("room3-mode", compactButtons);
     roomActionPop.classList.toggle("no-caret", noCaret);
+    roomActionPop.classList.toggle("hide-actions", hideActions);
 
     if (fixedLower){
       roomActionPop.style.left = "";
@@ -7118,6 +7121,12 @@
     });
   }
 
+  function showWalpurgisCannotAttackPopAt(clientX, clientY){
+    showRoomActionPopAt(clientX, clientY, "この後、攻撃できません。", null, {
+      hideActions: true
+    });
+  }
+
   function refreshRoomAbilityHint(){
     if (canUseRoom4Steal()){
       showTurnHint("他プレイヤーの装備を奪うことができます。");
@@ -9473,6 +9482,31 @@
     return targets;
   }
 
+  function walpurgisSwapCanAttackAfterSwap(targetUid){
+    const myUid = safeText(state.userId || "");
+    const otherUid = safeText(targetUid || "");
+    if (!myUid || !otherUid || myUid === otherUid) return false;
+    const myMarker = markerCache?.[myUid] || null;
+    const targetMarker = markerCache?.[otherUid] || null;
+    const myRoomId = markerRoomId(myMarker);
+    const swappedRoomId = markerRoomId(targetMarker);
+    if (!myRoomId || !swappedRoomId) return false;
+
+    const deadScopeCount = countEquipmentByNames(myUid, ["死神スコープ"]);
+    const attackRooms = attackTargetRoomIdsFromRoom(swappedRoomId, deadScopeCount);
+    if (!attackRooms.size) return false;
+
+    for (const [uid, marker] of Object.entries(markerCache || {})){
+      if (!marker || uid === myUid) continue;
+      if (isPlayerEliminated(uid)) continue;
+      const rid = (uid === otherUid) ? myRoomId : markerRoomId(marker);
+      if (!rid || !attackRooms.has(rid)) continue;
+      if (isAttackTargetProtected(uid)) continue;
+      return true;
+    }
+    return false;
+  }
+
   function inferRoomIdFromPoint(x, y){
     for (const [ridText, pts] of Object.entries(roomPolygons)){
       const rid = Number(ridText);
@@ -10690,6 +10724,10 @@
       if (uid === state.userId) return;
       markerLongPressTimer = setTimeout(() => {
         markerLongPressDone = true;
+        if (!walpurgisSwapCanAttackAfterSwap(uid)){
+          showWalpurgisCannotAttackPopAt(e.clientX, e.clientY);
+          return;
+        }
         showWalpurgisSwapConfirm(e.clientX, e.clientY, uid);
       }, longPressMs);
     });
