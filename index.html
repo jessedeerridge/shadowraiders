@@ -5699,12 +5699,12 @@
             return;
           }
         } else {
+          if (isRoleAbilityUsed(myRoleId)) return;
           if (START_ONLY_ABILITY_ROLE_IDS.has(myRoleId) && !!turnState()?.moveDone){
             e.stopPropagation();
             showRevealPopAt(idCard, { mode:"notice", message:"手番の初めにだけ使えます。" });
             return;
           }
-          if (isRoleAbilityUsed(myRoleId)) return;
           if (!canStartRoleSelection(myRoleId, state.userId)){
             e.stopPropagation();
             showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
@@ -5973,6 +5973,15 @@
       return;
     }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
+    if (myRoleId === "RAI_G1"){
+      if (!isGordonAbilityUsed() && isMyTurn() && !!turnState()?.moveDone && !turnState()?.attackDone && state.roomCode){
+        await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
+        await markGordonAbilityUsed();
+        hideRevealPop();
+        await doEndTurn();
+        return;
+      }
+    }
     if (isRoleSelectionAbility(myRoleId) && !isRoleAbilityUsed(myRoleId)){
       if (!canStartRoleSelection(myRoleId, state.userId)){
         hideRevealPop();
