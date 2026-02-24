@@ -221,7 +221,9 @@
   .attack-loot-row{display:flex;gap:8px;align-items:flex-start;}
   .attack-loot-row.byron-row{padding-top:8px;border-top:1px dashed rgba(0,0,0,.28);}
   .attack-loot-row.byron-row:first-child{padding-top:0;border-top:none;}
-  .attack-loot-row.byron-row.selected{opacity:.55;}
+  .attack-loot-row.byron-row.selected .card72.wb-front,
+  .attack-loot-row.byron-row.selected .id72{opacity:.35;animation:none !important;}
+  .attack-loot-row.byron-row .byron-selected-card{opacity:1 !important;}
   .attack-loot-cards{display:flex;gap:8px;flex-wrap:wrap;}
   .attack-loot-no-steal{border:2px solid #111 !important;color:#111 !important;background:#fff !important;display:flex;align-items:center;justify-content:center;font-weight:1000;flex:0 0 auto;}
 
@@ -5128,6 +5130,7 @@
 
       const cardsWrap = document.createElement("div");
       cardsWrap.className = "attack-loot-cards";
+      const rowSelected = (mode === "byron") ? (selectedByOwner[uid] || null) : null;
       for (const it of list){
         const cardEl = buildEquipCard(it);
         cardEl.dataset.ownerUid = uid;
@@ -5136,28 +5139,32 @@
         cardEl.dataset.itemKind = isIdentityEquipItem(it) ? "identity" : "equip";
         if (!isIdentityEquipItem(it)){
           hasLootableCard = true;
-          cardEl.classList.add("equip-defeat-pulse");
+          if (!rowSelected) cardEl.classList.add("equip-defeat-pulse");
         }
         const isSelected = mode === "byron"
-          ? (!!selectedByOwner[uid] && !selectedByOwner[uid].noSteal && selectedByOwner[uid].sourceKey === safeText(it.sourceKey || ""))
+          ? (!!rowSelected && !rowSelected.noSteal && rowSelected.sourceKey === safeText(it.sourceKey || ""))
           : (selected && !selected.noSteal && selected.ownerUid === uid && selected.sourceKey === safeText(it.sourceKey || ""));
         if (isSelected && !isIdentityEquipItem(it)){
           cardEl.classList.remove("equip-defeat-pulse");
-          cardEl.classList.add("equip-steal-pulse");
+          if (mode === "byron"){
+            cardEl.classList.add("byron-selected-card");
+          } else {
+            cardEl.classList.add("equip-steal-pulse");
+          }
         }
         cardsWrap.appendChild(cardEl);
       }
 
       if (mode === "byron"){
         const noStealCard = document.createElement("div");
-        noStealCard.className = "card72 wb-front wb-white attack-loot-no-steal equip-defeat-pulse";
+        noStealCard.className = "card72 wb-front wb-white attack-loot-no-steal";
+        if (!rowSelected) noStealCard.classList.add("equip-defeat-pulse");
         noStealCard.dataset.noSteal = "1";
         noStealCard.dataset.ownerUid = uid;
         noStealCard.textContent = "奪わない";
-        const rowSelected = selectedByOwner[uid];
         if (rowSelected?.noSteal){
           noStealCard.classList.remove("equip-defeat-pulse");
-          noStealCard.classList.add("equip-steal-pulse");
+          noStealCard.classList.add("byron-selected-card");
         }
         cardsWrap.appendChild(noStealCard);
         if (rowSelected){
