@@ -6114,8 +6114,13 @@
       : null;
 
     hideAttackPop();
-    if (ulsterExtraAttackPending > 0 && isMyRole("SHA_U3") && !isMyIdentityRevealed()){
-      await revealMyIdentityToEquipment({ revealedBy:"attack_ability" });
+    if (ulsterExtraAttackPending > 0 && isMyRole("SHA_U3")){
+      if (!isMyIdentityRevealed()){
+        await revealMyIdentityToEquipment({ revealedBy:"attack_ability" });
+      } else {
+        const role = myRoleInfo();
+        if (role) openIdentityRevealZoom(role, state.userId);
+      }
     }
     attackTurnEndChoicePending = true;
     attackFlowUiLockActive = true;
