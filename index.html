@@ -5912,7 +5912,9 @@
         await finalizePendingAttackResolution(false, true);
         await resolveAttackAbilityReveal(role);
         if (hasMyEquipmentByName("銀のロザリオ")){
+          const turnOwnerUid = currentTurnPlayerId();
           await runRosaryAutoLootFlow(byronTargets);
+          await doEndTurn(turnOwnerUid);
           return;
         }
         await createByronAttackLootPending(byronTargets);
