@@ -5226,6 +5226,7 @@
       const selectedByOwner = pendingAttackLoot.selectedByOwner || {};
       const targets = (pendingAttackLoot.targetUids || []).filter(uid => !!selectedByOwner[uid]);
       if (!targets.length) return;
+      const turnOwnerUid = currentTurnPlayerId();
       closeAttackLootPanel();
       closeEquipmentDockBeforeLootResolve();
       for (const ownerUid of targets){
@@ -5238,6 +5239,7 @@
       await clearAttackLootPending();
       closeZoom();
       renderEquipmentDock();
+      await doEndTurn(turnOwnerUid);
       return;
     }
     if (selection?.noSteal){
