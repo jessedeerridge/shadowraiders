@@ -2676,6 +2676,7 @@
       if (text){
         const textWrap = document.createElement("span");
         textWrap.textContent = text;
+        if (text.includes("\n")) textWrap.style.whiteSpace = "pre-line";
         turnHintPop.appendChild(textWrap);
       }
       if (showSkip){
@@ -3460,7 +3461,7 @@
     });
     const suffix = ulsterGuideShown
       ? ""
-      : " 攻撃するプレイヤーを選んだ後に正体を公開します。公開をやめる場合は手番を終わる。";
+      : "\n※攻撃するプレイヤーを選んだ後に正体を公開します。\n※公開をやめる場合は手番を終わる。";
     showTurnHint(`デル・フリス：もう一度攻撃対象を選んでください。${suffix}`, { clearRoom3Skip:true });
     ulsterGuideShown = true;
     renderTurnEndButton();
@@ -6221,7 +6222,7 @@
 
     if (attackResultChoiceBusy) return;
     const isUlsterAbility = safeText(myRoleInfo()?.id || "") === "SHA_U3" && safeText(spec?.abilityName || "") === "デル・フリス";
-    const ulsterGuideText = "攻撃するプレイヤーを選んだ後に正体を公開します。公開をやめる場合は手番を終わる。";
+    const ulsterGuideText = "※攻撃するプレイヤーを選んだ後に正体を公開します。<br>※公開をやめる場合は手番を終わる。";
     showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
       if (attackResultChoiceBusy) return;
       attackResultChoiceBusy = true;
@@ -6231,7 +6232,7 @@
         attackResultChoiceBusy = false;
       }
     }, {
-      messageHtml: `<span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>${escapeHtml(spec.description)}${(!ulsterGuideShown && isUlsterAbility) ? `<br>${escapeHtml(ulsterGuideText)}` : ""}`,
+      messageHtml: `<span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>${escapeHtml(spec.description)}${(!ulsterGuideShown && isUlsterAbility) ? `<br>${ulsterGuideText}` : ""}`,
       yesLabel: "はい",
       noLabel: "いいえ",
       fixedLower:true,
