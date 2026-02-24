@@ -3896,67 +3896,73 @@
     const selectedUid = safeText(targetUid || "");
     if (!actorUid || !roleId || actorUid !== state.userId || !selectedUid) return;
 
-    if (roleId === "RAI_F2"){
-      await setDamageToPlayer(selectedUid, 7, "felicia_set");
-    } else if (roleId === "RAI_F1"){
-      const eye = 1 + Math.floor(Math.random() * 6);
-      await emitCardDiceEvent({ kind:"role_felix", uid: actorUid, d6: eye });
-      await waitMs(1000);
-      await addDamageToPlayer(selectedUid, eye);
-    } else if (roleId === "RAI_E3"){
-      const eye = 1 + Math.floor(Math.random() * 4);
-      await emitCardDiceEvent({ kind:"role_emma", uid: actorUid, d4: eye });
-      await waitMs(1000);
-      await healDamageToPlayer(selectedUid, eye, "emma_ability_heal");
-      await update(ref(db, `rooms/${state.roomCode}/turn`), {
-        attackDone: true,
-        deckDrawDone: true,
-        updatedAt: Date.now()
-      });
-    } else if (roleId === "RAI_E2"){
-      await set(ref(db, `rooms/${state.roomCode}/erikaSealedTargets/${selectedUid}`), true);
-    } else if (roleId === "RAI_G3"){
-      const roomRef = ref(db, `rooms/${state.roomCode}`);
-      await runTransaction(roomRef, (cur) => {
-        if (!cur) return cur;
-        cur.damage = cur.damage || {};
-        cur.damage[selectedUid] = clampDamage(7);
-        recycleRevivedPlayerEquipIntoDeck(cur, selectedUid);
-        cur.markers = cur.markers || {};
-        cur.markers[selectedUid] = null;
-        cur.godwinRevivePendingMove = cur.godwinRevivePendingMove || {};
-        cur.godwinRevivePendingMove[selectedUid] = true;
-        if (cur.deckState && typeof cur.deckState === "object"){
-          cur.deckState.updatedAt = Date.now();
+    let resolved = false;
+    try {
+      if (roleId === "RAI_F2"){
+        await setDamageToPlayer(selectedUid, 7, "felicia_set");
+      } else if (roleId === "RAI_F1"){
+        const eye = 1 + Math.floor(Math.random() * 6);
+        await emitCardDiceEvent({ kind:"role_felix", uid: actorUid, d6: eye });
+        await waitMs(1000);
+        await addDamageToPlayer(selectedUid, eye);
+      } else if (roleId === "RAI_E3"){
+        const eye = 1 + Math.floor(Math.random() * 4);
+        await emitCardDiceEvent({ kind:"role_emma", uid: actorUid, d4: eye });
+        await waitMs(1000);
+        await healDamageToPlayer(selectedUid, eye, "emma_ability_heal");
+        await update(ref(db, `rooms/${state.roomCode}/turn`), {
+          attackDone: true,
+          deckDrawDone: true,
+          updatedAt: Date.now()
+        });
+      } else if (roleId === "RAI_E2"){
+        await set(ref(db, `rooms/${state.roomCode}/erikaSealedTargets/${selectedUid}`), true);
+      } else if (roleId === "RAI_G3"){
+        const roomRef = ref(db, `rooms/${state.roomCode}`);
+        await runTransaction(roomRef, (cur) => {
+          if (!cur) return cur;
+          cur.damage = cur.damage || {};
+          cur.damage[selectedUid] = clampDamage(7);
+          recycleRevivedPlayerEquipIntoDeck(cur, selectedUid);
+          cur.markers = cur.markers || {};
+          cur.markers[selectedUid] = null;
+          cur.godwinRevivePendingMove = cur.godwinRevivePendingMove || {};
+          cur.godwinRevivePendingMove[selectedUid] = true;
+          if (cur.deckState && typeof cur.deckState === "object"){
+            cur.deckState.updatedAt = Date.now();
+          }
+          return cur;
+        });
+      } else if (roleId === "SHA_U2"){
+        await addDamageToPlayer(selectedUid, 3);
+        uranusMeteorResolved = true;
+      } else if (roleId === "CIT_C3"){
+        const me = clampDamage(damageCache?.[actorUid]);
+        const target = clampDamage(damageCache?.[selectedUid]);
+        pendingHpSwapAnimation = { aUid: actorUid, bUid: selectedUid, at: Date.now() };
+        const roomRef = ref(db, `rooms/${state.roomCode}`);
+        await runTransaction(roomRef, (cur) => {
+          if (!cur) return cur;
+          cur.damage = cur.damage || {};
+          const curMe = clampDamage(cur.damage?.[actorUid]);
+          const curTarget = clampDamage(cur.damage?.[selectedUid]);
+          cur.damage[actorUid] = curTarget;
+          cur.damage[selectedUid] = curMe;
+          return cur;
+        });
+        if (me === target){
+          pendingHpSwapAnimation = null;
         }
-        return cur;
-      });
-    } else if (roleId === "SHA_U2"){
-      await addDamageToPlayer(selectedUid, 3);
-      uranusMeteorResolved = true;
-    } else if (roleId === "CIT_C3"){
-      const me = clampDamage(damageCache?.[actorUid]);
-      const target = clampDamage(damageCache?.[selectedUid]);
-      pendingHpSwapAnimation = { aUid: actorUid, bUid: selectedUid, at: Date.now() };
-      const roomRef = ref(db, `rooms/${state.roomCode}`);
-      await runTransaction(roomRef, (cur) => {
-        if (!cur) return cur;
-        cur.damage = cur.damage || {};
-        const curMe = clampDamage(cur.damage?.[actorUid]);
-        const curTarget = clampDamage(cur.damage?.[selectedUid]);
-        cur.damage[actorUid] = curTarget;
-        cur.damage[selectedUid] = curMe;
-        return cur;
-      });
-      if (me === target){
-        pendingHpSwapAnimation = null;
+        await emitHpSwapEvent(actorUid, selectedUid);
       }
-      await emitHpSwapEvent(actorUid, selectedUid);
+
+      await markRoleAbilityUsed(roleId);
+      resolved = true;
+    } finally {
+      await setRoleAbilitySelectionState(null).catch(() => {});
     }
 
-    await markRoleAbilityUsed(roleId);
-    await setRoleAbilitySelectionState(null);
-    if (!!entry?.endTurnAfterResolve){
+    if (resolved && !!entry?.endTurnAfterResolve){
       await doEndTurn();
     }
   }
