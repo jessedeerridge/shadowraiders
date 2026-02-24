@@ -2319,6 +2319,7 @@
   let cardDiceEventSeenAt = 0;
   let cardDiceEventInitialized = false;
   const deckRebuildTimers = { green:null, white:null, black:null };
+  let equipSelectionStartedFromExpand = false;
   let roleFlashEventSeenAt = 0;
   let roleFlashEventInitialized = false;
   let hpSwapEventSeenAt = 0;
@@ -6280,6 +6281,7 @@
         setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
         setZoomPassthrough(false);
         zoomDismissHandler = async () => {
+          equipSelectionStartedFromExpand = false;
           restoreDavidAbilitySelection();
         };
         return;
@@ -6305,13 +6307,21 @@
           await setDavidAbilityOverlayState(null);
           pendingEquipAction = null;
           hideDavidSelectPreview();
+          if (equipSelectionStartedFromExpand){
+            closeEquipExpandIfOpen();
+          }
+          equipSelectionStartedFromExpand = false;
           closeZoom();
           renderEquipmentDock();
+          renderMarkers();
+        } else {
+          equipSelectionStartedFromExpand = false;
         }
       }, {
         fixedLower:true,
         closeZoomOnNo:false,
         onNo: () => {
+          equipSelectionStartedFromExpand = false;
           restoreDavidAbilitySelection();
         }
       });
@@ -11268,6 +11278,7 @@
 
     const linked = findEquipBodyCardFromDataset(card);
     if (linked){
+      equipSelectionStartedFromExpand = true;
       linked.click();
       return;
     }
