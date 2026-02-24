@@ -1181,6 +1181,11 @@
   z-index:286;
   box-shadow:0 8px 18px rgba(0,0,0,.28);
 }
+.turn-hint-pop.multiline{
+  white-space:pre;
+  width:max-content;
+  max-width:calc(100vw - 20px);
+}
 .turn-hint-pop.hidden{ display:none; }
 .turn-hint-action{
   display:inline-block;
@@ -2379,6 +2384,7 @@
   let pendingAttackResultMeta = null;
   let attackResultChoiceBusy = false;
   let ulsterExtraAttackPending = 0;
+  let ulsterExtraAttackGuideShown = false;
   let attackFlowUiLockActive = false;
   let suppressEndTurnButton = false;
   let pendingHpSwapAnimation = null;
@@ -2665,32 +2671,34 @@
     attackPop?.classList.add("hidden");
   }
 
-  function showTurnHint(message){
+  function showTurnHint(message, options = {}){
     if (!turnHintPop) return;
-    if (message && typeof message === "object"){
-      const text = safeText(message.text || "");
-      const showSkip = !!message.showRoom3Skip;
-      turnHintPop.innerHTML = "";
-      if (text){
-        const textWrap = document.createElement("span");
-        textWrap.textContent = text;
-        turnHintPop.appendChild(textWrap);
-      }
-      if (showSkip){
-        const btn = document.createElement("button");
-        btn.className = "btn ghost turn-hint-action";
-        btn.textContent = "スキップ(して攻撃)";
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          skipRoom3ActionAndStartAttack();
-        });
-        turnHintPop.appendChild(btn);
-      }
-      turnHintPop.classList.toggle("hidden", !text && !showSkip);
-      return;
+    const opts = (message && typeof message === "object") ? message : options;
+    const text = (message && typeof message === "object")
+      ? safeText(message.text || "")
+      : safeText(message || "");
+    const showSkip = !!opts.showRoom3Skip;
+    const multiline = !!opts.multiline;
+
+    turnHintPop.innerHTML = "";
+    turnHintPop.classList.toggle("multiline", multiline);
+
+    if (text){
+      const textWrap = document.createElement("span");
+      textWrap.textContent = text;
+      turnHintPop.appendChild(textWrap);
     }
-    turnHintPop.textContent = safeText(message || "");
-    turnHintPop.classList.toggle("hidden", !message);
+    if (showSkip){
+      const btn = document.createElement("button");
+      btn.className = "btn ghost turn-hint-action";
+      btn.textContent = "スキップ(して攻撃)";
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        skipRoom3ActionAndStartAttack();
+      });
+      turnHintPop.appendChild(btn);
+    }
+    turnHintPop.classList.toggle("hidden", !text && !showSkip);
   }
 
   function hideDavidSelectPreview(){
@@ -3449,13 +3457,17 @@
   async function startUlsterExtraAttackSelection(){
     if (!state.roomCode) return;
     ulsterExtraAttackPending = Math.max(ulsterExtraAttackPending, 1);
-    suppressEndTurnButton = true;
+    suppressEndTurnButton = false;
     attackFlowUiLockActive = false;
     await update(ref(db, `rooms/${state.roomCode}/turn`), {
       attackDone: false,
       updatedAt: Date.now()
     });
-    showTurnHint("デル・フリス：もう一度攻撃対象を選んでください。", { clearRoom3Skip:true });
+    const message = ulsterExtraAttackGuideShown
+      ? "デル・フリス：もう一度攻撃対象を選んでください。"
+      : "デル・フリス：もう一度攻撃対象を選んでください。\n※攻撃するプレイヤーを選んだ後に正体を公開します。\n公開をやめる場合は手番を終わる。";
+    showTurnHint(message, { multiline:true });
+    ulsterExtraAttackGuideShown = true;
     renderTurnEndButton();
   }
 
@@ -6102,6 +6114,14 @@
       : null;
 
     hideAttackPop();
+    if (ulsterExtraAttackPending > 0 && isMyRole("SHA_U3")){
+      if (!isMyIdentityRevealed()){
+        await revealMyIdentityToEquipment({ revealedBy:"attack_ability" });
+      } else {
+        const role = myRoleInfo();
+        if (role) await emitIdentityZoomEvent(role.id, state.userId);
+      }
+    }
     attackTurnEndChoicePending = true;
     attackFlowUiLockActive = true;
     renderTurnEndButton();
@@ -6188,7 +6208,7 @@
       }
 
       await finalizePendingAttackResolution(false, true);
-      await resolveAttackAbilityReveal(role);
+      if (roleId !== "SHA_U3") await resolveAttackAbilityReveal(role);
 
       if (roleId === "CIT_C1"){
         markAttackAbilityUsedThisTurn(roleId);
@@ -7912,7 +7932,7 @@
     if (!pending || pending.applied){
       if (!endTurnAfterApply){
         attackFlowUiLockActive = false;
-        suppressEndTurnButton = ulsterExtraAttackPending > 0;
+        suppressEndTurnButton = false;
         renderTurnEndButton();
       }
       return;
@@ -7937,7 +7957,7 @@
       ulsterExtraAttackPending = Math.max(0, ulsterExtraAttackPending - 1);
     }
     attackFlowUiLockActive = false;
-    suppressEndTurnButton = ulsterExtraAttackPending > 0;
+    suppressEndTurnButton = false;
     renderTurnEndButton();
   }
 
