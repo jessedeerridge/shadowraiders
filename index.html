@@ -3415,6 +3415,25 @@
     return "";
   }
 
+  function willBeEliminatedByAttackRows(rows = []){
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) return false;
+    let hasTarget = false;
+    for (const item of list){
+      const uid = safeText(item?.uid || "");
+      if (!uid) continue;
+      hasTarget = true;
+      const incoming = Math.max(0, Number(item?.damage || 0));
+      const roleId = safeText(state.hands?.[uid]?.roleId || "");
+      const hp = Number(ROLE_BY_ID?.[roleId]?.hp || 0);
+      if (incoming <= 0 || hp <= 0) return false;
+      const before = clampDamage(damageCache?.[uid]);
+      const after = clampDamage(before + incoming);
+      if (!(before < hp && after >= hp)) return false;
+    }
+    return hasTarget;
+  }
+
   function markerClientPointByUid(uid){
     const marker = markerCache?.[safeText(uid || "")] || null;
     const x = Number(marker?.x);
@@ -6211,6 +6230,21 @@
       if (roleId !== "SHA_U3") await resolveAttackAbilityReveal(role);
 
       if (roleId === "CIT_C1"){
+        if (willBeEliminatedByAttackRows(pending?.rows || [])){
+          showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この結果プレイヤーは脱落するため、能力を使用しません。", null, {
+            fixedLower: true,
+            noCaret: true,
+            hideActions: true,
+            dismissOnOutside: false,
+            fitText: true
+          });
+          try {
+            await finalizePendingAttackResolution(true, true);
+          } finally {
+            hideRoomActionPop();
+          }
+          return;
+        }
         markAttackAbilityUsedThisTurn(roleId);
         await addDamageToPlayer(state.userId, 2);
         await runFollowupAttackToTarget(followupTargetUid, 1500);
