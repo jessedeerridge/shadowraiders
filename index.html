@@ -2594,6 +2594,7 @@
   function canUseAliceAbilityNow(){
     if (!isMyRole("CIT_A1")) return { ok:false, message:"今は使えません。" };
     if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
+    if (isMyAbilitySealed()) return { ok:false, message:"今は使えません。" };
     if (isAliceAbilityUsed()) return { ok:false, message:"この能力はすでに使用済みです。" };
     if (!!turnState()?.moveDone) return { ok:false, message:"手番の初めにだけ使えます。" };
     return { ok:true };
@@ -2602,6 +2603,7 @@
   function canUseWightAbilityNow(){
     if (!isMyRole("SHA_W1")) return { ok:false, message:"今は公開できません。" };
     if (isWightAbilityUsed()) return { ok:false, message:"今は公開できません。" };
+    if (isMyAbilitySealed()) return { ok:false, message:"今は公開できません。" };
     if (!turnState()?.moveDone) return { ok:false, message:"今は公開できません。" };
     const eliminated = eliminatedPlayerCount();
     if (eliminated <= 0) return { ok:false, message:"今は公開できません。" };
@@ -2994,7 +2996,7 @@
     if (!counterAbilityPop || !counterAbilityMsg || !btnCounterAbilityUse || !btnCounterAbilitySkip){
       return;
     }
-    if (!entry || !isCounterRole(entry.roleId)){
+    if (!entry || !isCounterRole(entry.roleId) || isAbilitySealedForPlayer(state.userId, entry.roleId)){
       hideCounterAbilityPrompt();
       return;
     }
@@ -3211,6 +3213,28 @@
     return my && my.roleId ? (ROLE_BY_ID[my.roleId] || null) : null;
   }
 
+  function erikaSealedTargets(){
+    return state.room?.erikaSealedTargets || {};
+  }
+
+  function isErikaSealedPlayer(uid = state.userId){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return false;
+    return !!erikaSealedTargets()?.[targetUid];
+  }
+
+  function isAbilitySealedForPlayer(uid = state.userId, roleId = ""){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return false;
+    if (!isErikaSealedPlayer(targetUid)) return false;
+    const rid = safeText(roleId || state.hands?.[targetUid]?.roleId || "");
+    return rid !== "SHA_U1";
+  }
+
+  function isMyAbilitySealed(){
+    return isAbilitySealedForPlayer(state.userId);
+  }
+
   function isMyRole(roleId){
     return safeText(state.hands?.[state.userId]?.roleId || "") === safeText(roleId || "");
   }
@@ -3234,6 +3258,7 @@
 
   function scheduleVampireHeal(){
     if (!isMyRole("SHA_V2")) return;
+    if (isMyAbilitySealed()) return;
     if (vampireHealScheduled) return;
     vampireHealScheduled = true;
     setTimeout(async () => {
@@ -3260,10 +3285,12 @@
     const key = turnCycleKey();
     if (!key || key === carolTurnHealKey) return;
     if (!isMyTurn() || !isMyRole("CIT_C2") || !isMyIdentityRevealed()) return;
+    if (isMyAbilitySealed()) return;
     carolTurnHealKey = key;
     carolTurnHealTimer = setTimeout(async () => {
       carolTurnHealTimer = null;
       if (!isMyTurn() || !isMyRole("CIT_C2") || !isMyIdentityRevealed()) return;
+      if (isMyAbilitySealed()) return;
       await emitRoleFlashEvent("CIT_C2", "carol_turn_heal", 1200);
       await healDamageToPlayer(state.userId, 2, "carol_role_heal");
     }, 1000);
@@ -3284,6 +3311,7 @@
     const role = myRoleInfo();
     const roleId = safeText(role?.id || "");
     if (!roleId) return null;
+    if (isMyAbilitySealed()) return null;
     const normalizedRows = Array.isArray(rows)
       ? rows.map(item => ({ uid:safeText(item?.uid || ""), damage:Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
       : [];
@@ -3785,6 +3813,7 @@
   function emmaAbilityAvailability(){
     if (!isMyRole("RAI_E3")) return { ok:false, message:"今は使えません。" };
     if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
+    if (isMyAbilitySealed()) return { ok:false, message:"今は使えません。" };
     if (!isMyIdentityRevealed()) return { ok:false, message:"今は使えません。" };
     if (!turnState()?.moveDone) return { ok:false, message:"今は使えません。" };
     if (isRoleAbilityUsed("RAI_E3")) return { ok:false, message:"今は使えません。" };
@@ -3795,6 +3824,7 @@
   function uranusAbilityAvailability(){
     if (!isMyRole("SHA_U2")) return { ok:false, message:"今は使えません。" };
     if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
+    if (isMyAbilitySealed()) return { ok:false, message:"今は使えません。" };
     if (!isMyIdentityRevealed()) return { ok:false, message:"今は使えません。" };
     if (isRoleAbilityUsed("SHA_U2")) return { ok:false, message:"今は使えません。" };
     if (!canStartRoleSelection("SHA_U2", state.userId)) return { ok:false, message:"今は使えません。" };
@@ -3815,6 +3845,7 @@
   function benjaminAbilityAvailability(){
     if (!isMyRole("CIT_B2")) return { ok:false, message:"今は使えません。" };
     if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
+    if (isMyAbilitySealed()) return { ok:false, message:"今は使えません。" };
     if (!isMyIdentityRevealed()) return { ok:false, message:"今は使えません。" };
     if (!turnState()?.moveDone) return { ok:false, message:"今は使えません。" };
     if (isRoleAbilityUsed("CIT_B2")) return { ok:false, message:"今は使えません。" };
@@ -3826,6 +3857,7 @@
   function benjaminRevealAvailability(){
     if (!isMyRole("CIT_B2")) return { ok:false, message:"今は使えません。" };
     if (!isMyTurn()) return { ok:false, message:"今は使えません。" };
+    if (isMyAbilitySealed()) return { ok:false, message:"今は使えません。" };
     if (!turnState()?.moveDone) return { ok:false, message:"今は使えません。" };
     if (!hasAnyEquipment(state.userId)) return { ok:false, message:"今は使えません。" };
     if (benjaminCandidates(state.userId).length === 0) return { ok:false, message:"今は使えません。" };
@@ -3855,6 +3887,8 @@
         deckDrawDone: true,
         updatedAt: Date.now()
       });
+    } else if (roleId === "RAI_E2"){
+      await set(ref(db, `rooms/${state.roomCode}/erikaSealedTargets/${selectedUid}`), true);
     } else if (roleId === "RAI_G3"){
       await setDamageToPlayer(selectedUid, 7);
       await update(ref(db, `rooms/${state.roomCode}`), {
@@ -3909,6 +3943,11 @@
     });
     setZoomPassthrough(true);
     if (!isActor){
+      greenShareDock?.classList.add("hidden");
+      return;
+    }
+    if (isAbilitySealedForPlayer(actorUid, roleId)){
+      setRoleAbilitySelectionState(null).catch(() => {});
       greenShareDock?.classList.add("hidden");
       return;
     }
@@ -5325,7 +5364,7 @@
       return next;
     });
     maybeResolveVampireHiddenHealOnReveal();
-    if (revealedNow && safeText(my.roleId) === "CIT_C2"){
+    if (revealedNow && safeText(my.roleId) === "CIT_C2" && !isMyAbilitySealed()){
       await healDamageToPlayer(state.userId, 2, "carol_reveal_heal");
       if (isMyTurn()){
         carolTurnHealKey = turnCycleKey();
@@ -5492,6 +5531,14 @@
     if (!my || !my.roleId) return;
 
     const myRoleId = safeText(my.roleId || "");
+    if (isErikaSealedPlayer(state.userId) && !isMyIdentityRevealed()){
+      e.stopPropagation();
+      return;
+    }
+    if (isMyAbilitySealed() && isMyIdentityRevealed()){
+      e.stopPropagation();
+      return;
+    }
     if (myRoleId === "SHA_W3" || myRoleId === "SHA_V1"){
       if (isMyIdentityRevealed()){
         e.stopPropagation();
@@ -6724,6 +6771,7 @@
   function canUseWalpurgisSwap(){
     if (!isMyTurn() || !canUseAttackDice()) return false;
     if (!isMyRole("SHA_W2")) return false;
+    if (isMyAbilitySealed()) return false;
     if (!isMyIdentityRevealed()) return false;
     if (walpurgisSwapUsed) return false;
     return true;
@@ -7444,11 +7492,14 @@
       attackResultRows.appendChild(row);
     }
     const spec = attackAbilitySpecFromRows(rows);
+    const sealedVictim = isErikaSealedPlayer(state.userId);
     if (btnAttackResultEnd){
       btnAttackResultEnd.textContent = hasSealWisdomBonusThisTurn() ? "OKおわる(+1)" : "OKおわる";
     }
     if (btnAttackResultKeep){
-      if (spec){
+      if (sealedVictim){
+        btnAttackResultKeep.textContent = "OKおわる";
+      } else if (spec){
         btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>`;
       } else {
         btnAttackResultKeep.textContent = "OKおわらない";
@@ -7460,7 +7511,7 @@
       && isAttackAbilityUsedThisTurn(roleId);
     btnAttackResultExcalibur?.classList.toggle("hidden", !exMeta.allowExcaliburButton);
     btnAttackResultEnd?.classList.remove("hidden");
-    btnAttackResultKeep?.classList.toggle("hidden", shouldHideKeepAsSecondAttack);
+    btnAttackResultKeep?.classList.toggle("hidden", sealedVictim || shouldHideKeepAsSecondAttack);
     attackResultChoiceBusy = false;
     attackResultPop.classList.remove("hidden");
   }
@@ -7480,6 +7531,7 @@
         const roleId = safeText(item?.roleId || "");
         if (!uid || !isCounterRole(roleId)) continue;
         const incomingDamage = Math.max(0, Number(item?.damage || 0));
+        if (isAbilitySealedForPlayer(uid, roleId)) continue;
         const hp = Number(ROLE_BY_ID?.[cur.hands?.[uid]?.roleId || ""]?.hp || 0);
         const beforeDamage = clampDamage(cur.damage?.[uid]);
         const afterDamage = clampDamage(beforeDamage + incomingDamage);
@@ -7822,7 +7874,7 @@
       }
 
       const myRoleId = safeText(state.hands?.[state.userId]?.roleId || "");
-      if (myRoleId === "CIT_D1" && !isMyIdentityRevealed()){
+      if (myRoleId === "CIT_D1" && !isMyIdentityRevealed() && !isMyAbilitySealed()){
         const othersEliminatedNow = latestPlayers.some(p => p.id !== state.userId && !!eliminatedNow[p.id]);
         const othersEliminatedBefore = latestPlayers.some(p => p.id !== state.userId && !!previousEliminatedMap[p.id]);
         if (othersEliminatedNow && !othersEliminatedBefore && !danielAutoRevealTimer){
@@ -7838,7 +7890,7 @@
         .map(p => p.id)
         .filter(uid => !!eliminatedNow[uid] && !previousEliminatedMap[uid]);
 
-      if (myRoleId === "CIT_B3" && attackDefeatedUids.length && !isMyIdentityRevealed() && !bruceAutoRevealTimer){
+      if (myRoleId === "CIT_B3" && attackDefeatedUids.length && !isMyIdentityRevealed() && !bruceAutoRevealTimer && !isMyAbilitySealed()){
         const hadHiddenRevealTarget = attackDefeatedUids.some(uid => justEliminatedUids.includes(uid) && !isIdentityRevealedFor(uid));
         const revealDelayMs = hadHiddenRevealTarget ? 2200 : 0;
         bruceAutoRevealTimer = setTimeout(async () => {
@@ -8772,7 +8824,7 @@
     }
 
     const targetUid = safeText(options.targetUid || "");
-    if (uid === state.userId && isMyRole("RAI_F3") && isMyIdentityRevealed() && targetUid && isIdentityRevealedFor(targetUid)){
+    if (uid === state.userId && isMyRole("RAI_F3") && isMyIdentityRevealed() && !isMyAbilitySealed() && targetUid && isIdentityRevealedFor(targetUid)){
       damage += 2;
     }
 
@@ -9917,7 +9969,7 @@
         const exMeta = d4OnlyMode
           ? null
           : buildExcaliburAttackMeta({ attackerUid:state.userId, targetUid, attackSucceeded, d6:finalD6, d4:finalD4 });
-        const hiddenFreddie = isMyRole("RAI_F3") && !isMyIdentityRevealed();
+        const hiddenFreddie = isMyRole("RAI_F3") && !isMyIdentityRevealed() && !isMyAbilitySealed();
         const hiddenExcaliburPreview = !!exMeta?.allowExcaliburButton;
         const hasExcalibur = hasEquipmentByName(state.userId, "エクスカリバー");
         let resolvedRows = targetUids.map(uid => {
@@ -9963,7 +10015,7 @@
         if (hasExcaliburPreviewZero){
           pendingAttackResultMeta.zeroDamagePreview = true;
         }
-        if (isMyRole("RAI_G2") && !isMyIdentityRevealed()){
+        if (isMyRole("RAI_G2") && !isMyIdentityRevealed() && !isMyAbilitySealed()){
           const hasZeroDamage = resolvedRows.some(row => Number(row.damage || 0) === 0);
           if (!attackSucceeded || hasZeroDamage){
             pendingAttackResultMeta.allowExcaliburButton = false;
@@ -9975,7 +10027,7 @@
         cachePendingAttackResolution(pendingAttackResolution);
         await upsertPendingAttackResolution(resolvedRows, pendingTurnKey, pendingAttackResultMeta);
         showAttackResultPop(resolvedRows);
-        if (dealtDamage && isMyRole("SHA_V2")){
+        if (dealtDamage && isMyRole("SHA_V2") && !isMyAbilitySealed()){
           if (isMyIdentityRevealed()){
             scheduleVampireHeal();
           } else {
@@ -12335,6 +12387,7 @@
       hands,
       deckState: freshDeckState,
       guardianAngelShield: null,
+      erikaSealedTargets: null,
       gameStarted: true,
       startedAt: Date.now(),
       playerCountAtStart: n,
@@ -12420,6 +12473,7 @@
       remove(ref(db, `${base}/attackResolutionPending`)),
       remove(ref(db, `${base}/attackLootPending`)),
       remove(ref(db, `${base}/counterPromptState`)),
+      remove(ref(db, `${base}/erikaSealedTargets`)),
     ]);
 
     deckCache = null;
@@ -12446,6 +12500,7 @@
 
   async function tryOpenEmmaSelectionOnEndAttempt(){
     if (!isMyRole("RAI_E3") || !isMyIdentityRevealed()) return false;
+    if (isMyAbilitySealed()) return false;
     const check = emmaAbilityAvailability();
     if (!check.ok) return false;
     await setRoleAbilitySelectionState({ roleId:"RAI_E3", actorUid: state.userId, privateToActor:true, endTurnAfterResolve:true });
