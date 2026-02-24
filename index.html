@@ -6699,6 +6699,25 @@
     return safeText(state.userName).trim().toLowerCase() === "test";
   }
 
+  let testDeckFocus = { white:null, black:null };
+  function testDeckFocusKey(cardObj){
+    if (!cardObj) return "";
+    const name = safeText(cardObj.name || cardObj.text || "").trim();
+    const effect = safeText(cardObj.effect || "").trim();
+    if (!name) return "";
+    return `${name}::${effect}`;
+  }
+  function setTestDeckFocus(type, cardObj){
+    if (!isTestPlayer()) return;
+    if (!testDeckFocus || typeof testDeckFocus !== "object"){
+      testDeckFocus = { white:null, black:null };
+    }
+    if (!["white","black"].includes(type)) return;
+    const key = testDeckFocusKey(cardObj);
+    if (!key) return;
+    testDeckFocus[type] = { key, name: safeText(cardObj.name || "").trim() };
+  }
+
   function canControlHpBoard(){
     return isTestPlayer() || !!state.isHost;
   }
@@ -8333,8 +8352,41 @@
       const idx = Number(d.idx || 0);
       if (idx >= d.order.length) return cur;
 
+      if (allowUnlimitedDraw && (type === "white" || type === "black")){
+        const focused = testDeckFocus?.[type];
+        if (focused?.key){
+          let focusedIdx = -1;
+          for (let i = idx; i < d.order.length; i++){
+            if (testDeckFocusKey(d.order[i]) === focused.key){
+              focusedIdx = i;
+              break;
+            }
+          }
+          if (focusedIdx >= 0 && focusedIdx !== idx){
+            const tmp = d.order[idx];
+            d.order[idx] = d.order[focusedIdx];
+            d.order[focusedIdx] = tmp;
+          } else if (focusedIdx < 0){
+            testDeckFocus[type] = null;
+          }
+        }
+      }
+
       drawn = d.order[idx];
       d.idx = idx + 1;
+
+      if (allowUnlimitedDraw && (type === "white" || type === "black") && testDeckFocus?.[type]?.key){
+        let stillLeft = false;
+        for (let i = d.idx; i < d.order.length; i++){
+          if (testDeckFocusKey(d.order[i]) === testDeckFocus[type].key){
+            stillLeft = true;
+            break;
+          }
+        }
+        if (!stillLeft){
+          testDeckFocus[type] = null;
+        }
+      }
 
       ds.reveal = ds.reveal || { slot3:null, slot5:null };
       if (type === "black"){
@@ -11077,6 +11129,10 @@
         card.style.cursor = 'pointer';
         card.addEventListener('click', async (e) => {
           e.stopPropagation();
+          if (isTestPlayer() && (theme === 'white' || theme === 'black')){
+            setTestDeckFocus(theme, cardObj);
+            return;
+          }
           if (isTestPlayer() && isEquipCard(cardObj)){
             await grantEquipmentToMe(cardObj, theme);
             return;
