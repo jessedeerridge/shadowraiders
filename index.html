@@ -1205,6 +1205,7 @@
 #roomActionPop.room3-mode .actions .btn{
   white-space:nowrap;
 }
+#roomActionPop.notice-mode .actions{ display:none; }
 
   .card72{
     width:var(--card-w);
@@ -2695,7 +2696,7 @@
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
-    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret");
+    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret", "notice-mode");
     if (btnRoomActionYes){
       btnRoomActionYes.textContent = "はい";
       btnRoomActionYes.disabled = false;
@@ -2715,6 +2716,7 @@
     const compactButtons = !!options.compactButtons;
     const yOffset = Number(options.yOffset) || 0;
     const noCaret = !!options.noCaret;
+    const noticeMode = !!options.noButtons;
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
       onNo: (typeof options.onNo === "function") ? options.onNo : null,
@@ -2748,6 +2750,7 @@
     roomActionPop.classList.toggle("lower-mode", fixedLower);
     roomActionPop.classList.toggle("room3-mode", compactButtons);
     roomActionPop.classList.toggle("no-caret", noCaret);
+    roomActionPop.classList.toggle("notice-mode", noticeMode);
 
     if (fixedLower){
       roomActionPop.style.left = "";
@@ -10723,8 +10726,7 @@
         markerLongPressDone = true;
         if (!canSwapWithWalpurgisTarget(uid)){
           showRoomActionPopAt(e.clientX, e.clientY, "この後、攻撃できません。", null, {
-            yesLabel: "OK",
-            noLabel: "閉じる"
+            noButtons: true
           });
           return;
         }
