@@ -3945,6 +3945,15 @@
 
     await markRoleAbilityUsed(roleId);
     await setRoleAbilitySelectionState(null);
+    if (roleId === "RAI_G3"){
+      activeRoleAbilitySelection = null;
+      cardPlayerSelectActive = false;
+      greenShareDock?.classList.add("hidden");
+      renderTurnEndButton();
+      updateCardInteractivity();
+      closeZoom();
+      clearDiceRollTimers();
+    }
     if (!!entry?.endTurnAfterResolve){
       await doEndTurn();
     }
@@ -3958,6 +3967,10 @@
     if (!role) return;
     activeRoleAbilitySelection = entry;
     const isActor = actorUid === state.userId;
+    if (roleId === "RAI_G3" && !isActor){
+      greenShareDock?.classList.add("hidden");
+      return;
+    }
     if (!!entry?.privateToActor && !isActor){
       greenShareDock?.classList.add("hidden");
       return;
@@ -8587,6 +8600,19 @@
     return recycled;
   }
 
+  function remainingDeckCardsForRebuild(cur, type){
+    const deck = cur?.deckState?.[type];
+    if (!deck || !Array.isArray(deck.order)) return [];
+    const idx = Math.max(0, Number(deck.idx || 0));
+    return deck.order
+      .slice(idx)
+      .map((card) => ({
+        name: safeText(card?.name || ""),
+        effect: safeText(card?.effect || "")
+      }))
+      .filter((card) => !!card.name);
+  }
+
   async function scheduleDeckRebuildIfEmpty(type){
     if (!state.roomCode || !["green","white","black"].includes(type)) return;
     if (deckRebuildTimers[type]) return;
@@ -8619,9 +8645,9 @@
           delete deck.rebuildPendingAt;
           return cur;
         }
-        const base = baseOrderWithoutEquip(type);
+        const remaining = remainingDeckCardsForRebuild(cur, type);
         const recycled = collectEliminatedEquipCardsForDeck(cur, type);
-        deck.order = shuffle([...base, ...recycled]);
+        deck.order = shuffle([...remaining, ...recycled]);
         deck.idx = 0;
         cur.deckState.reveal = cur.deckState.reveal || { slot3:null, slot5:null };
         if (type === "white") cur.deckState.reveal.slot3 = null;
