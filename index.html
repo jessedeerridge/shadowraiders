@@ -2432,7 +2432,8 @@
     return {
       movedByDiceRoomId: Number(t.movedByDiceRoomId || 0) || null,
       room3ActionUsed: !!t.room3ActionUsed,
-      room4StealUsed: !!t.room4StealUsed
+      room4StealUsed: !!t.room4StealUsed,
+      walpurgisSwapUsed: !!t.walpurgisSwapUsed
     };
   }
 
@@ -2448,6 +2449,9 @@
     }
     if (Object.prototype.hasOwnProperty.call(patch, "room4StealUsed")){
       next.room4StealUsed = !!patch.room4StealUsed;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "walpurgisSwapUsed")){
+      next.walpurgisSwapUsed = !!patch.walpurgisSwapUsed;
     }
     if (!Object.keys(next).length) return;
     await update(ref(db, `rooms/${state.roomCode}/turn`), next);
@@ -2959,6 +2963,7 @@
               movedByDiceRoomId: null,
               room3ActionUsed: false,
               room4StealUsed: false,
+              walpurgisSwapUsed: false,
               repeatTurnRemaining: 0,
               repeatTurnTotal: 0,
               sealWisdomBonus: false,
@@ -6916,12 +6921,13 @@
     room4StealUsed = roomActionState.room4StealUsed;
     room3ActionUsed = roomActionState.room3ActionUsed;
     movedByDiceRoomId = roomActionState.movedByDiceRoomId;
+    walpurgisSwapUsed = roomActionState.walpurgisSwapUsed;
     const hasMatchingPending = !!pendingAttackResolution
       && safeText(pendingAttackResolution.turnKey || "") === key
       && currentTurnPlayerId() === state.userId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
-    walpurgisSwapUsed = false;
+    walpurgisSwapUsed = roomActionState.walpurgisSwapUsed;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
     vampireHealScheduled = false;
@@ -7108,6 +7114,7 @@
     showRoomActionPopAt(clientX, clientY, "", async () => {
       if (!canUseWalpurgisSwap()) return;
       walpurgisSwapUsed = true;
+      await updateTurnRoomActionState({ walpurgisSwapUsed:true });
       await emitRoleFlashEvent("SHA_W2", "walpurgis_swap");
       await new Promise(resolve => setTimeout(resolve, 1800));
       try {
@@ -8428,6 +8435,7 @@
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        walpurgisSwapUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         sealWisdomBonus: false,
@@ -8493,6 +8501,7 @@
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        walpurgisSwapUsed: false,
         repeatTurnRemaining: nextRepeatRemaining,
         repeatTurnTotal: nextRepeatTotal,
         sealWisdomBonus: false,
@@ -12718,6 +12727,7 @@
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        walpurgisSwapUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         sealWisdomBonus: false,
