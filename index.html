@@ -2515,7 +2515,7 @@
     "RAI_E3": { usageKey:"emma", abilityName:"癒しの光", prompt:"回復させるプレイヤーを選んでください。", perTurn:true },
     "RAI_G3": { usageKey:"godwin", abilityName:"蘇生装置TYPE-G", prompt:"復活させるプレイヤーを選んでください。" },
     "CIT_C3": { usageKey:"claire", abilityName:"キャスリングTYPE-G", prompt:"ダメージを入れ替えるプレイヤーを選んでください。" },
-    "CIT_B2": { usageKey:"benjamin", abilityName:"ドラッグ移送", prompt:"装備を渡す相手を選んでください。", endTurnAfterResolve:true },
+    "CIT_B2": { usageKey:"benjamin", abilityName:"ドラッグ移送", prompt:"装備を渡す相手を選んでください。", endTurnAfterResolve:true, perTurn:true },
     "SHA_U2": { usageKey:"uranus", abilityName:"メテオストライク", prompt:"ダメージを与えるプレイヤーを選んでください。", perTurn:true },
     "SHA_W2": { usageKey:"walpurgis", abilityName:"重力の虹", prompt:"位置を交換するプレイヤーを選んでください。", perTurn:true },
   };
@@ -5672,6 +5672,10 @@
 
     const myRoleId = safeText(my.roleId || "");
     if (myRoleId === "CIT_B3" && isMyTurn()){
+      e.stopPropagation();
+      return;
+    }
+    if ((myRoleId === "CIT_C1" || myRoleId === "SHA_U3") && isMyTurn()){
       e.stopPropagation();
       return;
     }
@@ -10222,7 +10226,7 @@
 
     if (vendettaMode){
       showRoleFlashOverlay("SHA_V3", 1800);
-      await new Promise(resolve => setTimeout(resolve, 1800));
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     clearDiceRollTimers();
@@ -11548,6 +11552,16 @@
 
     const linked = findEquipBodyCardFromDataset(card);
     if (linked){
+      const shouldCloseOnVenomGiveSelect = isVenomSelectionEntry(counterPromptEntryForMe())
+        && ownerUid === state.userId
+        && !!sourceKey
+        && card.classList.contains("equip-defeat-pulse");
+      if (shouldCloseOnVenomGiveSelect){
+        closeEquipExpandIfOpen();
+        if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")){
+          closeZoom();
+        }
+      }
       equipSelectionStartedFromExpand = true;
       linked.click();
       return;
