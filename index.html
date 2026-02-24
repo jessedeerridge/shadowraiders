@@ -70,6 +70,7 @@
   .ability-pill{display:inline-block;padding:1px 6px;border-radius:999px;background:#111;color:#fff;font-weight:700;}
   .confirm-pop .actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
   .confirm-pop.hide-actions .actions{display:none;}
+  .confirm-pop.hide-actions .msg{margin-bottom:0;}
   .confirm-pop .caret{
     position:absolute;
     left:50%; top:-7px;
@@ -1199,6 +1200,11 @@
 }
 #roomActionPop.lower-mode .caret{ display:none; }
 #roomActionPop.no-caret .caret{ display:none; }
+#roomActionPop.text-fit{
+  min-width:0;
+  width:fit-content;
+  max-width:min(92vw, 420px);
+}
 #roomActionPop.room3-mode .actions{
   flex-wrap:nowrap;
   justify-content:center;
@@ -2696,7 +2702,7 @@
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
-    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret", "hide-actions");
+    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret", "hide-actions", "text-fit");
     if (btnRoomActionYes){
       btnRoomActionYes.textContent = "はい";
       btnRoomActionYes.disabled = false;
@@ -2717,6 +2723,7 @@
     const yOffset = Number(options.yOffset) || 0;
     const noCaret = !!options.noCaret;
     const hideActions = !!options.hideActions;
+    const fitText = !!options.fitText;
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
       onNo: (typeof options.onNo === "function") ? options.onNo : null,
@@ -2751,6 +2758,7 @@
     roomActionPop.classList.toggle("room3-mode", compactButtons);
     roomActionPop.classList.toggle("no-caret", noCaret);
     roomActionPop.classList.toggle("hide-actions", hideActions);
+    roomActionPop.classList.toggle("text-fit", fitText);
 
     if (fixedLower){
       roomActionPop.style.left = "";
@@ -7123,7 +7131,8 @@
 
   function showWalpurgisCannotAttackPopAt(clientX, clientY){
     showRoomActionPopAt(clientX, clientY, "この後、攻撃できません。", null, {
-      hideActions: true
+      hideActions: true,
+      fitText: true
     });
   }
 
