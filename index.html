@@ -8801,18 +8801,20 @@
     const b = Number(d4) || 0;
     if (!uid) return 0;
 
+    const plusDamageFromEquipment = countEquipmentByNames(uid, ["サーベル", "拳銃R", "拳銃L", "クロスボウガン"]);
+
     if (options.masamuneMode){
-      return Math.max(0, b);
+      return Math.max(0, b + plusDamageFromEquipment);
     }
 
     if (options.vendettaMode){
-      return Math.max(0, b);
+      return Math.max(0, b + plusDamageFromEquipment);
     }
 
     if (!didAttackRollSucceed(a, b, options)) return 0;
 
     let damage = Math.abs(a - b);
-    damage += countEquipmentByNames(uid, ["サーベル", "拳銃R", "拳銃L", "クロスボウガン"]);
+    damage += plusDamageFromEquipment;
 
     const role = myRoleInfo();
     if (uid === state.userId && role && hasEquipmentByName(uid, "エクスカリバー") && isMyIdentityRevealed() && role.faction === "レイダー"){
