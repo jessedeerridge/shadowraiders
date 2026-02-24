@@ -3917,9 +3917,11 @@
       await set(ref(db, `rooms/${state.roomCode}/erikaSealedTargets/${selectedUid}`), true);
     } else if (roleId === "RAI_G3"){
       await setDamageToPlayer(selectedUid, 7);
-      await update(ref(db, `rooms/${state.roomCode}`), {
-        [`markers/${selectedUid}`]: null
-      });
+      const revivedMarkerRoomId = markerRoomId(markerCache?.[selectedUid]);
+      const fallbackRoomId = markerRoomId(markerCache?.[actorUid]) || 1;
+      if (!revivedMarkerRoomId){
+        await placePlayerMarkerInRoom(selectedUid, fallbackRoomId);
+      }
     } else if (roleId === "SHA_U2"){
       await addDamageToPlayer(selectedUid, 3);
       uranusMeteorResolved = true;
@@ -3945,6 +3947,7 @@
 
     await markRoleAbilityUsed(roleId);
     await setRoleAbilitySelectionState(null);
+    closeZoom();
     if (!!entry?.endTurnAfterResolve){
       await doEndTurn();
     }
@@ -8619,9 +8622,9 @@
           delete deck.rebuildPendingAt;
           return cur;
         }
-        const base = baseOrderWithoutEquip(type);
+        const remaining = Array.isArray(deck.order) ? deck.order.slice(Math.max(0, idx)) : [];
         const recycled = collectEliminatedEquipCardsForDeck(cur, type);
-        deck.order = shuffle([...base, ...recycled]);
+        deck.order = shuffle([...remaining, ...recycled]);
         deck.idx = 0;
         cur.deckState.reveal = cur.deckState.reveal || { slot3:null, slot5:null };
         if (type === "white") cur.deckState.reveal.slot3 = null;
