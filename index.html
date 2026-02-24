@@ -2374,6 +2374,7 @@
   let ulsterExtraAttackPending = 0;
   let attackFlowUiLockActive = false;
   let suppressEndTurnButton = false;
+  let suppressTurnEndUntilTurnCycleChanges = "";
   let pendingHpSwapAnimation = null;
   let attackAbilityUsedTurnByRole = {};
   let attackAbilityUsageTurnOwnerUid = "";
@@ -5952,12 +5953,14 @@
       return;
     }
     if (pendingRevealAction === "wight_ability"){
+      lockTurnEndButtonUntilNextTurnCycle();
       if (!isMyIdentityRevealed()){
         await revealMyIdentityToEquipment({ revealedBy:"wight_ability" });
       }
       const ok = await activateWightAbilityAndEndTurn();
       hideRevealPop();
       if (!ok){
+        suppressTurnEndUntilTurnCycleChanges = "";
         showRevealPopAt(null, { mode:"notice", message:canUseWightAbilityNow().message || "今は公開できません。" });
       }
       return;
@@ -7466,6 +7469,20 @@
     return Number(turnState()?.repeatTurnRemaining || 0) > 0;
   }
 
+  function lockTurnEndButtonUntilNextTurnCycle(){
+    suppressTurnEndUntilTurnCycleChanges = turnCycleKey();
+  }
+
+  function isTurnEndButtonLockedForTurnTransition(){
+    if (!suppressTurnEndUntilTurnCycleChanges) return false;
+    const nowKey = turnCycleKey();
+    if (nowKey && nowKey !== suppressTurnEndUntilTurnCycleChanges){
+      suppressTurnEndUntilTurnCycleChanges = "";
+      return false;
+    }
+    return true;
+  }
+
   function repeatTurnLabel(){
     const rest = Math.max(0, Number(turnState()?.repeatTurnRemaining || 0));
     const total = Math.max(0, Number(turnState()?.repeatTurnTotal || 0));
@@ -7480,6 +7497,11 @@
   function renderTurnEndButton(){
     syncRoomAbilityTurnState();
     if (!turnEndWrap) return;
+    if (isTurnEndButtonLockedForTurnTransition()){
+      turnEndWrap.classList.add("hidden");
+      hideEndTurnConfirm();
+      return;
+    }
     const visible = isGameStarted() && canShowEndTurnButton();
     turnEndWrap.classList.toggle("hidden", !visible);
     if (btnEndTurn){
