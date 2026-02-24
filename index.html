@@ -9062,18 +9062,11 @@
     if (!uid) return 0;
 
     const plusDamageFromEquipment = countEquipmentByNames(uid, ["サーベル", "拳銃R", "拳銃L", "クロスボウガン"]);
+    const d4OnlyMode = !!options.masamuneMode || !!options.vendettaMode;
 
-    if (options.masamuneMode){
-      return Math.max(0, b + plusDamageFromEquipment);
-    }
+    if (!d4OnlyMode && !didAttackRollSucceed(a, b, options)) return 0;
 
-    if (options.vendettaMode){
-      return Math.max(0, b + plusDamageFromEquipment);
-    }
-
-    if (!didAttackRollSucceed(a, b, options)) return 0;
-
-    let damage = Math.abs(a - b);
+    let damage = d4OnlyMode ? b : Math.abs(a - b);
     damage += plusDamageFromEquipment;
 
     const role = myRoleInfo();
