@@ -3517,7 +3517,8 @@
     const overlay = document.createElement("div");
     overlay.style.position = "fixed";
     overlay.style.inset = "0";
-    overlay.style.zIndex = "var(--z-role-flash-overlay)";
+    // ヴェノム常駐表示はヘルプ/装備拡大/通常拡大より背面に置く
+    overlay.style.zIndex = "273";
     overlay.style.display = "flex";
     overlay.style.alignItems = "center";
     overlay.style.justifyContent = "center";
@@ -4677,7 +4678,8 @@
     zoomBackdrop.classList.remove("passthrough");
     const equipExpandEl = document.getElementById("equipExpandBackdrop");
     const equipExpandOpen = !!equipExpandEl && !equipExpandEl.classList.contains("hidden");
-    zoomBackdrop.classList.toggle("over-panel", equipExpandOpen);
+    const venomResolutionActive = isVenomSelectionEntry(counterPromptEntryForMe());
+    zoomBackdrop.classList.toggle("over-panel", equipExpandOpen && !venomResolutionActive);
     greenZoomLocked = !showCloseButton;
     zoomStage.appendChild(contentEl);
     zoomBackdrop.classList.remove("hidden");
