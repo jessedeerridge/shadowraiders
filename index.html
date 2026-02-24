@@ -2327,6 +2327,8 @@
   let hpSwapEventInitialized = false;
   let walpurgisSwapEventSeenAt = 0;
   let walpurgisSwapEventInitialized = false;
+  let identityZoomEventSeenAt = 0;
+  let identityZoomEventInitialized = false;
   let roleFlashTimer = null;
   let roleFlashOverlayEl = null;
   let persistentVenomOverlayEl = null;
@@ -3453,6 +3455,17 @@
       uidA: a,
       uidB: b,
       durationMs: Math.max(240, Number(durationMs) || 620),
+      at: Date.now()
+    });
+  }
+
+  async function emitIdentityZoomEvent(roleId, uid){
+    const rid = safeText(roleId || "");
+    const actorUid = safeText(uid || "");
+    if (!state.roomCode || !rid || !actorUid) return;
+    await set(ref(db, `rooms/${state.roomCode}/effectEvents/identityZoom`), {
+      roleId: rid,
+      uid: actorUid,
       at: Date.now()
     });
   }
@@ -5955,6 +5968,7 @@
         await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
         await markGordonAbilityUsed();
       }
+      await emitIdentityZoomEvent("RAI_G1", state.userId);
       if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
       await doEndTurn();
       return;
@@ -8280,6 +8294,29 @@
       const durationMs = Math.max(240, Number(ev.durationMs) || 620);
       if (!uidA || !uidB || uidA === uidB) return;
       animateMarkerSwapVisual(uidA, uidB, durationMs);
+    });
+  }
+
+  function subscribeIdentityZoomEvents(){
+    const zoomRef = ref(db, `rooms/${state.roomCode}/effectEvents/identityZoom`);
+    onValue(zoomRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!identityZoomEventInitialized){
+        identityZoomEventInitialized = true;
+        identityZoomEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= identityZoomEventSeenAt) return;
+      identityZoomEventSeenAt = at;
+      const uid = safeText(ev.uid || "");
+      const roleId = safeText(ev.roleId || "");
+      const role = ROLE_BY_ID[roleId];
+      if (!uid || !role) return;
+      openIdentityRevealZoom(role, uid, {
+        ownerTagDurationMs: 1200,
+        showOwnerTag: true
+      });
     });
   }
 
@@ -12805,6 +12842,7 @@
     subscribeRoleFlashEvents();
     subscribeHpSwapEvents();
     subscribeWalpurgisSwapEvents();
+    subscribeIdentityZoomEvents();
 
     renderSeatTiles();
     refreshStartBadge();
