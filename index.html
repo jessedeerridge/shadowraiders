@@ -10722,7 +10722,10 @@
       markerLongPressTimer = setTimeout(() => {
         markerLongPressDone = true;
         if (!canSwapWithWalpurgisTarget(uid)){
-          showRevealPopAt(null, { mode:"notice", message:"この後、攻撃できません。" });
+          showRoomActionPopAt(e.clientX, e.clientY, "この後、攻撃できません。", null, {
+            yesLabel: "OK",
+            noLabel: "閉じる"
+          });
           return;
         }
         showWalpurgisSwapConfirm(e.clientX, e.clientY, uid);
