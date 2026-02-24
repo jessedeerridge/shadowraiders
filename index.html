@@ -219,6 +219,9 @@
   .attack-loot-header{padding:10px 12px;border-bottom:1px solid #eee;font-weight:1000;font-size:14px;}
   .attack-loot-body{padding:12px;overflow:auto;display:flex;flex-direction:column;gap:10px;background:url('gear.jpg') center/cover no-repeat;}
   .attack-loot-row{display:flex;gap:8px;align-items:flex-start;}
+  .attack-loot-row.byron-row{padding-top:8px;border-top:1px dashed rgba(0,0,0,.28);}
+  .attack-loot-row.byron-row:first-child{padding-top:0;border-top:none;}
+  .attack-loot-row.byron-row.selected{opacity:.55;}
   .attack-loot-cards{display:flex;gap:8px;flex-wrap:wrap;}
   .attack-loot-no-steal{border:2px solid #111 !important;color:#111 !important;background:#fff !important;display:flex;align-items:center;justify-content:center;font-weight:1000;flex:0 0 auto;}
 
@@ -4884,8 +4887,12 @@
   function normalizeAttackLootPayload(raw){
     if (!raw || typeof raw !== "object") return null;
     const uid = safeText(raw.uid || "");
+    const mode = safeText(raw.mode || "defeated") || "defeated";
     const defeatedUids = Array.isArray(raw.defeatedUids)
       ? raw.defeatedUids.map(v => safeText(v || "")).filter(v => v && v !== uid)
+      : [];
+    const targetUids = Array.isArray(raw.targetUids)
+      ? raw.targetUids.map(v => safeText(v || "")).filter(v => v && v !== uid)
       : [];
     const selected = raw.selected && typeof raw.selected === "object"
       ? {
@@ -4894,8 +4901,27 @@
           noSteal: !!raw.selected.noSteal
         }
       : null;
-    if (!uid || !defeatedUids.length) return null;
-    return { uid, defeatedUids:[...new Set(defeatedUids)], selected, at:Number(raw.at || Date.now()) };
+    const selectedByOwner = raw.selectedByOwner && typeof raw.selectedByOwner === "object"
+      ? Object.entries(raw.selectedByOwner).reduce((acc, [ownerUid, item]) => {
+          const normalizedOwner = safeText(ownerUid || "");
+          if (!normalizedOwner || !item || typeof item !== "object") return acc;
+          acc[normalizedOwner] = {
+            ownerUid: normalizedOwner,
+            sourceKey: safeText(item.sourceKey || ""),
+            noSteal: !!item.noSteal
+          };
+          return acc;
+        }, {})
+      : null;
+    const normalizedDefeated = [...new Set(defeatedUids)];
+    const normalizedTargets = [...new Set(targetUids)];
+    if (!uid) return null;
+    if (mode === "byron"){
+      if (!normalizedTargets.length) return null;
+      return { uid, mode, targetUids:normalizedTargets, selectedByOwner:selectedByOwner || {}, at:Number(raw.at || Date.now()) };
+    }
+    if (!normalizedDefeated.length) return null;
+    return { uid, mode:"defeated", defeatedUids:normalizedDefeated, selected, at:Number(raw.at || Date.now()) };
   }
 
   async function setAttackLootPending(payload){
@@ -4927,6 +4953,22 @@
       uid,
       defeatedUids:[...merged],
       selected: pendingAttackLoot?.selected || null,
+      at: Date.now()
+    };
+    await setAttackLootPending(pendingAttackLoot);
+    renderAttackLootPanel();
+  }
+
+  async function createByronAttackLootPending(targetUids = []){
+    const uid = safeText(state.userId || "");
+    if (!uid) return;
+    const list = (targetUids || []).map(v => safeText(v || "")).filter(v => v && v !== uid);
+    if (!list.length) return;
+    pendingAttackLoot = {
+      uid,
+      mode:"byron",
+      targetUids:[...new Set(list)],
+      selectedByOwner:{},
       at: Date.now()
     };
     await setAttackLootPending(pendingAttackLoot);
@@ -5048,26 +5090,40 @@
     if (!attackLootBackdrop || !attackLootBody){
       return;
     }
-    if (!payload || !Array.isArray(payload.defeatedUids) || !payload.defeatedUids.length){
+    if (!payload){
       closeAttackLootPanel();
       return;
     }
 
     attackLootBody.innerHTML = "";
     const byId = new Map(latestPlayers.map(p => [p.id, p]));
+    const mode = safeText(payload.mode || "defeated") || "defeated";
     const selected = payload.selected || null;
+    const selectedByOwner = payload.selectedByOwner || {};
     let lastCardsWrap = null;
     let hasLootableCard = false;
 
-    for (const uid of payload.defeatedUids){
+    const rowUids = mode === "byron" ? (payload.targetUids || []) : (payload.defeatedUids || []);
+
+    for (const uid of rowUids){
       const p = byId.get(uid);
       if (!p) continue;
-      const list = listEquipForUid(uid);
-      const hasLootableEquip = list.some(it => !isIdentityEquipItem(it));
+      const rawList = listEquipForUid(uid);
+      const hasLootableEquip = rawList.some(it => !isIdentityEquipItem(it));
       if (!hasLootableEquip) continue;
+      const identityItem = rawList.find(it => isIdentityEquipItem(it));
+      const list = [];
+      if (mode === "byron" && identityItem){
+        list.push(identityItem);
+      }
+      for (const it of rawList){
+        if (mode === "byron" && identityItem && it === identityItem) continue;
+        list.push(it);
+      }
 
       const row = document.createElement("div");
       row.className = "attack-loot-row";
+      if (mode === "byron") row.classList.add("byron-row");
       row.appendChild(buildEquipTag(p.color || "#ddd", firstChar(p.name)));
 
       const cardsWrap = document.createElement("div");
@@ -5082,12 +5138,33 @@
           hasLootableCard = true;
           cardEl.classList.add("equip-defeat-pulse");
         }
-        if (selected && !selected.noSteal && selected.ownerUid === uid && selected.sourceKey === safeText(it.sourceKey || "") && !isIdentityEquipItem(it)){
+        const isSelected = mode === "byron"
+          ? (!!selectedByOwner[uid] && !selectedByOwner[uid].noSteal && selectedByOwner[uid].sourceKey === safeText(it.sourceKey || ""))
+          : (selected && !selected.noSteal && selected.ownerUid === uid && selected.sourceKey === safeText(it.sourceKey || ""));
+        if (isSelected && !isIdentityEquipItem(it)){
           cardEl.classList.remove("equip-defeat-pulse");
           cardEl.classList.add("equip-steal-pulse");
         }
         cardsWrap.appendChild(cardEl);
       }
+
+      if (mode === "byron"){
+        const noStealCard = document.createElement("div");
+        noStealCard.className = "card72 wb-front wb-white attack-loot-no-steal equip-defeat-pulse";
+        noStealCard.dataset.noSteal = "1";
+        noStealCard.dataset.ownerUid = uid;
+        noStealCard.textContent = "奪わない";
+        const rowSelected = selectedByOwner[uid];
+        if (rowSelected?.noSteal){
+          noStealCard.classList.remove("equip-defeat-pulse");
+          noStealCard.classList.add("equip-steal-pulse");
+        }
+        cardsWrap.appendChild(noStealCard);
+        if (rowSelected){
+          row.classList.add("selected");
+        }
+      }
+
       row.appendChild(cardsWrap);
       attackLootBody.appendChild(row);
       lastCardsWrap = cardsWrap;
@@ -5095,6 +5172,11 @@
 
     if (!hasLootableCard){
       closeAttackLootPanel();
+      return;
+    }
+
+    if (mode === "byron"){
+      attackLootBackdrop.classList.remove("hidden");
       return;
     }
 
@@ -5120,8 +5202,26 @@
     attackLootBackdrop.classList.remove("hidden");
   }
 
+
   async function commitAttackLootSelection(selection){
     if (!pendingAttackLoot) return;
+    if (safeText(pendingAttackLoot.mode || "") === "byron"){
+      const selectedByOwner = pendingAttackLoot.selectedByOwner || {};
+      const targets = (pendingAttackLoot.targetUids || []).filter(uid => !!selectedByOwner[uid]);
+      if (!targets.length) return;
+      closeAttackLootPanel();
+      for (const ownerUid of targets){
+        const pick = selectedByOwner[ownerUid];
+        if (!pick || pick.noSteal) continue;
+        const sourceKey = safeText(pick.sourceKey || "");
+        if (!sourceKey) continue;
+        await stealEquipmentFromPlayer(ownerUid, sourceKey);
+      }
+      await clearAttackLootPending();
+      closeZoom();
+      renderEquipmentDock();
+      return;
+    }
     if (selection?.noSteal){
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "奪わなくて本当にいいですか。", async () => {
         await clearAttackLootPending();
@@ -5139,6 +5239,7 @@
       renderEquipmentDock();
     }
   }
+
 
   async function grantEquipmentToMe(cardObj, theme){
     if (!state.roomCode) return;
@@ -5782,6 +5883,19 @@
       const role = myRoleInfo();
       const roleId = safeText(role?.id || "");
       const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
+
+      if (roleId === "CIT_B1"){
+        const byronTargets = (pending?.rows || [])
+          .filter(item => Math.max(0, Number(item?.damage || 0)) >= 2)
+          .map(item => safeText(item?.uid || ""))
+          .filter(Boolean);
+        pending.rows = (pending?.rows || []).map(item => ({ ...item, damage:0 }));
+        await finalizePendingAttackResolution(false, true);
+        await resolveAttackAbilityReveal(role);
+        await createByronAttackLootPending(byronTargets);
+        return;
+      }
+
       await finalizePendingAttackResolution(false, true);
       await resolveAttackAbilityReveal(role);
 
@@ -6262,6 +6376,31 @@
   attackLootBody?.addEventListener("click", async (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
     if (!card || !pendingAttackLoot) return;
+    if (safeText(pendingAttackLoot.mode || "") === "byron"){
+      const ownerUid = safeText(card.dataset.ownerUid || "");
+      if (!ownerUid) return;
+      if (card.dataset.itemKind === "identity") return;
+      const current = { ...(pendingAttackLoot.selectedByOwner || {}) };
+      if (card.dataset.noSteal === "1"){
+        current[ownerUid] = { ownerUid, sourceKey:"", noSteal:true };
+      } else {
+        const sourceKey = safeText(card.dataset.sourceKey || "");
+        if (!sourceKey) return;
+        current[ownerUid] = { ownerUid, sourceKey, noSteal:false };
+      }
+      pendingAttackLoot = { ...pendingAttackLoot, selectedByOwner:current };
+      await setAttackLootPending(pendingAttackLoot);
+      renderAttackLootPanel();
+      const rowUids = (pendingAttackLoot.targetUids || []).filter(uid => {
+        const list = listEquipForUid(uid);
+        return list.some(it => !isIdentityEquipItem(it));
+      });
+      const allSelected = rowUids.length > 0 && rowUids.every(uid => !!current[uid]);
+      if (allSelected){
+        await commitAttackLootSelection({ byron:true });
+      }
+      return;
+    }
     if (card.dataset.noSteal === "1"){
       pendingAttackLoot = { ...pendingAttackLoot, selected:{ noSteal:true, ownerUid:"", sourceKey:"" } };
       await setAttackLootPending(pendingAttackLoot);
