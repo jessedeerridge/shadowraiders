@@ -4721,7 +4721,8 @@
     syncPersistentVenomOverlay();
   }
   zoomBackdrop.addEventListener("click", async (e) => {
-    const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
+    const clickedBackdrop = (e.target === zoomBackdrop);
+    const canClose = zoomCloseOnAnyClick || (clickedBackdrop && zoomCloseOnBackdrop);
     if (canClose){
       if (typeof zoomDismissHandler === "function"){
         await zoomDismissHandler();
@@ -4729,6 +4730,9 @@
       }
       await clearPendingGreenBubble();
       closeZoom();
+      if (clickedBackdrop && equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden')){
+        closeEquipExpand();
+      }
     }
   });
 
@@ -6356,6 +6360,7 @@
       const sourceKey = safeText(card.dataset.sourceKey || "");
       if (!ownerUid || ownerUid === state.userId || !sourceKey) return;
       openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "この装備を奪いますか。", async () => {
         room4StealUsed = true;
         await updateTurnRoomActionState({ room4StealUsed:true });
@@ -6381,6 +6386,7 @@
     if (isDeductionZoomActive()) return;
 
     openZoomFromCard(card);
+    setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
   });
 
   equipBody.addEventListener("dblclick", async (e) => {
