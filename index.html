@@ -3538,7 +3538,8 @@
   }
 
   function syncPersistentVenomOverlay(){
-    if (hasPendingVenomResolution() && zoomBackdrop?.classList.contains("hidden")){
+    const equipExpandOpen = !!equipExpandBackdrop && !equipExpandBackdrop.classList.contains("hidden");
+    if (hasPendingVenomResolution() && zoomBackdrop?.classList.contains("hidden") && !equipExpandOpen){
       showPersistentVenomOverlay();
       return;
     }
@@ -11505,9 +11506,11 @@
     if (!equipDock?.classList.contains('visible')) return;
     renderEquipExpandBody();
     equipExpandBackdrop?.classList.remove('hidden');
+    syncPersistentVenomOverlay();
   }
   function closeEquipExpand(){
     equipExpandBackdrop?.classList.add('hidden');
+    syncPersistentVenomOverlay();
     if (isEquipSelectionLockActive() && zoomBackdrop?.classList.contains('hidden')){
       restorePendingEquipSelection();
     }
