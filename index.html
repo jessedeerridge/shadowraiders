@@ -5969,7 +5969,6 @@
         await markGordonAbilityUsed();
       }
       await emitIdentityZoomEvent("RAI_G1", state.userId);
-      if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
       await doEndTurn();
       return;
     }
@@ -5992,8 +5991,8 @@
       if (!isGordonAbilityUsed() && isMyTurn() && !!turnState()?.moveDone && !turnState()?.attackDone && state.roomCode){
         await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
         await markGordonAbilityUsed();
+        await emitIdentityZoomEvent("RAI_G1", state.userId);
         hideRevealPop();
-        if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
         await doEndTurn();
         return;
       }
