@@ -3415,6 +3415,30 @@
     return "";
   }
 
+  function attackEliminationPreview(rows = []){
+    const entries = Array.isArray(rows)
+      ? rows.map(item => ({ uid:safeText(item?.uid || ""), damage:Math.max(0, Number(item?.damage || 0)) })).filter(item => item.uid)
+      : [];
+    if (!entries.length) return { attackedUids:[], eliminatedUids:[], allAttackedEliminated:false };
+    const attackedSet = new Set(entries.map(item => item.uid));
+    const eliminatedSet = new Set();
+    for (const item of entries){
+      if (item.damage <= 0) continue;
+      const roleId = safeText(state.hands?.[item.uid]?.roleId || "");
+      const hp = Number(ROLE_BY_ID?.[roleId]?.hp || 0);
+      if (hp <= 0) continue;
+      const beforeDamage = clampDamage(damageCache?.[item.uid]);
+      const afterDamage = clampDamage(beforeDamage + item.damage);
+      if (beforeDamage < hp && afterDamage >= hp){
+        eliminatedSet.add(item.uid);
+      }
+    }
+    const attackedUids = [...attackedSet];
+    const eliminatedUids = [...eliminatedSet];
+    const allAttackedEliminated = attackedUids.length > 0 && attackedUids.every(uid => eliminatedSet.has(uid));
+    return { attackedUids, eliminatedUids, allAttackedEliminated };
+  }
+
   function markerClientPointByUid(uid){
     const marker = markerCache?.[safeText(uid || "")] || null;
     const x = Number(marker?.x);
@@ -6205,6 +6229,24 @@
         }
         await createByronAttackLootPending(byronTargets);
         return;
+      }
+
+      if (roleId === "CIT_C1"){
+        const preview = attackEliminationPreview(pending?.rows || []);
+        if (preview.allAttackedEliminated){
+          const turnOwnerUid = currentTurnPlayerId();
+          await finalizePendingAttackResolution(false, true);
+          showRevealPopAt(null, {
+            mode:"notice",
+            message:"この結果プレイヤーは脱落するため、能力を使用しません。"
+          });
+          await waitMs(2000);
+          hideRevealPop();
+          if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
+            await doEndTurn(turnOwnerUid);
+          }
+          return;
+        }
       }
 
       await finalizePendingAttackResolution(false, true);
