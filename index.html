@@ -3299,18 +3299,18 @@
       carolTurnHealTimer = null;
       if (!isMyTurn() || !isMyRole("CIT_C2") || !isMyIdentityRevealed()) return;
       if (isMyAbilitySealed()) return;
-      await emitRoleFlashEvent("CIT_C2", "carol_turn_heal", 1200);
+      await emitRoleFlashEvent("CIT_C2", "carol_turn_heal", 1800);
       await healDamageToPlayer(state.userId, 2, "carol_role_heal");
     }, 1000);
   }
 
-  async function emitRoleFlashEvent(roleId, reason = "", durationMs = 1200){
+  async function emitRoleFlashEvent(roleId, reason = "", durationMs = 1800){
     const rid = safeText(roleId || "");
     if (!state.roomCode || !rid) return;
     await set(ref(db, `rooms/${state.roomCode}/effectEvents/roleFlash`), {
       roleId: rid,
       reason: safeText(reason || ""),
-      durationMs: Math.max(100, Number(durationMs) || 1200),
+      durationMs: Math.max(100, Number(durationMs) || 1800),
       at: Date.now()
     });
   }
@@ -3418,7 +3418,7 @@
     if (!isMyIdentityRevealed()){
       await revealMyIdentityToEquipment({ revealedBy:"attack_ability" });
     } else {
-      await emitRoleFlashEvent(role.id, "attack_ability_reveal_repeat", 1500);
+      await emitRoleFlashEvent(role.id, "attack_ability_reveal_repeat", 1800);
     }
   }
 
@@ -3522,7 +3522,7 @@
     hidePersistentVenomOverlay();
   }
 
-  function showRoleFlashOverlay(roleId, durationMs = 1200){
+  function showRoleFlashOverlay(roleId, durationMs = 1800){
     const role = ROLE_BY_ID[safeText(roleId || "")];
     if (!role) return;
     hideRoleFlashOverlay();
@@ -3547,7 +3547,7 @@
 
     roleFlashTimer = setTimeout(() => {
       hideRoleFlashOverlay();
-    }, Math.max(100, Number(durationMs) || 1200));
+    }, Math.max(100, Number(durationMs) || 1800));
   }
 
   function showTemporaryRoleTag(uid, text, durationMs = 2000){
@@ -4722,7 +4722,7 @@
     setTimeout(() => {
       if (activeRoleAbilitySelection) return;
       if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
-    }, 2000);
+    }, 1800);
   }
   function openMultiIdentityRevealZoom(entries = []){
     const targets = (entries || []).filter(v => v?.role && v?.uid);
@@ -4758,7 +4758,7 @@
     openZoomContent(row, { closeOnBackdrop:false, showCloseButton:false, stageClass:"zoom-stage-multi" });
     setTimeout(() => {
       if (!zoomBackdrop.classList.contains("hidden")) closeZoom();
-    }, 2000);
+    }, 1800);
   }
   function openZoomFromDeckCard(cardObj, theme, options){
     if (!cardObj) return;
@@ -6299,7 +6299,7 @@
     if (!isMyIdentityRevealed()){
       await revealMyIdentityToEquipment({ revealedBy:"counter_attack" });
     } else {
-      await emitRoleFlashEvent(role.id, 1500);
+      await emitRoleFlashEvent(role.id, "counter_attack_reveal_repeat", 1800);
     }
 
     if (safeText(role.id || "") === "SHA_W3"){
@@ -7100,7 +7100,7 @@
       if (!canUseWalpurgisSwap()) return;
       walpurgisSwapUsed = true;
       await emitRoleFlashEvent("SHA_W2", "walpurgis_swap");
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      await new Promise(resolve => setTimeout(resolve, 1800));
       try {
         await emitWalpurgisSwapEvent(state.userId, uid, 620);
         await new Promise(resolve => setTimeout(resolve, 620));
@@ -8266,7 +8266,7 @@
       }
       if (!ev || !at || at <= roleFlashEventSeenAt) return;
       roleFlashEventSeenAt = at;
-      showRoleFlashOverlay(safeText(ev.roleId || ""), Number(ev.durationMs || 1200));
+      showRoleFlashOverlay(safeText(ev.roleId || ""), Number(ev.durationMs || 1800));
     });
   }
 
@@ -9191,7 +9191,7 @@
     const roomName = safeText(EMI_TELEPORT_ROOM_NAMES[rid] || `ROOM${rid}`);
     showRoomActionPopAt(clickX, clickY, `「${roomName}」に移動しますか。`, async () => {
       if (!isMyIdentityRevealedThisTurn()){
-        await emitRoleFlashEvent("RAI_E1", "emi_teleport", 1500);
+        await emitRoleFlashEvent("RAI_E1", "emi_teleport", 1800);
       }
       await placeMarkerInRoom(rid);
       if (state.roomCode && isMyTurn()){
@@ -10118,8 +10118,8 @@
     const d4OnlyMode = masamuneMode || vendettaMode;
 
     if (vendettaMode){
-      showRoleFlashOverlay("SHA_V3", 1200);
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      showRoleFlashOverlay("SHA_V3", 1800);
+      await new Promise(resolve => setTimeout(resolve, 1800));
     }
 
     clearDiceRollTimers();
@@ -10605,7 +10605,7 @@
     const ability = '<span class="ability-pill">メテオストライク</span>';
     showRoomActionPopAt(clientX, clientY, "", async () => {
       await emitRoleFlashEvent("SHA_U2", "meteor_strike");
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      await new Promise(resolve => setTimeout(resolve, 1800));
       await addDamageToPlayer(uid, 3);
       uranusMeteorResolved = true;
       renderMarkers();
