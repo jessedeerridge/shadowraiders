@@ -3517,7 +3517,8 @@
     const overlay = document.createElement("div");
     overlay.style.position = "fixed";
     overlay.style.inset = "0";
-    overlay.style.zIndex = "var(--z-role-flash-overlay)";
+    // ヴェノム常駐表示はヘルプ/装備拡大/通常拡大より背面に置く
+    overlay.style.zIndex = "273";
     overlay.style.display = "flex";
     overlay.style.alignItems = "center";
     overlay.style.justifyContent = "center";
@@ -4677,7 +4678,8 @@
     zoomBackdrop.classList.remove("passthrough");
     const equipExpandEl = document.getElementById("equipExpandBackdrop");
     const equipExpandOpen = !!equipExpandEl && !equipExpandEl.classList.contains("hidden");
-    zoomBackdrop.classList.toggle("over-panel", equipExpandOpen);
+    const venomResolutionActive = isVenomSelectionEntry(counterPromptEntryForMe());
+    zoomBackdrop.classList.toggle("over-panel", equipExpandOpen && !venomResolutionActive);
     greenZoomLocked = !showCloseButton;
     zoomStage.appendChild(contentEl);
     zoomBackdrop.classList.remove("hidden");
@@ -6370,10 +6372,19 @@
     if (isVenomSelectionEntry(counterPromptEntryForMe())){
       const ownerUid = safeText(card.dataset.ownerUid || "");
       const sourceKey = safeText(card.dataset.sourceKey || "");
-      if (ownerUid !== state.userId || !sourceKey || !card.classList.contains("equip-defeat-pulse")) return;
+      const canGive = ownerUid === state.userId && !!sourceKey && card.classList.contains("equip-defeat-pulse");
+      if (!canGive){
+        openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false, closeOnAnyClick:true });
+        setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
+        return;
+      }
       const name = safeText(card.dataset.cardName || "このカード");
+      openZoomFromCard(card, { closeOnBackdrop:true, showCloseButton:false });
+      setZoomOverPanel(!!equipExpandBackdrop && !equipExpandBackdrop.classList.contains('hidden'));
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, `${name}を渡しますか？`, async () => {
         hideRoomActionPop();
+        closeZoom();
+        closeEquipExpandIfOpen();
         await resolveVenomCounterChoice("give", sourceKey);
       }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
       return;
