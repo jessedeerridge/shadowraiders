@@ -6119,7 +6119,7 @@
         await revealMyIdentityToEquipment({ revealedBy:"attack_ability" });
       } else {
         const role = myRoleInfo();
-        if (role) openIdentityRevealZoom(role, state.userId);
+        if (role) await emitIdentityZoomEvent(role.id, state.userId);
       }
     }
     attackTurnEndChoicePending = true;
