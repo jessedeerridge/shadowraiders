@@ -3449,7 +3449,7 @@
   async function startUlsterExtraAttackSelection(){
     if (!state.roomCode) return;
     ulsterExtraAttackPending = Math.max(ulsterExtraAttackPending, 1);
-    suppressEndTurnButton = true;
+    suppressEndTurnButton = false;
     attackFlowUiLockActive = false;
     await update(ref(db, `rooms/${state.roomCode}/turn`), {
       attackDone: false,
@@ -6101,6 +6101,10 @@
         })()
       : null;
 
+    if (ulsterExtraAttackPending > 0 && isMyRole("SHA_U3") && !isMyIdentityRevealed()){
+      await revealMyIdentityToEquipment({ revealedBy:"ulster_extra_attack" });
+    }
+
     hideAttackPop();
     attackTurnEndChoicePending = true;
     attackFlowUiLockActive = true;
@@ -6217,7 +6221,11 @@
         attackResultChoiceBusy = false;
       }
     }, {
-      messageHtml: `<span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>${escapeHtml(spec.description)}`,
+      messageHtml: (() => {
+        const base = `<span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel(spec.abilityName))}</span>${escapeHtml(spec.description)}`;
+        if (safeText(myRoleInfo()?.id || "") !== "SHA_U3") return base;
+        return `${base}<br>※攻撃するプレイヤーを選んだ後に正体を公開します。<br>公開をやめる場合は手番を終わる。`;
+      })(),
       yesLabel: "はい",
       noLabel: "いいえ",
       fixedLower:true,
@@ -7912,7 +7920,7 @@
     if (!pending || pending.applied){
       if (!endTurnAfterApply){
         attackFlowUiLockActive = false;
-        suppressEndTurnButton = ulsterExtraAttackPending > 0;
+        suppressEndTurnButton = false;
         renderTurnEndButton();
       }
       return;
@@ -7937,7 +7945,7 @@
       ulsterExtraAttackPending = Math.max(0, ulsterExtraAttackPending - 1);
     }
     attackFlowUiLockActive = false;
-    suppressEndTurnButton = ulsterExtraAttackPending > 0;
+    suppressEndTurnButton = false;
     renderTurnEndButton();
   }
 
