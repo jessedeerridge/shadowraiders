@@ -2304,6 +2304,7 @@
     "RAI_F2", // フェリシア
     "SHA_U2", // ウラヌス
   ]);
+  const START_ONLY_ABILITY_ROLE_IDS = new Set(["RAI_E2", "RAI_F1", "RAI_F2"]);
   const REVEAL_ENDS_TURN_ROLE_IDS = new Set([
     "CIT_B2", // ベンジャミン
     "RAI_E3", // エマ
@@ -2326,6 +2327,8 @@
   let hpSwapEventInitialized = false;
   let walpurgisSwapEventSeenAt = 0;
   let walpurgisSwapEventInitialized = false;
+  let identityZoomEventSeenAt = 0;
+  let identityZoomEventInitialized = false;
   let roleFlashTimer = null;
   let roleFlashOverlayEl = null;
   let persistentVenomOverlayEl = null;
@@ -3330,7 +3333,7 @@
     if (roleId === "CIT_B1" && maxDamage >= 2){
       return { abilityName:"念力の懐中時計", description:"ダメージの代わりに相手の装備カードを獲得しますか。" };
     }
-    if (roleId === "RAI_F3" && !isMyIdentityRevealed() && pendingAttackResultMeta?.freddieSpecial){
+    if (roleId === "RAI_F3" && !isMyIdentityRevealed() && pendingAttackResultMeta?.freddieSpecial && hasRevealedTargetInRows(normalizedRows)){
       return { abilityName:"ドラゴンアタック", description:"正体を公開している相手へのダメージが+2になります。" };
     }
     if (roleId === "RAI_G2" && hasMyEquipmentByName("エクスカリバー") && attackFailed){
@@ -3452,6 +3455,17 @@
       uidA: a,
       uidB: b,
       durationMs: Math.max(240, Number(durationMs) || 620),
+      at: Date.now()
+    });
+  }
+
+  async function emitIdentityZoomEvent(roleId, uid){
+    const rid = safeText(roleId || "");
+    const actorUid = safeText(uid || "");
+    if (!state.roomCode || !rid || !actorUid) return;
+    await set(ref(db, `rooms/${state.roomCode}/effectEvents/identityZoom`), {
+      roleId: rid,
+      uid: actorUid,
       at: Date.now()
     });
   }
@@ -3824,6 +3838,13 @@
     if (isRoleAbilityUsed("RAI_E3")) return { ok:false, message:"今は使えません。" };
     if (!canStartRoleSelection("RAI_E3", state.userId)) return { ok:false, message:"今は使えません。" };
     return { ok:true };
+  }
+
+  function hasRevealedTargetInRows(rows = []){
+    const normalizedRows = Array.isArray(rows)
+      ? rows.map(item => safeText(item?.uid || "")).filter(Boolean)
+      : [];
+    return normalizedRows.some(uid => isIdentityRevealedFor(uid));
   }
 
   function uranusAbilityAvailability(){
@@ -5692,6 +5713,11 @@
           }
         } else {
           if (isRoleAbilityUsed(myRoleId)) return;
+          if (START_ONLY_ABILITY_ROLE_IDS.has(myRoleId) && !!turnState()?.moveDone){
+            e.stopPropagation();
+            showRevealPopAt(idCard, { mode:"notice", message:"手番の初めにだけ使えます。" });
+            return;
+          }
           if (!canStartRoleSelection(myRoleId, state.userId)){
             e.stopPropagation();
             showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
@@ -5735,6 +5761,20 @@
         showRevealPopAt(idCard, {
           action: "alice_ability",
           messageHtml: `<span class="ability-pill">うさぎさんヒール</span>を使いますか。`
+        });
+        return;
+      }
+      if (myRoleId === "RAI_G1"){
+        if (isGordonAbilityUsed()) return;
+        if (!isMyTurn() || !turnState()?.moveDone || !!turnState()?.attackDone){
+          e.stopPropagation();
+          showRevealPopAt(idCard, { mode:"notice", message:"手番の最後にだけ使えます。" });
+          return;
+        }
+        e.stopPropagation();
+        showRevealPopAt(idCard, {
+          action: "gordon_barrier",
+          messageHtml: `<span class="ability-pill">絶対無敵バリア</span>を使いますか。<br>使用後に手番が終了します。`
         });
         return;
       }
@@ -5791,6 +5831,11 @@
       showRevealPopAt(idCard, { mode: "notice", message: "今は公開できません。" });
       return;
     }
+    if (myRoleId === "RAI_E3" && !canStartRoleSelection(myRoleId, state.userId)){
+      e.stopPropagation();
+      showRevealPopAt(idCard, { mode: "notice", message: "今は使えません。" });
+      return;
+    }
 
     const moved = !!turnState()?.moveDone;
     if (myRoleId === "CIT_B2"){
@@ -5807,8 +5852,11 @@
       return;
     }
     if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && moved){
+      const message = START_ONLY_ABILITY_ROLE_IDS.has(myRoleId)
+        ? "手番の初めにだけ使えます。"
+        : "手番の初めにだけ正体を公開できます。";
       e.stopPropagation();
-      showRevealPopAt(idCard, { mode: "notice", message: "手番の初めにだけ正体を公開できます。" });
+      showRevealPopAt(idCard, { mode: "notice", message });
       return;
     }
     if (myRoleId === "SHA_W1"){
@@ -5910,6 +5958,20 @@
       }, 1500);
       return;
     }
+    if (pendingRevealAction === "gordon_barrier"){
+      hideRevealPop();
+      if (!isMyTurn() || !turnState()?.moveDone || !!turnState()?.attackDone || isGordonAbilityUsed()){
+        showRevealPopAt(null, { mode:"notice", message:"手番の最後にだけ使えます。" });
+        return;
+      }
+      if (state.roomCode){
+        await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
+        await markGordonAbilityUsed();
+      }
+      await emitIdentityZoomEvent("RAI_G1", state.userId);
+      await doEndTurn();
+      return;
+    }
     if (pendingRevealAction.startsWith("role_select:")){
       const roleId = safeText(pendingRevealAction.split(":")[1] || "");
       const role = ROLE_BY_ID[roleId];
@@ -5925,8 +5987,15 @@
       return;
     }
     await revealMyIdentityToEquipment({ revealedBy:"manual" });
-    if (myRoleId === "RAI_G1" && state.roomCode){
-      await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
+    if (myRoleId === "RAI_G1"){
+      if (!isGordonAbilityUsed() && isMyTurn() && !!turnState()?.moveDone && !turnState()?.attackDone && state.roomCode){
+        await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
+        await markGordonAbilityUsed();
+        await emitIdentityZoomEvent("RAI_G1", state.userId);
+        hideRevealPop();
+        await doEndTurn();
+        return;
+      }
     }
     if (isRoleSelectionAbility(myRoleId) && !isRoleAbilityUsed(myRoleId)){
       if (!canStartRoleSelection(myRoleId, state.userId)){
@@ -5943,10 +6012,6 @@
       }, 1500);
     }
     hideRevealPop();
-    if (myRoleId === "RAI_G1" && isMyTurn()){
-      await doEndTurn();
-      return;
-    }
     if (myRoleId === "CIT_A3" && isAgathaAbilityUsed() && isMyTurn()){
       await doEndTurn();
     }
@@ -6675,6 +6740,15 @@
     const targetUid = safeText(uid);
     if (!targetUid) return false;
     return !!state.room?.gordonBarrier?.[targetUid];
+  }
+
+  function isGordonAbilityUsed(){
+    return !!state.room?.abilityUsage?.gordon?.[state.userId];
+  }
+
+  async function markGordonAbilityUsed(){
+    if (!state.roomCode || !state.userId) return;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/gordon/${state.userId}`), true);
   }
 
   function isGordonBarrierHpChangeAllowed(uid, source = ""){
@@ -8222,6 +8296,29 @@
     });
   }
 
+  function subscribeIdentityZoomEvents(){
+    const zoomRef = ref(db, `rooms/${state.roomCode}/effectEvents/identityZoom`);
+    onValue(zoomRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!identityZoomEventInitialized){
+        identityZoomEventInitialized = true;
+        identityZoomEventSeenAt = at || 0;
+        return;
+      }
+      if (!ev || !at || at <= identityZoomEventSeenAt) return;
+      identityZoomEventSeenAt = at;
+      const uid = safeText(ev.uid || "");
+      const roleId = safeText(ev.roleId || "");
+      const role = ROLE_BY_ID[roleId];
+      if (!uid || !role) return;
+      openIdentityRevealZoom(role, uid, {
+        ownerTagDurationMs: 1200,
+        showOwnerTag: true
+      });
+    });
+  }
+
   function subscribeGreenReplyBubbles(){
     const bRef = ref(db, `rooms/${state.roomCode}/greenReplyBubbles`);
     onValue(bRef, snap => {
@@ -9027,6 +9124,9 @@
     if (!isMyRole("RAI_E1")) return [];
     if (!isMyIdentityRevealed()) return [];
     if (!turnState()?.moveDone || !!turnState()?.attackDone) return [];
+    if (!!turnState()?.deckDrawDone) return [];
+    const roomActionState = turnRoomActionState();
+    if (roomActionState.room3ActionUsed || roomActionState.room4StealUsed) return [];
     if (!!turnState()?.emiTeleportUsed) return [];
     const myMarker = markerCache?.[state.userId] || null;
     const nowRoom = markerRoomId(myMarker);
@@ -12741,6 +12841,7 @@
     subscribeRoleFlashEvents();
     subscribeHpSwapEvents();
     subscribeWalpurgisSwapEvents();
+    subscribeIdentityZoomEvents();
 
     renderSeatTiles();
     refreshStartBadge();
