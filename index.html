@@ -71,6 +71,7 @@
   .confirm-pop .actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
   .confirm-pop.hide-actions .actions{display:none;}
   .confirm-pop.hide-actions .msg{margin-bottom:0;}
+  .confirm-pop.no-wrap .msg{white-space:nowrap;}
   .confirm-pop .caret{
     position:absolute;
     left:50%; top:-7px;
@@ -2702,7 +2703,7 @@
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
-    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret", "hide-actions", "text-fit");
+    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret", "hide-actions", "text-fit", "no-wrap");
     if (btnRoomActionYes){
       btnRoomActionYes.textContent = "はい";
       btnRoomActionYes.disabled = false;
@@ -2724,6 +2725,7 @@
     const noCaret = !!options.noCaret;
     const hideActions = !!options.hideActions;
     const fitText = !!options.fitText;
+    const noWrap = !!options.noWrap;
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
       onNo: (typeof options.onNo === "function") ? options.onNo : null,
@@ -2759,6 +2761,7 @@
     roomActionPop.classList.toggle("no-caret", noCaret);
     roomActionPop.classList.toggle("hide-actions", hideActions);
     roomActionPop.classList.toggle("text-fit", fitText);
+    roomActionPop.classList.toggle("no-wrap", noWrap);
 
     if (fixedLower){
       roomActionPop.style.left = "";
@@ -7132,7 +7135,8 @@
   function showWalpurgisCannotAttackPopAt(clientX, clientY){
     showRoomActionPopAt(clientX, clientY, "この後、攻撃できません。", null, {
       hideActions: true,
-      fitText: true
+      fitText: true,
+      noWrap: true
     });
   }
 
