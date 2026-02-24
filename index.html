@@ -1198,6 +1198,13 @@
 }
 #roomActionPop.lower-mode .caret{ display:none; }
 #roomActionPop.no-caret .caret{ display:none; }
+#roomActionPop.message-only{
+  min-width:0;
+  width:max-content;
+  max-width:calc(100vw - 20px);
+}
+#roomActionPop.message-only .msg{ margin:0; }
+#roomActionPop.message-only .actions{ display:none; }
 #roomActionPop.room3-mode .actions{
   flex-wrap:nowrap;
   justify-content:center;
@@ -2425,7 +2432,8 @@
     return {
       movedByDiceRoomId: Number(t.movedByDiceRoomId || 0) || null,
       room3ActionUsed: !!t.room3ActionUsed,
-      room4StealUsed: !!t.room4StealUsed
+      room4StealUsed: !!t.room4StealUsed,
+      walpurgisSwapUsed: !!t.walpurgisSwapUsed
     };
   }
 
@@ -2441,6 +2449,9 @@
     }
     if (Object.prototype.hasOwnProperty.call(patch, "room4StealUsed")){
       next.room4StealUsed = !!patch.room4StealUsed;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "walpurgisSwapUsed")){
+      next.walpurgisSwapUsed = !!patch.walpurgisSwapUsed;
     }
     if (!Object.keys(next).length) return;
     await update(ref(db, `rooms/${state.roomCode}/turn`), next);
@@ -2695,7 +2706,7 @@
   function hideRoomActionPop(){
     pendingRoomAction = null;
     roomActionPop?.classList.add("hidden");
-    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret");
+    roomActionPop?.classList.remove("lower-mode", "room3-mode", "no-caret", "message-only");
     if (btnRoomActionYes){
       btnRoomActionYes.textContent = "はい";
       btnRoomActionYes.disabled = false;
@@ -2715,6 +2726,7 @@
     const compactButtons = !!options.compactButtons;
     const yOffset = Number(options.yOffset) || 0;
     const noCaret = !!options.noCaret;
+    const messageOnly = !!options.messageOnly;
     pendingRoomAction = {
       onYes: (typeof onYes === "function") ? onYes : null,
       onNo: (typeof options.onNo === "function") ? options.onNo : null,
@@ -2748,6 +2760,7 @@
     roomActionPop.classList.toggle("lower-mode", fixedLower);
     roomActionPop.classList.toggle("room3-mode", compactButtons);
     roomActionPop.classList.toggle("no-caret", noCaret);
+    roomActionPop.classList.toggle("message-only", messageOnly);
 
     if (fixedLower){
       roomActionPop.style.left = "";
@@ -2950,6 +2963,7 @@
               movedByDiceRoomId: null,
               room3ActionUsed: false,
               room4StealUsed: false,
+              walpurgisSwapUsed: false,
               repeatTurnRemaining: 0,
               repeatTurnTotal: 0,
               sealWisdomBonus: false,
@@ -6907,12 +6921,13 @@
     room4StealUsed = roomActionState.room4StealUsed;
     room3ActionUsed = roomActionState.room3ActionUsed;
     movedByDiceRoomId = roomActionState.movedByDiceRoomId;
+    walpurgisSwapUsed = roomActionState.walpurgisSwapUsed;
     const hasMatchingPending = !!pendingAttackResolution
       && safeText(pendingAttackResolution.turnKey || "") === key
       && currentTurnPlayerId() === state.userId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
-    walpurgisSwapUsed = false;
+    walpurgisSwapUsed = roomActionState.walpurgisSwapUsed;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
     vampireHealScheduled = false;
@@ -7099,6 +7114,7 @@
     showRoomActionPopAt(clientX, clientY, "", async () => {
       if (!canUseWalpurgisSwap()) return;
       walpurgisSwapUsed = true;
+      await updateTurnRoomActionState({ walpurgisSwapUsed:true });
       await emitRoleFlashEvent("SHA_W2", "walpurgis_swap");
       await new Promise(resolve => setTimeout(resolve, 1800));
       try {
@@ -7115,6 +7131,42 @@
       noLabel: "いいえ",
       yesBtnClass: "pop-purple",
       noBtnClass: "pop-white"
+    });
+  }
+
+  function hasWalpurgisAttackTargetAfterSwap(targetUid){
+    const attackerUid = safeText(state.userId || "");
+    const otherUid = safeText(targetUid || "");
+    if (!attackerUid || !otherUid || attackerUid === otherUid) return false;
+
+    const attackerMarker = markerCache?.[attackerUid] || null;
+    const otherMarker = markerCache?.[otherUid] || null;
+    const attackerRoomBefore = markerRoomId(attackerMarker);
+    const attackerRoomAfter = markerRoomId(otherMarker);
+    if (!attackerRoomBefore || !attackerRoomAfter) return false;
+
+    const deadScopeCount = countEquipmentByNames(attackerUid, ["死神スコープ"]);
+    const attackRooms = attackTargetRoomIdsFromRoom(attackerRoomAfter, deadScopeCount);
+    if (!attackRooms.size) return false;
+
+    for (const player of (latestPlayers || [])){
+      const uid = safeText(player?.id || "");
+      if (!uid || uid === attackerUid) continue;
+      if (isPlayerEliminated(uid)) continue;
+
+      const marker = markerCache?.[uid] || null;
+      if (!marker) continue;
+      const roomAfterSwap = (uid === otherUid) ? attackerRoomBefore : markerRoomId(marker);
+      if (!roomAfterSwap) continue;
+      if (attackRooms.has(roomAfterSwap)) return true;
+    }
+    return false;
+  }
+
+  function showWalpurgisCannotAttackNotice(clientX, clientY){
+    showRoomActionPopAt(clientX, clientY, "この後、攻撃できません。", null, {
+      noCaret: true,
+      messageOnly: true
     });
   }
 
@@ -8383,6 +8435,7 @@
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        walpurgisSwapUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         sealWisdomBonus: false,
@@ -8448,6 +8501,7 @@
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        walpurgisSwapUsed: false,
         repeatTurnRemaining: nextRepeatRemaining,
         repeatTurnTotal: nextRepeatTotal,
         sealWisdomBonus: false,
@@ -10690,6 +10744,10 @@
       if (uid === state.userId) return;
       markerLongPressTimer = setTimeout(() => {
         markerLongPressDone = true;
+        if (!hasWalpurgisAttackTargetAfterSwap(uid)){
+          showWalpurgisCannotAttackNotice(e.clientX, e.clientY);
+          return;
+        }
         showWalpurgisSwapConfirm(e.clientX, e.clientY, uid);
       }, longPressMs);
     });
@@ -12669,6 +12727,7 @@
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        walpurgisSwapUsed: false,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         sealWisdomBonus: false,
