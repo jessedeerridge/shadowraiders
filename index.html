@@ -7915,7 +7915,19 @@
     if (attackFlowUiLockActive) return false;
     if (suppressEndTurnButton) return false;
     if (hpBoardAnimationActive) return false;
+    if (hasUnresolvedAttackLootSelection()) return false;
     return !!turnState()?.moveDone;
+  }
+
+  function hasUnresolvedAttackLootSelection(){
+    const mine = normalizeAttackLootPayload(state.room?.attackLootPending?.[state.userId] || pendingAttackLoot || null);
+    if (!mine) return false;
+    const mode = safeText(mine.mode || "defeated") || "defeated";
+    const targets = mode === "byron" ? (mine.targetUids || []) : (mine.defeatedUids || []);
+    return targets.some(uid => {
+      if (!uid || uid === state.userId) return false;
+      return listEquipForUid(uid).some(it => !isIdentityEquipItem(it));
+    });
   }
 
   function mustAttackWithMasamune(){
@@ -9004,6 +9016,33 @@
       const curTurn = cur.turn || {};
       const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || aliveOrder[0] || "");
       if (expectedUid && curId !== expectedUid) return cur;
+
+      const nonIdentityEquipCountInRoom = (uid) => {
+        if (!uid) return 0;
+        const equip = cur.equipment?.[uid];
+        if (!equip || typeof equip !== "object") return 0;
+        let count = 0;
+        for (const value of Object.values(equip)){
+          if (!value || typeof value !== "object") continue;
+          if (safeText(value.kind || "") === "identity") continue;
+          const copies = Math.max(1, Math.floor(Number(value.count || 1)));
+          count += copies;
+        }
+        return count;
+      };
+
+      const pendingLoot = cur.attackLootPending?.[curId];
+      if (pendingLoot && typeof pendingLoot === "object"){
+        const mode = safeText(pendingLoot.mode || "defeated") || "defeated";
+        const targetUids = (mode === "byron" ? pendingLoot.targetUids : pendingLoot.defeatedUids) || [];
+        const hasLootableTarget = Array.isArray(targetUids) && targetUids.some((uidRaw) => {
+          const uid = safeText(uidRaw || "");
+          if (!uid || uid === curId) return false;
+          return nonIdentityEquipCountInRoom(uid) > 0;
+        });
+        if (hasLootableTarget) return cur;
+      }
+
       const rest = Math.max(0, Number(curTurn.repeatTurnRemaining || 0));
       const total = Math.max(0, Number(curTurn.repeatTurnTotal || 0));
       const repeat = rest > 0 && !isEliminatedInRoom(curId);
