@@ -5249,6 +5249,7 @@
   let attackExpectedEliminationAt = 0;
   let previousEliminatedMap = {};
   let pendingAttackLoot = null;
+  let pendingEndTurnAfterLoot = null;
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
   const attackLootBody = document.getElementById("attackLootBody");
   const attackLootHeader = document.getElementById("attackLootHeader");
@@ -5316,6 +5317,37 @@
     pendingAttackLoot = null;
     closeAttackLootPanel();
     await setAttackLootPending(null);
+    flushDeferredEndTurnAfterLoot().catch(() => {});
+  }
+
+  function hasBlockingAttackLootFlow(){
+    const expectedAttackWindowActive = (Date.now() - Number(attackExpectedEliminationAt || 0) < 12000);
+    return !!pendingAttackLoot || (expectedAttackWindowActive && attackExpectedEliminationUids.size > 0);
+  }
+
+  async function requestTurnEndAfterLoot(expectedCurrentPlayerId = ""){
+    const expectedUid = safeText(expectedCurrentPlayerId || "");
+    if (hasBlockingAttackLootFlow()){
+      pendingEndTurnAfterLoot = { expectedCurrentPlayerId:expectedUid, at:Date.now() };
+      return false;
+    }
+    pendingEndTurnAfterLoot = null;
+    const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
+    if (openedEmma) return true;
+    await doEndTurn(expectedUid);
+    return true;
+  }
+
+  async function flushDeferredEndTurnAfterLoot(){
+    const request = pendingEndTurnAfterLoot;
+    if (!request) return;
+    if (hasBlockingAttackLootFlow()) return;
+    pendingEndTurnAfterLoot = null;
+    const expectedUid = safeText(request.expectedCurrentPlayerId || "");
+    if (expectedUid && currentTurnPlayerId() !== expectedUid) return;
+    const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
+    if (openedEmma) return;
+    await doEndTurn(expectedUid);
   }
 
   async function createOrMergeAttackLootPending(defeatedUids = []){
@@ -5605,7 +5637,7 @@
       await clearAttackLootPending();
       closeZoom();
       renderEquipmentDock();
-      await doEndTurn(turnOwnerUid);
+      await requestTurnEndAfterLoot(turnOwnerUid);
       return;
     }
     if (selection?.noSteal){
@@ -6455,7 +6487,7 @@
         if (hasMyEquipmentByName("銀のロザリオ")){
           const turnOwnerUid = currentTurnPlayerId();
           await runRosaryAutoLootFlow(byronTargets);
-          await doEndTurn(turnOwnerUid);
+          await requestTurnEndAfterLoot(turnOwnerUid);
           return;
         }
         await createByronAttackLootPending(byronTargets);
@@ -6474,7 +6506,7 @@
           await waitMs(2000);
           hideRevealPop();
           if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
-            await doEndTurn(turnOwnerUid);
+            await requestTurnEndAfterLoot(turnOwnerUid);
           }
           return;
         }
@@ -6502,7 +6534,7 @@
         await resolveVampireHealAfterAttack();
         const turnOwnerUid = currentTurnPlayerId();
         if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
-          await doEndTurn(turnOwnerUid);
+          await requestTurnEndAfterLoot(turnOwnerUid);
         }
         return;
       }
@@ -8408,7 +8440,7 @@
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
       if (currentTurnPlayerId() === attackTurnOwnerUid){
-        await doEndTurn(attackTurnOwnerUid);
+        await requestTurnEndAfterLoot(attackTurnOwnerUid);
       }
       attackFlowUiLockActive = false;
       suppressEndTurnButton = false;
@@ -8733,7 +8765,9 @@
           if (shouldUseRosaryLoot){
             runRosaryAutoLootFlow(attackDefeatedUids).catch(() => {});
           } else {
-            createOrMergeAttackLootPending(attackDefeatedUids).catch(() => {});
+            waitUntilZoomClosed({ maxWaitMs:16000, pollMs:80 })
+              .then(() => createOrMergeAttackLootPending(attackDefeatedUids))
+              .catch(() => {});
           }
         }, 2200);
       }
@@ -8745,6 +8779,7 @@
       if (myRoleBack){
         myRoleBack.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
       }
+      flushDeferredEndTurnAfterLoot().catch(() => {});
     });
   }
 
