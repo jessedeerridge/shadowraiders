@@ -557,7 +557,7 @@
     box-sizing:border-box;z-index:4;
   }
   .id72 .name{
-    position:absolute;top:48px;left:2px;right:4px;
+    position:absolute;top:45px;left:2px;right:4px;
     text-align:left;padding:0px 4px;
     background:var(--black);color:var(--gold);
     border:1px solid var(--gold);
@@ -567,7 +567,7 @@
     box-sizing:border-box;z-index:2;
   }
   .id72 .hp-badge{
-    position:absolute;top:46px;right:1px;
+    position:absolute;top:43px;right:1px;
     width:18px;height:18px;border-radius:999px;
     background:var(--brown);
     border:1px solid var(--gold);
@@ -586,7 +586,7 @@
     transform:translateY(-1px);
   }
   .id72 .effect{
-    position:absolute;left:3px;right:3px;bottom:2px;top:64px;
+    position:absolute;left:3px;right:3px;bottom:2px;top:61px;
     background:var(--effect);
     border-radius:4px;
     padding:1px 1px;
@@ -11242,36 +11242,36 @@
   }
 
   const ROLES = [
-    { id:"CIT_A1", name:"アリス",    en:"ALICE",    initial:"A", faction:"シチズン", hp:8,  win:"生存している", effect:"うさぎさんヒール：手番初めに使用。ダメージを全回復（1回）" },
-    { id:"CIT_A2", name:"アンジェラ", en:"ANGELA",  initial:"A", faction:"シチズン", hp:8,  win:"右隣のプレイヤーが勝利する", effect:"移り気：勝利条件を「左隣のプレイヤーが勝利する」に変更（1回）" },
-    { id:"CIT_A3", name:"アガサ",    en:"AGATHA",   initial:"A", faction:"シチズン", hp:8,  win:"自分の手番でゲーム終了", effect:"完全犯罪：正体公開時にダイス2個を同時に振り、出目エリアのPL全員に3ダメージ（1回）" },
-    { id:"CIT_B1", name:"バイロン",  en:"BYRON",    initial:"B", faction:"シチズン", hp:10, win:"装備カードを5枚以上所持", effect:"念力の懐中時計：2以上の攻撃ダメージ時、代わりに装備を1つ奪う" },
-    { id:"CIT_B2", name:"ベンジャミン", en:"BENJAMIN", initial:"B", faction:"シチズン", hp:10, win:"他PLが装備を5つ以上所持", effect:"太鼓持ち：手番最後に同じエリアのPLへ装備を1つ渡せる" },
-    { id:"CIT_B3", name:"ブルース",  en:"BRUCE",    initial:"B", faction:"シチズン", hp:10, win:"攻撃でHP12以上のPLを脱落させる、または終了時にマス9にいる", effect:"国士無双：攻撃でPLを脱落させた時、自分の正体を公開" },
-    { id:"CIT_C1", name:"クレイグ",  en:"CRAIG",    initial:"C", faction:"シチズン", hp:11, win:"2人脱落後に他PLを攻撃して脱落させる", effect:"死の饗宴：攻撃後、自分に2ダメージ与え再攻撃可" },
-    { id:"CIT_C2", name:"キャロル",  en:"CAROL",    initial:"C", faction:"シチズン", hp:11, win:"最初に脱落する、または自分ともう1人だけ生存", effect:"聖痕：正体公開後に2回復。公開済みなら手番初めに2回復" },
-    { id:"CIT_C3", name:"クレア",    en:"CLAIRE",   initial:"C", faction:"シチズン", hp:11, win:"ゲーム終了時、自分のダメージが6～8", effect:"キャスリング：手番初めに自分と他PLのHPを入れ替える（1回）" },
-    { id:"CIT_D1", name:"ダニエル",  en:"DANIEL",   initial:"D", faction:"シチズン", hp:13, win:"最初に脱落する、またはシャドウ全員脱落かつ生存", effect:"絶叫：最初に他PLが脱落した時、正体カードを公開" },
-    { id:"CIT_D2", name:"デーヴィッド", en:"DAVID",  initial:"D", faction:"シチズン", hp:13, win:"「いにしえの聖杯」「神秘のコンパス」「幸運のブローチ」「銀のロザリオ」のうち3種を所持", effect:"グレイブディガー：手番初めに脱落者の装備カードから任意1枚獲得" },
-    { id:"CIT_D3", name:"デボラ",    en:"DEBORAH",  initial:"D", faction:"シチズン", hp:13, win:"5人戦：終了時に最もダメージが多い／6人戦：自分以外のシチズンが勝利", effect:"献身的な愛：手番初めに勝利条件を「脱落する」に変更" },
-    { id:"RAI_E1", name:"エミ",      en:"EMI",      initial:"E", faction:"レイダー", hp:10, win:"シャドウ全員の脱落", effect:"テレポート：正体公開後、移動後かつ未攻撃なら現在地の両隣エリアへ移動可" },
-    { id:"RAI_E2", name:"エリカ",    en:"ERIKA",    initial:"E", faction:"レイダー", hp:10, win:"シャドウ全員の脱落", effect:"癒しの光：手番終了時に4面ダイスを振り、出目分他PLを回復" },
-    { id:"RAI_E3", name:"エマ",      en:"EMMA",     initial:"E", faction:"レイダー", hp:10, win:"シャドウ全員の脱落", effect:"封印の鎖：手番初めに他PL1人の特殊能力をゲーム終了まで封印（1回）" },
+    { id:"CIT_A1", name:"アリス",    en:"ALICE",    initial:"A", faction:"シチズン", hp:8,  win:"ゲーム終了時に生存している。", effect:"うさぎさんヒール：手番の初めに使用する。自分のダメージを全回復する。（1回のみ）" },
+    { id:"CIT_A2", name:"アンジェラ", en:"ANGELA",  initial:"A", faction:"シチズン", hp:8,  win:"右隣のプレイヤーが勝利する。", effect:"移り気：勝利条件を「左隣のプレイヤーが勝利する」に変更する。（1回のみ）" },
+    { id:"CIT_A3", name:"アガサ",    en:"AGATHA",   initial:"A", faction:"シチズン", hp:8,  win:"自分の手番でゲームが終了する。", effect:"完全犯罪：手番の最後に、ダイスを2個振り、合計のエリアにいるプレイヤー全員に3ダメージ与える。（1回のみ）" },
+    { id:"CIT_B1", name:"バイロン",  en:"BYRON",    initial:"B", faction:"シチズン", hp:10, win:"装備カードを5枚以上所持している。", effect:"念力の懐中時計：攻撃でダメージを2以上与えた時、ダメージの代わりに装備を1つ奪える。" },
+    { id:"CIT_B2", name:"ベンジャミン", en:"BENJAMIN", initial:"B", faction:"シチズン", hp:10, win:"他プレイヤーが装備を5つ以上所持した。", effect:"太鼓持ち：手番の最後に使用する。同じエリアにいるプレイヤーに装備を1つ渡せる。" },
+    { id:"CIT_B3", name:"ブルース",  en:"BRUCE",    initial:"B", faction:"シチズン", hp:10, win:"攻撃でHP12以上のPLを脱落させるか、終了時にオリバーの隠れ家にいる", effect:"国士無双：攻撃でHP11以下のPLを脱落させた時、必ず自分の正体を公開する。" },
+    { id:"CIT_C1", name:"クレイグ",  en:"CRAIG",    initial:"C", faction:"シチズン", hp:11, win:"2人脱落後に他PLを攻撃して脱落させる", effect:"死の饗宴：攻撃した後、自分に2ダメージ与えて、もう一度同じ相手に攻撃できる。" },
+    { id:"CIT_C2", name:"キャロル",  en:"CAROL",    initial:"C", faction:"シチズン", hp:11, win:"最初に脱落するか、誰かと2人だけで生存する。", effect:"聖痕：手番の初めに使用できる。自分のダメージを2回復する。" },
+    { id:"CIT_C3", name:"クレア",    en:"CLAIRE",   initial:"C", faction:"シチズン", hp:11, win:"自分のダメージが6～8で終わる。", effect:"キャスリング：手番の初めに使用する。自分と他プレイヤーのダメージを入れ替える（1回のみ）" },
+    { id:"CIT_D1", name:"ダニエル",  en:"DANIEL",   initial:"D", faction:"シチズン", hp:13, win:"最初に脱落する。またはシャドウ全員が脱落して自分が生存する。", effect:"絶叫：最初に他プレイヤーが脱落した時、必ず自分の正体カードを公開する。" },
+    { id:"CIT_D2", name:"デーヴィッド", en:"DAVID",  initial:"D", faction:"シチズン", hp:13, win:"「いにしえの聖杯」「神秘のコンパス」「幸運のブローチ」「銀のロザリオ」のうち3種を所持する。", effect:"グレイブディガー：手番の初めに、脱落者の装備を1枚獲得できる。（1回のみ）" },
+    { id:"CIT_D3", name:"デボラ",    en:"DEBORAH",  initial:"D", faction:"シチズン", hp:13, win:"5人：終了時に最もダメージが多い／6人以上：自分以外のシチズンが勝利する。", effect:"献身的な愛：手番の初めに使用する。勝利条件を「脱落する」に変更する。" },
+    { id:"RAI_E1", name:"エミ",      en:"EMI",      initial:"E", faction:"レイダー", hp:10, win:"シャドウ全員の脱落", effect:"テレポート：移動のダイスを振った後に、両隣のエリアに移動してもよい。あああああ" },
+    { id:"RAI_E2", name:"エリカ",    en:"ERIKA",    initial:"E", faction:"レイダー", hp:10, win:"シャドウ全員の脱落", effect:"封印の鎖：手番の初めに、他プレイヤー1人の能力をゲームが終わるまで封印できる。（1回のみ）" },
+    { id:"RAI_E3", name:"エマ",      en:"EMMA",     initial:"E", faction:"レイダー", hp:10, win:"シャドウ全員の脱落", effect:"癒しの光：手番の最後に、4面ダイスを振れる。目の数だけ同エリアの他PL1人を回復。" },
     { id:"RAI_F1", name:"フェリックス", en:"FELIX", initial:"F", faction:"レイダー", hp:12, win:"シャドウ全員の脱落", effect:"アストラル・メイス：手番初めに他PL1人へ6面ダイス攻撃（1回）" },
     { id:"RAI_F2", name:"フェリシア", en:"FELICIA", initial:"F", faction:"レイダー", hp:12, win:"シャドウ全員の脱落", effect:"スラム街の天使：手番初めに任意のPLのダメージを7にする（1回）" },
     { id:"RAI_F3", name:"フレディ",  en:"FREDDIE",  initial:"F", faction:"レイダー", hp:12, win:"シャドウ全員の脱落", effect:"ドラゴンアタック：正体公開中のPLへの攻撃成功時 +2ダメージ" },
     { id:"RAI_G1", name:"ゴードン",  en:"GORDON",   initial:"G", faction:"レイダー", hp:14, win:"シャドウ全員の脱落", effect:"絶対無敵バリア：手番終了時に使用。次の自分の手番初めまで全ダメージ無効（1回）" },
     { id:"RAI_G2", name:"ガラハド",  en:"GALAHAD",  initial:"G", faction:"レイダー", hp:14, win:"シャドウ全員の脱落", effect:"魔剣の伝承者：エクスカリバー所持時に攻撃失敗ならダイス振り直し" },
     { id:"RAI_G3", name:"ゴドウィン", en:"GODWIN",  initial:"G", faction:"レイダー", hp:14, win:"シャドウ全員の脱落", effect:"蘇生装置TYPE-G：自分脱落時、既に脱落しているPL1人をダメージ7で復活" },
-    { id:"SHA_U1", name:"ウルリッヒ", en:"ULRICH",  initial:"U", faction:"シャドウ", hp:11, win:"レイダー全員またはシチズン3人の脱落", effect:"推理カードを受け取った時、ウソをついてよい" },
-    { id:"SHA_U2", name:"ウラヌス",   en:"URANUS",  initial:"U", faction:"シャドウ", hp:11, win:"レイダー全員またはシチズン3人の脱落", effect:"メテオストライク：正体公開済みで移動前なら、エリア6-7のPL1人に3ダメージ" },
-    { id:"SHA_U3", name:"アルスター", en:"ULSTER",  initial:"U", faction:"シャドウ", hp:11, win:"レイダー全員またはシチズン3人の脱落", effect:"デル・フリス：2回攻撃できる" },
-    { id:"SHA_V1", name:"ヴェノム",    en:"VENOM",   initial:"V", faction:"シャドウ", hp:13, win:"レイダー全員またはシチズン3人の脱落", effect:"反駁の猛毒：攻撃者は1ダメージ受けるか装備を渡すか選択" },
-    { id:"SHA_V2", name:"ヴァンパイア", en:"VAMPIRE", initial:"V", faction:"シャドウ", hp:13, win:"レイダー全員またはシチズン3人の脱落", effect:"吸血：攻撃成功時、ダメージを2回復" },
-    { id:"SHA_V3", name:"ヴェンデッタ", en:"VENDETTA", initial:"V", faction:"シャドウ", hp:13, win:"レイダー全員またはシチズン3人の脱落", effect:"冥府の大鎌：攻撃は4面ダイスのみ使用" },
-    { id:"SHA_W1", name:"ワイト",      en:"WIGHT",    initial:"W", faction:"シャドウ", hp:14, win:"レイダー全員またはシチズン3人の脱落", effect:"亡者の王：移動後に公開して使用。手番を終了して、脱落者数ぶん追加手番（1回）" },
-    { id:"SHA_W2", name:"ワルプルギス", en:"WALPURGIS", initial:"W", faction:"シャドウ", hp:14, win:"レイダー全員またはシチズン3人の脱落", effect:"重力の虹：攻撃時、任意のPL1人と位置を交換可" },
-    { id:"SHA_W3", name:"ワーウルフ",   en:"WEREWOLF", initial:"W", faction:"シャドウ", hp:14, win:"レイダー全員またはシチズン3人の脱落", effect:"反撃：攻撃を受けた時、そのPLをただちに攻撃" },
+    { id:"SHA_U1", name:"ウルリッヒ", en:"ULRICH",  initial:"U", faction:"シャドウ", hp:11, win:"レイダー全員、またはシチズン3人の脱落", effect:"推理カードを受け取った時、ウソをついてよい。" },
+    { id:"SHA_U2", name:"ウラヌス",   en:"URANUS",  initial:"U", faction:"シャドウ", hp:11, win:"レイダー全員、またはシチズン3人の脱落", effect:"メテオストライク：手番の最初に使用する。「ブラックミス地区」「女王陛下の飛行船」にいるプレイヤー1人に3ダメージ与える。" },
+    { id:"SHA_U3", name:"アルスター", en:"ULSTER",  initial:"U", faction:"シャドウ", hp:11, win:"レイダー全員、またはシチズン3人の脱落", effect:"デル・フリス：2回攻撃できる。" },
+    { id:"SHA_V1", name:"ヴェノム",    en:"VENOM",   initial:"V", faction:"シャドウ", hp:13, win:"レイダー全員、またはシチズン3人の脱落", effect:"反駁の猛毒：攻撃された時、相手に1ダメージうけるか、装備を自分に渡すか選ばせる。" },
+    { id:"SHA_V2", name:"ヴァンパイア", en:"VAMPIRE", initial:"V", faction:"シャドウ", hp:13, win:"レイダー全員、またはシチズン3人の脱落", effect:"吸血：攻撃が成功した時にダメージを2回復する。" },
+    { id:"SHA_V3", name:"ヴェンデッタ", en:"VENDETTA", initial:"V", faction:"シャドウ", hp:13, win:"レイダー全員、またはシチズン3人の脱落", effect:"冥府の大鎌：攻撃する時は4面ダイスのみ使用する。" },
+    { id:"SHA_W1", name:"ワイト",      en:"WIGHT",    initial:"W", faction:"シャドウ", hp:14, win:"レイダー全員、またはシチズン3人の脱落", effect:"亡者の王：手番の最後に使用する。あと「脱落者数」回、追加で手番を行う。（1回のみ）" },
+    { id:"SHA_W2", name:"ワルプルギス", en:"WALPURGIS", initial:"W", faction:"シャドウ", hp:14, win:"レイダー全員、またはシチズン3人の脱落", effect:"重力の虹：攻撃する前に任意のプレイヤーと位置を交換できる。" },
+    { id:"SHA_W3", name:"ワーウルフ",   en:"WEREWOLF", initial:"W", faction:"シャドウ", hp:14, win:"レイダー全員、またはシチズン3人の脱落", effect:"反撃：攻撃を受けた時、そのプレイヤーをただちに攻撃できる。" },
   ];
 
   const ROLE_BY_ID = Object.fromEntries(ROLES.map(r => [r.id, r]));
