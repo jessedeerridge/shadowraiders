@@ -2727,7 +2727,11 @@
   };
 
   function roleSelectionSpec(roleId){ return ROLE_SELECTION_SPECS[safeText(roleId || "")] || null; }
-  function isRoleSelectionAbility(roleId){ return !!roleSelectionSpec(roleId); }
+  function isRoleSelectionAbility(roleId){
+    const rid = safeText(roleId || "");
+    if (rid === "SHA_W2") return false;
+    return !!roleSelectionSpec(rid);
+  }
   function isRoleAbilityUsed(roleId){
     const spec = roleSelectionSpec(roleId);
     if (!spec || !state.userId) return false;
