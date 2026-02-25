@@ -2670,6 +2670,33 @@
     popEl.style.top = top + "px";
   }
 
+  function getZoomPrimaryCardEl(){
+    if (!zoomBackdrop || !zoomStage) return null;
+    if (zoomBackdrop.classList.contains("hidden")) return null;
+    return zoomStage.querySelector('.card72, .id72');
+  }
+
+  function placePopUnderAnchor(popEl, anchorEl, { gap = 10 } = {}){
+    if (!popEl || !anchorEl) return false;
+    const pad = 10;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const popRect = popEl.getBoundingClientRect();
+    const halfW = popRect.width / 2;
+    let x = anchorRect.left + (anchorRect.width / 2);
+    if (x - halfW < pad) x = pad + halfW;
+    if (x + halfW > vw - pad) x = (vw - pad) - halfW;
+    let top = anchorRect.bottom + Number(gap || 0);
+    if (top + popRect.height > vh - pad){
+      top = Math.max(pad, anchorRect.top - popRect.height - Number(gap || 0));
+    }
+    top = Math.max(pad, Math.min(top, vh - pad - popRect.height));
+    popEl.style.left = `${x}px`;
+    popEl.style.top = `${top}px`;
+    return true;
+  }
+
   function skipRoom3ActionAndStartAttack(){
     if (!canUseRoom3Action()) return;
     room3ActionUsed = true;
@@ -2752,26 +2779,12 @@
     }
     revealPop.classList.remove("hidden");
     if (!anchorEl){
+      const zoomAnchor = getZoomPrimaryCardEl();
+      if (placePopUnderAnchor(revealPop, zoomAnchor, { gap:10 })) return;
       placeFloatingPop(revealPop, window.innerWidth / 2, window.innerHeight / 2);
       return;
     }
-    const pad = 10;
-    const gap = 10;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const anchorRect = anchorEl.getBoundingClientRect();
-    const popRect = revealPop.getBoundingClientRect();
-    const halfW = popRect.width / 2;
-    let x = anchorRect.left + (anchorRect.width / 2);
-    if (x - halfW < pad) x = pad + halfW;
-    if (x + halfW > vw - pad) x = (vw - pad) - halfW;
-    let top = anchorRect.bottom + gap;
-    if (top + popRect.height > vh - pad){
-      top = Math.max(pad, anchorRect.top - popRect.height - gap);
-    }
-    top = Math.max(pad, Math.min(top, vh - pad - popRect.height));
-    revealPop.style.left = `${x}px`;
-    revealPop.style.top = `${top}px`;
+    placePopUnderAnchor(revealPop, anchorEl, { gap:10 });
   }
   function hideRevealPop(){
     revealPop.classList.add("hidden");
@@ -2964,6 +2977,9 @@
       roomActionPop.style.top = "";
       return;
     }
+
+    const zoomAnchor = getZoomPrimaryCardEl();
+    if (placePopUnderAnchor(roomActionPop, zoomAnchor, { gap:10 })) return;
 
     const pad = 10;
     const vw = window.innerWidth;
