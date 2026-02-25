@@ -11358,6 +11358,8 @@
     8: { "レイダー": 3, "シャドウ": 3, "シチズン": 2 },
     9: { "レイダー": 3, "シャドウ": 3, "シチズン": 3 },
     10:{ "レイダー": 3, "シャドウ": 3, "シチズン": 4 },
+    11:{ "レイダー": 4, "シャドウ": 4, "シチズン": 3 },
+    12:{ "レイダー": 4, "シャドウ": 4, "シチズン": 4 },
   };
 
   const state = {
@@ -11562,7 +11564,12 @@
       return sec;
     }
 
-    const roleSec = makeSection('正体カードリスト');
+    const currentCount = Number(latestPlayers.length || 0);
+    const currentRule = DEAL_RULE[currentCount] || null;
+    const roleTitle = currentRule
+      ? `正体カードリスト（🔶${Number(currentRule["レイダー"] || 0)}　🔷${Number(currentRule["シャドウ"] || 0)}　⬜${Number(currentRule["シチズン"] || 0)}）`
+      : '正体カードリスト';
+    const roleSec = makeSection(roleTitle);
     for (const group of byInitial.values()){
       const row = document.createElement('div');
       row.className = 'help-role-row';
