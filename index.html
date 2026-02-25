@@ -2517,6 +2517,11 @@
   let attackAbilityUsedTurnByRole = {};
   let attackAbilityUsageTurnOwnerUid = "";
   let turnStartBoardTurnKey = "";
+  let autoIdentityRevealTimer = null;
+  let autoIdentityRevealTimerKey = "";
+
+  const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
+  const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -5157,6 +5162,7 @@
           const seen = Number(identityRevealSeenByUid[uid] || 0);
           if (at <= seen) continue;
           identityRevealSeenByUid[uid] = at;
+          if (safeText(row?.identity?.revealedBy || "") === AUTO_IDENTITY_REVEAL_BY) continue;
           const rid = safeText(row?.identity?.roleId || "");
           const role = ROLE_BY_ID[rid];
           if (role){
@@ -5169,6 +5175,7 @@
       }
       equipCache = next;
       renderEquipmentDock();
+      evaluateAutoIdentityRevealTrigger();
     });
   }
   function isIdentityEquipItem(v){
@@ -7086,6 +7093,153 @@
     return dmg >= hp;
   }
 
+  function roleIdForUid(uid){
+    return safeText(state.hands?.[uid]?.roleId || "");
+  }
+
+  function factionForUid(uid){
+    const role = ROLE_BY_ID[roleIdForUid(uid)];
+    return safeText(role?.faction || "");
+  }
+
+  function isRoleAlive(roleId){
+    const rid = safeText(roleId || "");
+    if (!rid) return false;
+    return latestPlayers.some(p => roleIdForUid(p.id) === rid && !isPlayerEliminated(p.id));
+  }
+
+  function teamEliminationReached(factionName){
+    const teamPlayers = latestPlayers.filter(p => factionForUid(p.id) === factionName);
+    if (!teamPlayers.length) return false;
+    return teamPlayers.every(p => isPlayerEliminated(p.id));
+  }
+
+  function nonIdentityEquipCount(uid){
+    return listEquipForUid(uid).filter(it => !isIdentityEquipItem(it)).length;
+  }
+
+  function davidDistinctWinGearCount(uid){
+    const names = new Set(
+      listEquipForUid(uid)
+        .filter(it => !isIdentityEquipItem(it))
+        .map(it => safeText(it?.name || ""))
+        .filter(name => DAVID_WIN_GEAR_NAMES.has(name))
+    );
+    return names.size;
+  }
+
+  function autoIdentityRevealReason(){
+    if (!isGameStarted()) return "";
+
+    if (teamEliminationReached("レイダー")) return "all_raiders_eliminated";
+    if (teamEliminationReached("シャドウ")) return "all_shadows_eliminated";
+
+    if (isRoleAlive("CIT_B2")){
+      const others = latestPlayers.filter(p => roleIdForUid(p.id) !== "CIT_B2");
+      if (others.some(p => nonIdentityEquipCount(p.id) >= 5)) return "benjamin_other_5_equips";
+    }
+
+    const byronUid = latestPlayers.find(p => roleIdForUid(p.id) === "CIT_B1" && !isPlayerEliminated(p.id))?.id || "";
+    if (byronUid && nonIdentityEquipCount(byronUid) >= 5) return "byron_5_equips";
+
+    const davidUid = latestPlayers.find(p => roleIdForUid(p.id) === "CIT_D2" && !isPlayerEliminated(p.id))?.id || "";
+    if (davidUid && davidDistinctWinGearCount(davidUid) >= 3) return "david_3_unique_gears";
+
+    return "";
+  }
+
+  async function scheduleAutoIdentityReveal(reason){
+    const normalizedReason = safeText(reason || "");
+    if (!normalizedReason || !state.roomCode || !state.userId) return;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur || !(cur.gameStarted || cur.startedAt)) return cur;
+      if (cur.autoIdentityReveal && (cur.autoIdentityReveal.status === "scheduled" || cur.autoIdentityReveal.status === "revealed")) return cur;
+      const now = Date.now();
+      cur.autoIdentityReveal = {
+        status: "scheduled",
+        reason: normalizedReason,
+        requestedBy: state.userId,
+        requestedAt: now,
+        revealAt: now + 3000
+      };
+      return cur;
+    });
+  }
+
+  async function executeAutoIdentityRevealIfNeeded(){
+    if (!state.roomCode) return;
+    const auto = state.room?.autoIdentityReveal;
+    if (!auto || auto.status !== "scheduled") return;
+
+    const equipRef = ref(db, `rooms/${state.roomCode}/equipment`);
+    await runTransaction(equipRef, (cur) => {
+      const next = (cur && typeof cur === "object") ? { ...cur } : {};
+      const now = Date.now();
+      for (const p of latestPlayers){
+        const uid = safeText(p?.id || "");
+        const roleId = roleIdForUid(uid);
+        if (!uid || !roleId) continue;
+        const row = (next[uid] && typeof next[uid] === "object") ? { ...next[uid] } : {};
+        row.identity = {
+          kind: "identity",
+          roleId,
+          uid,
+          revealedAt: now,
+          revealedBy: AUTO_IDENTITY_REVEAL_BY
+        };
+        next[uid] = row;
+      }
+      return next;
+    });
+
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    await runTransaction(roomRef, (cur) => {
+      if (!cur || !cur.autoIdentityReveal || cur.autoIdentityReveal.status !== "scheduled") return cur;
+      cur.autoIdentityReveal = {
+        ...cur.autoIdentityReveal,
+        status: "revealed",
+        revealedAt: Date.now(),
+        revealedBy: state.userId
+      };
+      return cur;
+    });
+  }
+
+  function syncAutoIdentityRevealTimer(){
+    const auto = state.room?.autoIdentityReveal;
+    if (!auto || auto.status !== "scheduled"){
+      if (autoIdentityRevealTimer){
+        clearTimeout(autoIdentityRevealTimer);
+        autoIdentityRevealTimer = null;
+      }
+      autoIdentityRevealTimerKey = "";
+      return;
+    }
+    const revealAt = Number(auto.revealAt || 0);
+    if (!revealAt) return;
+    const timerKey = `${revealAt}:${safeText(auto.reason || "")}`;
+    if (autoIdentityRevealTimer && autoIdentityRevealTimerKey === timerKey) return;
+    if (autoIdentityRevealTimer){
+      clearTimeout(autoIdentityRevealTimer);
+      autoIdentityRevealTimer = null;
+    }
+    autoIdentityRevealTimerKey = timerKey;
+    const delay = Math.max(0, revealAt - Date.now());
+    autoIdentityRevealTimer = setTimeout(() => {
+      autoIdentityRevealTimer = null;
+      executeAutoIdentityRevealIfNeeded().catch(() => {});
+    }, delay);
+  }
+
+  function evaluateAutoIdentityRevealTrigger(){
+    if (!isGameStarted()) return;
+    if (state.room?.autoIdentityReveal && (state.room.autoIdentityReveal.status === "scheduled" || state.room.autoIdentityReveal.status === "revealed")) return;
+    const reason = autoIdentityRevealReason();
+    if (!reason) return;
+    scheduleAutoIdentityReveal(reason).catch(() => {});
+  }
+
   function hasGuardianAngelShield(uid){
     const targetUid = safeText(uid);
     if (!targetUid) return false;
@@ -8583,6 +8737,8 @@
           }
         }, 2200);
       }
+
+      evaluateAutoIdentityRevealTrigger();
 
       renderEquipmentDock();
       const myRoleBack = myRoleCard?.querySelector('.role-back');
@@ -12164,6 +12320,8 @@
       restorePendingMoveChoiceFromSeat();
       updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
+      syncAutoIdentityRevealTimer();
+      evaluateAutoIdentityRevealTrigger();
       syncTurnStartBoard();
     });
   }
@@ -12184,6 +12342,7 @@
       renderHands();
       tryRestorePendingGreenSession();
       tryRestorePendingCardTargetSession().catch(() => {});
+      evaluateAutoIdentityRevealTrigger();
     });
   }
 
@@ -12573,6 +12732,7 @@
       renderHpBoard();
       renderPositionLine();
       renderLastAttackToMeHeader();
+      evaluateAutoIdentityRevealTrigger();
     });
   }
 
@@ -13159,6 +13319,7 @@
       deckState: freshDeckState,
       guardianAngelShield: null,
       erikaSealedTargets: null,
+      autoIdentityReveal: null,
       gameStarted: true,
       startedAt: Date.now(),
       playerCountAtStart: n,
@@ -13245,11 +13406,17 @@
       remove(ref(db, `${base}/attackLootPending`)),
       remove(ref(db, `${base}/counterPromptState`)),
       remove(ref(db, `${base}/erikaSealedTargets`)),
+      remove(ref(db, `${base}/autoIdentityReveal`)),
     ]);
 
     deckCache = null;
     equipCache = {};
     damageCache = {};
+    if (autoIdentityRevealTimer){
+      clearTimeout(autoIdentityRevealTimer);
+      autoIdentityRevealTimer = null;
+    }
+    autoIdentityRevealTimerKey = "";
 
     state.seatedTable = null;
     state.spectating = false;
