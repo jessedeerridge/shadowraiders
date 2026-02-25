@@ -5284,13 +5284,14 @@
       : null;
     const normalizedDefeated = [...new Set(defeatedUids)];
     const normalizedTargets = [...new Set(targetUids)];
+    const endTurnAfterResolve = !!raw.endTurnAfterResolve;
     if (!uid) return null;
     if (mode === "byron"){
       if (!normalizedTargets.length) return null;
-      return { uid, mode, targetUids:normalizedTargets, selectedByOwner:selectedByOwner || {}, at:Number(raw.at || Date.now()) };
+      return { uid, mode, targetUids:normalizedTargets, selectedByOwner:selectedByOwner || {}, endTurnAfterResolve, at:Number(raw.at || Date.now()) };
     }
     if (!normalizedDefeated.length) return null;
-    return { uid, mode:"defeated", defeatedUids:normalizedDefeated, selected, at:Number(raw.at || Date.now()) };
+    return { uid, mode:"defeated", defeatedUids:normalizedDefeated, selected, endTurnAfterResolve, at:Number(raw.at || Date.now()) };
   }
 
   async function setAttackLootPending(payload){
@@ -5318,7 +5319,7 @@
     await setAttackLootPending(null);
   }
 
-  async function createOrMergeAttackLootPending(defeatedUids = []){
+  async function createOrMergeAttackLootPending(defeatedUids = [], options = {}){
     const uid = safeText(state.userId || "");
     if (!uid) return;
     const list = (defeatedUids || []).map(v => safeText(v || "")).filter(v => v && v !== uid);
@@ -5328,6 +5329,7 @@
       uid,
       defeatedUids:[...merged],
       selected: pendingAttackLoot?.selected || null,
+      endTurnAfterResolve: !!options.endTurnAfterResolve,
       at: Date.now()
     };
     await setAttackLootPending(pendingAttackLoot);
@@ -5588,6 +5590,7 @@
 
   async function commitAttackLootSelection(selection){
     if (!pendingAttackLoot) return;
+    const shouldEndTurnAfterResolve = !!pendingAttackLoot.endTurnAfterResolve;
     if (safeText(pendingAttackLoot.mode || "") === "byron"){
       const selectedByOwner = pendingAttackLoot.selectedByOwner || {};
       const targets = (pendingAttackLoot.targetUids || []).filter(uid => !!selectedByOwner[uid]);
@@ -5610,7 +5613,9 @@
     }
     if (selection?.noSteal){
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "奪わなくて本当にいいですか。", async () => {
+        const turnOwnerUid = currentTurnPlayerId();
         await clearAttackLootPending();
+        if (shouldEndTurnAfterResolve) await doEndTurn(turnOwnerUid);
       }, { fixedLower:true, closeZoomOnNo:true });
       return;
     }
@@ -5621,9 +5626,11 @@
     closeEquipmentDockBeforeLootResolve();
     const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
     if (ok){
+      const turnOwnerUid = currentTurnPlayerId();
       await clearAttackLootPending();
       closeZoom();
       renderEquipmentDock();
+      if (shouldEndTurnAfterResolve) await doEndTurn(turnOwnerUid);
     }
   }
 
@@ -6394,6 +6401,7 @@
       uid: state.userId,
       targetUids: attackTargetUids,
       hasRosary: hasMyEquipmentByName("銀のロザリオ"),
+      endTurnAfterLootResolve: false,
       at: Date.now()
     };
     const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
@@ -6480,6 +6488,9 @@
         }
       }
 
+      if (lastAttackWatch && safeText(lastAttackWatch.uid || "") === safeText(state.userId || "")){
+        lastAttackWatch.endTurnAfterLootResolve = (roleId === "RAI_F3" || roleId === "SHA_V2");
+      }
       await finalizePendingAttackResolution(false, true);
       if (roleId !== "SHA_U3") await resolveAttackAbilityReveal(role);
 
@@ -6577,12 +6588,18 @@
         if (attackResultChoiceBusy) return;
         attackResultChoiceBusy = true;
         try {
+          if (lastAttackWatch && safeText(lastAttackWatch.uid || "") === safeText(state.userId || "")){
+            lastAttackWatch.endTurnAfterLootResolve = true;
+          }
           await finalizePendingAttackResolution(true, true);
         } finally {
           attackResultChoiceBusy = false;
         }
       }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
       return;
+    }
+    if (lastAttackWatch && safeText(lastAttackWatch.uid || "") === safeText(state.userId || "")){
+      lastAttackWatch.endTurnAfterLootResolve = true;
     }
     await finalizePendingAttackResolution(true, true);
   });
@@ -8736,7 +8753,9 @@
           if (shouldUseRosaryLoot){
             runRosaryAutoLootFlow(attackDefeatedUids).catch(() => {});
           } else {
-            createOrMergeAttackLootPending(attackDefeatedUids).catch(() => {});
+            createOrMergeAttackLootPending(attackDefeatedUids, {
+              endTurnAfterResolve: !!lastAttackWatch?.endTurnAfterLootResolve
+            }).catch(() => {});
           }
         }, 2200);
       }
