@@ -1494,20 +1494,9 @@
     position:relative;
     width:72px;
     height:108px;
-    zoom:var(--zoom, 4);
+    transform:scale(var(--zoom, 4));
     transform-origin:center;
     transition:transform .35s ease;
-  }
-  @supports not (zoom:1){
-    .zoom-stage{
-      transform:scale(var(--zoom, 4));
-    }
-    .zoom-backdrop.green-reveal-active .zoom-stage{
-      transform:translateX(-90px) scale(var(--zoom, 4));
-    }
-    .zoom-backdrop.david-select-active .zoom-stage{
-      transform:translateX(-90px) scale(var(--zoom, 4));
-    }
   }
   .zoom-stage.zoom-stage-multi{
     width:min(98vw, 1400px);
@@ -1516,10 +1505,10 @@
     transition:none;
   }
   .zoom-backdrop.green-reveal-active .zoom-stage{
-    transform:translateX(calc(-90px / var(--zoom, 4)));
+    transform:translateX(-90px) scale(var(--zoom, 4));
   }
   .zoom-backdrop.david-select-active .zoom-stage{
-    transform:translateX(calc(-90px / var(--zoom, 4)));
+    transform:translateX(-90px) scale(var(--zoom, 4));
   }
   .zoom-stage .card72,
   .zoom-stage .id72{
@@ -2990,11 +2979,15 @@
     if (fixedLower){
       roomActionPop.style.left = "";
       roomActionPop.style.top = "";
+      roomActionPop.style.transform = "";
       return;
     }
 
     const zoomAnchor = getZoomPrimaryCardEl();
-    if (placePopUnderAnchor(roomActionPop, zoomAnchor, { gap:10 })) return;
+    if (placePopUnderAnchor(roomActionPop, zoomAnchor, { gap:10 })){
+      roomActionPop.style.transform = "translateX(-50%)";
+      return;
+    }
 
     const pad = 10;
     const vw = window.innerWidth;
@@ -3010,6 +3003,7 @@
     top = Math.max(pad, Math.min(top, vh - pad - r.height));
     roomActionPop.style.left = x + "px";
     roomActionPop.style.top  = top + "px";
+    roomActionPop.style.transform = "translate(-50%,-10px)";
   }
 
   function hideIdentityPrompt(){
