@@ -6514,6 +6514,10 @@
       const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
       const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
+      if (roleId === "RAI_F3"){
+        await requestAttackLootAutoEndForCurrentTurn({ syncPending:false });
+      }
+
       if (roleId === "CIT_B1"){
         const byronTargets = (pending?.rows || [])
           .filter(item => Math.max(0, Number(item?.damage || 0)) >= 2)
