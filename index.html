@@ -6265,8 +6265,7 @@
         await setRoleAbilitySelectionState({
           roleId,
           actorUid: state.userId,
-          privateToActor: (roleId === "SHA_U2"),
-          endTurnAfterResolve: roleId === "RAI_E3"
+          privateToActor: (roleId === "SHA_U2")
         });
       }
       hideRevealPop();
@@ -6293,8 +6292,7 @@
         roleId: myRoleId,
         actorUid: state.userId,
         justRevealed:true,
-        privateToActor: (myRoleId === "RAI_E3" || myRoleId === "SHA_U2"),
-        endTurnAfterResolve: myRoleId === "RAI_E3"
+        privateToActor: (myRoleId === "RAI_E3" || myRoleId === "SHA_U2")
       });
     }
     if (myRoleId === "CIT_A1"){
