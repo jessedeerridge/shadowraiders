@@ -6493,7 +6493,18 @@
       }
     };
 
+    const roleId = safeText(myRoleInfo()?.id || "");
+    const isVampireSingleButton = roleId === "SHA_V2" && !!spec && isMyIdentityRevealed() && !isErikaSealedPlayer(state.userId);
     if (attackResultChoiceBusy) return;
+    if (isVampireSingleButton){
+      attackResultChoiceBusy = true;
+      try {
+        await runKeepAbility();
+      } finally {
+        attackResultChoiceBusy = false;
+      }
+      return;
+    }
     showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
       if (attackResultChoiceBusy) return;
       attackResultChoiceBusy = true;
@@ -8110,8 +8121,12 @@
     btnAttackResultExcalibur?.classList.toggle("hidden", !exMeta.allowExcaliburButton);
     btnAttackResultEnd?.classList.toggle("hidden", isVampireSingleButton);
     if (btnAttackResultKeep){
+      btnAttackResultKeep.classList.remove("primary");
+      btnAttackResultKeep.classList.add("ghost");
       if (isVampireSingleButton){
         btnAttackResultKeep.textContent = "OK吸血";
+        btnAttackResultKeep.classList.remove("ghost");
+        btnAttackResultKeep.classList.add("primary");
       }
       btnAttackResultKeep.classList.toggle("hidden", (!isVampireSingleButton && sealedVictim) || shouldHideKeepAsSecondAttack);
     }
