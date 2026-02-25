@@ -1452,10 +1452,20 @@
     position:relative;
     width:72px;
     height:108px;
-    transform:scale(var(--zoom, 4));
+    zoom:var(--zoom, 4);
     transform-origin:center;
-    will-change:transform;
     transition:transform .35s ease;
+  }
+  @supports not (zoom:1){
+    .zoom-stage{
+      transform:scale(var(--zoom, 4));
+    }
+    .zoom-backdrop.green-reveal-active .zoom-stage{
+      transform:translateX(-90px) scale(var(--zoom, 4));
+    }
+    .zoom-backdrop.david-select-active .zoom-stage{
+      transform:translateX(-90px) scale(var(--zoom, 4));
+    }
   }
   .zoom-stage.zoom-stage-multi{
     width:min(98vw, 1400px);
@@ -1464,10 +1474,10 @@
     transition:none;
   }
   .zoom-backdrop.green-reveal-active .zoom-stage{
-    transform:translateX(-90px) scale(var(--zoom, 4));
+    transform:translateX(calc(-90px / var(--zoom, 4)));
   }
   .zoom-backdrop.david-select-active .zoom-stage{
-    transform:translateX(-90px) scale(var(--zoom, 4));
+    transform:translateX(calc(-90px / var(--zoom, 4)));
   }
   .zoom-stage .card72,
   .zoom-stage .id72{
