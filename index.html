@@ -753,6 +753,18 @@
   }
   .hp-cell::after{ display:none; } /* セル線を消す */
 
+  /* HPボード内のコマ位置微調整 */
+  .hp-cell .chip16{
+    transform:translateY(1px); /* わずかに上寄りに見えるぶんを下へ */
+  }
+  .hp-cell[data-damage="4"],
+  .hp-cell[data-damage="3"],
+  .hp-cell[data-damage="2"],
+  .hp-cell[data-damage="1"],
+  .hp-cell[data-damage="0"]{
+    transform:translateX(-10px); /* room4以降は左へ10px */
+  }
+
 .chip16{
     width:18px;height:18px;
     border-radius:7px;
