@@ -11,6 +11,7 @@
     --z-dice-roll-overlay: 12050;
     --z-role-flash-overlay: 12040;
     --equip-dock-height: 220px;
+    --room-action-lower-bottom: 160px;
   }
   header{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #eee; position:sticky; top:0; z-index:272; background:#fff;}
   h1{margin:0;font-size:18px;}
@@ -1278,7 +1279,7 @@
 #roomActionPop.lower-mode{
   left:50% !important;
   top:auto !important;
-  bottom:160px;
+  bottom:var(--room-action-lower-bottom, 160px);
   transform:translateX(-50%);
 }
 #roomActionPop.lower-mode .caret{ display:none; }
@@ -2397,24 +2398,49 @@
   const greenShareSubtitle = document.getElementById("greenShareSubtitle");
   const greenShareActions = document.getElementById("greenShareActions");
   const greenShareCloseBtn = document.getElementById("greenShareCloseBtn");
+  function visibleRect(el){
+    if (!el) return null;
+    const rect = el.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden") return null;
+    return rect;
+  }
+
+  function lowerOverlayBottomOffset({ base = 16, gap = 12 } = {}){
+    const equipRect = visibleRect(equipDock);
+    if (!equipRect) return Math.max(0, Number(base) || 0);
+    const aboveEquip = Math.round(window.innerHeight - equipRect.top + gap);
+    return Math.max(Math.max(0, Number(base) || 0), aboveEquip);
+  }
+
+  function syncRoomActionLowerBottom(){
+    const bottom = lowerOverlayBottomOffset({ base:160, gap:10 });
+    document.documentElement.style.setProperty("--room-action-lower-bottom", `${bottom}px`);
+  }
+
   function updateGreenShareDockPosition(){
     if (!greenShareDock || greenShareDock.classList.contains("hidden")) return;
     const gap = 10;
     const viewportPadding = 12;
     let top = 500;
     const zoomRect = zoomStage?.getBoundingClientRect?.();
-    if (zoomRect && Number.isFinite(zoomRect.bottom) && zoomRect.height > 0){
+    const zoomBackdropVisible = !!visibleRect(zoomBackdrop);
+    if (zoomBackdropVisible && zoomRect && Number.isFinite(zoomRect.bottom) && zoomRect.height > 0){
       top = Math.round(zoomRect.bottom + gap);
     }
     const dockRect = greenShareDock.getBoundingClientRect();
     const dockHeight = (Number.isFinite(dockRect.height) && dockRect.height > 0) ? dockRect.height : 0;
-    const maxTop = Math.max(viewportPadding, Math.round(window.innerHeight - dockHeight - viewportPadding));
+    const lowerBottom = lowerOverlayBottomOffset({ base:viewportPadding, gap:10 });
+    const maxTop = Math.max(viewportPadding, Math.round(window.innerHeight - dockHeight - lowerBottom));
     const clampedTop = Math.max(viewportPadding, Math.min(top, maxTop));
     greenShareDock.style.top = `${clampedTop}px`;
   }
   window.addEventListener("resize", () => {
+    syncRoomActionLowerBottom();
     updateGreenShareDockPosition();
   });
+  syncRoomActionLowerBottom();
   if (greenShareDock && greenShareDock.parentElement === zoomBackdrop){
     document.body.appendChild(greenShareDock);
   }
@@ -2958,6 +2984,7 @@
     roomActionPop.classList.toggle("hide-actions", hideActions);
     roomActionPop.classList.toggle("text-fit", fitText);
     roomActionPop.classList.toggle("no-wrap", noWrap);
+    syncRoomActionLowerBottom();
 
     if (fixedLower){
       roomActionPop.style.left = "";
