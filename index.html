@@ -240,10 +240,29 @@
   .help-section{padding:6px 0 10px;}
   .help-section + .help-section{border-top:1px solid rgba(0,0,0,.16);}
   .help-section-title{font-weight:900;font-size:13px;margin:0 0 8px;}
-  .help-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--card-w),1fr));gap:8px;}
-  .help-card-grid .card72,.help-card-grid .id72{margin:0 auto;}
+  .help-card-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;justify-items:center;}
+  .help-card-slot{
+    width:calc(var(--card-w) * 1.5);
+    height:calc(var(--card-h) * 1.5);
+    position:relative;
+  }
+  .help-card-slot .card72,.help-card-slot .id72,
+  .help-role-row .role-card-wrap .id72{
+    position:absolute;
+    top:0;
+    left:0;
+    transform:scale(1.5);
+    transform-origin:top left;
+    margin:0;
+  }
   .help-section .card72,.help-section .id72{width:var(--card-w);height:var(--card-h);}
-  .help-role-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+  .help-role-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;}
+  .help-role-row .role-card-wrap{
+    width:calc(var(--card-w) * 1.5);
+    height:calc(var(--card-h) * 1.5);
+    flex:0 0 auto;
+    position:relative;
+  }
   .help-role-row:last-child{margin-bottom:0;}
 
   .role-row{
@@ -11551,6 +11570,8 @@
       grid.className = 'help-card-grid';
       sortDeckForHelp(deck).forEach((cardData) => {
         const cardObj = toCardObj(cardData);
+        const slot = document.createElement('div');
+        slot.className = 'help-card-slot';
         const card = document.createElement('div');
         card.className = `card72 wb-front ${theme === 'black' ? 'wb-black' : theme === 'green' ? 'wb-green' : 'wb-white'}`;
         card.innerHTML = buildWbFrontHTML(cardObj, theme);
@@ -11576,7 +11597,8 @@
             };
           }
         });
-        grid.appendChild(card);
+        slot.appendChild(card);
+        grid.appendChild(slot);
       });
       sec.appendChild(grid);
       helpBody.appendChild(sec);
