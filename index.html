@@ -5320,6 +5320,13 @@
     return req;
   }
 
+  function requestAttackLootAutoEnd(turnOwnerUid = ""){
+    pendingAttackLootEndTurnRequest = {
+      turnOwnerUid: safeText(turnOwnerUid || "") || safeText(currentTurnPlayerId() || ""),
+      expiresAt: Date.now() + 15000
+    };
+  }
+
   async function setAttackLootPending(payload){
     const roomCode = safeText(state.roomCode || "");
     const uid = safeText(state.userId || "");
@@ -6514,6 +6521,7 @@
         const preview = attackEliminationPreview(pending?.rows || []);
         if (preview.allAttackedEliminated){
           const turnOwnerUid = currentTurnPlayerId();
+          requestAttackLootAutoEnd(turnOwnerUid);
           await finalizePendingAttackResolution(false, true);
           showRevealPopAt(null, {
             mode:"notice",
@@ -6561,6 +6569,14 @@
           await doEndTurn(turnOwnerUid);
         }
         return;
+      }
+
+      if (roleId === "RAI_F3"){
+        const turnOwnerUid = currentTurnPlayerId();
+        requestAttackLootAutoEnd(turnOwnerUid);
+        if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
+          await doEndTurn(turnOwnerUid);
+        }
       }
     };
 
@@ -6627,12 +6643,6 @@
     const pending = pendingAttackResolution;
     const spec = attackAbilitySpecFromRows(pending?.rows || []);
     const shouldConfirmEmmaEnd = isMyRole("RAI_E3") && isMyIdentityRevealed();
-    const requestAttackLootAutoEnd = () => {
-      pendingAttackLootEndTurnRequest = {
-        turnOwnerUid: safeText(currentTurnPlayerId() || ""),
-        expiresAt: Date.now() + 15000
-      };
-    };
     if (spec || shouldConfirmEmmaEnd){
       if (attackResultChoiceBusy) return;
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "本当に終了しますか。", async () => {
