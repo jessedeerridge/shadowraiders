@@ -752,7 +752,7 @@
 
     display:flex;
     align-items:center;
-    justify-content:flex-start;
+    justify-content:center;
     flex-wrap:nowrap;
     gap:6px;
 
@@ -760,6 +760,9 @@
     box-sizing:border-box;
 
     background:transparent; /* セル背景も透明 */
+  }
+  .hp-cell.hp-cell-room4plus{
+    padding-right:calc(var(--hp-cell-pad-x) + 50px);
   }
   .hp-cell::after{ display:none; } /* セル線を消す */
 
@@ -6895,6 +6898,7 @@
     for (let row=15; row>=0; row--){
       const cell = document.createElement("div");
       cell.className = "hp-cell";
+      if (row >= 4) cell.classList.add("hp-cell-room4plus");
       cell.dataset.damage = String(row);
       hpBoard.appendChild(cell);
     }
