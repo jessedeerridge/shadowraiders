@@ -2484,7 +2484,6 @@
   let suppressTurnButtonUntilNextTurnStart = false;
   let uranusMeteorResolved = false;
   let vampireHiddenAttackSuccess = false;
-  let vampireHealScheduled = false;
   let pendingEquipAction = null;
   let pendingCardTargetSelection = null;
   let danielAutoRevealTimer = null;
@@ -3493,22 +3492,13 @@
     return false;
   }
 
-  function scheduleVampireHeal(){
-    if (!isMyRole("SHA_V2")) return;
-    if (isMyAbilitySealed()) return;
-    if (vampireHealScheduled) return;
-    vampireHealScheduled = true;
-    setTimeout(async () => {
-      await emitRoleFlashEvent("SHA_V2", "vampire_heal");
-      await healDamageToPlayer(state.userId, 2, "vampire_role_heal");
-    }, 1500);
-  }
-
-  function maybeResolveVampireHiddenHealOnReveal(){
+  async function resolveVampireHealAfterAttack(){
     if (!isMyRole("SHA_V2")) return;
     if (!vampireHiddenAttackSuccess) return;
-    if (!isMyTurn()) return;
-    scheduleVampireHeal();
+    if (isMyAbilitySealed()) return;
+    vampireHiddenAttackSuccess = false;
+    await emitRoleFlashEvent("SHA_V2", "vampire_heal");
+    await healDamageToPlayer(state.userId, 2, "vampire_role_heal");
   }
 
   function clearCarolTurnHealTimer(){
@@ -3684,7 +3674,7 @@
       attackDone: false,
       updatedAt: Date.now()
     });
-    const message = ulsterExtraAttackGuideShown
+    const message = (ulsterExtraAttackGuideShown || isMyIdentityRevealed())
       ? "デル・フリス：もう一度攻撃対象を選んでください。"
       : "デル・フリス：もう一度攻撃対象を選んでください。\n※攻撃するプレイヤーを選んだ後に正体を公開します。\n公開をやめる場合は手番を終わる。";
     showTurnHint(message, { multiline:true });
@@ -4214,7 +4204,7 @@
 
     await markRoleAbilityUsed(roleId);
     await setRoleAbilitySelectionState(null);
-    if (!!entry?.endTurnAfterResolve){
+    if (roleId === "RAI_E3" || !!entry?.endTurnAfterResolve){
       await doEndTurn();
     }
   }
@@ -5693,7 +5683,6 @@
       if (revealedBy) next.revealedBy = revealedBy;
       return next;
     });
-    maybeResolveVampireHiddenHealOnReveal();
     if (revealedNow && safeText(my.roleId) === "CIT_C2" && !isMyAbilitySealed()){
       await healDamageToPlayer(state.userId, 2, "carol_reveal_heal");
       if (isMyTurn()){
@@ -5921,6 +5910,10 @@
       e.stopPropagation();
       return;
     }
+    if (myRoleId === "RAI_G2" && isMyTurn()){
+      e.stopPropagation();
+      return;
+    }
     if (isErikaSealedPlayer(state.userId) && !isMyIdentityRevealed()){
       e.stopPropagation();
       return;
@@ -6131,6 +6124,14 @@
       showRevealPopAt(idCard, { mode: "notice", message: "今は使えません。" });
       return;
     }
+    if (myRoleId === "RAI_E1"){
+      const roomActionState = turnRoomActionState();
+      if (!!turnState()?.deckDrawDone || roomActionState.room3ActionUsed || roomActionState.room4StealUsed){
+        e.stopPropagation();
+        showRevealPopAt(idCard, { mode: "notice", message: "今は使えません。" });
+        return;
+      }
+    }
     if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && moved){
       const message = START_ONLY_ABILITY_ROLE_IDS.has(myRoleId)
         ? "手番の初めにだけ使えます。"
@@ -6261,7 +6262,11 @@
           showRevealPopAt(null, { mode:"notice", message:((["RAI_E3","SHA_U2","CIT_B2"].includes(roleId)) ? "今は使えません。" : "今は公開できません。") });
           return;
         }
-        await setRoleAbilitySelectionState({ roleId, actorUid: state.userId, privateToActor: (roleId === "SHA_U2") });
+        await setRoleAbilitySelectionState({
+          roleId,
+          actorUid: state.userId,
+          privateToActor: (roleId === "SHA_U2")
+        });
       }
       hideRevealPop();
       return;
@@ -6283,7 +6288,12 @@
         showRevealPopAt(null, { mode:"notice", message:((["RAI_E3","SHA_U2","CIT_B2"].includes(myRoleId)) ? "今は使えません。" : "今は公開できません。") });
         return;
       }
-      await setRoleAbilitySelectionState({ roleId: myRoleId, actorUid: state.userId, justRevealed:true, privateToActor: (myRoleId === "RAI_E3" || myRoleId === "SHA_U2") });
+      await setRoleAbilitySelectionState({
+        roleId: myRoleId,
+        actorUid: state.userId,
+        justRevealed:true,
+        privateToActor: (myRoleId === "RAI_E3" || myRoleId === "SHA_U2")
+      });
     }
     if (myRoleId === "CIT_A1"){
       await markAliceAbilityUsed();
@@ -6473,9 +6483,28 @@
         await startUlsterExtraAttackSelection();
         return;
       }
+      if (roleId === "SHA_V2"){
+        await resolveVampireHealAfterAttack();
+        const turnOwnerUid = currentTurnPlayerId();
+        if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
+          await doEndTurn(turnOwnerUid);
+        }
+        return;
+      }
     };
 
+    const roleId = safeText(myRoleInfo()?.id || "");
+    const isVampireSingleButton = roleId === "SHA_V2" && !!spec && isMyIdentityRevealed() && !isErikaSealedPlayer(state.userId);
     if (attackResultChoiceBusy) return;
+    if (isVampireSingleButton){
+      attackResultChoiceBusy = true;
+      try {
+        await runKeepAbility();
+      } finally {
+        attackResultChoiceBusy = false;
+      }
+      return;
+    }
     showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "", async () => {
       if (attackResultChoiceBusy) return;
       attackResultChoiceBusy = true;
@@ -7223,7 +7252,6 @@
     suppressSelfTurnStartPulse = false;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
-    vampireHealScheduled = false;
     hideRoomActionPop();
     if (!hasMatchingPending){
       hideAttackResultPop();
@@ -8089,9 +8117,17 @@
     const shouldHideKeepAsSecondAttack = !spec
       && (roleId === "CIT_C1" || roleId === "SHA_U3")
       && isAttackAbilityUsedThisTurn(roleId);
+    const isVampireSingleButton = roleId === "SHA_V2" && !!spec && isMyIdentityRevealed() && !sealedVictim;
     btnAttackResultExcalibur?.classList.toggle("hidden", !exMeta.allowExcaliburButton);
-    btnAttackResultEnd?.classList.remove("hidden");
-    btnAttackResultKeep?.classList.toggle("hidden", sealedVictim || shouldHideKeepAsSecondAttack);
+    btnAttackResultEnd?.classList.toggle("hidden", isVampireSingleButton);
+    if (btnAttackResultKeep){
+      btnAttackResultKeep.classList.remove("primary");
+      btnAttackResultKeep.classList.add("ghost");
+      if (isVampireSingleButton){
+        btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel("吸血"))}</span>`;
+      }
+      btnAttackResultKeep.classList.toggle("hidden", (!isVampireSingleButton && sealedVictim) || shouldHideKeepAsSecondAttack);
+    }
     attackResultChoiceBusy = false;
     attackResultPop.classList.remove("hidden");
   }
@@ -10700,12 +10736,8 @@
         cachePendingAttackResolution(pendingAttackResolution);
         await upsertPendingAttackResolution(resolvedRows, pendingTurnKey, pendingAttackResultMeta);
         showAttackResultPop(resolvedRows);
-        if (dealtDamage && isMyRole("SHA_V2") && !isMyAbilitySealed()){
-          if (isMyIdentityRevealed()){
-            scheduleVampireHeal();
-          } else {
-            vampireHiddenAttackSuccess = true;
-          }
+        if (dealtDamage && isMyRole("SHA_V2")){
+          vampireHiddenAttackSuccess = true;
         }
       });
     }, stopDelayMs);
