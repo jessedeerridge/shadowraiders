@@ -5284,13 +5284,15 @@
       : null;
     const normalizedDefeated = [...new Set(defeatedUids)];
     const normalizedTargets = [...new Set(targetUids)];
+    const endTurnAfterResolve = !!raw.endTurnAfterResolve;
+    const endTurnOwnerUid = safeText(raw.endTurnOwnerUid || "");
     if (!uid) return null;
     if (mode === "byron"){
       if (!normalizedTargets.length) return null;
-      return { uid, mode, targetUids:normalizedTargets, selectedByOwner:selectedByOwner || {}, at:Number(raw.at || Date.now()) };
+      return { uid, mode, targetUids:normalizedTargets, selectedByOwner:selectedByOwner || {}, endTurnAfterResolve, endTurnOwnerUid, at:Number(raw.at || Date.now()) };
     }
     if (!normalizedDefeated.length) return null;
-    return { uid, mode:"defeated", defeatedUids:normalizedDefeated, selected, at:Number(raw.at || Date.now()) };
+    return { uid, mode:"defeated", defeatedUids:normalizedDefeated, selected, endTurnAfterResolve, endTurnOwnerUid, at:Number(raw.at || Date.now()) };
   }
 
   async function setAttackLootPending(payload){
@@ -5318,16 +5320,20 @@
     await setAttackLootPending(null);
   }
 
-  async function createOrMergeAttackLootPending(defeatedUids = []){
+  async function createOrMergeAttackLootPending(defeatedUids = [], options = {}){
     const uid = safeText(state.userId || "");
     if (!uid) return;
     const list = (defeatedUids || []).map(v => safeText(v || "")).filter(v => v && v !== uid);
     if (!list.length) return;
+    const endTurnAfterResolve = !!options.endTurnAfterResolve;
+    const endTurnOwnerUid = safeText(options.endTurnOwnerUid || "");
     const merged = new Set([...(pendingAttackLoot?.defeatedUids || []), ...list]);
     pendingAttackLoot = {
       uid,
       defeatedUids:[...merged],
       selected: pendingAttackLoot?.selected || null,
+      endTurnAfterResolve: !!(pendingAttackLoot?.endTurnAfterResolve || endTurnAfterResolve),
+      endTurnOwnerUid: endTurnOwnerUid || safeText(pendingAttackLoot?.endTurnOwnerUid || ""),
       at: Date.now()
     };
     await setAttackLootPending(pendingAttackLoot);
@@ -5588,6 +5594,8 @@
 
   async function commitAttackLootSelection(selection){
     if (!pendingAttackLoot) return;
+    const endTurnAfterResolve = !!pendingAttackLoot.endTurnAfterResolve;
+    const endTurnOwnerUid = safeText(pendingAttackLoot.endTurnOwnerUid || "");
     if (safeText(pendingAttackLoot.mode || "") === "byron"){
       const selectedByOwner = pendingAttackLoot.selectedByOwner || {};
       const targets = (pendingAttackLoot.targetUids || []).filter(uid => !!selectedByOwner[uid]);
@@ -5611,6 +5619,9 @@
     if (selection?.noSteal){
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "奪わなくて本当にいいですか。", async () => {
         await clearAttackLootPending();
+        if (endTurnAfterResolve && endTurnOwnerUid && currentTurnPlayerId() === endTurnOwnerUid){
+          await doEndTurn(endTurnOwnerUid);
+        }
       }, { fixedLower:true, closeZoomOnNo:true });
       return;
     }
@@ -5624,6 +5635,9 @@
       await clearAttackLootPending();
       closeZoom();
       renderEquipmentDock();
+      if (endTurnAfterResolve && endTurnOwnerUid && currentTurnPlayerId() === endTurnOwnerUid){
+        await doEndTurn(endTurnOwnerUid);
+      }
     }
   }
 
@@ -6501,10 +6515,34 @@
       }
       if (roleId === "SHA_V2"){
         await resolveVampireHealAfterAttack();
-        if (!hasMyEquipmentByName("銀のロザリオ") && eliminationPreview.eliminatedUids.length){
-          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids);
+        const turnOwnerUid = safeText(currentTurnPlayerId() || "");
+        const shouldWaitForLootChoice = !!turnOwnerUid
+          && !hasMyEquipmentByName("銀のロザリオ")
+          && eliminationPreview.eliminatedUids.length > 0;
+        if (shouldWaitForLootChoice){
+          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids, {
+            endTurnAfterResolve: true,
+            endTurnOwnerUid: turnOwnerUid
+          });
+          return;
         }
-        const turnOwnerUid = currentTurnPlayerId();
+        if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
+          await doEndTurn(turnOwnerUid);
+        }
+        return;
+      }
+      if (roleId === "RAI_F3"){
+        const turnOwnerUid = safeText(currentTurnPlayerId() || "");
+        const shouldWaitForLootChoice = !!turnOwnerUid
+          && !hasMyEquipmentByName("銀のロザリオ")
+          && eliminationPreview.eliminatedUids.length > 0;
+        if (shouldWaitForLootChoice){
+          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids, {
+            endTurnAfterResolve: true,
+            endTurnOwnerUid: turnOwnerUid
+          });
+          return;
+        }
         if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
           await doEndTurn(turnOwnerUid);
         }
@@ -8413,8 +8451,19 @@
     await addResolvedDamageToPlayers(pending.rows || [], { advanceTurnOnResolve: advanceTurnOnCounterResolve });
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
+      const turnOwnerUid = safeText(attackTurnOwnerUid || "");
+      const eliminationPreview = attackEliminationPreview(pending.rows || []);
+      const shouldWaitForLootChoice = !!turnOwnerUid
+        && !hasMyEquipmentByName("銀のロザリオ")
+        && eliminationPreview.eliminatedUids.length > 0;
+      if (shouldWaitForLootChoice){
+        await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids, {
+          endTurnAfterResolve: true,
+          endTurnOwnerUid: turnOwnerUid
+        });
+      }
       await new Promise(resolve => setTimeout(resolve, 2000));
-      if (currentTurnPlayerId() === attackTurnOwnerUid){
+      if (!shouldWaitForLootChoice && currentTurnPlayerId() === attackTurnOwnerUid){
         await doEndTurn(attackTurnOwnerUid);
       }
       attackFlowUiLockActive = false;
