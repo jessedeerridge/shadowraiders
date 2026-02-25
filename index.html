@@ -2513,6 +2513,8 @@
   let ulsterExtraAttackGuideShown = false;
   let attackFlowUiLockActive = false;
   let suppressEndTurnButton = false;
+  let attackLootAutoEndTurnPending = false;
+  let attackLootAutoEndTurnTimer = null;
   let pendingHpSwapAnimation = null;
   let attackAbilityUsedTurnByRole = {};
   let attackAbilityUsageTurnOwnerUid = "";
@@ -5611,6 +5613,7 @@
     if (selection?.noSteal){
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "奪わなくて本当にいいですか。", async () => {
         await clearAttackLootPending();
+        await tryEndTurnAfterAttackLootResolution(true);
       }, { fixedLower:true, closeZoomOnNo:true });
       return;
     }
@@ -5624,7 +5627,60 @@
       await clearAttackLootPending();
       closeZoom();
       renderEquipmentDock();
+      await tryEndTurnAfterAttackLootResolution(true);
     }
+  }
+
+  function hasMyPendingAttackLootChoice(){
+    const uid = safeText(state.userId || "");
+    if (!uid) return false;
+    const mine = normalizeAttackLootPayload(state.room?.attackLootPending?.[uid] || pendingAttackLoot || null);
+    if (!mine) return false;
+    if (safeText(mine.uid || "") !== uid) return false;
+
+    const hasLootable = (ownerUidRaw) => {
+      const ownerUid = safeText(ownerUidRaw || "");
+      if (!ownerUid || ownerUid === uid) return false;
+      const list = listEquipForUid(ownerUid);
+      return list.some(it => !isIdentityEquipItem(it));
+    };
+
+    if (safeText(mine.mode || "") === "byron"){
+      return (mine.targetUids || []).some(hasLootable);
+    }
+    return (mine.defeatedUids || []).some(hasLootable);
+  }
+
+  async function tryEndTurnAfterAttackLootResolution(force = false){
+    if (!attackLootAutoEndTurnPending) return false;
+    const turnOwnerUid = currentTurnPlayerId();
+    if (!turnOwnerUid || turnOwnerUid !== state.userId){
+      attackLootAutoEndTurnPending = false;
+      return false;
+    }
+    if (!force && hasMyPendingAttackLootChoice()) return false;
+    attackLootAutoEndTurnPending = false;
+    if (attackLootAutoEndTurnTimer){
+      clearTimeout(attackLootAutoEndTurnTimer);
+      attackLootAutoEndTurnTimer = null;
+    }
+    await doEndTurn(turnOwnerUid);
+    return true;
+  }
+
+  function queueAttackLootAutoEndTurn(){
+    if (attackLootAutoEndTurnTimer){
+      clearTimeout(attackLootAutoEndTurnTimer);
+    }
+    attackLootAutoEndTurnTimer = setTimeout(() => {
+      attackLootAutoEndTurnTimer = null;
+      tryEndTurnAfterAttackLootResolution(false).catch(() => {});
+    }, 2600);
+  }
+
+  function reserveAttackLootAutoEndTurn(){
+    attackLootAutoEndTurnPending = true;
+    queueAttackLootAutoEndTurn();
   }
 
 
@@ -6442,6 +6498,9 @@
     const runKeepAbility = async () => {
       const role = myRoleInfo();
       const roleId = safeText(role?.id || "");
+      if (roleId === "RAI_F3" || roleId === "RAI_G2" || roleId === "SHA_V2"){
+        reserveAttackLootAutoEndTurn();
+      }
       const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
 
       if (roleId === "CIT_B1"){
@@ -6500,10 +6559,7 @@
       }
       if (roleId === "SHA_V2"){
         await resolveVampireHealAfterAttack();
-        const turnOwnerUid = currentTurnPlayerId();
-        if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
-          await doEndTurn(turnOwnerUid);
-        }
+        await tryEndTurnAfterAttackLootResolution(false);
         return;
       }
     };
@@ -6577,6 +6633,7 @@
         if (attackResultChoiceBusy) return;
         attackResultChoiceBusy = true;
         try {
+          reserveAttackLootAutoEndTurn();
           await finalizePendingAttackResolution(true, true);
         } finally {
           attackResultChoiceBusy = false;
@@ -6584,6 +6641,7 @@
       }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
       return;
     }
+    reserveAttackLootAutoEndTurn();
     await finalizePendingAttackResolution(true, true);
   });
 
@@ -13483,6 +13541,11 @@
     ulsterExtraAttackPending = 0;
     attackFlowUiLockActive = false;
     suppressEndTurnButton = false;
+    attackLootAutoEndTurnPending = false;
+    if (attackLootAutoEndTurnTimer){
+      clearTimeout(attackLootAutoEndTurnTimer);
+      attackLootAutoEndTurnTimer = null;
+    }
     resetAttackAbilityUsageTurnState();
     cachePendingAttackResolution(null);
     await advanceTurnToNextPlayer(expectedCurrentPlayerId);
