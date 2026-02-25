@@ -610,12 +610,15 @@
   }
   .id72 .row{ margin:0 0 1px 0; }
   .id72 .row:last-child{ margin-bottom:0; }
-  .id72 .david-effect-row{
-    font-size:3.5px;
+  .id72 .effect.david-all-text{
+    font-size:4px;
     line-height:1.2;
   }
-  .id72 .david-effect-row .tag{
-    font-size:3.5px;
+  .id72 .effect.david-all-text .tag{
+    font-size:4px;
+  }
+  .id72 .ulrich-effect-row{
+    color:#0b2a6a;
   }
   .role-card-wrap{ flex:0 0 auto; }
 
@@ -11418,11 +11421,10 @@
     const effectBody = rest.join("：").trim() || effect;
 
     if (role?.id === "SHA_U1"){
-      return `<p class="row">${effectBody}</p>`;
+      return `<p class="row ulrich-effect-row">${effectBody}</p>`;
     }
 
-    const isDavid = role?.id === "CIT_D2";
-    return `<p class="row${isDavid ? " david-effect-row" : ""}"><span class="tag">${abilityName || "技名"}</span>${effectBody}</p>`;
+    return `<p class="row"><span class="tag">${abilityName || "技名"}</span>${effectBody}</p>`;
   }
   function createIdentityCard(role){
     const team = teamColor(role.faction);
@@ -11455,7 +11457,7 @@
         <div class="label">HP</div>
         <div class="val">${role.hp ?? ""}</div>
       </div>
-      <div class="effect">
+      <div class="effect${role.id === "CIT_D2" ? " david-all-text" : ""}">
         <p class="row"><span class="tag">勝利条件</span>${resolveRoleWinText(role)}</p>
         ${resolveRoleEffectHtml(role)}
       </div>
