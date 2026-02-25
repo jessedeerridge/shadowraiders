@@ -6570,27 +6570,18 @@
     e.stopPropagation();
     const pending = pendingAttackResolution;
     const spec = attackAbilitySpecFromRows(pending?.rows || []);
-    if (spec){
+    const shouldConfirmEmmaEnd = isMyRole("RAI_E3") && isMyIdentityRevealed();
+    if (spec || shouldConfirmEmmaEnd){
       if (attackResultChoiceBusy) return;
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "本当に終了しますか。", async () => {
         if (attackResultChoiceBusy) return;
         attackResultChoiceBusy = true;
         try {
-          const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
-          if (openedEmma){
-            await finalizePendingAttackResolution(false);
-            return;
-          }
           await finalizePendingAttackResolution(true, true);
         } finally {
           attackResultChoiceBusy = false;
         }
       }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
-      return;
-    }
-    const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
-    if (openedEmma){
-      await finalizePendingAttackResolution(false);
       return;
     }
     await finalizePendingAttackResolution(true, true);
