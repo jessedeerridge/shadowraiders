@@ -2519,6 +2519,7 @@
   let turnStartBoardTurnKey = "";
   let autoIdentityRevealTimer = null;
   let autoIdentityRevealTimerKey = "";
+  let pendingEndTurnAfterLootUid = "";
 
   const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
@@ -5318,6 +5319,27 @@
     await setAttackLootPending(null);
   }
 
+  function hasPendingAttackLootWithChoicesFor(uid){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return false;
+    const mine = normalizeAttackLootPayload(state.room?.attackLootPending?.[targetUid] || pendingAttackLoot || null);
+    if (!mine || safeText(mine.uid || "") !== targetUid) return false;
+    const mode = safeText(mine.mode || "defeated") || "defeated";
+    const rowUids = mode === "byron" ? (mine.targetUids || []) : (mine.defeatedUids || []);
+    return rowUids.some(ownerUid => listEquipForUid(ownerUid).some(it => !isIdentityEquipItem(it)));
+  }
+
+  async function endTurnOrDeferForAttackLoot(turnOwnerUid){
+    const uid = safeText(turnOwnerUid || "");
+    if (!uid || currentTurnPlayerId() !== uid) return;
+    if (hasPendingAttackLootWithChoicesFor(uid)){
+      pendingEndTurnAfterLootUid = uid;
+      return;
+    }
+    pendingEndTurnAfterLootUid = "";
+    await doEndTurn(uid);
+  }
+
   async function createOrMergeAttackLootPending(defeatedUids = []){
     const uid = safeText(state.userId || "");
     if (!uid) return;
@@ -5611,6 +5633,11 @@
     if (selection?.noSteal){
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "奪わなくて本当にいいですか。", async () => {
         await clearAttackLootPending();
+        if (pendingEndTurnAfterLootUid && currentTurnPlayerId() === pendingEndTurnAfterLootUid){
+          const turnOwnerUid = pendingEndTurnAfterLootUid;
+          pendingEndTurnAfterLootUid = "";
+          await doEndTurn(turnOwnerUid);
+        }
       }, { fixedLower:true, closeZoomOnNo:true });
       return;
     }
@@ -5624,6 +5651,11 @@
       await clearAttackLootPending();
       closeZoom();
       renderEquipmentDock();
+      if (pendingEndTurnAfterLootUid && currentTurnPlayerId() === pendingEndTurnAfterLootUid){
+        const turnOwnerUid = pendingEndTurnAfterLootUid;
+        pendingEndTurnAfterLootUid = "";
+        await doEndTurn(turnOwnerUid);
+      }
     }
   }
 
@@ -6501,9 +6533,7 @@
       if (roleId === "SHA_V2"){
         await resolveVampireHealAfterAttack();
         const turnOwnerUid = currentTurnPlayerId();
-        if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
-          await doEndTurn(turnOwnerUid);
-        }
+        await endTurnOrDeferForAttackLoot(turnOwnerUid);
         return;
       }
     };
@@ -8410,9 +8440,7 @@
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
-      if (currentTurnPlayerId() === attackTurnOwnerUid){
-        await doEndTurn(attackTurnOwnerUid);
-      }
+      await endTurnOrDeferForAttackLoot(attackTurnOwnerUid);
       attackFlowUiLockActive = false;
       suppressEndTurnButton = false;
       renderTurnEndButton();
@@ -13476,6 +13504,7 @@
   }
 
   async function doEndTurn(expectedCurrentPlayerId = ""){
+    pendingEndTurnAfterLootUid = "";
     lastAttackWatch = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
