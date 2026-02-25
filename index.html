@@ -3169,6 +3169,9 @@
         const stillPending = Object.values(counterMap).some((v) => !!v && !!v.advanceTurnOnResolve && safeText(v.attackerUid || "") === safeText(entry.attackerUid || "") && safeText(v.turnKey || "") === safeText(entry.turnKey || ""));
         if (!stillPending){
           const order = Array.isArray(cur.positionOrder) ? cur.positionOrder : [];
+          const counterHasBlockingChoice = Object.values(counterMap).some((v) => !!v && !!v.mustChoose);
+          if (counterHasBlockingChoice) return cur;
+
           const isEliminatedInRoom = (uid) => {
             const hand = cur.hands?.[uid];
             const role = hand?.roleId ? ROLE_BY_ID[hand.roleId] : null;
@@ -3176,8 +3179,38 @@
             if (!hp) return false;
             return clampDamage(cur.damage?.[uid]) >= hp;
           };
+
+          const nonIdentityEquipCountInRoom = (uid) => {
+            if (!uid) return 0;
+            const equip = cur.equipment?.[uid];
+            if (!equip || typeof equip !== "object") return 0;
+            let count = 0;
+            for (const value of Object.values(equip)){
+              if (!value || typeof value !== "object") continue;
+              if (safeText(value.kind || "") === "identity") continue;
+              const copies = Math.max(1, Math.floor(Number(value.count || 1)));
+              count += copies;
+            }
+            return count;
+          };
+
           const aliveOrder = order.filter(uid => !isEliminatedInRoom(uid));
           const curId = safeText(cur.turn?.currentPlayerId || "");
+          const attackerUid = safeText(entry.attackerUid || "");
+          if (!curId || !attackerUid || curId !== attackerUid) return cur;
+
+          const pendingLoot = cur.attackLootPending?.[curId];
+          if (pendingLoot && typeof pendingLoot === "object"){
+            const mode = safeText(pendingLoot.mode || "defeated") || "defeated";
+            const targetUids = (mode === "byron" ? pendingLoot.targetUids : pendingLoot.defeatedUids) || [];
+            const hasLootableTarget = Array.isArray(targetUids) && targetUids.some((uidRaw) => {
+              const uid = safeText(uidRaw || "");
+              if (!uid || uid === curId) return false;
+              return nonIdentityEquipCountInRoom(uid) > 0;
+            });
+            if (hasLootableTarget) return cur;
+          }
+
           let idx = aliveOrder.indexOf(curId);
           if (idx < 0) idx = 0;
           const nextPlayerId = safeText(aliveOrder[(idx + 1) % Math.max(1, aliveOrder.length)] || "");
