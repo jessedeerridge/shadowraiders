@@ -8124,9 +8124,7 @@
       btnAttackResultKeep.classList.remove("primary");
       btnAttackResultKeep.classList.add("ghost");
       if (isVampireSingleButton){
-        btnAttackResultKeep.textContent = "OK吸血";
-        btnAttackResultKeep.classList.remove("ghost");
-        btnAttackResultKeep.classList.add("primary");
+        btnAttackResultKeep.innerHTML = `OK <span class="ability-pill">${escapeHtml(formatAttackAbilityPillLabel("吸血"))}</span>`;
       }
       btnAttackResultKeep.classList.toggle("hidden", (!isVampireSingleButton && sealedVictim) || shouldHideKeepAsSecondAttack);
     }
