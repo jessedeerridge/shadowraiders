@@ -13298,12 +13298,12 @@
 
   btnEndTurn?.addEventListener('click', async () => {
     if (!canShowEndTurnButton()) return;
-    const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
-    if (openedEmma) return;
     if (!turnState()?.attackDone){
       showEndTurnConfirm({ message:"本当に終了しますか。" });
       return;
     }
+    const openedEmma = await tryOpenEmmaSelectionOnEndAttempt();
+    if (openedEmma) return;
     await doEndTurn();
   });
 
