@@ -6563,6 +6563,13 @@
         await runFollowupAttackToTarget(followupTargetUid, 0);
         return;
       }
+      if (roleId === "RAI_F3"){
+        const turnOwnerUid = currentTurnPlayerId();
+        if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
+          await doEndTurn(turnOwnerUid);
+        }
+        return;
+      }
       if (roleId === "SHA_U3"){
         markAttackAbilityUsedThisTurn(roleId);
         await startUlsterExtraAttackSelection();
