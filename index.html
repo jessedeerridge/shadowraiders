@@ -1169,6 +1169,9 @@
   transform-origin:center;
   animation:markerPulse 1.2s ease-in-out infinite;
 }
+.mark-pulse-self-turn-start{
+  animation:markerPulseSelfTurn 1.2s ease-in-out infinite;
+}
 .equip-steal-pulse{
   animation:equipStealPulse 1.1s ease-in-out infinite;
   cursor:pointer;
@@ -1188,6 +1191,10 @@
 @keyframes markerPulse{
   0%,100%{ transform:scale(1); }
   50%{ transform:scale(1.2); }
+}
+@keyframes markerPulseSelfTurn{
+  0%,100%{ transform:scale(1); }
+  50%{ transform:scale(1.6); }
 }
 .turn-hint-pop{
   position:fixed;
@@ -2483,6 +2490,7 @@
   let room3ActionUsed = false;
   const walpurgisSwapHiddenUids = new Set();
   let movedByDiceRoomId = null;
+  let suppressSelfTurnStartPulse = false;
   let pendingRoomAction = null;
   let suppressTurnButtonUntilNextTurnStart = false;
   let uranusMeteorResolved = false;
@@ -7193,6 +7201,7 @@
       && currentTurnPlayerId() === state.userId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
+    suppressSelfTurnStartPulse = false;
     uranusMeteorResolved = false;
     vampireHiddenAttackSuccess = false;
     vampireHealScheduled = false;
@@ -7799,6 +7808,8 @@
     if (!state.roomCode || !canUseMoveDice()) return;
     const selectedSum = chooseSumForTestPlayer("移動");
     if (isTestPlayer() && selectedSum == null) return;
+    suppressSelfTurnStartPulse = true;
+    renderMarkers();
     const selectedPair = selectedSum != null ? pickDiceBySum(selectedSum) : null;
     const d6 = selectedPair?.d6 ?? (1 + Math.floor(Math.random() * 6));
     const d4 = selectedPair?.d4 ?? (1 + Math.floor(Math.random() * 4));
@@ -11004,7 +11015,12 @@
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
   if (uid && walpurgisSwapHiddenUids.has(uid)) g.classList.add("marker-swap-hidden");
-  if (pulse) g.classList.add("mark-pulse-target");
+  if (pulse) {
+    g.classList.add("mark-pulse-target");
+    if (uid && uid === state.userId && canUseMoveDice() && !mustResolveUranusMeteorStrike() && !hasMovedByDiceInCurrentTurn() && !suppressSelfTurnStartPulse){
+      g.classList.add("mark-pulse-self-turn-start");
+    }
+  }
   if (eliminated) g.classList.add("marker-eliminated");
 
   const size = (uid && uid === state.userId) ? 17 : 16;
@@ -11198,7 +11214,7 @@
     ensureMarkerLayer();
     clearMarkerLayer();
     const pulseTargets = highlightedMarkerUids();
-    if (canUseMoveDice() && !mustResolveUranusMeteorStrike() && !hasMovedByDiceInCurrentTurn()) pulseTargets.add(state.userId);
+    if (canUseMoveDice() && !mustResolveUranusMeteorStrike() && !hasMovedByDiceInCurrentTurn() && !suppressSelfTurnStartPulse) pulseTargets.add(state.userId);
     const entries = Object.entries(markerCache || {});
     for (const [uid, m] of entries){
       if (!m) continue;
