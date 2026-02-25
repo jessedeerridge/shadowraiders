@@ -289,7 +289,7 @@
   .seat-pop-backdrop.hidden{display:none;}
 
   .seat-board{
-    width:min(420px, calc(100% - 32px));
+    width:min(400px, calc(100% - 32px));
     background:rgba(255,255,255,.92);
     border:1px solid rgba(0,0,0,.08);
     border-radius:16px;
@@ -322,7 +322,7 @@
     grid-template-columns:repeat(4, 54px);
     grid-auto-rows:54px;
     gap:10px;
-    justify-content:flex-start;
+    justify-content:center;
     padding:4px 0 2px;
   }
   .seat-tile{
@@ -2073,6 +2073,26 @@
     return {r,g,b};
   }
   function textColorFor(bgHex){
+    const normalized = String(bgHex || "").trim().toLowerCase();
+    const forceWhiteTextColors = new Set([
+      "#ef4444", // 赤
+      "#3b82f6", // 青
+      "#111111", // 黒
+      "#ec4899", // ピンク
+      "#1e3a8a", // ネイビー
+      "#16a34a"  // 緑
+    ]);
+    const forceBlackTextColors = new Set([
+      "#facc15", // 黄
+      "#67e8f9", // 水色
+      "#8b5cf6", // バイオレット
+      "#fb923c", // オレンジ
+      "#ffffff", // 白
+      "#a855f7"  // パープル
+    ]);
+    if (forceWhiteTextColors.has(normalized)) return "#fff";
+    if (forceBlackTextColors.has(normalized)) return "#111";
+
     const {r,g,b} = rgbFromHex(bgHex);
     const L = (0.2126*r + 0.7152*g + 0.0722*b)/255;
     return (L < 0.55) ? "#fff" : "#111";
@@ -11757,9 +11777,18 @@
   });
 
   const SEAT_COLORS = [
-    "#ef4444", "#f97316", "#f59e0b", "#eab308",
-    "#22c55e", "#10b981", "#06b6d4", "#3b82f6",
-    "#6366f1", "#8b5cf6", "#ec4899", "#f43f5e"
+    "#ef4444", // 赤
+    "#3b82f6", // 青
+    "#111111", // 黒
+    "#ec4899", // ピンク
+    "#1e3a8a", // ネイビー
+    "#16a34a", // 緑
+    "#facc15", // 黄
+    "#67e8f9", // 水色
+    "#8b5cf6", // バイオレット
+    "#fb923c", // オレンジ
+    "#ffffff", // 白
+    "#a855f7"  // パープル
   ];
 
   const seatKey = (room)=>`bbSeat_${room}_${state.userId}`;
@@ -12399,6 +12428,7 @@
         tile.classList.add('taken');
         const initial = document.createElement('div');
         initial.className = 'seat-initial';
+        initial.style.color = textColorFor(color);
         initial.textContent = firstChar(taken.name);
         tile.appendChild(initial);
       }
