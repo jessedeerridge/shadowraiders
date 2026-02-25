@@ -3737,6 +3737,21 @@
     });
   }
 
+  function resolveGreenRevealRoleId(requestId="", responderId=""){
+    const rid = safeText(requestId || "");
+    const reveal = rid ? greenRevealByRequestId[rid] : null;
+    const revealRoleId = safeText(reveal?.roleId || "");
+    if (revealRoleId) return revealRoleId;
+
+    const uid = safeText(responderId || reveal?.responderId || "");
+    if (!uid) return "";
+
+    const identityRoleId = safeText(equipCache?.[uid]?.identity?.roleId || "");
+    if (identityRoleId) return identityRoleId;
+
+    return safeText(state.hands?.[uid]?.roleId || "");
+  }
+
   async function sendGreenResponse(msg, opt, overrideLabel=""){
     if (!state.roomCode || !msg?.from || !msg?.requestId || !opt?.id) return;
     const answerLabel = safeText(overrideLabel || opt.label || "");
@@ -4529,9 +4544,11 @@
     greenShareCard = msg.card;
     pendingGreenAnswerMsg = msg;
     setGreenSessionState({ phase:"answering", msg }).catch(() => {});
-    const reveal = greenRevealByRequestId[safeText(msg.requestId || "")];
-    if (reveal?.roleId){
-      showGreenRevealPanel(reveal.roleId, reveal.responderId);
+    const requestId = safeText(msg.requestId || "");
+    const reveal = greenRevealByRequestId[requestId];
+    const revealRoleId = resolveGreenRevealRoleId(requestId, safeText(msg.to || state.userId || ""));
+    if (revealRoleId){
+      showGreenRevealPanel(revealRoleId, safeText(reveal?.responderId || msg.to || state.userId || ""));
     } else {
       hideGreenRevealPanel();
     }
@@ -4545,9 +4562,7 @@
     greenShareList.innerHTML = "";
 
     if (isRevealIdentity){
-      const requestId = safeText(msg.requestId || "");
-      const reveal = greenRevealByRequestId[requestId];
-      if (!reveal?.roleId){
+      if (!revealRoleId){
         applyGreenAnswerEffect(msg, { id:"reveal_identity", label:"私の正体です。" }).catch(() => {});
       }
       remove(ref(db, `rooms/${state.roomCode}/greenInbox/${state.userId}`)).catch(() => {});
@@ -4659,8 +4674,9 @@
     if (!msg || safeText(msg.requestId || "") !== rid) return;
     setGreenDockMeta({ title:"回答が届きました", subtitle:safeText(msg.answerLabel || "") });
     const reveal = greenRevealByRequestId[rid];
-    if (reveal?.roleId){
-      showGreenRevealPanel(reveal.roleId, reveal.responderId);
+    const revealRoleId = resolveGreenRevealRoleId(rid, safeText(msg.to || ""));
+    if (revealRoleId){
+      showGreenRevealPanel(revealRoleId, safeText(reveal?.responderId || msg.to || ""));
     }
     greenShareActions?.classList.remove("hidden");
     const responder = playerById(safeText(msg.to || ""));
@@ -12187,14 +12203,19 @@
     const revealRef = ref(db, `rooms/${state.roomCode}/greenReveals`);
     onValue(revealRef, snap => {
       greenRevealByRequestId = snap.val() || {};
-      const pendingReveal = greenRevealByRequestId[safeText(pendingGreenRequestId || "")];
-      if (pendingReveal?.roleId){
-        showGreenRevealPanel(pendingReveal.roleId, pendingReveal.responderId);
+      const pendingRid = safeText(pendingGreenRequestId || "");
+      const pendingReveal = greenRevealByRequestId[pendingRid];
+      const pendingRoleId = resolveGreenRevealRoleId(pendingRid, safeText(pendingReveal?.responderId || ""));
+      if (pendingRoleId){
+        showGreenRevealPanel(pendingRoleId, safeText(pendingReveal?.responderId || ""));
         return;
       }
-      const answerReveal = greenRevealByRequestId[safeText(pendingGreenAnswerMsg?.requestId || "")];
-      if (answerReveal?.roleId){
-        showGreenRevealPanel(answerReveal.roleId, answerReveal.responderId);
+
+      const answerRid = safeText(pendingGreenAnswerMsg?.requestId || "");
+      const answerReveal = greenRevealByRequestId[answerRid];
+      const answerRoleId = resolveGreenRevealRoleId(answerRid, safeText(pendingGreenAnswerMsg?.to || ""));
+      if (answerRoleId){
+        showGreenRevealPanel(answerRoleId, safeText(answerReveal?.responderId || pendingGreenAnswerMsg?.to || ""));
         return;
       }
       hideGreenRevealPanel();
