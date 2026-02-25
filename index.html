@@ -1224,6 +1224,47 @@
   border-color:rgba(255,255,255,.78) !important;
   background:rgba(255,255,255,.08);
 }
+.turn-start-board{
+  position:fixed;
+  left:50%;
+  top:50%;
+  width:180px;
+  height:120px;
+  transform:translate(-50%,-50%);
+  z-index:286;
+  pointer-events:none;
+}
+.turn-start-board.hidden{display:none;}
+.turn-start-board img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+  border-radius:8px;
+}
+.turn-start-board-label{
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  color:#fff;
+  font-size:28px;
+  font-weight:900;
+  letter-spacing:.02em;
+  text-shadow:0 1px 1px rgba(0,0,0,.45);
+  display:flex;
+  white-space:nowrap;
+}
+.turn-start-board-label .char-odd{animation:turn-label-bob-odd .9s ease-in-out infinite;}
+.turn-start-board-label .char-even{animation:turn-label-bob-even .9s ease-in-out infinite;}
+@keyframes turn-label-bob-odd{
+  0%,100%{transform:translateY(-1px);}
+  50%{transform:translateY(1px);}
+}
+@keyframes turn-label-bob-even{
+  0%,100%{transform:translateY(1px);}
+  50%{transform:translateY(-1px);}
+}
 #roomActionPop{
   z-index:293;
 }
@@ -1446,10 +1487,20 @@
     position:relative;
     width:72px;
     height:108px;
-    transform:scale(var(--zoom, 4));
+    zoom:var(--zoom, 4);
     transform-origin:center;
-    will-change:transform;
     transition:transform .35s ease;
+  }
+  @supports not (zoom:1){
+    .zoom-stage{
+      transform:scale(var(--zoom, 4));
+    }
+    .zoom-backdrop.green-reveal-active .zoom-stage{
+      transform:translateX(-90px) scale(var(--zoom, 4));
+    }
+    .zoom-backdrop.david-select-active .zoom-stage{
+      transform:translateX(-90px) scale(var(--zoom, 4));
+    }
   }
   .zoom-stage.zoom-stage-multi{
     width:min(98vw, 1400px);
@@ -1458,10 +1509,10 @@
     transition:none;
   }
   .zoom-backdrop.green-reveal-active .zoom-stage{
-    transform:translateX(-90px) scale(var(--zoom, 4));
+    transform:translateX(calc(-90px / var(--zoom, 4)));
   }
   .zoom-backdrop.david-select-active .zoom-stage{
-    transform:translateX(-90px) scale(var(--zoom, 4));
+    transform:translateX(calc(-90px / var(--zoom, 4)));
   }
   .zoom-stage .card72,
   .zoom-stage .id72{
@@ -1811,6 +1862,11 @@
 </div>
 
 <div id="turnHintPop" class="turn-hint-pop hidden" aria-live="polite"></div>
+
+<div id="turnStartBoard" class="turn-start-board hidden" aria-hidden="true">
+  <img src="turnboard.jpg" alt="手番開始ボード">
+  <div id="turnStartBoardLabel" class="turn-start-board-label"></div>
+</div>
 
 <div id="endTurnConfirm" class="endturn-confirm hidden" role="dialog" aria-label="手番終了確認">
   <p class="msg" id="endTurnConfirmMsg">本当に終了しますか。</p>
@@ -2456,6 +2512,7 @@
   let pendingHpSwapAnimation = null;
   let attackAbilityUsedTurnByRole = {};
   let attackAbilityUsageTurnOwnerUid = "";
+  let turnStartBoardTurnKey = "";
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -2477,6 +2534,8 @@
   const btnRoomActionYes = document.getElementById("btnRoomActionYes");
   const btnRoomActionNo = document.getElementById("btnRoomActionNo");
   const turnHintPop = document.getElementById("turnHintPop");
+  const turnStartBoard = document.getElementById("turnStartBoard");
+  const turnStartBoardLabel = document.getElementById("turnStartBoardLabel");
   const identityPromptPop = document.getElementById("identityPromptPop");
   const identityPromptMsg = document.getElementById("identityPromptMsg");
   const btnIdentityPromptYes = document.getElementById("btnIdentityPromptYes");
@@ -2507,6 +2566,51 @@
     "恩恵",
     "幸せのクッキー"
   ]);
+
+  function setTurnStartBoardLabel(text){
+    if (!turnStartBoardLabel) return;
+    turnStartBoardLabel.innerHTML = "";
+    Array.from(safeText(text || "")).forEach((ch, idx) => {
+      const span = document.createElement("span");
+      span.textContent = ch;
+      span.className = (idx % 2 === 0) ? "char-odd" : "char-even";
+      turnStartBoardLabel.appendChild(span);
+    });
+  }
+
+  function hideTurnStartBoard(){
+    turnStartBoard?.classList.add("hidden");
+  }
+
+  function showTurnStartBoard(){
+    setTurnStartBoardLabel("あなたの手番");
+    turnStartBoard?.classList.remove("hidden");
+  }
+
+  function syncTurnStartBoard(){
+    if (!isGameStarted()){
+      turnStartBoardTurnKey = "";
+      hideTurnStartBoard();
+      return;
+    }
+    const key = turnCycleKey();
+    if (!isMyTurn()){
+      if (turnStartBoardTurnKey && turnStartBoardTurnKey !== key){
+        turnStartBoardTurnKey = key;
+      }
+      hideTurnStartBoard();
+      return;
+    }
+    if (!key || key === turnStartBoardTurnKey) return;
+    turnStartBoardTurnKey = key;
+    showTurnStartBoard();
+  }
+
+  document.addEventListener("pointerdown", (e) => {
+    if (turnStartBoard?.classList.contains("hidden")) return;
+    if (!e.isPrimary || e.button !== 0) return;
+    hideTurnStartBoard();
+  }, true);
 
   function turnRoomActionState(){
     const t = turnState() || {};
@@ -11985,6 +12089,7 @@
       restorePendingMoveChoiceFromSeat();
       updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
+      syncTurnStartBoard();
     });
   }
 
