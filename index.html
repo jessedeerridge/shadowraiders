@@ -760,7 +760,18 @@
 
     background:transparent; /* セル背景も透明 */
   }
-  .hp-cell::after{ display:none; } /* セル線を消す */
+  .hp-cell::after{
+    content:"";
+    position:absolute;
+    left:0;
+    right:0;
+    bottom:0;
+    height:1px;
+    background:rgba(0,0,0,.35);
+    box-shadow:0 1px 0 rgba(255,255,255,.35);
+    pointer-events:none;
+  }
+  .hp-cell:last-child::after{ display:none; }
 
 .chip16{
     width:18px;height:18px;
