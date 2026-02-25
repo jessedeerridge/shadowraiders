@@ -5320,6 +5320,21 @@
     return req;
   }
 
+  function hasActiveAttackLootEndTurnRequest(turnOwnerUid = currentTurnPlayerId()){
+    const req = pendingAttackLootEndTurnRequest;
+    if (!req) return false;
+    const isExpired = Number(req.expiresAt || 0) <= Date.now();
+    if (isExpired) return false;
+    return safeText(req.turnOwnerUid || "") === safeText(turnOwnerUid || "");
+  }
+
+  function requestAttackLootAutoEndTurn(){
+    pendingAttackLootEndTurnRequest = {
+      turnOwnerUid: safeText(currentTurnPlayerId() || ""),
+      expiresAt: Date.now() + 15000
+    };
+  }
+
   async function setAttackLootPending(payload){
     const roomCode = safeText(state.roomCode || "");
     const uid = safeText(state.userId || "");
@@ -6513,17 +6528,14 @@
       if (roleId === "CIT_C1"){
         const preview = attackEliminationPreview(pending?.rows || []);
         if (preview.allAttackedEliminated){
-          const turnOwnerUid = currentTurnPlayerId();
-          await finalizePendingAttackResolution(false, true);
+          requestAttackLootAutoEndTurn();
+          await finalizePendingAttackResolution(true, true);
           showRevealPopAt(null, {
             mode:"notice",
             message:"この結果プレイヤーは脱落するため、能力を使用しません。"
           });
           await waitMs(2000);
           hideRevealPop();
-          if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
-            await doEndTurn(turnOwnerUid);
-          }
           return;
         }
       }
@@ -6627,19 +6639,13 @@
     const pending = pendingAttackResolution;
     const spec = attackAbilitySpecFromRows(pending?.rows || []);
     const shouldConfirmEmmaEnd = isMyRole("RAI_E3") && isMyIdentityRevealed();
-    const requestAttackLootAutoEnd = () => {
-      pendingAttackLootEndTurnRequest = {
-        turnOwnerUid: safeText(currentTurnPlayerId() || ""),
-        expiresAt: Date.now() + 15000
-      };
-    };
     if (spec || shouldConfirmEmmaEnd){
       if (attackResultChoiceBusy) return;
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "本当に終了しますか。", async () => {
         if (attackResultChoiceBusy) return;
         attackResultChoiceBusy = true;
         try {
-          requestAttackLootAutoEnd();
+          requestAttackLootAutoEndTurn();
           await finalizePendingAttackResolution(true, true);
         } finally {
           attackResultChoiceBusy = false;
@@ -6647,7 +6653,7 @@
       }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
       return;
     }
-    requestAttackLootAutoEnd();
+    requestAttackLootAutoEndTurn();
     await finalizePendingAttackResolution(true, true);
   });
 
@@ -8474,6 +8480,18 @@
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
+      const shouldDeferToAttackLoot = hasActiveAttackLootEndTurnRequest(attackTurnOwnerUid);
+      if (shouldDeferToAttackLoot){
+        await waitMs(900);
+      }
+      const lootPendingForEndTurn = !!pendingAttackLoot?.endTurnAfterResolve
+        && safeText(pendingAttackLoot?.endTurnExpectedUid || "") === safeText(attackTurnOwnerUid || "");
+      if (shouldDeferToAttackLoot && lootPendingForEndTurn){
+        attackFlowUiLockActive = false;
+        suppressEndTurnButton = false;
+        renderTurnEndButton();
+        return;
+      }
       if (currentTurnPlayerId() === attackTurnOwnerUid){
         await doEndTurn(attackTurnOwnerUid);
       }
