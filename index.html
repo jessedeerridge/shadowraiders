@@ -6515,6 +6515,7 @@
       const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
       if (roleId === "RAI_F3"){
+        pending.rows = applyAttackBonusLabelDamage(pending?.rows || []);
         await requestAttackLootAutoEndForCurrentTurn({ syncPending:false });
       }
 
@@ -9806,6 +9807,17 @@
     });
   }
 
+  function applyAttackBonusLabelDamage(rows = []){
+    return (rows || []).map(item => {
+      const uid = safeText(item?.uid || "");
+      const base = Math.max(0, Number(item?.damage || 0));
+      const bonus = Math.max(0, Number(item?.bonusLabelAmount || 0));
+      if (!uid || base <= 0 || bonus <= 0) return { ...item, uid, damage:base };
+      const add = applyIncomingDamageModifiers(uid, bonus, { source:"attack" });
+      return { ...item, uid, damage:Math.max(0, base + add) };
+    });
+  }
+
   function buildExcaliburAttackMeta({ attackerUid, targetUid, attackSucceeded, d6, d4 }){
     const uid = safeText(attackerUid);
     if (uid !== state.userId) return null;
@@ -10971,8 +10983,9 @@
           const damageAfterMods = (attackSucceeded && damage > 0)
             ? applyIncomingDamageModifiers(normalizedUid, damage, { source:"attack" })
             : 0;
+          const freddieAttackBonusActive = hiddenFreddie && attackSucceeded && damageAfterMods > 0;
           let bonusLabelAmount = 0;
-          if (hiddenFreddie && targetRevealed){
+          if (freddieAttackBonusActive && targetRevealed){
             bonusLabelAmount += 2;
             if (hasExcalibur){
               bonusLabelAmount += 2;
