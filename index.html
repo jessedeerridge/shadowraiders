@@ -10,6 +10,7 @@
   :root{
     --z-dice-roll-overlay: 12050;
     --z-role-flash-overlay: 12040;
+    --equip-dock-height: 220px;
   }
   header{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #eee; position:sticky; top:0; z-index:272; background:#fff;}
   h1{margin:0;font-size:18px;}
@@ -431,10 +432,9 @@
     left:16px;
     right:calc(2px + 72px + 12px);
     top:var(--equip-top, auto);
-    bottom:16px;
+    height:var(--equip-dock-height);
     z-index:259;
     display:none;
-    min-height:120px;
   }
   .equip-dock.visible{ display:block; }
   .equip-dock.david-select-front{ z-index:283; }
