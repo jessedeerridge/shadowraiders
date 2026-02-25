@@ -6443,6 +6443,7 @@
       const role = myRoleInfo();
       const roleId = safeText(role?.id || "");
       const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
+      const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
       if (roleId === "CIT_B1"){
         const byronTargets = (pending?.rows || [])
@@ -6500,6 +6501,9 @@
       }
       if (roleId === "SHA_V2"){
         await resolveVampireHealAfterAttack();
+        if (!hasMyEquipmentByName("銀のロザリオ") && eliminationPreview.eliminatedUids.length){
+          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids);
+        }
         const turnOwnerUid = currentTurnPlayerId();
         if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
           await doEndTurn(turnOwnerUid);
