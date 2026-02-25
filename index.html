@@ -265,6 +265,9 @@
     position:relative;
   }
   .help-role-row:last-child{margin-bottom:0;}
+  .help-deal-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px 10px;font-size:12px;line-height:1.5;}
+  .help-deal-item{padding:6px 8px;border-radius:8px;background:rgba(0,0,0,.04);font-weight:700;}
+  .help-deal-legend{margin-top:8px;font-size:11px;opacity:.78;}
 
   .role-row{
     display:flex;gap:12px;align-items:flex-start;
@@ -11358,6 +11361,8 @@
     8: { "レイダー": 3, "シャドウ": 3, "シチズン": 2 },
     9: { "レイダー": 3, "シャドウ": 3, "シチズン": 3 },
     10:{ "レイダー": 3, "シャドウ": 3, "シチズン": 4 },
+    11:{ "レイダー": 4, "シャドウ": 4, "シチズン": 3 },
+    12:{ "レイダー": 4, "シャドウ": 4, "シチズン": 4 },
   };
 
   const state = {
@@ -11561,6 +11566,26 @@
       sec.appendChild(h);
       return sec;
     }
+
+    const dealSec = makeSection('人数別 正体カード配分');
+    const dealList = document.createElement('div');
+    dealList.className = 'help-deal-list';
+    Object.keys(DEAL_RULE)
+      .map(n => Number(n))
+      .sort((a,b) => a - b)
+      .forEach((n) => {
+        const rule = DEAL_RULE[n] || {};
+        const item = document.createElement('div');
+        item.className = 'help-deal-item';
+        item.textContent = `${n}人（🔶${Number(rule["レイダー"] || 0)}　🔷${Number(rule["シャドウ"] || 0)}　⬜${Number(rule["シチズン"] || 0)}）`;
+        dealList.appendChild(item);
+      });
+    dealSec.appendChild(dealList);
+    const dealLegend = document.createElement('div');
+    dealLegend.className = 'help-deal-legend';
+    dealLegend.textContent = '🔶=レイダー / 🔷=シャドウ / ⬜=シチズン';
+    dealSec.appendChild(dealLegend);
+    helpBody.appendChild(dealSec);
 
     const roleSec = makeSection('正体カードリスト');
     for (const group of byInitial.values()){
