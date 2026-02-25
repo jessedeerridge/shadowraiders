@@ -5248,6 +5248,7 @@
   let attackExpectedEliminationUids = new Set();
   let attackExpectedEliminationAt = 0;
   let previousEliminatedMap = {};
+  let autoEndTurnAfterAttackLoot = false;
   let pendingAttackLoot = null;
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
   const attackLootBody = document.getElementById("attackLootBody");
@@ -5284,13 +5285,14 @@
       : null;
     const normalizedDefeated = [...new Set(defeatedUids)];
     const normalizedTargets = [...new Set(targetUids)];
+    const endTurnAfterResolve = !!raw.endTurnAfterResolve;
     if (!uid) return null;
     if (mode === "byron"){
       if (!normalizedTargets.length) return null;
-      return { uid, mode, targetUids:normalizedTargets, selectedByOwner:selectedByOwner || {}, at:Number(raw.at || Date.now()) };
+      return { uid, mode, targetUids:normalizedTargets, selectedByOwner:selectedByOwner || {}, endTurnAfterResolve, at:Number(raw.at || Date.now()) };
     }
     if (!normalizedDefeated.length) return null;
-    return { uid, mode:"defeated", defeatedUids:normalizedDefeated, selected, at:Number(raw.at || Date.now()) };
+    return { uid, mode:"defeated", defeatedUids:normalizedDefeated, selected, endTurnAfterResolve, at:Number(raw.at || Date.now()) };
   }
 
   async function setAttackLootPending(payload){
@@ -5318,16 +5320,18 @@
     await setAttackLootPending(null);
   }
 
-  async function createOrMergeAttackLootPending(defeatedUids = []){
+  async function createOrMergeAttackLootPending(defeatedUids = [], options = {}){
     const uid = safeText(state.userId || "");
     if (!uid) return;
     const list = (defeatedUids || []).map(v => safeText(v || "")).filter(v => v && v !== uid);
     if (!list.length) return;
+    const shouldAutoEndTurn = !!options.endTurnAfterResolve;
     const merged = new Set([...(pendingAttackLoot?.defeatedUids || []), ...list]);
     pendingAttackLoot = {
       uid,
       defeatedUids:[...merged],
       selected: pendingAttackLoot?.selected || null,
+      endTurnAfterResolve: shouldAutoEndTurn || !!pendingAttackLoot?.endTurnAfterResolve,
       at: Date.now()
     };
     await setAttackLootPending(pendingAttackLoot);
@@ -5617,6 +5621,8 @@
     const ownerUid = safeText(selection?.ownerUid || "");
     const sourceKey = safeText(selection?.sourceKey || "");
     if (!ownerUid || !sourceKey) return;
+    const turnOwnerUid = currentTurnPlayerId();
+    const shouldEndTurnAfterResolve = !!pendingAttackLoot?.endTurnAfterResolve;
     closeAttackLootPanel();
     closeEquipmentDockBeforeLootResolve();
     const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
@@ -5624,6 +5630,9 @@
       await clearAttackLootPending();
       closeZoom();
       renderEquipmentDock();
+      if (shouldEndTurnAfterResolve && turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
+        await doEndTurn(turnOwnerUid);
+      }
     }
   }
 
@@ -6444,6 +6453,10 @@
       const roleId = safeText(role?.id || "");
       const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
 
+      if (roleId === "RAI_F3" || roleId === "RAI_G2" || roleId === "SHA_V2"){
+        autoEndTurnAfterAttackLoot = true;
+      }
+
       if (roleId === "CIT_B1"){
         const byronTargets = (pending?.rows || [])
           .filter(item => Math.max(0, Number(item?.damage || 0)) >= 2)
@@ -6577,6 +6590,7 @@
         if (attackResultChoiceBusy) return;
         attackResultChoiceBusy = true;
         try {
+          autoEndTurnAfterAttackLoot = true;
           await finalizePendingAttackResolution(true, true);
         } finally {
           attackResultChoiceBusy = false;
@@ -6584,6 +6598,7 @@
       }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
       return;
     }
+    autoEndTurnAfterAttackLoot = true;
     await finalizePendingAttackResolution(true, true);
   });
 
@@ -8736,7 +8751,9 @@
           if (shouldUseRosaryLoot){
             runRosaryAutoLootFlow(attackDefeatedUids).catch(() => {});
           } else {
-            createOrMergeAttackLootPending(attackDefeatedUids).catch(() => {});
+            createOrMergeAttackLootPending(attackDefeatedUids, {
+              endTurnAfterResolve: !!autoEndTurnAfterAttackLoot
+            }).catch(() => {});
           }
         }, 2200);
       }
@@ -13483,6 +13500,7 @@
     ulsterExtraAttackPending = 0;
     attackFlowUiLockActive = false;
     suppressEndTurnButton = false;
+    autoEndTurnAfterAttackLoot = false;
     resetAttackAbilityUsageTurnState();
     cachePendingAttackResolution(null);
     await advanceTurnToNextPlayer(expectedCurrentPlayerId);
