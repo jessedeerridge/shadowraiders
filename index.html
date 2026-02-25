@@ -350,16 +350,6 @@
   }
   .seat-tile.empty{opacity:.95;}
   .seat-tile.taken{opacity:1;}
-  .seat-tile .seat-num{
-    position:absolute;right:6px;bottom:6px;
-    font-size:11px;font-weight:1000;
-    color:rgba(0,0,0,.55);
-    background:rgba(255,255,255,.7);
-    border:1px solid rgba(0,0,0,.08);
-    padding:2px 6px;border-radius:999px;
-    pointer-events:none;
-  }
-
   .warn{
     font-size:12px;
     opacity:.75;
@@ -2085,10 +2075,10 @@
     const forceBlackTextColors = new Set([
       "#facc15", // 黄
       "#67e8f9", // 水色
-      "#8b5cf6", // バイオレット
+      "#3e0211", // バイオレット
       "#fb923c", // オレンジ
       "#ffffff", // 白
-      "#a855f7"  // パープル
+      "#9b72b0"  // パープル
     ]);
     if (forceWhiteTextColors.has(normalized)) return "#fff";
     if (forceBlackTextColors.has(normalized)) return "#111";
@@ -11785,10 +11775,10 @@
     "#16a34a", // 緑
     "#facc15", // 黄
     "#67e8f9", // 水色
-    "#8b5cf6", // バイオレット
+    "#3e0211", // バイオレット
     "#fb923c", // オレンジ
     "#ffffff", // 白
-    "#a855f7"  // パープル
+    "#9b72b0"  // パープル
   ];
 
   const seatKey = (room)=>`bbSeat_${room}_${state.userId}`;
@@ -12432,11 +12422,6 @@
         initial.textContent = firstChar(taken.name);
         tile.appendChild(initial);
       }
-
-      const num = document.createElement('div');
-      num.className = 'seat-num';
-      num.textContent = seatIndex;
-      tile.appendChild(num);
 
       if (state.seatedTable === seatIndex) tile.classList.add('me');
 
