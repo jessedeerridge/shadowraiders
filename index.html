@@ -610,6 +610,13 @@
   }
   .id72 .row{ margin:0 0 1px 0; }
   .id72 .row:last-child{ margin-bottom:0; }
+  .id72 .david-effect-row{
+    font-size:3.5px;
+    line-height:1.2;
+  }
+  .id72 .david-effect-row .tag{
+    font-size:3.5px;
+  }
   .role-card-wrap{ flex:0 0 auto; }
 
   .host-settings-btn{
@@ -11392,6 +11399,31 @@
     const safe = encodeURI(`${initial}${roleName}`.trim());
     return safe ? `url('${safe}.jpg')` : "none";
   }
+  function currentPlayerCountForWinText(){
+    const startedCount = Number(state?.room?.playerCountAtStart || 0);
+    if (startedCount > 0) return startedCount;
+    return latestPlayers.length;
+  }
+  function resolveRoleWinText(role){
+    if (!role) return "";
+    if (role.id !== "CIT_D3") return role.win || "";
+    const n = currentPlayerCountForWinText();
+    if (n === 5) return "終了時に最もダメージが多い。";
+    if (n >= 6) return "自分以外のシチズンが勝利する。";
+    return role.win || "";
+  }
+  function resolveRoleEffectHtml(role){
+    const effect = String(role?.effect || "");
+    const [abilityName, ...rest] = effect.split("：");
+    const effectBody = rest.join("：").trim() || effect;
+
+    if (role?.id === "SHA_U1"){
+      return `<p class="row">${effectBody}</p>`;
+    }
+
+    const isDavid = role?.id === "CIT_D2";
+    return `<p class="row${isDavid ? " david-effect-row" : ""}"><span class="tag">${abilityName || "技名"}</span>${effectBody}</p>`;
+  }
   function createIdentityCard(role){
     const team = teamColor(role.faction);
     const en = (role.en || "").trim() || (role.name || "").trim();
@@ -11424,8 +11456,8 @@
         <div class="val">${role.hp ?? ""}</div>
       </div>
       <div class="effect">
-        <p class="row"><span class="tag">勝利条件</span>${role.win || ""}</p>
-        <p class="row"><span class="tag">${(String(role.effect||"").split("：")[0] || "技名")}</span>${(String(role.effect||"").split("：").slice(1).join("：") || "").trim() || String(role.effect||"")}</p>
+        <p class="row"><span class="tag">勝利条件</span>${resolveRoleWinText(role)}</p>
+        ${resolveRoleEffectHtml(role)}
       </div>
     `;
     return card;
