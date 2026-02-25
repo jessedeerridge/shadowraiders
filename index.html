@@ -5257,6 +5257,7 @@
     if (!raw || typeof raw !== "object") return null;
     const uid = safeText(raw.uid || "");
     const mode = safeText(raw.mode || "defeated") || "defeated";
+    const turnKey = safeText(raw.turnKey || "");
     const defeatedUids = Array.isArray(raw.defeatedUids)
       ? raw.defeatedUids.map(v => safeText(v || "")).filter(v => v && v !== uid)
       : [];
@@ -5285,12 +5286,27 @@
     const normalizedDefeated = [...new Set(defeatedUids)];
     const normalizedTargets = [...new Set(targetUids)];
     if (!uid) return null;
+    if (!turnKey) return null;
     if (mode === "byron"){
       if (!normalizedTargets.length) return null;
-      return { uid, mode, targetUids:normalizedTargets, selectedByOwner:selectedByOwner || {}, at:Number(raw.at || Date.now()) };
+      return {
+        uid,
+        mode,
+        turnKey,
+        targetUids:normalizedTargets,
+        selectedByOwner:selectedByOwner || {},
+        at:Number(raw.at || Date.now())
+      };
     }
     if (!normalizedDefeated.length) return null;
-    return { uid, mode:"defeated", defeatedUids:normalizedDefeated, selected, at:Number(raw.at || Date.now()) };
+    return {
+      uid,
+      mode:"defeated",
+      turnKey,
+      defeatedUids:normalizedDefeated,
+      selected,
+      at:Number(raw.at || Date.now())
+    };
   }
 
   async function setAttackLootPending(payload){
@@ -5320,12 +5336,15 @@
 
   async function createOrMergeAttackLootPending(defeatedUids = []){
     const uid = safeText(state.userId || "");
+    const turnKey = turnCycleKey();
     if (!uid) return;
+    if (!turnKey) return;
     const list = (defeatedUids || []).map(v => safeText(v || "")).filter(v => v && v !== uid);
     if (!list.length) return;
     const merged = new Set([...(pendingAttackLoot?.defeatedUids || []), ...list]);
     pendingAttackLoot = {
       uid,
+      turnKey,
       defeatedUids:[...merged],
       selected: pendingAttackLoot?.selected || null,
       at: Date.now()
@@ -5336,12 +5355,15 @@
 
   async function createByronAttackLootPending(targetUids = []){
     const uid = safeText(state.userId || "");
+    const turnKey = turnCycleKey();
     if (!uid) return;
+    if (!turnKey) return;
     const list = (targetUids || []).map(v => safeText(v || "")).filter(v => v && v !== uid);
     if (!list.length) return;
     pendingAttackLoot = {
       uid,
       mode:"byron",
+      turnKey,
       targetUids:[...new Set(list)],
       selectedByOwner:{},
       at: Date.now()
@@ -5588,6 +5610,11 @@
 
   async function commitAttackLootSelection(selection){
     if (!pendingAttackLoot) return;
+    const pendingTurnKey = safeText(pendingAttackLoot.turnKey || "");
+    if (!isMyTurn() || pendingTurnKey !== turnCycleKey()){
+      await clearAttackLootPending();
+      return;
+    }
     if (safeText(pendingAttackLoot.mode || "") === "byron"){
       const selectedByOwner = pendingAttackLoot.selectedByOwner || {};
       const targets = (pendingAttackLoot.targetUids || []).filter(uid => !!selectedByOwner[uid]);
@@ -6999,6 +7026,11 @@
   attackLootBody?.addEventListener("click", async (e) => {
     const card = e.target.closest(".card72.wb-front, .id72");
     if (!card || !pendingAttackLoot) return;
+    const pendingTurnKey = safeText(pendingAttackLoot.turnKey || "");
+    if (!isMyTurn() || pendingTurnKey !== turnCycleKey()){
+      await clearAttackLootPending();
+      return;
+    }
     if (safeText(pendingAttackLoot.mode || "") === "byron"){
       const ownerUid = safeText(card.dataset.ownerUid || "");
       if (!ownerUid) return;
@@ -7409,6 +7441,9 @@
     const hasMatchingPending = !!pendingAttackResolution
       && safeText(pendingAttackResolution.turnKey || "") === key
       && currentTurnPlayerId() === state.userId;
+    const hasMatchingLootPending = !!pendingAttackLoot
+      && safeText(pendingAttackLoot.turnKey || "") === key
+      && currentTurnPlayerId() === state.userId;
     if (roomAbilityTurnKey === key) return;
     roomAbilityTurnKey = key;
     suppressSelfTurnStartPulse = false;
@@ -7422,6 +7457,10 @@
       attackTurnEndChoicePending = false;
       attackFlowUiLockActive = false;
       cachePendingAttackResolution(null);
+    }
+    if (!hasMatchingLootPending){
+      pendingAttackLoot = null;
+      closeAttackLootPanel();
     }
     showTurnHint("");
     clearCarolTurnHealTimer();
@@ -8139,6 +8178,17 @@
   function restoreAttackLootPendingFromRoom(){
     const roomPending = state.room?.attackLootPending || {};
     const mine = normalizeAttackLootPayload(roomPending?.[state.userId] || null);
+    const canRestore = !!mine
+      && currentTurnPlayerId() === state.userId
+      && safeText(mine.turnKey || "") === turnCycleKey();
+    if (!canRestore){
+      pendingAttackLoot = null;
+      closeAttackLootPanel();
+      if (mine){
+        setAttackLootPending(null).catch(() => {});
+      }
+      return;
+    }
     pendingAttackLoot = mine;
     renderAttackLootPanel();
   }
@@ -13118,9 +13168,15 @@
     const attackLootPending = roomData.attackLootPending || {};
     if (Object.prototype.hasOwnProperty.call(attackLootPending, previousPlayerId)){
       const pending = attackLootPending[previousPlayerId] || {};
+      const prevLootTurnKey = safeText(pending.turnKey || "");
+      const expectedOldLootTurnKey = turn ? `${safeText(previousPlayerId || "")}:${Number(turn.updatedAt || 0)}` : "";
+      const nextLootTurnKey = (isTurnOwnerStolen && prevLootTurnKey === expectedOldLootTurnKey)
+        ? `${safeText(state.userId || "")}:${nextTurnUpdatedAt}`
+        : prevLootTurnKey;
       updates[`attackLootPending/${state.userId}`] = {
         ...pending,
         uid: state.userId,
+        turnKey: nextLootTurnKey,
         at: Date.now()
       };
       updates[`attackLootPending/${previousPlayerId}`] = null;
