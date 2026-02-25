@@ -2682,14 +2682,29 @@
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const anchorRect = anchorEl.getBoundingClientRect();
+    const stageEl = anchorEl.closest?.('.zoom-stage');
+    let anchorLeft = anchorRect.left;
+    let anchorTop = anchorRect.top;
+    let anchorWidth = anchorRect.width;
+    let anchorHeight = anchorRect.height;
+    if (stageEl){
+      const rawZoom = Number((window.getComputedStyle(stageEl).getPropertyValue('--zoom') || '').trim());
+      const zoomScale = Number.isFinite(rawZoom) && rawZoom > 0 ? rawZoom : 1;
+      const baseHeight = Number(anchorEl.offsetHeight || 0);
+      const measuredScale = (baseHeight > 0 && Number.isFinite(anchorRect.height)) ? (anchorRect.height / baseHeight) : 1;
+      if (zoomScale > 1 && measuredScale < (zoomScale * 0.75)){
+        anchorWidth = anchorRect.width * zoomScale;
+        anchorHeight = anchorRect.height * zoomScale;
+      }
+    }
     const popRect = popEl.getBoundingClientRect();
     const halfW = popRect.width / 2;
-    let x = anchorRect.left + (anchorRect.width / 2);
+    let x = anchorLeft + (anchorWidth / 2);
     if (x - halfW < pad) x = pad + halfW;
     if (x + halfW > vw - pad) x = (vw - pad) - halfW;
-    let top = anchorRect.bottom + Number(gap || 0);
+    let top = (anchorTop + anchorHeight) + Number(gap || 0);
     if (top + popRect.height > vh - pad){
-      top = Math.max(pad, anchorRect.top - popRect.height - Number(gap || 0));
+      top = Math.max(pad, anchorTop - popRect.height - Number(gap || 0));
     }
     top = Math.max(pad, Math.min(top, vh - pad - popRect.height));
     popEl.style.left = `${x}px`;
