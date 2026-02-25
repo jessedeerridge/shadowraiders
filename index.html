@@ -1649,6 +1649,14 @@
     opacity:.45;
     cursor:default;
   }
+  .green-share-btn.skip-disabled,
+  .green-share-btn.skip-disabled:disabled{
+    opacity:1;
+    background:#d1d5db;
+    border-color:#d1d5db;
+    color:#fff;
+    cursor:not-allowed;
+  }
   .green-share-btn.waiting-selected{
     opacity:1;
   }
@@ -4301,8 +4309,8 @@
       const spec = roleSelectionSpec(roleId);
       const disableSkip = !!entry?.justRevealed;
       if (disableSkip){
-        skipBtn.style.opacity = "0.45";
-        skipBtn.style.cursor = "not-allowed";
+        skipBtn.disabled = true;
+        skipBtn.classList.add("skip-disabled");
       }
       skipBtn.addEventListener("click", () => {
         if (disableSkip || selectionBusy) return;
