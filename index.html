@@ -8106,14 +8106,14 @@
     const shouldHideKeepAsSecondAttack = !spec
       && (roleId === "CIT_C1" || roleId === "SHA_U3")
       && isAttackAbilityUsedThisTurn(roleId);
-    const isVampireAbilityChoice = roleId === "SHA_V2" && !!spec;
+    const isVampireSingleButton = roleId === "SHA_V2" && !!spec && isMyIdentityRevealed() && !sealedVictim;
     btnAttackResultExcalibur?.classList.toggle("hidden", !exMeta.allowExcaliburButton);
-    btnAttackResultEnd?.classList.toggle("hidden", isVampireAbilityChoice);
+    btnAttackResultEnd?.classList.toggle("hidden", isVampireSingleButton);
     if (btnAttackResultKeep){
-      if (isVampireAbilityChoice){
+      if (isVampireSingleButton){
         btnAttackResultKeep.textContent = "OK吸血";
       }
-      btnAttackResultKeep.classList.toggle("hidden", (!isVampireAbilityChoice && sealedVictim) || shouldHideKeepAsSecondAttack);
+      btnAttackResultKeep.classList.toggle("hidden", (!isVampireSingleButton && sealedVictim) || shouldHideKeepAsSecondAttack);
     }
     attackResultChoiceBusy = false;
     attackResultPop.classList.remove("hidden");
