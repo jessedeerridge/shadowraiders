@@ -2590,11 +2590,16 @@
       hideTurnStartBoard();
       return;
     }
+    const turn = turnState() || {};
     const key = turnCycleKey();
     if (!isMyTurn()){
       if (turnStartBoardTurnKey && turnStartBoardTurnKey !== key){
         turnStartBoardTurnKey = key;
       }
+      hideTurnStartBoard();
+      return;
+    }
+    if (!!turn.moveDone){
       hideTurnStartBoard();
       return;
     }
