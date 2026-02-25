@@ -2577,11 +2577,6 @@
     turnStartBoard?.classList.remove("hidden");
   }
 
-  function isClickableElement(el){
-    if (!(el instanceof Element)) return false;
-    return !!el.closest('button, a, input, select, textarea, [role="button"], .btn, .seat-tile, .card72, .id72, .chip16, [data-clickable="true"]');
-  }
-
   function syncTurnStartBoard(){
     if (!isGameStarted()){
       turnStartBoardTurnKey = "";
@@ -2603,7 +2598,7 @@
 
   document.addEventListener("pointerdown", (e) => {
     if (turnStartBoard?.classList.contains("hidden")) return;
-    if (!isClickableElement(e.target)) return;
+    if (!e.isPrimary || e.button !== 0) return;
     hideTurnStartBoard();
   }, true);
 
