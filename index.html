@@ -1169,6 +1169,9 @@
   transform-origin:center;
   animation:markerPulse 1.2s ease-in-out infinite;
 }
+.mark-pulse-self-turn-start{
+  animation:markerPulseSelfTurn 1.2s ease-in-out infinite;
+}
 .equip-steal-pulse{
   animation:equipStealPulse 1.1s ease-in-out infinite;
   cursor:pointer;
@@ -1188,6 +1191,10 @@
 @keyframes markerPulse{
   0%,100%{ transform:scale(1); }
   50%{ transform:scale(1.2); }
+}
+@keyframes markerPulseSelfTurn{
+  0%,100%{ transform:scale(1); }
+  50%{ transform:scale(1.6); }
 }
 .turn-hint-pop{
   position:fixed;
@@ -11004,7 +11011,12 @@
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
   if (uid && walpurgisSwapHiddenUids.has(uid)) g.classList.add("marker-swap-hidden");
-  if (pulse) g.classList.add("mark-pulse-target");
+  if (pulse) {
+    g.classList.add("mark-pulse-target");
+    if (uid && uid === state.userId && canUseMoveDice() && !mustResolveUranusMeteorStrike() && !hasMovedByDiceInCurrentTurn()){
+      g.classList.add("mark-pulse-self-turn-start");
+    }
+  }
   if (eliminated) g.classList.add("marker-eliminated");
 
   const size = (uid && uid === state.userId) ? 17 : 16;
