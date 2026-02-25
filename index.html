@@ -2319,6 +2319,24 @@
   const greenShareSubtitle = document.getElementById("greenShareSubtitle");
   const greenShareActions = document.getElementById("greenShareActions");
   const greenShareCloseBtn = document.getElementById("greenShareCloseBtn");
+  function updateGreenShareDockPosition(){
+    if (!greenShareDock || greenShareDock.classList.contains("hidden")) return;
+    const gap = 10;
+    const viewportPadding = 12;
+    let top = 500;
+    const zoomRect = zoomStage?.getBoundingClientRect?.();
+    if (zoomRect && Number.isFinite(zoomRect.bottom) && zoomRect.height > 0){
+      top = Math.round(zoomRect.bottom + gap);
+    }
+    const dockRect = greenShareDock.getBoundingClientRect();
+    const dockHeight = (Number.isFinite(dockRect.height) && dockRect.height > 0) ? dockRect.height : 0;
+    const maxTop = Math.max(viewportPadding, Math.round(window.innerHeight - dockHeight - viewportPadding));
+    const clampedTop = Math.max(viewportPadding, Math.min(top, maxTop));
+    greenShareDock.style.top = `${clampedTop}px`;
+  }
+  window.addEventListener("resize", () => {
+    updateGreenShareDockPosition();
+  });
   if (greenShareDock && greenShareDock.parentElement === zoomBackdrop){
     document.body.appendChild(greenShareDock);
   }
@@ -4174,6 +4192,7 @@
     }
     greenShareActions?.classList.add("hidden");
     greenShareDock.classList.remove("hidden");
+    updateGreenShareDockPosition();
     cardPlayerSelectActive = true;
     updateCardInteractivity();
     renderTurnEndButton();
@@ -4298,6 +4317,7 @@
     updateCardInteractivity();
     renderTurnEndButton();
     greenShareDock.classList.remove("hidden");
+    updateGreenShareDockPosition();
     return true;
   }
 
@@ -4552,6 +4572,7 @@
       greenShareList.appendChild(btn);
     }
     greenShareDock.classList.remove("hidden");
+    updateGreenShareDockPosition();
     setGreenSessionState({ phase:"selecting", card:greenShareCard, attackRangeOnly: !!attackRangeOnly }).catch(() => {});
   }
 
@@ -4583,6 +4604,7 @@
       }
       remove(ref(db, `rooms/${state.roomCode}/greenInbox/${state.userId}`)).catch(() => {});
       greenShareDock.classList.remove("hidden");
+      updateGreenShareDockPosition();
       return;
     }
 
@@ -4620,6 +4642,7 @@
       greenShareList.appendChild(btn);
     }
     greenShareDock.classList.remove("hidden");
+    updateGreenShareDockPosition();
   }
 
   function hideGreenShareDock(){
@@ -4660,6 +4683,7 @@
 
       if (!greenShareDock || !greenShareList) return;
       greenShareDock.classList.remove("hidden");
+      updateGreenShareDockPosition();
       greenShareActions?.classList.add("hidden");
       pendingGreenRequestId = safeText(entry.requestId || "");
       renderGreenWaitingSelection(safeText(entry.toUid || ""), safeText(entry.toName || ""), safeText(entry.toInitial || ""), safeText(entry.toColor || ""));
