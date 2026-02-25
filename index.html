@@ -240,9 +240,9 @@
   .help-section{padding:6px 0 10px;}
   .help-section + .help-section{border-top:1px solid rgba(0,0,0,.16);}
   .help-section-title{font-weight:900;font-size:13px;margin:0 0 8px;}
-  .help-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--card-w),1fr));gap:8px;}
+  .help-card-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
   .help-card-grid .card72,.help-card-grid .id72{margin:0 auto;}
-  .help-section .card72,.help-section .id72{width:var(--card-w);height:var(--card-h);}
+  .help-section .card72,.help-section .id72{width:calc(var(--card-w) * 1.5);height:calc(var(--card-h) * 1.5);}
   .help-role-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
   .help-role-row:last-child{margin-bottom:0;}
 
