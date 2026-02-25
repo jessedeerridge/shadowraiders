@@ -6499,7 +6499,14 @@
         return;
       }
       if (roleId === "SHA_V2"){
+        const shouldWaitLootSelection = hasLootableEquipmentInAttackRows(pending?.rows || []);
         await resolveVampireHealAfterAttack();
+        if (shouldWaitLootSelection){
+          await waitMs(2600);
+        }
+        if (hasUnresolvedAttackLootSelection()){
+          return;
+        }
         const turnOwnerUid = currentTurnPlayerId();
         if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
           await doEndTurn(turnOwnerUid);
@@ -7925,6 +7932,15 @@
     const mode = safeText(mine.mode || "defeated") || "defeated";
     const targets = mode === "byron" ? (mine.targetUids || []) : (mine.defeatedUids || []);
     return targets.some(uid => {
+      if (!uid || uid === state.userId) return false;
+      return listEquipForUid(uid).some(it => !isIdentityEquipItem(it));
+    });
+  }
+
+  function hasLootableEquipmentInAttackRows(rows = []){
+    const preview = attackEliminationPreview(rows);
+    if (!preview.eliminatedUids.length) return false;
+    return preview.eliminatedUids.some(uid => {
       if (!uid || uid === state.userId) return false;
       return listEquipForUid(uid).some(it => !isIdentityEquipItem(it));
     });
