@@ -5249,6 +5249,7 @@
   let attackExpectedEliminationAt = 0;
   let previousEliminatedMap = {};
   let pendingAttackLoot = null;
+  let attackLootAutoEndTurnOwnerUid = "";
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
   const attackLootBody = document.getElementById("attackLootBody");
   const attackLootHeader = document.getElementById("attackLootHeader");
@@ -5287,10 +5288,36 @@
     if (!uid) return null;
     if (mode === "byron"){
       if (!normalizedTargets.length) return null;
-      return { uid, mode, targetUids:normalizedTargets, selectedByOwner:selectedByOwner || {}, at:Number(raw.at || Date.now()) };
+      return {
+        uid,
+        mode,
+        targetUids:normalizedTargets,
+        selectedByOwner:selectedByOwner || {},
+        autoEndTurn: !!raw.autoEndTurn,
+        at:Number(raw.at || Date.now())
+      };
     }
     if (!normalizedDefeated.length) return null;
-    return { uid, mode:"defeated", defeatedUids:normalizedDefeated, selected, at:Number(raw.at || Date.now()) };
+    return {
+      uid,
+      mode:"defeated",
+      defeatedUids:normalizedDefeated,
+      selected,
+      autoEndTurn: !!raw.autoEndTurn,
+      at:Number(raw.at || Date.now())
+    };
+  }
+
+  function setAttackLootAutoEndTurnOwner(uid){
+    attackLootAutoEndTurnOwnerUid = safeText(uid || "");
+  }
+
+  async function maybeEndTurnAfterAttackLootResolve(ownerUidHint = ""){
+    const ownerUid = safeText(ownerUidHint || attackLootAutoEndTurnOwnerUid || currentTurnPlayerId() || "");
+    attackLootAutoEndTurnOwnerUid = "";
+    if (!ownerUid) return;
+    if (currentTurnPlayerId() !== ownerUid) return;
+    await doEndTurn(ownerUid);
   }
 
   async function setAttackLootPending(payload){
@@ -5318,16 +5345,18 @@
     await setAttackLootPending(null);
   }
 
-  async function createOrMergeAttackLootPending(defeatedUids = []){
+  async function createOrMergeAttackLootPending(defeatedUids = [], options = {}){
     const uid = safeText(state.userId || "");
     if (!uid) return;
     const list = (defeatedUids || []).map(v => safeText(v || "")).filter(v => v && v !== uid);
     if (!list.length) return;
     const merged = new Set([...(pendingAttackLoot?.defeatedUids || []), ...list]);
+    const autoEndTurn = !!options.autoEndTurn || !!pendingAttackLoot?.autoEndTurn;
     pendingAttackLoot = {
       uid,
       defeatedUids:[...merged],
       selected: pendingAttackLoot?.selected || null,
+      autoEndTurn,
       at: Date.now()
     };
     await setAttackLootPending(pendingAttackLoot);
@@ -5588,6 +5617,8 @@
 
   async function commitAttackLootSelection(selection){
     if (!pendingAttackLoot) return;
+    const shouldAutoEndTurn = !!pendingAttackLoot.autoEndTurn;
+    const autoEndOwnerUid = safeText(pendingAttackLoot.uid || "");
     if (safeText(pendingAttackLoot.mode || "") === "byron"){
       const selectedByOwner = pendingAttackLoot.selectedByOwner || {};
       const targets = (pendingAttackLoot.targetUids || []).filter(uid => !!selectedByOwner[uid]);
@@ -5605,12 +5636,17 @@
       await clearAttackLootPending();
       closeZoom();
       renderEquipmentDock();
-      await doEndTurn(turnOwnerUid);
+      if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
+        await doEndTurn(turnOwnerUid);
+      }
       return;
     }
     if (selection?.noSteal){
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "奪わなくて本当にいいですか。", async () => {
         await clearAttackLootPending();
+        if (shouldAutoEndTurn){
+          await maybeEndTurnAfterAttackLootResolve(autoEndOwnerUid);
+        }
       }, { fixedLower:true, closeZoomOnNo:true });
       return;
     }
@@ -5624,6 +5660,9 @@
       await clearAttackLootPending();
       closeZoom();
       renderEquipmentDock();
+      if (shouldAutoEndTurn){
+        await maybeEndTurnAfterAttackLootResolve(autoEndOwnerUid);
+      }
     }
   }
 
@@ -6499,12 +6538,30 @@
         await startUlsterExtraAttackSelection();
         return;
       }
+      if (roleId === "RAI_F3"){
+        const turnOwnerUid = currentTurnPlayerId();
+        const needsLootSelection = !hasMyEquipmentByName("銀のロザリオ")
+          && eliminationPreview.eliminatedUids.some(uid => hasNonIdentityEquipment(uid));
+        if (needsLootSelection){
+          setAttackLootAutoEndTurnOwner(turnOwnerUid);
+          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids, { autoEndTurn:true });
+          return;
+        }
+        if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
+          await doEndTurn(turnOwnerUid);
+        }
+        return;
+      }
       if (roleId === "SHA_V2"){
         await resolveVampireHealAfterAttack();
-        if (!hasMyEquipmentByName("銀のロザリオ") && eliminationPreview.eliminatedUids.length){
-          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids);
-        }
         const turnOwnerUid = currentTurnPlayerId();
+        const needsLootSelection = !hasMyEquipmentByName("銀のロザリオ")
+          && eliminationPreview.eliminatedUids.some(uid => hasNonIdentityEquipment(uid));
+        if (needsLootSelection){
+          setAttackLootAutoEndTurnOwner(turnOwnerUid);
+          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids, { autoEndTurn:true });
+          return;
+        }
         if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
           await doEndTurn(turnOwnerUid);
         }
@@ -8413,9 +8470,18 @@
     await addResolvedDamageToPlayers(pending.rows || [], { advanceTurnOnResolve: advanceTurnOnCounterResolve });
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
+      const eliminationPreview = attackEliminationPreview(pending.rows || []);
+      const needsLootSelection = eliminationPreview.eliminatedUids.some(uid => hasNonIdentityEquipment(uid));
       await new Promise(resolve => setTimeout(resolve, 2000));
       if (currentTurnPlayerId() === attackTurnOwnerUid){
-        await doEndTurn(attackTurnOwnerUid);
+        if (needsLootSelection){
+          setAttackLootAutoEndTurnOwner(attackTurnOwnerUid);
+          if (eliminationPreview.eliminatedUids.length){
+            await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids, { autoEndTurn:true });
+          }
+        } else {
+          await doEndTurn(attackTurnOwnerUid);
+        }
       }
       attackFlowUiLockActive = false;
       suppressEndTurnButton = false;
