@@ -5249,6 +5249,7 @@
   let attackExpectedEliminationAt = 0;
   let previousEliminatedMap = {};
   let pendingAttackLoot = null;
+  let pendingAttackLootEndTurnRequest = null;
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
   const attackLootBody = document.getElementById("attackLootBody");
   const attackLootHeader = document.getElementById("attackLootHeader");
@@ -5287,10 +5288,36 @@
     if (!uid) return null;
     if (mode === "byron"){
       if (!normalizedTargets.length) return null;
-      return { uid, mode, targetUids:normalizedTargets, selectedByOwner:selectedByOwner || {}, at:Number(raw.at || Date.now()) };
+      return {
+        uid,
+        mode,
+        targetUids:normalizedTargets,
+        selectedByOwner:selectedByOwner || {},
+        endTurnAfterResolve: !!raw.endTurnAfterResolve,
+        endTurnExpectedUid: safeText(raw.endTurnExpectedUid || ""),
+        at:Number(raw.at || Date.now())
+      };
     }
     if (!normalizedDefeated.length) return null;
-    return { uid, mode:"defeated", defeatedUids:normalizedDefeated, selected, at:Number(raw.at || Date.now()) };
+    return {
+      uid,
+      mode:"defeated",
+      defeatedUids:normalizedDefeated,
+      selected,
+      endTurnAfterResolve: !!raw.endTurnAfterResolve,
+      endTurnExpectedUid: safeText(raw.endTurnExpectedUid || ""),
+      at:Number(raw.at || Date.now())
+    };
+  }
+
+  function consumePendingAttackLootEndTurnRequest(){
+    const req = pendingAttackLootEndTurnRequest;
+    if (!req) return null;
+    const isExpired = Number(req.expiresAt || 0) <= Date.now();
+    const sameTurnOwner = safeText(req.turnOwnerUid || "") === safeText(currentTurnPlayerId() || "");
+    pendingAttackLootEndTurnRequest = null;
+    if (isExpired || !sameTurnOwner) return null;
+    return req;
   }
 
   async function setAttackLootPending(payload){
@@ -5318,16 +5345,26 @@
     await setAttackLootPending(null);
   }
 
-  async function createOrMergeAttackLootPending(defeatedUids = []){
+  async function createOrMergeAttackLootPending(defeatedUids = [], options = {}){
     const uid = safeText(state.userId || "");
     if (!uid) return;
     const list = (defeatedUids || []).map(v => safeText(v || "")).filter(v => v && v !== uid);
     if (!list.length) return;
+    const requestedEndTurn = !!options.endTurnAfterResolve;
+    const requestTurnOwnerUid = safeText(options.endTurnExpectedUid || "") || safeText(currentTurnPlayerId() || "");
+    const carry = consumePendingAttackLootEndTurnRequest();
+    const keepEndTurn = !!pendingAttackLoot?.endTurnAfterResolve;
+    const shouldEndTurnAfterResolve = keepEndTurn || requestedEndTurn || !!carry;
+    const endTurnExpectedUid = keepEndTurn
+      ? safeText(pendingAttackLoot?.endTurnExpectedUid || "")
+      : (requestedEndTurn ? requestTurnOwnerUid : safeText(carry?.turnOwnerUid || ""));
     const merged = new Set([...(pendingAttackLoot?.defeatedUids || []), ...list]);
     pendingAttackLoot = {
       uid,
       defeatedUids:[...merged],
       selected: pendingAttackLoot?.selected || null,
+      endTurnAfterResolve: shouldEndTurnAfterResolve,
+      endTurnExpectedUid,
       at: Date.now()
     };
     await setAttackLootPending(pendingAttackLoot);
@@ -5610,7 +5647,12 @@
     }
     if (selection?.noSteal){
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "奪わなくて本当にいいですか。", async () => {
+        const shouldEndTurn = !!pendingAttackLoot?.endTurnAfterResolve;
+        const expectedUid = safeText(pendingAttackLoot?.endTurnExpectedUid || "") || safeText(currentTurnPlayerId() || "");
         await clearAttackLootPending();
+        if (shouldEndTurn && expectedUid && expectedUid === safeText(currentTurnPlayerId() || "")){
+          await doEndTurn(expectedUid);
+        }
       }, { fixedLower:true, closeZoomOnNo:true });
       return;
     }
@@ -5621,9 +5663,14 @@
     closeEquipmentDockBeforeLootResolve();
     const ok = await stealEquipmentFromPlayer(ownerUid, sourceKey);
     if (ok){
+      const shouldEndTurn = !!pendingAttackLoot?.endTurnAfterResolve;
+      const expectedUid = safeText(pendingAttackLoot?.endTurnExpectedUid || "") || safeText(currentTurnPlayerId() || "");
       await clearAttackLootPending();
       closeZoom();
       renderEquipmentDock();
+      if (shouldEndTurn && expectedUid && expectedUid === safeText(currentTurnPlayerId() || "")){
+        await doEndTurn(expectedUid);
+      }
     }
   }
 
@@ -6501,8 +6548,13 @@
       }
       if (roleId === "SHA_V2"){
         await resolveVampireHealAfterAttack();
-        if (!hasMyEquipmentByName("銀のロザリオ") && eliminationPreview.eliminatedUids.length){
-          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids);
+        const shouldOpenLoot = !hasMyEquipmentByName("銀のロザリオ") && eliminationPreview.eliminatedUids.length;
+        if (shouldOpenLoot){
+          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids, {
+            endTurnAfterResolve:true,
+            endTurnExpectedUid: safeText(currentTurnPlayerId() || "")
+          });
+          return;
         }
         const turnOwnerUid = currentTurnPlayerId();
         if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
@@ -6575,12 +6627,19 @@
     const pending = pendingAttackResolution;
     const spec = attackAbilitySpecFromRows(pending?.rows || []);
     const shouldConfirmEmmaEnd = isMyRole("RAI_E3") && isMyIdentityRevealed();
+    const requestAttackLootAutoEnd = () => {
+      pendingAttackLootEndTurnRequest = {
+        turnOwnerUid: safeText(currentTurnPlayerId() || ""),
+        expiresAt: Date.now() + 15000
+      };
+    };
     if (spec || shouldConfirmEmmaEnd){
       if (attackResultChoiceBusy) return;
       showRoomActionPopAt(window.innerWidth/2, window.innerHeight/2 + 40, "本当に終了しますか。", async () => {
         if (attackResultChoiceBusy) return;
         attackResultChoiceBusy = true;
         try {
+          requestAttackLootAutoEnd();
           await finalizePendingAttackResolution(true, true);
         } finally {
           attackResultChoiceBusy = false;
@@ -6588,6 +6647,7 @@
       }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
       return;
     }
+    requestAttackLootAutoEnd();
     await finalizePendingAttackResolution(true, true);
   });
 
