@@ -8295,6 +8295,11 @@
     return safeText(picked?.id || "");
   }
 
+  async function npcAnnounceSelectedPlayer(uid, targetUid){
+    const targetName = safeText(playerById(targetUid)?.name || "プレイヤー");
+    await showNpcSpeech(uid, `じゃ、${targetName}さん！`, 1200);
+  }
+
   async function applyNpcImmediateDeckCardEffect(uid, cardObj, theme){
     const name = safeText(cardObj?.name || "");
     if (!uid || !name) return;
@@ -8304,12 +8309,14 @@
     if (name === "応急手当"){
       const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:true });
       if (!targetUid) return;
+      await npcAnnounceSelectedPlayer(uid, targetUid);
       await setDamageToPlayer(targetUid, 7, "first_aid_set");
       return;
     }
     if (name === "恩恵"){
       const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:false });
       if (!targetUid) return;
+      await npcAnnounceSelectedPlayer(uid, targetUid);
       const eye = 1 + Math.floor(Math.random() * 6);
       await emitCardDiceEvent({ kind:"blessing", uid, d6:eye });
       await healDamageToPlayer(targetUid, eye, "card_blessing_heal");
@@ -8318,6 +8325,7 @@
     if (name === "吸血コウモリ"){
       const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:false });
       if (!targetUid) return;
+      await npcAnnounceSelectedPlayer(uid, targetUid);
       if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
       await healDamageToPlayer(uid, 1, "card_vampire_bat_heal");
       return;
@@ -8325,6 +8333,7 @@
     if (name === "三つ目の黒犬"){
       const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:false });
       if (!targetUid) return;
+      await npcAnnounceSelectedPlayer(uid, targetUid);
       if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
       if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 2);
       return;
@@ -8332,6 +8341,7 @@
     if (name === "呪いの人形"){
       const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:true });
       if (!targetUid) return;
+      await npcAnnounceSelectedPlayer(uid, targetUid);
       const eye = 1 + Math.floor(Math.random() * 6);
       await emitCardDiceEvent({ kind:"curse_doll", uid, d6:eye });
       if (eye <= 4){
@@ -8342,21 +8352,24 @@
       return;
     }
     if (name === "光臨"){
-      if (chooseYes && role?.faction === "レイダー"){
+      const canChooseYes = role?.faction === "レイダー";
+      if (canChooseYes && chooseYes){
         await revealIdentityToEquipmentForUid(uid);
         await setDamageToPlayer(uid, 0, "card_kohrin_heal");
       }
       return;
     }
     if (name === "戦慄の闇儀式"){
-      if (chooseYes && role?.faction === "シャドウ"){
+      const canChooseYes = role?.faction === "シャドウ";
+      if (canChooseYes && chooseYes){
         await revealIdentityToEquipmentForUid(uid);
         await setDamageToPlayer(uid, 0, "card_kohrin_heal");
       }
       return;
     }
     if (name === "幸せのクッキー"){
-      if (chooseYes && (role?.initial === "A" || role?.initial === "U")){
+      const canChooseYes = (role?.initial === "A" || role?.initial === "U");
+      if (canChooseYes && chooseYes){
         await revealIdentityToEquipmentForUid(uid, identityPromptRevealOptions(name));
         await setDamageToPlayer(uid, 0, "card_kohrin_heal");
       }
@@ -8407,14 +8420,31 @@
       return;
     }
     if (name === "オリバーの子分"){
-      await npcStealRandomEquipment(uid);
+      const stolen = await npcStealRandomEquipment(uid);
+      if (stolen?.ownerUid){
+        const ownerName = safeText(playerById(stolen.ownerUid)?.name || "プレイヤー");
+        const cardName = safeText(stolen.cardName || "装備");
+        await showNpcSpeech(uid, `${ownerName}さんから${cardName}をもらいます！`, 1500);
+      }
       return;
     }
     if (name === "バナナの皮"){
       const myItems = listEquipForUid(uid).filter(it => !isIdentityEquipItem(it));
       if (myItems.length === 0){
         await addDamageToPlayer(uid, 1);
+        return;
       }
+      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:false });
+      if (!targetUid) return;
+      const choice = myItems[Math.floor(Math.random() * myItems.length)] || null;
+      const sourceKey = safeText(choice?.sourceKey || "");
+      if (!sourceKey) return;
+      const ok = await moveEquipmentCardBetweenPlayers(uid, targetUid, sourceKey);
+      if (!ok) return;
+      const targetName = safeText(playerById(targetUid)?.name || "プレイヤー");
+      const cardName = safeText(choice?.name || "装備");
+      await showNpcSpeech(uid, `${targetName}さんに${cardName}をあげますよ...`, 1600);
+      return;
     }
   }
 
@@ -8426,6 +8456,7 @@
     const pool = inRange.length ? inRange : aliveOthers.map(p => p.id);
     const targetUid = pool[Math.floor(Math.random() * pool.length)];
     if (!targetUid) return;
+    await npcAnnounceSelectedPlayer(senderUid, targetUid);
 
     const requestId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
     const payload = { from: senderUid, to: targetUid, requestId, card: cardObj, at: Date.now() };
