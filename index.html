@@ -8245,6 +8245,17 @@
 
   let npcAutoTurnRunning = false;
   let npcAutoTurnKey = "";
+  let npcAutoTurnRetryTimer = null;
+
+  function scheduleNpcTurnRetry(delayMs = 80){
+    if (npcAutoTurnRetryTimer){
+      clearTimeout(npcAutoTurnRetryTimer);
+    }
+    npcAutoTurnRetryTimer = setTimeout(() => {
+      npcAutoTurnRetryTimer = null;
+      runNpcTurnIfNeeded();
+    }, Math.max(10, Number(delayMs || 80)));
+  }
 
   async function runNpcTurnIfNeeded(){
     if (npcAutoTurnRunning) return;
@@ -8336,6 +8347,7 @@
       await advanceTurnToNextPlayer(turnUid);
     } finally {
       npcAutoTurnRunning = false;
+      scheduleNpcTurnRetry(120);
     }
   }
 
