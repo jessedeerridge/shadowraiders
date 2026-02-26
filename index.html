@@ -3565,7 +3565,7 @@
     if (roleId === "CIT_B1" && maxDamage >= 2){
       return { abilityName:"念力の懐中時計", description:"ダメージの代わりに相手の装備カードを獲得しますか。" };
     }
-    if (roleId === "RAI_F3" && !isMyIdentityRevealed() && pendingAttackResultMeta?.freddieSpecial && hasRevealedTargetInRows(normalizedRows)){
+    if (roleId === "RAI_F3" && !isMyIdentityRevealed() && pendingAttackResultMeta?.freddieSpecial && hasRevealedTargetInRows(normalizedRows) && hasSuccessDamage){
       return { abilityName:"ドラゴンアタック", description:"正体を公開している相手へのダメージが+2になります。" };
     }
     if (roleId === "RAI_G2" && hasMyEquipmentByName("エクスカリバー") && attackFailed){
@@ -6515,6 +6515,29 @@
       const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
       if (roleId === "RAI_F3"){
+        pending.rows = (pending?.rows || []).map(item => {
+          const uid = safeText(item?.uid || "");
+          const baseDamage = Math.max(0, Number(item?.damage || 0));
+          const bonusDamage = Math.max(0, Number(item?.bonusLabelAmount || 0));
+          if (!uid || bonusDamage <= 0) return { ...item, uid, damage: baseDamage, bonusLabelAmount: 0 };
+          const add = applyIncomingDamageModifiers(uid, bonusDamage, { source:"attack" });
+          return {
+            ...item,
+            uid,
+            damage: Math.max(0, baseDamage + add),
+            bonusLabelAmount: 0
+          };
+        });
+        pendingAttackResultMeta = {
+          ...(pendingAttackResultMeta || {}),
+          showBonusLabel: false,
+          freddieSpecial: false,
+          zeroDamagePreview: false
+        };
+        pending.meta = normalizeAttackResultMeta(pendingAttackResultMeta);
+        showAttackResultPop(pending.rows);
+        cachePendingAttackResolution(pending);
+        await upsertPendingAttackResolution(pending.rows, pending.turnKey || turnCycleKey(), pendingAttackResultMeta);
         await requestAttackLootAutoEndForCurrentTurn({ syncPending:false });
       }
 
