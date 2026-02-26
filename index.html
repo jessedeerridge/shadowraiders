@@ -8122,6 +8122,8 @@
 
   let npcTurnAutoKey = "";
   let npcTurnAutoTimer = null;
+  let npcTurnInFlightUid = "";
+
 
   async function emitNpcMoveDiceEvent(uid, d6, d4){
     if (!state.roomCode || !uid) return;
@@ -8199,10 +8201,14 @@
   async function runNpcTurnIfNeeded(){
     if (!state.isHost || !isGameStarted()) return;
     const uid = currentTurnPlayerId();
-    if (!uid || !isNpcPlayer(uid)) return;
-    const key = turnCycleKey();
-    if (!key || key === npcTurnAutoKey) return;
-    npcTurnAutoKey = key;
+    if (!uid || !isNpcPlayer(uid)){
+      npcTurnInFlightUid = "";
+      npcTurnAutoKey = "";
+      return;
+    }
+    if (npcTurnInFlightUid === uid) return;
+    if (npcTurnAutoTimer && npcTurnAutoKey === uid) return;
+    npcTurnAutoKey = uid;
     if (npcTurnAutoTimer){
       clearTimeout(npcTurnAutoTimer);
       npcTurnAutoTimer = null;
@@ -8210,84 +8216,95 @@
     npcTurnAutoTimer = setTimeout(async () => {
       npcTurnAutoTimer = null;
       if (currentTurnPlayerId() !== uid || !isNpcPlayer(uid)) return;
-
-      const nowTurn = turnState() || {};
-      if (!nowTurn.moveDone){
-        showTemporaryRoleTag(uid, "やります！", 1500, { tone:"white" });
-        await new Promise(r => setTimeout(r, 1500));
-        const startRoomId = markerRoomId(markerCache?.[uid] || null);
-        let roomId = 1;
-        if (startRoomId === 7){
-          roomId = 1 + Math.floor(Math.random() * 6);
-        } else {
-          const d6 = 1 + Math.floor(Math.random() * 6);
-          const d4 = 1 + Math.floor(Math.random() * 4);
-          await emitNpcMoveDiceEvent(uid, d6, d4);
-          roomId = diceTotalToRoomId(d6 + d4);
+      npcTurnInFlightUid = uid;
+      try {
+        const nowTurn = turnState() || {};
+        if (!nowTurn.moveDone){
+          showTemporaryRoleTag(uid, "やります！", 1500, { tone:"white" });
+          await new Promise(r => setTimeout(r, 1500));
+          const startRoomId = markerRoomId(markerCache?.[uid] || null);
+          let roomId = 1;
+          if (startRoomId === 7){
+            roomId = 1 + Math.floor(Math.random() * 6);
+          } else {
+            const d6 = 1 + Math.floor(Math.random() * 6);
+            const d4 = 1 + Math.floor(Math.random() * 4);
+            await emitNpcMoveDiceEvent(uid, d6, d4);
+            await new Promise(r => setTimeout(r, 200));
+            roomId = diceTotalToRoomId(d6 + d4);
+          }
+          await placePlayerMarkerInRoom(uid, roomId);
+          await updateTurnRoomActionState({
+            moveDone:true,
+            movedByDiceRoomId:roomId,
+            room3ActionUsed:false,
+            room4StealUsed:false
+          }, uid);
         }
-        await placePlayerMarkerInRoom(uid, roomId);
-        await updateTurnRoomActionState({
-          moveDone:true,
-          movedByDiceRoomId:roomId,
-          room3ActionUsed:false,
-          room4StealUsed:false
-        }, uid);
-      }
 
-      await new Promise(r => setTimeout(r, 2000));
-      if (currentTurnPlayerId() !== uid) return;
-      const movedRoom = Number(turnRoomActionState()?.movedByDiceRoomId || 0);
-      if (movedRoom === 3 && !turnRoomActionState()?.room3ActionUsed){
-        const alive = latestPlayers.filter(p => !isPlayerEliminated(p.id));
-        const target = alive[Math.floor(Math.random() * Math.max(1, alive.length))];
-        if (target?.id){
-          if (Math.random() < 0.5) await addDamageToPlayer(target.id, 2, { source:"room3" });
-          else await healDamageToPlayer(target.id, 1, "room3_heal");
-        }
-        await updateTurnRoomActionState({ room3ActionUsed:true, deckDrawDone:true }, uid);
-      } else if (movedRoom === 4 && !turnRoomActionState()?.room4StealUsed){
-        const candidates = latestPlayers.filter(p => p.id !== uid && !isPlayerEliminated(p.id) && hasAnyEquipment(p.id));
-        const victim = candidates[Math.floor(Math.random() * Math.max(1, candidates.length))];
-        if (victim?.id){
-          const items = listEquipForUid(victim.id).filter(v => !isIdentityEquipItem(v));
-          const pick = items[Math.floor(Math.random() * Math.max(1, items.length))];
-          if (pick?.sourceKey){
-            await moveEquipmentCardBetweenPlayers(victim.id, uid, pick.sourceKey);
+        await new Promise(r => setTimeout(r, 2000));
+        if (currentTurnPlayerId() !== uid) return;
+        const movedRoom = Number(turnRoomActionState()?.movedByDiceRoomId || 0);
+        if (movedRoom === 3 && !turnRoomActionState()?.room3ActionUsed){
+          const alive = latestPlayers.filter(p => !isPlayerEliminated(p.id));
+          const target = alive[Math.floor(Math.random() * Math.max(1, alive.length))];
+          if (target?.id){
+            if (Math.random() < 0.5) await addDamageToPlayer(target.id, 2, { source:"room3" });
+            else await healDamageToPlayer(target.id, 1, "room3_heal");
+          }
+          await updateTurnRoomActionState({ room3ActionUsed:true, deckDrawDone:true }, uid);
+        } else if (movedRoom === 4 && !turnRoomActionState()?.room4StealUsed){
+          const candidates = latestPlayers.filter(p => p.id !== uid && !isPlayerEliminated(p.id) && hasAnyEquipment(p.id));
+          const victim = candidates[Math.floor(Math.random() * Math.max(1, candidates.length))];
+          if (victim?.id){
+            const items = listEquipForUid(victim.id).filter(v => !isIdentityEquipItem(v));
+            const pick = items[Math.floor(Math.random() * Math.max(1, items.length))];
+            if (pick?.sourceKey){
+              await moveEquipmentCardBetweenPlayers(victim.id, uid, pick.sourceKey);
+            }
+          }
+          await updateTurnRoomActionState({ room4StealUsed:true, deckDrawDone:true }, uid);
+        } else if (!turnState()?.deckDrawDone){
+          const allows = allowedTypesByRoom(movedRoom);
+          if (allows.length){
+            const drawType = allows[Math.floor(Math.random() * allows.length)];
+            await npcDrawType(uid, drawType);
           }
         }
-        await updateTurnRoomActionState({ room4StealUsed:true, deckDrawDone:true }, uid);
-      } else if (!turnState()?.deckDrawDone){
-        const allows = allowedTypesByRoom(movedRoom);
-        if (allows.length){
-          const drawType = allows[Math.floor(Math.random() * allows.length)];
-          await npcDrawType(uid, drawType);
+
+        await new Promise(r => setTimeout(r, 2000));
+        if (currentTurnPlayerId() !== uid) return;
+        const targets = Array.from(attackRangeTargetUidsFor(uid)).filter(t => !isPlayerEliminated(t));
+        if (targets.length){
+          const targetUid = targets[Math.floor(Math.random() * targets.length)];
+          const targetName = safeText(playerById(targetUid)?.name || "").trim() || "その人";
+          showTemporaryRoleTag(uid, `${targetName}さんを攻撃！`, 3200, { tone:"white" });
+          await new Promise(r => setTimeout(r, 1500));
+          const d6 = 1 + Math.floor(Math.random() * 6);
+          const d4 = 1 + Math.floor(Math.random() * 4);
+          await emitNpcAttackDiceEvent(uid, targetUid, d6, d4);
+          await new Promise(r => setTimeout(r, 200));
+          const damage = calcAttackDamageFromRoll(uid, d6, d4, { targetUid });
+          if (damage > 0){
+            await addDamageToPlayer(targetUid, damage, { source:"attack" });
+          }
+          await new Promise(r => setTimeout(r, 900));
+          delete temporaryRoleTagByUid[uid];
+          renderPositionLine();
+        }
+        await updateTurnRoomActionState({ attackDone:true }, uid);
+
+        await new Promise(r => setTimeout(r, 2000));
+        if (currentTurnPlayerId() !== uid) return;
+        await advanceTurnToNextPlayer(uid);
+      } finally {
+        if (npcTurnInFlightUid === uid){
+          npcTurnInFlightUid = "";
+        }
+        if (currentTurnPlayerId() !== uid){
+          npcTurnAutoKey = "";
         }
       }
-
-      await new Promise(r => setTimeout(r, 2000));
-      if (currentTurnPlayerId() !== uid) return;
-      const targets = Array.from(attackRangeTargetUidsFor(uid)).filter(t => !isPlayerEliminated(t));
-      if (targets.length){
-        const targetUid = targets[Math.floor(Math.random() * targets.length)];
-        const targetName = safeText(playerById(targetUid)?.name || "").trim() || "その人";
-        showTemporaryRoleTag(uid, `${targetName}さんを攻撃！`, 3200, { tone:"white" });
-        await new Promise(r => setTimeout(r, 1500));
-        const d6 = 1 + Math.floor(Math.random() * 6);
-        const d4 = 1 + Math.floor(Math.random() * 4);
-        await emitNpcAttackDiceEvent(uid, targetUid, d6, d4);
-        const damage = calcAttackDamageFromRoll(uid, d6, d4, { targetUid });
-        if (damage > 0){
-          await addDamageToPlayer(targetUid, damage, { source:"attack" });
-        }
-        await new Promise(r => setTimeout(r, 1100));
-        delete temporaryRoleTagByUid[uid];
-        renderPositionLine();
-      }
-      await updateTurnRoomActionState({ attackDone:true }, uid);
-
-      await new Promise(r => setTimeout(r, 2000));
-      if (currentTurnPlayerId() !== uid) return;
-      await advanceTurnToNextPlayer(uid);
     }, 2000);
   }
 
