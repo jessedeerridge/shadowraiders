@@ -8814,26 +8814,34 @@
           await placePlayerMarkerInRoom(turnUid, nextRoom);
         } else {
           await showNpcSpeech(turnUid, "ふります！", 1500);
+          const hasCompass = hasEquipmentByName(turnUid, "神秘のコンパス");
           const d6 = 1 + Math.floor(Math.random() * 6);
           const d4 = 1 + Math.floor(Math.random() * 4);
+          const secondD6 = 1 + Math.floor(Math.random() * 6);
+          const secondD4 = 1 + Math.floor(Math.random() * 4);
           const width = window.innerWidth;
           const height = window.innerHeight;
           const centerX = width / 2;
           const centerY = height / 2;
           const motion = createDiceMotion(width, height, centerX, centerY);
+          const secondMotion = hasCompass ? createDiceMotion(width, height, centerX, centerY) : null;
           await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), {
             uid: turnUid,
             d6,
             d4,
-            compass:false,
-            secondD6:1,
-            secondD4:1,
+            compass:hasCompass,
+            secondD6,
+            secondD4,
             motion,
+            secondMotion,
             at: Date.now()
           });
-          await waitMs(1200);
+          await waitMs(hasCompass ? 4200 : 1200);
           await waitMs(200);
-          const targetRoomId = diceTotalToRoomId(d6 + d4);
+          const roomA = diceTotalToRoomId(d6 + d4);
+          const roomB = diceTotalToRoomId(secondD6 + secondD4);
+          const candidateRooms = hasCompass ? [roomA, roomB].filter((rid) => Number.isFinite(Number(rid))) : [roomA];
+          const targetRoomId = candidateRooms[Math.floor(Math.random() * candidateRooms.length)] || roomA;
           if (targetRoomId) await placePlayerMarkerInRoom(turnUid, targetRoomId);
         }
         await update(ref(db, `rooms/${state.roomCode}/turn`), { moveDone:true, moveAt:Date.now() });
