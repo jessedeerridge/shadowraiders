@@ -3428,6 +3428,19 @@
         useAgathaAbilityOnReveal: false
       };
     }
+    if (name === "光臨"){
+      return {
+        revealedBy: "kohrin",
+        useAgathaAbilityOnReveal: false,
+        triggerGordonBarrierOnReveal: true
+      };
+    }
+    if (name === "戦慄の闇儀式"){
+      return {
+        revealedBy: "dark_ritual",
+        useAgathaAbilityOnReveal: false
+      };
+    }
     return {};
   }
 
@@ -5807,6 +5820,7 @@
 
     const revealedBy = safeText(options.revealedBy || "");
     const useAgathaAbilityOnReveal = options.useAgathaAbilityOnReveal !== false;
+    const triggerGordonBarrierOnReveal = options.triggerGordonBarrierOnReveal !== false;
     const eRef = ref(db, `rooms/${state.roomCode}/equipment/${state.userId}/identity`);
     let revealedNow = false;
     await runTransaction(eRef, (cur) => {
@@ -5830,6 +5844,9 @@
     if (revealedNow && safeText(my.roleId) === "CIT_A3" && useAgathaAbilityOnReveal){
       if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) closeZoom();
       await triggerAgathaRevealAbility();
+    }
+    if (revealedNow && safeText(my.roleId) === "RAI_G1" && triggerGordonBarrierOnReveal){
+      await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${state.userId}`), true);
     }
   }
 
@@ -6095,6 +6112,11 @@
         if (myRoleId === "RAI_G3"){
           e.stopPropagation();
           showRevealPopAt(idCard, { mode:"notice", message:"今は公開できません。" });
+          return;
+        }
+        if (TURN_START_ONLY_REVEAL_ROLE_IDS.has(myRoleId) && !!turnState()?.moveDone){
+          e.stopPropagation();
+          showRevealPopAt(idCard, { mode:"notice", message:"手番の初めにだけ使えます。" });
           return;
         }
         if (!isMyTurn()) return;
@@ -11800,7 +11822,7 @@
         cardTheme: name === "戦慄の闇儀式" ? "black" : "white",
         openZoom: true,
         onYes: async () => {
-          await revealMyIdentityToEquipment();
+          await revealMyIdentityToEquipment(identityPromptRevealOptions(name));
           openIdentityRevealZoom(role, state.userId);
           await setDamageToPlayer(state.userId, 0, "card_kohrin_heal");
         }
@@ -12046,6 +12068,7 @@
         const hiddenFreddie = isMyRole("RAI_F3") && !isMyIdentityRevealed() && !isMyAbilitySealed();
         const hiddenExcaliburPreview = !!exMeta?.allowExcaliburButton;
         const hasExcalibur = hasEquipmentByName(state.userId, "エクスカリバー");
+        let freddieHitRevealedTarget = false;
         let resolvedRows = targetUids.map(uid => {
           const normalizedUid = safeText(uid);
           const targetRevealed = isIdentityRevealedFor(normalizedUid);
@@ -12061,6 +12084,7 @@
           let bonusLabelAmount = 0;
           if (hiddenFreddie && attackSucceeded && targetRevealed){
             bonusLabelAmount += 2;
+            freddieHitRevealedTarget = true;
             if (hasExcalibur){
               bonusLabelAmount += 2;
             }
@@ -12079,7 +12103,7 @@
         pendingAttackResultMeta = {
           showBonusLabel: !!exMeta?.showBonusLabel,
           allowExcaliburButton: !!exMeta?.allowExcaliburButton && !freddieHiddenExcaliburRevealHit,
-          freddieSpecial: hiddenFreddie && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 2),
+          freddieSpecial: hiddenFreddie && freddieHitRevealedTarget,
           zeroDamagePreview: false
         };
         const hasAttackerSageRobe = hasEquipmentByName(state.userId, "賢者のローブ");
