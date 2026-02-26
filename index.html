@@ -8115,6 +8115,44 @@
   let npcTurnAutoKey = "";
   let npcTurnAutoTimer = null;
 
+  async function emitNpcMoveDiceEvent(uid, d6, d4){
+    if (!state.roomCode || !uid) return;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const motion = createDiceMotion(width, height, width/2, height/2);
+    await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), {
+      uid,
+      d6: Math.max(1, Math.min(6, Number(d6) || 1)),
+      d4: Math.max(1, Math.min(4, Number(d4) || 1)),
+      compass: false,
+      secondD6: 1 + Math.floor(Math.random() * 6),
+      secondD4: 1 + Math.floor(Math.random() * 4),
+      motion,
+      at: Date.now()
+    });
+  }
+
+  async function emitNpcAttackDiceEvent(uid, targetUid, d6, d4){
+    if (!state.roomCode || !uid || !targetUid) return;
+    const marker = markerCache?.[targetUid] || null;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const motion = createDiceMotion(width, height, width/2, height/2);
+    await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
+      uid,
+      targetUid,
+      d6: Math.max(1, Math.min(6, Number(d6) || 1)),
+      d4: Math.max(1, Math.min(4, Number(d4) || 1)),
+      x: Number(marker?.x || 0),
+      y: Number(marker?.y || 0),
+      masamuneMode: false,
+      vendettaMode: false,
+      gatlingTargetUids: [],
+      motion,
+      at: Date.now()
+    });
+  }
+
   async function npcDrawType(uid, type){
     if (!state.roomCode || !uid || !["green","white","black"].includes(type)) return;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
@@ -8167,7 +8205,16 @@
 
       const nowTurn = turnState() || {};
       if (!nowTurn.moveDone){
-        const roomId = 1 + Math.floor(Math.random() * 7);
+        const startRoomId = markerRoomId(markerCache?.[uid] || null);
+        let roomId = 1;
+        if (startRoomId === 7){
+          roomId = 1 + Math.floor(Math.random() * 6);
+        } else {
+          const d6 = 1 + Math.floor(Math.random() * 6);
+          const d4 = 1 + Math.floor(Math.random() * 4);
+          await emitNpcMoveDiceEvent(uid, d6, d4);
+          roomId = diceTotalToRoomId(d6 + d4);
+        }
         await placePlayerMarkerInRoom(uid, roomId);
         await updateTurnRoomActionState({
           moveDone:true,
@@ -8214,6 +8261,7 @@
         const targetUid = targets[Math.floor(Math.random() * targets.length)];
         const d6 = 1 + Math.floor(Math.random() * 6);
         const d4 = 1 + Math.floor(Math.random() * 4);
+        await emitNpcAttackDiceEvent(uid, targetUid, d6, d4);
         const damage = calcAttackDamageFromRoll(uid, d6, d4, { targetUid });
         if (damage > 0){
           await addDamageToPlayer(targetUid, damage, { source:"attack" });
