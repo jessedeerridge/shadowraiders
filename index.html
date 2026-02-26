@@ -6515,6 +6515,7 @@
       const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
       if (roleId === "RAI_F3"){
+        pending.rows = applyAttackResultBonusDamageRows(pending?.rows || []);
         await requestAttackLootAutoEndForCurrentTurn({ syncPending:false });
       }
 
@@ -9778,10 +9779,6 @@
       damage += 2;
     }
 
-    if (hasEquipmentByName(uid, "賢者のローブ")){
-      damage -= 1;
-    }
-
     const targetUid = safeText(options.targetUid || "");
     if (uid === state.userId && isMyRole("RAI_F3") && isMyIdentityRevealed() && !isMyAbilitySealed() && targetUid && isIdentityRevealedFor(targetUid)){
       damage += 2;
@@ -9803,6 +9800,21 @@
       if (!uid) return { ...item, damage: base };
       const add = applyIncomingDamageModifiers(uid, plus, { source:"attack" });
       return { ...item, uid, damage: Math.max(0, base + add) };
+    });
+  }
+
+  function applyAttackResultBonusDamageRows(rows = []){
+    return (rows || []).map(item => {
+      const uid = safeText(item?.uid || "");
+      const base = Math.max(0, Number(item?.damage || 0));
+      const bonus = Math.max(0, Number(item?.bonusLabelAmount || 0));
+      if (!uid || bonus <= 0) return { ...item, uid, damage: base };
+      const add = applyIncomingDamageModifiers(uid, bonus, { source:"attack" });
+      return {
+        ...item,
+        uid,
+        damage: Math.max(0, base + add)
+      };
     });
   }
 
@@ -10972,7 +10984,7 @@
             ? applyIncomingDamageModifiers(normalizedUid, damage, { source:"attack" })
             : 0;
           let bonusLabelAmount = 0;
-          if (hiddenFreddie && targetRevealed){
+          if (attackSucceeded && hiddenFreddie && targetRevealed){
             bonusLabelAmount += 2;
             if (hasExcalibur){
               bonusLabelAmount += 2;
@@ -10995,10 +11007,9 @@
           freddieSpecial: hiddenFreddie && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 2),
           zeroDamagePreview: false
         };
-        const hasAttackerSageRobe = hasEquipmentByName(state.userId, "賢者のローブ");
         const hasTargetSageRobe = targetUids.some(uid => hasEquipmentByName(uid, "賢者のローブ"));
         const hasExcaliburPreviewZero = !!pendingAttackResultMeta.allowExcaliburButton
-          && (hasAttackerSageRobe || hasTargetSageRobe)
+          && hasTargetSageRobe
           && Math.abs((Number(finalD6) || 0) - (Number(finalD4) || 0)) === 1
           && resolvedRows.some(row => Number(row.damage || 0) === 0);
         if (hasExcaliburPreviewZero){
