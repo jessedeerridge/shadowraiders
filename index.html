@@ -2422,6 +2422,9 @@
   let greenInboxInitialized = false;
   let greenReplySeenAt = 0;
   let greenReplyInitialized = false;
+  let npcSpeechInitialized = false;
+  let npcSpeechSeenAt = 0;
+  let activeNpcSpeechByUid = {};
   let greenZoomLocked = false;
   let pendingGreenRequestId = "";
   let pendingGreenAnswerMsg = null;
@@ -2522,6 +2525,10 @@
 
   const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
+  const NPC_FOREIGN_NAMES = [
+    "Alex","Brian","Chris","Diana","Emma","Felix","Grace","Henry","Iris","Jason",
+    "Kevin","Luna","Mia","Noah","Olivia","Parker","Quinn","Ruby","Sophia","Victor"
+  ];
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -8130,6 +8137,208 @@
     });
   }
 
+
+  function isNpcPlayerUid(uid){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return false;
+    const row = latestPlayers.find((p) => safeText(p.id || "") === targetUid) || null;
+    if (!row) return false;
+    const table = state.room?.tables?.[String(row.seatIndex)] || null;
+    return !!table?.isNpc || targetUid.startsWith("npc_");
+  }
+
+  async function showNpcSpeech(uid, text, durationMs = 1500){
+    const targetUid = safeText(uid || "");
+    const label = safeText(text || "").trim();
+    if (!state.roomCode || !targetUid || !label) return;
+    const at = Date.now();
+    await set(ref(db, `rooms/${state.roomCode}/npcSpeech`), {
+      uid: targetUid,
+      text: label,
+      at,
+      expiresAt: at + Math.max(400, Number(durationMs || 1500))
+    });
+    await waitMs(Math.max(400, Number(durationMs || 1500)));
+  }
+
+  async function grantEquipmentToPlayer(uid, cardObj, theme){
+    const targetUid = safeText(uid || "");
+    if (!state.roomCode || !targetUid || !cardObj || !isEquipCard(cardObj)) return false;
+    const key = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    await set(ref(db, `rooms/${state.roomCode}/equipment/${targetUid}/${key}`), {
+      theme: theme || "white",
+      name: safeText(cardObj.name),
+      effect: safeText(cardObj.effect),
+      at: Date.now()
+    });
+    return true;
+  }
+
+  async function npcDrawFromRoom(uid, roomId){
+    const types = allowedTypesByRoom(roomId);
+    if (!types.length || !state.roomCode) return;
+    const drawType = (roomId === 6)
+      ? (types[Math.floor(Math.random() * types.length)] || "white")
+      : types[0];
+    let drawn = null;
+    await runTransaction(ref(db, `rooms/${state.roomCode}`), (cur) => {
+      if (!cur) return cur;
+      const deck = cur.deckState?.[drawType];
+      if (!deck || !Array.isArray(deck.order)) return cur;
+      const idx = Number(deck.idx || 0);
+      if (idx >= deck.order.length) return cur;
+      drawn = deck.order[idx];
+      deck.idx = idx + 1;
+      cur.deckState.updatedAt = Date.now();
+      return cur;
+    });
+    if (drawn && (drawType === "white" || drawType === "black")){
+      await grantEquipmentToPlayer(uid, drawn, drawType);
+    }
+  }
+
+  async function npcStealRandomEquipment(uid){
+    const others = latestPlayers
+      .filter((p) => p.id !== uid && !isPlayerEliminated(p.id))
+      .map((p) => ({ uid:p.id, cards:listEquipForUid(p.id).filter((it) => !isIdentityEquipItem(it)) }))
+      .filter((row) => row.cards.length > 0);
+    if (!others.length || !state.roomCode) return;
+    const target = others[Math.floor(Math.random() * others.length)];
+    const card = target.cards[Math.floor(Math.random() * target.cards.length)];
+    if (!card?.sourceKey) return;
+    await runTransaction(ref(db, `rooms/${state.roomCode}`), (cur) => {
+      if (!cur) return cur;
+      const item = cur?.equipment?.[target.uid]?.[card.sourceKey];
+      if (!item || safeText(item.kind || "") === "identity") return cur;
+      cur.equipment = cur.equipment || {};
+      cur.equipment[target.uid] = cur.equipment[target.uid] || {};
+      delete cur.equipment[target.uid][card.sourceKey];
+      cur.equipment[uid] = cur.equipment[uid] || {};
+      const nextKey = `${Date.now()}_${Math.random().toString(16).slice(2,8)}`;
+      cur.equipment[uid][nextKey] = { ...item, at: Date.now() };
+      return cur;
+    });
+  }
+
+  async function executeNpcRoomAction(uid, roomId){
+    const rid = Number(roomId || 0);
+    if ([1,2,5,6].includes(rid)){
+      await npcDrawFromRoom(uid, rid);
+      return;
+    }
+    if (rid === 4){
+      await npcStealRandomEquipment(uid);
+      return;
+    }
+    if (rid === 3){
+      const doDamage = Math.random() < 0.5;
+      if (doDamage){
+        const targets = latestPlayers.filter((p) => p.id !== uid && !isPlayerEliminated(p.id));
+        if (!targets.length) return;
+        const t = targets[Math.floor(Math.random() * targets.length)];
+        await addDamageToPlayer(t.id, 2, { source:"room3" });
+      } else {
+        await healDamageToPlayer(uid, 1, "room3_heal");
+      }
+    }
+  }
+
+  let npcAutoTurnRunning = false;
+  let npcAutoTurnKey = "";
+
+  async function runNpcTurnIfNeeded(){
+    if (npcAutoTurnRunning) return;
+    if (!state.isHost || !isGameStarted() || !state.roomCode) return;
+    if (!state.room?.computerMode) return;
+    const turnUid = currentTurnPlayerId();
+    const turnKey = turnCycleKey();
+    if (!turnUid || !turnKey || !isNpcPlayerUid(turnUid)) return;
+    if (turnKey === npcAutoTurnKey) return;
+    npcAutoTurnKey = turnKey;
+    npcAutoTurnRunning = true;
+    try {
+      await waitMs(2000);
+      if (turnCycleKey() !== turnKey) return;
+
+      const marker = markerCache?.[turnUid] || null;
+      const nowRoom = markerRoomId(marker);
+      if (nowRoom === 7){
+        const nextRoom = 1 + Math.floor(Math.random() * 6);
+        await placePlayerMarkerInRoom(turnUid, nextRoom);
+      } else {
+        await showNpcSpeech(turnUid, "ふります！", 1500);
+        const d6 = 1 + Math.floor(Math.random() * 6);
+        const d4 = 1 + Math.floor(Math.random() * 4);
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const motion = createDiceMotion(width, height, width / 2, height / 2);
+        await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), {
+          uid: turnUid,
+          d6,
+          d4,
+          compass:false,
+          secondD6:1,
+          secondD4:1,
+          motion,
+          at: Date.now()
+        });
+        await waitMs(1200);
+        await waitMs(200);
+        const targetRoomId = diceTotalToRoomId(d6 + d4);
+        if (targetRoomId) await placePlayerMarkerInRoom(turnUid, targetRoomId);
+      }
+      await update(ref(db, `rooms/${state.roomCode}/turn`), { moveDone:true, moveAt:Date.now() });
+
+      await waitMs(2000);
+      if (turnCycleKey() !== turnKey) return;
+      const roomAfterMove = markerRoomId(markerCache?.[turnUid]);
+      await executeNpcRoomAction(turnUid, roomAfterMove);
+
+      await waitMs(2000);
+      if (turnCycleKey() !== turnKey) return;
+      const targets = [...attackRangeTargetUidsFor(turnUid)].filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
+      if (targets.length){
+        const targetUid = targets[Math.floor(Math.random() * targets.length)];
+        const targetName = safeText(playerById(targetUid)?.name || "");
+        await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 1500);
+
+        const tMarker = markerCache?.[targetUid] || null;
+        const tx = Number(tMarker?.x || (window.innerWidth / 2));
+        const ty = Number(tMarker?.y || (window.innerHeight / 2));
+        const d6 = 1 + Math.floor(Math.random() * 6);
+        const d4 = 1 + Math.floor(Math.random() * 4);
+        const motion = createDiceMotion(window.innerWidth, window.innerHeight, tx, ty);
+        await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
+          uid: turnUid,
+          targetUid,
+          gatlingTargetUids:[],
+          x: tx,
+          y: ty,
+          d6,
+          d4,
+          masamuneMode:false,
+          vendettaMode:false,
+          motion,
+          at: Date.now()
+        });
+        await waitMs(1200);
+        const hit = didAttackRollSucceed(d6, d4, { masamuneMode:false, vendettaMode:false });
+        await waitMs(200);
+        if (hit){
+          const dmg = calcAttackDamageFromRoll(turnUid, d6, d4, { targetUid });
+          if (dmg > 0) await addDamageToPlayer(targetUid, dmg, { source:"attack" });
+        }
+      }
+      await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
+
+      await waitMs(2000);
+      if (turnCycleKey() !== turnKey) return;
+      await advanceTurnToNextPlayer(turnUid);
+    } finally {
+      npcAutoTurnRunning = false;
+    }
+  }
+
   function nameFromSecondChar(name){
     const chars = Array.from(safeText(name || "").trim());
     return chars.slice(1).join("");
@@ -8690,7 +8899,7 @@
       if (tempRole && Number(tempRole.until || 0) <= Date.now()){
         delete temporaryRoleTagByUid[p.id];
       }
-      const bubbleText = safeText((temporaryRoleTagByUid?.[p.id]?.text) || (activeGreenReplies?.[p.id] || ""));
+      const bubbleText = safeText((temporaryRoleTagByUid?.[p.id]?.text) || (activeNpcSpeechByUid?.[p.id] || "") || (activeGreenReplies?.[p.id] || ""));
       if (bubbleText){
         const bubble = document.createElement("div");
         bubble.className = "position-bubble";
@@ -9033,6 +9242,51 @@
       }
       activeGreenReplies = next;
       renderPositionLine();
+    });
+  }
+
+
+  function subscribeNpcSpeech(){
+    const speechRef = ref(db, `rooms/${state.roomCode}/npcSpeech`);
+    onValue(speechRef, snap => {
+      const row = snap.val() || null;
+      const at = Number(row?.at || 0);
+      if (!npcSpeechInitialized){
+        npcSpeechInitialized = true;
+        npcSpeechSeenAt = at || 0;
+        if (row?.uid && row?.text && Number(row?.expiresAt || 0) > Date.now()){
+          activeNpcSpeechByUid = { [safeText(row.uid)]: safeText(row.text) };
+        }
+        renderPositionLine();
+        return;
+      }
+      if (!row || !at || at <= npcSpeechSeenAt){
+        if (!row){
+          activeNpcSpeechByUid = {};
+          renderPositionLine();
+        }
+        return;
+      }
+      npcSpeechSeenAt = at;
+      const expiresAt = Number(row?.expiresAt || 0);
+      const uid = safeText(row?.uid || "");
+      const text = safeText(row?.text || "");
+      if (!uid || !text || (expiresAt && expiresAt <= Date.now())){
+        activeNpcSpeechByUid = {};
+        renderPositionLine();
+        return;
+      }
+      activeNpcSpeechByUid = { [uid]: text };
+      renderPositionLine();
+      const timeoutMs = Math.max(0, expiresAt - Date.now());
+      if (timeoutMs > 0){
+        setTimeout(() => {
+          if (!activeNpcSpeechByUid[uid]) return;
+          if (activeNpcSpeechByUid[uid] !== text) return;
+          activeNpcSpeechByUid = {};
+          renderPositionLine();
+        }, timeoutMs + 20);
+      }
     });
   }
 
@@ -12463,6 +12717,7 @@
       restorePendingMoveChoiceFromSeat();
       updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
+      runNpcTurnIfNeeded();
       syncAutoIdentityRevealTimer();
       evaluateAutoIdentityRevealTrigger();
       syncTurnStartBoard();
@@ -13384,6 +13639,51 @@
     const s = shuffle(pool);
     return s.slice(0, Math.max(0, k));
   }
+  function pickNpcName(usedNames = new Set()){
+    const pool = shuffle(NPC_FOREIGN_NAMES.slice());
+    for (const base of pool){
+      const trimmed = safeText(base || "").trim();
+      if (!trimmed || usedNames.has(trimmed)) continue;
+      usedNames.add(trimmed);
+      return trimmed;
+    }
+    const fallback = `NPC${usedNames.size + 1}`;
+    usedNames.add(fallback);
+    return fallback;
+  }
+  function buildComputerModeTables(baseTables = {}, targetCount = 5){
+    const tables = { ...(baseTables || {}) };
+    const occupiedSeats = new Set();
+    const usedNames = new Set();
+    let humanCount = 0;
+
+    for (const [seatIndex, row] of Object.entries(tables)){
+      const seat = Number(seatIndex || 0);
+      if (!row || !row.playerId || !seat) continue;
+      occupiedSeats.add(seat);
+      usedNames.add(safeText(row.playerName || ""));
+      if (!row.isNpc) humanCount++;
+    }
+
+    const needNpc = Math.max(0, targetCount - humanCount);
+    if (needNpc <= 0) return { tables, addedNpcCount:0 };
+
+    let added = 0;
+    for (let seat = 1; seat <= SEAT_COLORS.length && added < needNpc; seat++){
+      if (occupiedSeats.has(seat)) continue;
+      const npcId = `npc_${Date.now()}_${seat}_${Math.random().toString(16).slice(2,8)}`;
+      tables[String(seat)] = {
+        playerId: npcId,
+        playerName: pickNpcName(usedNames),
+        color: SEAT_COLORS[seat - 1] || null,
+        seatedAt: Date.now(),
+        isNpc: true
+      };
+      occupiedSeats.add(seat);
+      added++;
+    }
+    return { tables, addedNpcCount:added };
+  }
   function buildDeckByPlayerCount(n){
     const rule = DEAL_RULE[n];
     if (!rule) throw new Error(`対応外の人数: ${n}`);
@@ -13408,7 +13708,14 @@
 
     if (roomData.gameStarted || roomData.startedAt) return;
 
-    const tables = roomData.tables || {};
+    let tables = roomData.tables || {};
+    const humanCount = Object.values(tables).filter((row) => !!row?.playerId && !row?.isNpc).length;
+    const useComputerMode = humanCount >= 1 && humanCount <= 3;
+    if (useComputerMode){
+      const filled = buildComputerModeTables(tables, 5);
+      tables = filled.tables;
+    }
+
     const players = Object.entries(tables)
       .map(([seatIndex, t]) => (t && t.playerId ? {
         id: t.playerId,
@@ -13466,7 +13773,9 @@
       gameStarted: true,
       startedAt: Date.now(),
       playerCountAtStart: n,
+      computerMode: useComputerMode,
       markers,
+      tables,
       positionOrder,
       startPlayerId,
       turn: {
@@ -13531,6 +13840,7 @@
       remove(ref(db, `${base}/gameStarted`)),
       remove(ref(db, `${base}/startedAt`)),
       remove(ref(db, `${base}/playerCountAtStart`)),
+      remove(ref(db, `${base}/computerMode`)),
       remove(ref(db, `${base}/markers`)),
       remove(ref(db, `${base}/deckState`)),
       remove(ref(db, `${base}/equipment`)),
@@ -13541,6 +13851,7 @@
       remove(ref(db, `${base}/greenInbox`)),
       remove(ref(db, `${base}/greenResponses`)),
       remove(ref(db, `${base}/greenReplyBubbles`)),
+      remove(ref(db, `${base}/npcSpeech`)),
       remove(ref(db, `${base}/greenReveals`)),
       remove(ref(db, `${base}/greenRequests`)),
       remove(ref(db, `${base}/roleAbilitySelection`)),
@@ -13703,6 +14014,7 @@
     subscribeGreenReveals();
     subscribeGreenCloseSignals();
     subscribeGreenReplyBubbles();
+    subscribeNpcSpeech();
     subscribeMarkers();
     subscribeEquipment();
     subscribeDamage();
