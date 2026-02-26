@@ -8297,9 +8297,168 @@
     return safeText(picked?.id || "");
   }
 
+  function chooseNpcTargetForCard(actorUid, { purpose="attack", includeSelf=false } = {}){
+    const actor = safeText(actorUid || "");
+    if (!actor) return "";
+    const actorFaction = safeText(roleInfoByUid(actor)?.faction || "");
+    const pool = latestPlayers
+      .filter((p) => includeSelf || p.id !== actor)
+      .filter((p) => !isPlayerEliminated(p.id))
+      .map((p) => p.id);
+    if (!pool.length) return "";
+
+    if (purpose === "attack") return chooseNpcAttackTarget(actor, pool);
+
+    if (purpose === "heal"){
+      if (actorFaction !== "シチズン"){
+        const revealedAlly = pool.filter((uid) => revealedFactionForUid(uid) === actorFaction);
+        if (revealedAlly.length){
+          return revealedAlly.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
+        }
+      }
+      return pool[Math.floor(Math.random() * pool.length)] || "";
+    }
+
+    if (purpose === "first_aid"){
+      if (actorFaction !== "シチズン"){
+        const allies = pool.filter((uid) => revealedFactionForUid(uid) === actorFaction && clampDamage(damageCache?.[uid]) > 7);
+        const enemies = pool.filter((uid) => {
+          const f = revealedFactionForUid(uid);
+          return !!f && isRivalFactionPair(actorFaction, f) && clampDamage(damageCache?.[uid]) < 7;
+        });
+        const picked = [...allies, ...enemies].sort((a,b) => Math.abs(clampDamage(damageCache?.[b]) - 7) - Math.abs(clampDamage(damageCache?.[a]) - 7))[0];
+        if (picked) return picked;
+      }
+      return pool[Math.floor(Math.random() * pool.length)] || "";
+    }
+    return pool[Math.floor(Math.random() * pool.length)] || "";
+  }
+
   async function npcAnnounceSelectedPlayer(uid, targetUid){
     const targetName = safeText(playerById(targetUid)?.name || "プレイヤー");
     await showNpcSpeech(uid, `じゃ、${targetName}さん！`, 1200);
+  }
+
+  function isRivalFactionPair(a, b){
+    const fa = safeText(a || "");
+    const fb = safeText(b || "");
+    return (fa === "シャドウ" && fb === "レイダー") || (fa === "レイダー" && fb === "シャドウ");
+  }
+
+  function revealedFactionForUid(uid){
+    const targetUid = safeText(uid || "");
+    if (!targetUid || !isIdentityRevealedFor(targetUid)) return "";
+    const rid = safeText(equipCache?.[targetUid]?.identity?.roleId || "");
+    return safeText(ROLE_BY_ID[rid]?.faction || "");
+  }
+
+  function greenFactionSetFromCard(cardObj){
+    const text = safeText(cardObj?.effect || cardObj?.text || "");
+    const compact = text.replace(/[\s　]+/g, "");
+    if (text.includes("シャドウ？")) return new Set(["シャドウ"]);
+    if (text.includes("レイダー？")) return new Set(["レイダー"]);
+    if (text.includes("シチズン？")) return new Set(["シチズン"]);
+    if (compact.includes("シチズンかシャドウ")) return new Set(["シチズン","シャドウ"]);
+    if (compact.includes("シチズンかレイダー")) return new Set(["シチズン","レイダー"]);
+    if (compact.includes("レイダーかシャドウ")) return new Set(["レイダー","シャドウ"]);
+    return null;
+  }
+
+  async function recordNpcFactionInference(fromUid, toUid, cardObj, answerId){
+    const asker = safeText(fromUid || "");
+    const target = safeText(toUid || "");
+    if (!state.roomCode || !asker || !target || asker === target) return;
+    if (!isNpcPlayerUid(asker)) return;
+    const askerFaction = safeText(roleInfoByUid(asker)?.faction || "");
+    if (!askerFaction || askerFaction === "シチズン") return;
+    const setAsked = greenFactionSetFromCard(cardObj);
+    if (!(setAsked instanceof Set)) return;
+    const allSet = new Set(["シチズン","レイダー","シャドウ"]);
+    const ans = safeText(answerId || "");
+    if (ans !== "yes" && ans !== "reveal_identity" && ans !== "no") return;
+    const possible = new Set(ans === "no" ? [...allSet].filter(f => !setAsked.has(f)) : [...setAsked]);
+    const samePossible = possible.has(askerFaction);
+    const sameImpossible = !samePossible;
+
+    await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
+      const next = cur && typeof cur === "object" ? cur : {};
+      next.factionHints = next.factionHints || {};
+      next.factionHints[asker] = next.factionHints[asker] || {};
+      const prev = next.factionHints[asker][target] || {};
+      next.factionHints[asker][target] = {
+        ...prev,
+        samePossible: !!(prev.samePossible || samePossible),
+        sameImpossible: !!(prev.sameImpossible || sameImpossible),
+        at: Date.now()
+      };
+      return next;
+    });
+  }
+
+  async function recordNpcAttackTarget(attackerUid, targetUid){
+    const attacker = safeText(attackerUid || "");
+    const target = safeText(targetUid || "");
+    if (!state.roomCode || !attacker || !target) return;
+    await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
+      const next = cur && typeof cur === "object" ? cur : {};
+      next.lastAttackTargetByUid = next.lastAttackTargetByUid || {};
+      next.lastAttackTargetByUid[attacker] = { targetUid: target, at: Date.now() };
+      next.attackedByUid = next.attackedByUid || {};
+      next.attackedByUid[attacker] = next.attackedByUid[attacker] || {};
+      next.attackedByUid[attacker][target] = Number(next.attackedByUid[attacker][target] || 0) + 1;
+      return next;
+    });
+  }
+
+  function chooseNpcAttackTarget(attackerUid, candidateUids){
+    const attacker = safeText(attackerUid || "");
+    const candidates = [...new Set((candidateUids || []).map(v => safeText(v)).filter(Boolean))];
+    if (!attacker || !candidates.length) return "";
+    const attackerFaction = safeText(roleInfoByUid(attacker)?.faction || "");
+    const intel = state.room?.npcIntel || {};
+    const hints = intel?.factionHints?.[attacker] || {};
+    const attackedMap = intel?.attackedByUid?.[attacker] || {};
+    const revealedEnemies = candidates.filter((uid) => {
+      const f = revealedFactionForUid(uid);
+      return !!f && isRivalFactionPair(attackerFaction, f);
+    });
+    if (revealedEnemies.length){
+      return revealedEnemies.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
+    }
+
+    let pool = candidates.filter((uid) => {
+      const f = revealedFactionForUid(uid);
+      if (!f) return true;
+      if (attackerFaction !== "シチズン" && f === attackerFaction) return false;
+      return true;
+    });
+    if (!pool.length) return "";
+
+    if (attackerFaction !== "シチズン"){
+      const allyRevealedAttackTargets = latestPlayers
+        .filter((p) => p.id !== attacker && !isPlayerEliminated(p.id))
+        .filter((p) => revealedFactionForUid(p.id) === attackerFaction)
+        .map((p) => safeText(intel?.lastAttackTargetByUid?.[p.id]?.targetUid || ""))
+        .filter((uid) => pool.includes(uid));
+      if (allyRevealedAttackTargets.length){
+        return allyRevealedAttackTargets.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
+      }
+    }
+
+    if (attackerFaction !== "シチズン"){
+      const certainEnemy = pool.filter((uid) => !!hints?.[uid]?.sameImpossible);
+      if (certainEnemy.length){
+        return certainEnemy.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
+      }
+      pool = pool.filter((uid) => !hints?.[uid]?.samePossible);
+      if (!pool.length) return "";
+    }
+
+    const attackedBefore = pool.filter((uid) => Number(attackedMap?.[uid] || 0) > 0);
+    if (attackedBefore.length){
+      return attackedBefore.sort((a,b) => Number(attackedMap?.[b] || 0) - Number(attackedMap?.[a] || 0))[0] || "";
+    }
+    return pool[Math.floor(Math.random() * pool.length)] || "";
   }
 
   async function applyNpcImmediateDeckCardEffect(uid, cardObj, theme){
@@ -8309,14 +8468,14 @@
     const chooseYes = npcYesNoByDamage(uid);
 
     if (name === "応急手当"){
-      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:true });
+      const targetUid = chooseNpcTargetForCard(uid, { purpose:"first_aid", includeSelf:true });
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
       await setDamageToPlayer(targetUid, 7, "first_aid_set");
       return;
     }
     if (name === "恩恵"){
-      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:false });
+      const targetUid = chooseNpcTargetForCard(uid, { purpose:"heal", includeSelf:false });
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
       const eye = 1 + Math.floor(Math.random() * 6);
@@ -8325,7 +8484,7 @@
       return;
     }
     if (name === "吸血コウモリ"){
-      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:false });
+      const targetUid = chooseNpcTargetForCard(uid, { purpose:"attack", includeSelf:false });
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
       if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
@@ -8333,7 +8492,7 @@
       return;
     }
     if (name === "三つ目の黒犬"){
-      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:false });
+      const targetUid = chooseNpcTargetForCard(uid, { purpose:"attack", includeSelf:false });
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
       if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
@@ -8341,7 +8500,7 @@
       return;
     }
     if (name === "呪いの人形"){
-      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:true });
+      const targetUid = chooseNpcTargetForCard(uid, { purpose:"attack", includeSelf:true });
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
       const eye = 1 + Math.floor(Math.random() * 6);
@@ -8471,6 +8630,7 @@
         const snap = await get(ref(db, `rooms/${state.roomCode}/greenResponses/${senderUid}`));
         const row = snap.val() || null;
         if (safeText(row?.requestId || "") === requestId){
+          await recordNpcFactionInference(senderUid, targetUid, cardObj, safeText(row?.answerId || ""));
           await waitMs(500);
           await Promise.all([
             remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`)).catch(() => {}),
@@ -8485,6 +8645,8 @@
     }
 
     await resolveNpcGreenInboxPayload(payload);
+    const npcRes = pickNpcGreenAnswer(cardObj, targetUid);
+    await recordNpcFactionInference(senderUid, targetUid, cardObj, npcRes.id);
     await waitMs(500);
     await Promise.all([
       remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`)).catch(() => {}),
@@ -8537,7 +8699,7 @@
 
   async function npcStealRandomEquipment(uid){
     const others = latestPlayers
-      .filter((p) => p.id !== uid && !isPlayerEliminated(p.id))
+      .filter((p) => p.id !== uid)
       .map((p) => ({ uid:p.id, cards:listEquipForUid(p.id).filter((it) => !isIdentityEquipItem(it)) }))
       .filter((row) => row.cards.length > 0);
     if (!others.length || !state.roomCode) return null;
@@ -8587,10 +8749,13 @@
           return true;
         });
         if (!targets.length) return;
-        const t = targets[Math.floor(Math.random() * targets.length)];
+        const targetUid = chooseNpcAttackTarget(uid, targets.map((v) => v.id));
+        if (!targetUid) return;
+        const t = playerById(targetUid) || targets[Math.floor(Math.random() * targets.length)];
         const targetName = safeText(playerById(t.id)?.name || "プレイヤー");
         await showNpcSpeech(uid, `${targetName}さんに2ダメージ！`, 1500);
         await addDamageToPlayer(t.id, 2, { source:"room3" });
+        await recordNpcAttackTarget(uid, t.id);
       } else {
         const recoverSelf = Math.random() < 0.5;
         if (recoverSelf){
@@ -8686,8 +8851,8 @@
       if (turnCycleKey() !== turnKey) return;
       if (!turnState()?.attackDone){
         const targets = [...attackRangeTargetUidsFor(turnUid)].filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
-        if (targets.length){
-          const targetUid = targets[Math.floor(Math.random() * targets.length)];
+        const targetUid = chooseNpcAttackTarget(turnUid, targets);
+        if (targetUid){
           const targetName = safeText(playerById(targetUid)?.name || "");
           await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 1500);
 
@@ -8716,6 +8881,7 @@
             const dmg = calcAttackDamageFromRoll(turnUid, d6, d4, { targetUid });
             if (dmg > 0) await addDamageToPlayer(targetUid, dmg, { source:"attack" });
           }
+          await recordNpcAttackTarget(turnUid, targetUid);
         }
         await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
       }
