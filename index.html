@@ -955,7 +955,8 @@
     bottom:calc(100% + 10px);
     left:50%;
     transform:translateX(-50%);
-    max-width:120px;
+    width:max-content;
+    max-width:min(260px, calc(100vw - 36px));
     padding:4px 8px;
     border-radius:8px;
     background:#111;
@@ -963,7 +964,8 @@
     color:#fff;
     font-size:10px;
     font-weight:900;
-    white-space:nowrap;
+    white-space:normal;
+    word-break:break-word;
     overflow:visible;
     text-overflow:clip;
     line-height:1.2;
@@ -8577,7 +8579,13 @@
     if (rid === 3){
       const doDamage = Math.random() < 0.5;
       if (doDamage){
-        const targets = latestPlayers.filter((p) => p.id !== uid && !isPlayerEliminated(p.id));
+        const targets = latestPlayers.filter((p) => {
+          if (p.id === uid || isPlayerEliminated(p.id)) return false;
+          if (hasGuardianAngelShield(p.id)) return false;
+          if (hasGordonBarrier(p.id)) return false;
+          if (hasEquipmentByName(p.id, "幸運のブローチ")) return false;
+          return true;
+        });
         if (!targets.length) return;
         const t = targets[Math.floor(Math.random() * targets.length)];
         const targetName = safeText(playerById(t.id)?.name || "プレイヤー");
@@ -8632,77 +8640,85 @@
       await waitMs(2000);
       if (turnCycleKey() !== turnKey) return;
 
-      const marker = markerCache?.[turnUid] || null;
-      const nowRoom = markerRoomId(marker);
-      if (nowRoom === 7){
-        const nextRoom = 1 + Math.floor(Math.random() * 6);
-        await placePlayerMarkerInRoom(turnUid, nextRoom);
-      } else {
-        await showNpcSpeech(turnUid, "ふります！", 1500);
-        const d6 = 1 + Math.floor(Math.random() * 6);
-        const d4 = 1 + Math.floor(Math.random() * 4);
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-        const centerX = width / 2;
-        const centerY = height / 2;
-        const motion = createDiceMotion(width, height, centerX, centerY);
-        await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), {
-          uid: turnUid,
-          d6,
-          d4,
-          compass:false,
-          secondD6:1,
-          secondD4:1,
-          motion,
-          at: Date.now()
-        });
-        await waitMs(1200);
-        await waitMs(200);
-        const targetRoomId = diceTotalToRoomId(d6 + d4);
-        if (targetRoomId) await placePlayerMarkerInRoom(turnUid, targetRoomId);
+      const currentTurn = turnState() || {};
+      if (!currentTurn.moveDone){
+        const marker = markerCache?.[turnUid] || null;
+        const nowRoom = markerRoomId(marker);
+        if (nowRoom === 7){
+          const nextRoom = 1 + Math.floor(Math.random() * 6);
+          await placePlayerMarkerInRoom(turnUid, nextRoom);
+        } else {
+          await showNpcSpeech(turnUid, "ふります！", 1500);
+          const d6 = 1 + Math.floor(Math.random() * 6);
+          const d4 = 1 + Math.floor(Math.random() * 4);
+          const width = window.innerWidth;
+          const height = window.innerHeight;
+          const centerX = width / 2;
+          const centerY = height / 2;
+          const motion = createDiceMotion(width, height, centerX, centerY);
+          await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), {
+            uid: turnUid,
+            d6,
+            d4,
+            compass:false,
+            secondD6:1,
+            secondD4:1,
+            motion,
+            at: Date.now()
+          });
+          await waitMs(1200);
+          await waitMs(200);
+          const targetRoomId = diceTotalToRoomId(d6 + d4);
+          if (targetRoomId) await placePlayerMarkerInRoom(turnUid, targetRoomId);
+        }
+        await update(ref(db, `rooms/${state.roomCode}/turn`), { moveDone:true, moveAt:Date.now() });
       }
-      await update(ref(db, `rooms/${state.roomCode}/turn`), { moveDone:true, moveAt:Date.now() });
 
       await waitMs(2000);
       if (turnCycleKey() !== turnKey) return;
       const roomAfterMove = markerRoomId(markerCache?.[turnUid]);
-      await executeNpcRoomAction(turnUid, roomAfterMove);
+      if (!turnState()?.deckDrawDone){
+        await executeNpcRoomAction(turnUid, roomAfterMove);
+        await update(ref(db, `rooms/${state.roomCode}/turn`), { deckDrawDone:true });
+      }
 
       await waitMs(2000);
       if (turnCycleKey() !== turnKey) return;
-      const targets = [...attackRangeTargetUidsFor(turnUid)].filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
-      if (targets.length){
-        const targetUid = targets[Math.floor(Math.random() * targets.length)];
-        const targetName = safeText(playerById(targetUid)?.name || "");
-        await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 1500);
+      if (!turnState()?.attackDone){
+        const targets = [...attackRangeTargetUidsFor(turnUid)].filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
+        if (targets.length){
+          const targetUid = targets[Math.floor(Math.random() * targets.length)];
+          const targetName = safeText(playerById(targetUid)?.name || "");
+          await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 1500);
 
-        const centerX = window.innerWidth / 2;
-        const centerY = window.innerHeight / 2;
-        const d6 = 1 + Math.floor(Math.random() * 6);
-        const d4 = 1 + Math.floor(Math.random() * 4);
-        const motion = createDiceMotion(window.innerWidth, window.innerHeight, centerX, centerY);
-        await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
-          uid: turnUid,
-          targetUid,
-          gatlingTargetUids:[],
-          x: centerX,
-          y: centerY,
-          d6,
-          d4,
-          masamuneMode:false,
-          vendettaMode:false,
-          motion,
-          at: Date.now()
-        });
-        await waitMs(1200);
-        const hit = didAttackRollSucceed(d6, d4, { masamuneMode:false, vendettaMode:false });
-        await waitMs(200);
-        if (hit){
-          const dmg = calcAttackDamageFromRoll(turnUid, d6, d4, { targetUid });
-          if (dmg > 0) await addDamageToPlayer(targetUid, dmg, { source:"attack" });
+          const centerX = window.innerWidth / 2;
+          const centerY = window.innerHeight / 2;
+          const d6 = 1 + Math.floor(Math.random() * 6);
+          const d4 = 1 + Math.floor(Math.random() * 4);
+          const motion = createDiceMotion(window.innerWidth, window.innerHeight, centerX, centerY);
+          await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
+            uid: turnUid,
+            targetUid,
+            gatlingTargetUids:[],
+            x: centerX,
+            y: centerY,
+            d6,
+            d4,
+            masamuneMode:false,
+            vendettaMode:false,
+            motion,
+            at: Date.now()
+          });
+          await waitMs(1200);
+          const hit = didAttackRollSucceed(d6, d4, { masamuneMode:false, vendettaMode:false });
+          await waitMs(200);
+          if (hit){
+            const dmg = calcAttackDamageFromRoll(turnUid, d6, d4, { targetUid });
+            if (dmg > 0) await addDamageToPlayer(targetUid, dmg, { source:"attack" });
+          }
         }
+        await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
       }
-      await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
 
       await waitMs(2000);
       if (turnCycleKey() !== turnKey) return;
@@ -8712,6 +8728,7 @@
       scheduleNpcTurnRetry(120);
     }
   }
+
 
   function nameFromSecondChar(name){
     const chars = Array.from(safeText(name || "").trim());
@@ -12026,7 +12043,7 @@
         e.stopPropagation();
         const p = playerById(uid);
         const nm = safeText(p?.name || "このプレイヤー");
-        const room3DamageBlocked = hasGordonBarrier(uid) || hasEquipmentByName(uid, "幸運のブローチ");
+        const room3DamageBlocked = hasGuardianAngelShield(uid) || hasGordonBarrier(uid) || hasEquipmentByName(uid, "幸運のブローチ");
         showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
           room3ActionUsed = true;
           await updateTurnRoomActionState({ room3ActionUsed:true });
@@ -12110,7 +12127,7 @@
       if (canUseRoom3Action()){
         const p = playerById(uid);
         const nm = safeText(p?.name || "このプレイヤー");
-        const room3DamageBlocked = hasGordonBarrier(uid) || hasEquipmentByName(uid, "幸運のブローチ");
+        const room3DamageBlocked = hasGuardianAngelShield(uid) || hasGordonBarrier(uid) || hasEquipmentByName(uid, "幸運のブローチ");
         showRoomActionPopAt(e.clientX, e.clientY, `「${nm}」に実行する効果を選んでください。`, async () => {
           room3ActionUsed = true;
           await updateTurnRoomActionState({ room3ActionUsed:true });
