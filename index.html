@@ -1529,6 +1529,32 @@
   .zoom-stage .equip-defeat-pulse{
     animation:none;
   }
+  .zoom-card-stack{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+  }
+  .zoom-card-caption{
+    width:min(88vw, 320px);
+    background:rgba(255,255,255,.96);
+    border:1px solid rgba(0,0,0,.14);
+    border-radius:10px;
+    padding:8px 10px;
+    box-shadow:0 10px 24px rgba(0,0,0,.28);
+    font-size:12px;
+    line-height:1.45;
+    color:#111;
+  }
+  .zoom-card-caption .title{
+    font-size:13px;
+    font-weight:1000;
+    margin:0 0 4px;
+  }
+  .zoom-card-caption .effect{
+    margin:0;
+    white-space:pre-wrap;
+  }
   .zoom-identity-owner{
     position:absolute;
     left:50%;
@@ -5002,6 +5028,23 @@
     clone.classList.remove("locked","blocked");
     clone.classList.remove("equip-steal-pulse","equip-defeat-pulse","eliminated-dim");
     clone.style.pointerEvents = "auto";
+    const cardName = safeText(cardEl?.dataset?.cardName || "").trim();
+    const cardEffect = safeText(cardEl?.dataset?.cardEffect || "").trim();
+    if (cardName || cardEffect){
+      const stack = document.createElement("div");
+      stack.className = "zoom-card-stack";
+      stack.appendChild(clone);
+
+      const caption = document.createElement("div");
+      caption.className = "zoom-card-caption";
+      caption.innerHTML = `
+        <p class="title">${escapeHtml(cardName || "カード")}</p>
+        <p class="effect">${escapeHtml(cardEffect || "説明はありません。")}</p>
+      `;
+      stack.appendChild(caption);
+      openZoomContent(stack, options);
+      return;
+    }
     openZoomContent(clone, options);
   }
   function setZoomOverPanel(enabled){
@@ -5089,7 +5132,19 @@
     cardEl.innerHTML = buildWbFrontHTML(cardObj, theme);
     adjustCardNameFont(cardEl);
     cardEl.dataset.cardType = theme || "";
-    openZoomContent(cardEl, options);
+    const stack = document.createElement("div");
+    stack.className = "zoom-card-stack";
+    stack.appendChild(cardEl);
+
+    const caption = document.createElement("div");
+    caption.className = "zoom-card-caption";
+    caption.innerHTML = `
+      <p class="title">${escapeHtml(safeText(cardObj?.name || "カード"))}</p>
+      <p class="effect">${escapeHtml(safeText(cardObj?.effect || "説明はありません。"))}</p>
+    `;
+    stack.appendChild(caption);
+
+    openZoomContent(stack, options);
   }
 
   async function waitUntilZoomClosed({ maxWaitMs = 12000, pollMs = 60 } = {}){
