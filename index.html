@@ -989,6 +989,13 @@
     border-top-color:#fff;
     z-index:-1;
   }
+  .position-bubble.white{
+    background:#fff;
+    border-color:#111;
+    color:#111;
+  }
+  .position-bubble.white::after{ border-top-color:#fff; }
+  .position-bubble.white::before{ border-top-color:#111; }
   .starter-mark{
     min-height:10px;
     font-size:10px;
@@ -3830,10 +3837,11 @@
     }, Math.max(100, Number(durationMs) || 1800));
   }
 
-  function showTemporaryRoleTag(uid, text, durationMs = 2000){
+  function showTemporaryRoleTag(uid, text, durationMs = 2000, options = {}){
     if (!uid || !text) return;
+    const tone = safeText(options.tone || "").toLowerCase();
     const until = Date.now() + Math.max(100, Number(durationMs) || 2000);
-    temporaryRoleTagByUid[uid] = { text: safeText(text), until };
+    temporaryRoleTagByUid[uid] = { text: safeText(text), until, tone };
     renderPositionLine();
     setTimeout(() => {
       const cur = temporaryRoleTagByUid[uid];
@@ -8205,6 +8213,8 @@
 
       const nowTurn = turnState() || {};
       if (!nowTurn.moveDone){
+        showTemporaryRoleTag(uid, "やります！", 1500, { tone:"white" });
+        await new Promise(r => setTimeout(r, 1500));
         const startRoomId = markerRoomId(markerCache?.[uid] || null);
         let roomId = 1;
         if (startRoomId === 7){
@@ -8259,6 +8269,9 @@
       const targets = Array.from(attackRangeTargetUidsFor(uid)).filter(t => !isPlayerEliminated(t));
       if (targets.length){
         const targetUid = targets[Math.floor(Math.random() * targets.length)];
+        const targetName = safeText(playerById(targetUid)?.name || "").trim() || "その人";
+        showTemporaryRoleTag(uid, `${targetName}さんを攻撃！`, 3200, { tone:"white" });
+        await new Promise(r => setTimeout(r, 1500));
         const d6 = 1 + Math.floor(Math.random() * 6);
         const d4 = 1 + Math.floor(Math.random() * 4);
         await emitNpcAttackDiceEvent(uid, targetUid, d6, d4);
@@ -8266,6 +8279,9 @@
         if (damage > 0){
           await addDamageToPlayer(targetUid, damage, { source:"attack" });
         }
+        await new Promise(r => setTimeout(r, 1100));
+        delete temporaryRoleTagByUid[uid];
+        renderPositionLine();
       }
       await updateTurnRoomActionState({ attackDone:true }, uid);
 
@@ -8883,6 +8899,9 @@
       if (bubbleText){
         const bubble = document.createElement("div");
         bubble.className = "position-bubble";
+        if (safeText(temporaryRoleTagByUid?.[p.id]?.tone || "") === "white"){
+          bubble.classList.add("white");
+        }
         bubble.textContent = bubbleText;
         chipWrap.appendChild(bubble);
       }
