@@ -6520,11 +6520,10 @@
           const baseDamage = Math.max(0, Number(item?.damage || 0));
           const bonusDamage = Math.max(0, Number(item?.bonusLabelAmount || 0));
           if (!uid || bonusDamage <= 0) return { ...item, uid, damage: baseDamage, bonusLabelAmount: 0 };
-          const add = applyIncomingDamageModifiers(uid, bonusDamage, { source:"attack" });
           return {
             ...item,
             uid,
-            damage: Math.max(0, baseDamage + add),
+            damage: Math.max(0, baseDamage + bonusDamage),
             bonusLabelAmount: 0
           };
         });
