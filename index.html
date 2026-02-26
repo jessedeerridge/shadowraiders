@@ -5712,6 +5712,19 @@
     });
   }
 
+  async function grantEquipmentToPlayer(uid, cardObj, theme){
+    const targetUid = safeText(uid || "");
+    if (!state.roomCode || !targetUid) return;
+    if (!cardObj || !isEquipCard(cardObj)) return;
+    const key = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    await set(ref(db, `rooms/${state.roomCode}/equipment/${targetUid}/${key}`), {
+      theme: theme || "white",
+      name: safeText(cardObj.name),
+      effect: safeText(cardObj.effect),
+      at: Date.now()
+    });
+  }
+
   async function setDeckToSingleCardForTest(theme, cardObj){
     if (!isTestPlayer()) return;
     if (!state.roomCode) return;
@@ -8934,6 +8947,28 @@
     });
   }
 
+  function subscribeNpcCardDrawEvents(){
+    const cardRef = ref(db, `rooms/${state.roomCode}/npcCardDrawEvent`);
+    let seenAt = 0;
+    let initialized = false;
+    onValue(cardRef, snap => {
+      const ev = snap.val() || null;
+      const at = Number(ev?.at || 0);
+      if (!initialized){
+        initialized = true;
+        seenAt = at || 0;
+        return;
+      }
+      if (!ev || !ev.card || at <= seenAt) return;
+      seenAt = at;
+      openZoomFromDeckCard(ev.card, safeText(ev.type || "white"), { closeOnBackdrop:false, showCloseButton:false });
+      setTimeout(() => {
+        if (!greenShareDock || !greenShareDock.classList.contains("hidden")) return;
+        closeZoom();
+      }, 1200);
+    });
+  }
+
   function subscribeRoleFlashEvents(){
     const flashRef = ref(db, `rooms/${state.roomCode}/effectEvents/roleFlash`);
     onValue(flashRef, snap => {
@@ -11857,6 +11892,15 @@
     currentRoomId: 0,
   };
 
+  const NPC_TOTAL_PLAYERS = 5;
+  const NPC_NAME_POOL = [
+    "Oliver Smith","Emma Johnson","Noah Williams","Liam Brown","Sophia Jones","Lucas Miller",
+    "Mason Davis","Ethan Wilson","Harper Moore","Ava Taylor","Henry Anderson","Isla Thomas",
+    "James White","Mia Martin","Benjamin Clark","Chloe Lewis","Daniel Walker","Amelia Hall"
+  ];
+  let npcTurnLockKey = "";
+  let npcTurnInProgress = false;
+
   const mainEl = document.getElementById('main');
   const joinBox = document.getElementById('joinBox');
   const inputName = document.getElementById('userName');
@@ -11906,6 +11950,17 @@
       img.decoding = 'async';
       img.src = file;
     });
+  }
+
+  function isNpcPlayer(uid){
+    const target = safeText(uid || "");
+    if (!target) return false;
+    return latestPlayers.some(p => p.id === target && !!p.isNpc);
+  }
+
+  function randomNpcName(used = new Set()){
+    const pool = shuffle(NPC_NAME_POOL).filter(name => !used.has(name));
+    return pool[0] || `NPC ${Math.floor(Math.random() * 9999)}`;
   }
 
   const myRoleDock = document.getElementById('myRoleDock');
@@ -12466,7 +12521,169 @@
       syncAutoIdentityRevealTimer();
       evaluateAutoIdentityRevealTrigger();
       syncTurnStartBoard();
+      const turnUid = currentTurnPlayerId();
+      if (state.isHost && turnUid && isNpcPlayer(turnUid)){
+        runNpcTurn(turnUid).catch(() => {});
+      }
     });
+  }
+
+  function npcTurnKey(uid = ""){
+    const turn = turnState() || {};
+    return `${safeText(uid || turn.currentPlayerId || "")}:${Number(turn.updatedAt || 0)}`;
+  }
+
+  function npcTargetUidsFor(uid){
+    return [...attackRangeTargetUidsFor(uid)].filter(id => !isNpcPlayer(id));
+  }
+
+  async function npcMoveToRoom(uid, roomId){
+    const rid = Number(roomId || 0);
+    if (!uid || !rid || !state.roomCode) return;
+    let target = null;
+    for (let i = 0; i < 120; i++){
+      const p = randomPointInRoom(rid);
+      if (!p) break;
+      if (!hasMarkerCollision(p.x, p.y, uid, 22)){
+        target = p;
+        break;
+      }
+      if (!target) target = p;
+    }
+    if (!target) return;
+    await set(ref(db, `rooms/${state.roomCode}/markers/${uid}`), {
+      ...(markerCache?.[uid] || {}),
+      x: target.x,
+      y: target.y,
+      roomId: rid,
+      updatedAt: Date.now(),
+      viaDice: true
+    });
+  }
+
+  async function npcDrawByType(uid, type){
+    if (!state.roomCode || !uid) return null;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    let drawn = null;
+    await runTransaction(roomRef, (cur) => {
+      if (!cur || !cur.turn) return cur;
+      if (safeText(cur.turn.currentPlayerId || "") !== uid) return cur;
+      const ds = cur.deckState;
+      if (!ds || !ds[type] || !Array.isArray(ds[type].order)) return cur;
+      const idx = Number(ds[type].idx || 0);
+      if (idx >= ds[type].order.length) return cur;
+      drawn = ds[type].order[idx];
+      ds[type].idx = idx + 1;
+      ds.reveal = ds.reveal || { slot3:null, slot5:null };
+      if (type === "black") ds.reveal.slot5 = { theme:"black", card: drawn, at: Date.now() };
+      if (type === "white") ds.reveal.slot3 = { theme:"white", card: drawn, at: Date.now() };
+      cur.turn.deckDrawDone = true;
+      cur.turn.drawnTypes = {
+        green: !!(cur.turn?.drawnTypes?.green || type === "green"),
+        white: !!(cur.turn?.drawnTypes?.white || type === "white"),
+        black: !!(cur.turn?.drawnTypes?.black || type === "black")
+      };
+      cur.turn.updatedAt = Date.now();
+      ds.updatedAt = Date.now();
+      return cur;
+    });
+    if (drawn && (type === "white" || type === "black")){
+      await grantEquipmentToPlayer(uid, drawn, type);
+    }
+    if (drawn){
+      await set(ref(db, `rooms/${state.roomCode}/npcCardDrawEvent`), {
+        uid,
+        type,
+        card: drawn,
+        at: Date.now()
+      });
+    }
+    return drawn;
+  }
+
+  async function runNpcTurn(uid){
+    if (!state.isHost || !state.roomCode || !isNpcPlayer(uid)) return;
+    const key = npcTurnKey(uid);
+    if (npcTurnInProgress && npcTurnLockKey === key) return;
+    npcTurnInProgress = true;
+    npcTurnLockKey = key;
+    try {
+      const marker = markerCache?.[uid] || null;
+      let roomId = markerRoomId(marker);
+
+      showTemporaryRoleTag(uid, "ふります！", 1500);
+      await waitMs(1500);
+      const d6 = 1 + Math.floor(Math.random() * 6);
+      const d4 = 1 + Math.floor(Math.random() * 4);
+      await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), { uid, d6, d4, at: Date.now() });
+      await waitMs(1200);
+      if (roomId === 7){
+        const options = [1,2,3,4,5,6];
+        roomId = options[Math.floor(Math.random() * options.length)];
+      } else {
+        roomId = diceTotalToRoomId(d6 + d4);
+      }
+      await waitMs(200);
+      await npcMoveToRoom(uid, roomId);
+      await update(ref(db, `rooms/${state.roomCode}/turn`), { moveDone:true, movedByDiceRoomId: roomId, updatedAt: Date.now() });
+
+      await waitMs(2000);
+      if (roomId === 3){
+        const alive = latestPlayers.filter(p => p.id !== uid && !isPlayerEliminated(p.id));
+        if (alive.length && Math.random() < 0.5){
+          const t = alive[Math.floor(Math.random() * alive.length)];
+          await addDamageToPlayer(t.id, 2, { source:"room3" });
+        } else {
+          await healDamageToPlayer(uid, 1, "room3_heal");
+        }
+      } else if (roomId === 4){
+        const victims = latestPlayers.filter(p => p.id !== uid && listEquipForUid(p.id).some(it => !isIdentityEquipItem(it)));
+        if (victims.length){
+          const v = victims[Math.floor(Math.random() * victims.length)];
+          const equip = listEquipForUid(v.id).find(it => !isIdentityEquipItem(it));
+          if (equip?.sourceKey) await moveEquipmentCardBetweenPlayers(v.id, uid, equip.sourceKey);
+        }
+      } else {
+        let type = "white";
+        if (roomId === 1) type = "white";
+        else if (roomId === 2) type = "black";
+        else if (roomId === 5) type = "green";
+        else if (roomId === 6) type = ["green","white","black"][Math.floor(Math.random() * 3)];
+        await npcDrawByType(uid, type);
+      }
+
+      await waitMs(2000);
+      const targets = npcTargetUidsFor(uid);
+      if (targets.length){
+        const targetUid = targets[Math.floor(Math.random() * targets.length)];
+        const targetName = safeText(playerById(targetUid)?.name || "プレイヤー");
+        showTemporaryRoleTag(uid, `${targetName}さんを攻撃！`, 1500);
+        await waitMs(1500);
+        const a6 = 1 + Math.floor(Math.random() * 6);
+        const a4 = 1 + Math.floor(Math.random() * 4);
+        await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
+          uid,
+          targetUid,
+          d6: a6,
+          d4: a4,
+          x: 0,
+          y: 0,
+          at: Date.now()
+        });
+        await waitMs(1000);
+        const dmg = Math.max(0, a6 - a4);
+        if (dmg > 0){
+          await waitMs(200);
+          await addDamageToPlayer(targetUid, dmg, { source:"attack" });
+        }
+      }
+
+      await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, updatedAt: Date.now() });
+      await waitMs(2000);
+      await advanceTurnToNextPlayer(uid);
+    } finally {
+      npcTurnInProgress = false;
+    }
   }
 
   function subscribeHostState(){
@@ -12839,6 +13056,7 @@
           name: t.playerName || '名無し',
           seatIndex: Number(seatIndex),
           color: t.color || null,
+          isNpc: !!t.isNpc,
           lastattacktome: Number(t.lastattacktome || 0)
         } : null))
         .filter(Boolean)
@@ -13408,7 +13626,47 @@
 
     if (roomData.gameStarted || roomData.startedAt) return;
 
-    const tables = roomData.tables || {};
+    const tables = { ...(roomData.tables || {}) };
+    const humanPlayers = Object.entries(tables)
+      .map(([seatIndex, t]) => (t && t.playerId ? {
+        id: t.playerId,
+        seatIndex: Number(seatIndex),
+        name: String(t.playerName || ""),
+        color: safeText(t.color || "")
+      } : null))
+      .filter(Boolean)
+      .sort((a,b) => a.seatIndex - b.seatIndex);
+
+    const humanCount = humanPlayers.length;
+    if (humanCount < 1 || humanCount > 10) return;
+
+    const computerMode = humanCount >= 1 && humanCount <= 3;
+    const targetCount = computerMode ? NPC_TOTAL_PLAYERS : humanCount;
+    if (targetCount > 10) return;
+
+    if (computerMode){
+      const usedNames = new Set(humanPlayers.map(p => safeText(p.name || "")).filter(Boolean));
+      const usedColors = new Set(humanPlayers.map(p => safeText(p.color || "")).filter(Boolean));
+      const freeSeats = Array.from({ length:10 }, (_,i) => i + 1).filter(seat => !tables[String(seat)]?.playerId);
+      const freeColors = shuffle(SEAT_COLORS.filter(c => !usedColors.has(c)));
+      const addCount = Math.max(0, targetCount - humanCount);
+      for (let i = 0; i < addCount; i++){
+        const seatIndex = freeSeats[i];
+        if (!seatIndex) break;
+        const npcId = `npc_${seatIndex}_${Date.now()}_${Math.floor(Math.random()*9999)}`;
+        const npcName = randomNpcName(usedNames);
+        usedNames.add(npcName);
+        const color = freeColors[i] || SEAT_COLORS[(seatIndex - 1) % SEAT_COLORS.length] || "#ddd";
+        tables[String(seatIndex)] = {
+          playerId: npcId,
+          playerName: npcName,
+          color,
+          isNpc: true,
+          joinedAt: Date.now()
+        };
+      }
+    }
+
     const players = Object.entries(tables)
       .map(([seatIndex, t]) => (t && t.playerId ? {
         id: t.playerId,
@@ -13458,11 +13716,13 @@
     }
 
     await update(roomRef, {
+      tables,
       hands,
       deckState: freshDeckState,
       guardianAngelShield: null,
       erikaSealedTargets: null,
       autoIdentityReveal: null,
+      computerMode,
       gameStarted: true,
       startedAt: Date.now(),
       playerCountAtStart: n,
@@ -13707,6 +13967,7 @@
     subscribeEquipment();
     subscribeDamage();
     subscribeDiceEvents();
+    subscribeNpcCardDrawEvents();
     subscribeRoleFlashEvents();
     subscribeHpSwapEvents();
     subscribeWalpurgisSwapEvents();
