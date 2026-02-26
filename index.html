@@ -8503,6 +8503,14 @@
     return !!hint?.sameImpossible;
   }
 
+  function isNpcCertainNotSameFactionByIntel(observerUid, targetUid){
+    const o = safeText(observerUid || "");
+    const t = safeText(targetUid || "");
+    if (!o || !t) return false;
+    const hint = state.room?.npcIntel?.factionHints?.[o]?.[t] || null;
+    return !!hint?.sameImpossible;
+  }
+
   async function resolveNpcCounterPromptsIfNeeded(){
     if (!state.isHost || !state.roomCode || !state.room?.computerMode) return;
     const map = state.room?.counterPromptState || {};
@@ -8521,6 +8529,45 @@
         if (!attackerUid || !isIdentityRevealedFor(attackerUid)) continue;
         await runWerewolfCounterAttackForUid(uid, attackerUid);
         await remove(ref(db, `rooms/${state.roomCode}/counterPromptState/${uid}`)).catch(() => {});
+        continue;
+      }
+
+      if (roleId === "SHA_V1" && safeText(entry.mode || "") !== "venom_resolution"){
+        const attackerRole = roleInfoByUid(attackerUid);
+        const attackerIsRevealedRaider = !!attackerUid
+          && isIdentityRevealedFor(attackerUid)
+          && safeText(attackerRole?.faction || "") === "レイダー";
+        const attackerIsCertainEnemy = isNpcCertainNotSameFactionByIntel(uid, attackerUid);
+        const shouldUseVenom = attackerIsRevealedRaider || attackerIsCertainEnemy;
+
+        if (!shouldUseVenom){
+          await remove(ref(db, `rooms/${state.roomCode}/counterPromptState/${uid}`)).catch(() => {});
+          continue;
+        }
+
+        await revealIdentityToEquipmentForUid(uid);
+        const roomRef = ref(db, `rooms/${state.roomCode}`);
+        await runTransaction(roomRef, (cur) => {
+          if (!cur) return cur;
+          const map = cur.counterPromptState || {};
+          const mine = map[uid];
+          if (!mine || Number(mine.at || 0) !== Number(entry.at || 0)) return cur;
+          delete map[uid];
+          map[safeText(entry.attackerUid || "")] = {
+            uid: safeText(entry.attackerUid || ""),
+            roleId: "SHA_V1",
+            attackerUid: safeText(entry.attackerUid || ""),
+            venomUid: uid,
+            turnKey: safeText(entry.turnKey || ""),
+            advanceTurnOnResolve: !!entry.advanceTurnOnResolve,
+            mustChoose: true,
+            mode: "venom_resolution",
+            expiresAt: 0,
+            at: Date.now()
+          };
+          cur.counterPromptState = map;
+          return cur;
+        });
         continue;
       }
 
