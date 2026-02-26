@@ -2533,6 +2533,8 @@
   let autoIdentityRevealTimer = null;
   let autoIdentityRevealTimerKey = "";
   let lastEliminationBatch = { uids: [], at: 0 };
+  let pendingGodwinReviveResolutionUids = new Set();
+  let pendingGodwinReviveTurnKey = "";
 
   const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
@@ -8065,7 +8067,66 @@
     if (suppressEndTurnButton) return false;
     if (hpBoardAnimationActive) return false;
     if (hasUnresolvedAttackLootSelection()) return false;
+    if (isGodwinReviveSelectionPending()) return false;
+    if (isGodwinReviveResolutionBlocked()) return false;
     return !!turnState()?.moveDone;
+  }
+
+  function isGodwinReviveSelectionPending(){
+    const selection = state.room?.roleAbilitySelection || null;
+    if (!selection || typeof selection !== "object") return false;
+    return safeText(selection.roleId || "") === "RAI_G3";
+  }
+
+  function hasOtherEliminatedPlayersForGodwin(uid){
+    const selfUid = safeText(uid || "");
+    if (!selfUid) return false;
+    return latestPlayers.some(p => p.id !== selfUid && isPlayerEliminated(p.id));
+  }
+
+  function collectPendingGodwinReviveUidsFromRows(rows = []){
+    const pending = [];
+    for (const item of (rows || [])){
+      const uid = safeText(item?.uid || "");
+      if (!uid) continue;
+      if (roleIdForUid(uid) !== "RAI_G3") continue;
+      if (!!state.room?.abilityUsage?.godwin?.[uid]) continue;
+      const hp = Number(ROLE_BY_ID?.[roleIdForUid(uid) || ""]?.hp || 0);
+      if (hp <= 0) continue;
+      const beforeDamage = clampDamage(damageCache?.[uid]);
+      const incomingDamage = Math.max(0, Number(item?.damage || 0));
+      const afterDamage = clampDamage(beforeDamage + incomingDamage);
+      if (!(beforeDamage < hp && afterDamage >= hp)) continue;
+      if (!hasOtherEliminatedPlayersForGodwin(uid)) continue;
+      pending.push(uid);
+    }
+    return [...new Set(pending)];
+  }
+
+  function isGodwinReviveResolutionBlocked(){
+    if (!(pendingGodwinReviveResolutionUids instanceof Set) || pendingGodwinReviveResolutionUids.size <= 0) return false;
+    const key = currentTurnKey();
+    if (!key || (pendingGodwinReviveTurnKey && pendingGodwinReviveTurnKey !== key)){
+      pendingGodwinReviveResolutionUids = new Set();
+      pendingGodwinReviveTurnKey = "";
+      return false;
+    }
+
+    const remaining = new Set();
+    for (const uid of pendingGodwinReviveResolutionUids){
+      const gid = safeText(uid || "");
+      if (!gid) continue;
+      if (!!state.room?.abilityUsage?.godwin?.[gid]) continue;
+      if (!hasOtherEliminatedPlayersForGodwin(gid)) continue;
+      remaining.add(gid);
+    }
+
+    pendingGodwinReviveResolutionUids = remaining;
+    if (remaining.size <= 0){
+      pendingGodwinReviveTurnKey = "";
+      return false;
+    }
+    return true;
   }
 
   function hasUnresolvedAttackLootSelection(){
@@ -9484,6 +9545,11 @@
   async function finalizePendingAttackResolution(endTurnAfterApply, advanceTurnOnCounterResolve = false){
     const pending = pendingAttackResolution;
     const attackTurnOwnerUid = currentTurnPlayerId();
+    const pendingGodwinUids = collectPendingGodwinReviveUidsFromRows(pending?.rows || []);
+    if (pendingGodwinUids.length && currentTurnKey()){
+      pendingGodwinReviveResolutionUids = new Set([...(pendingGodwinReviveResolutionUids || []), ...pendingGodwinUids]);
+      pendingGodwinReviveTurnKey = currentTurnKey();
+    }
     pendingAttackResolution = null;
     pendingAttackResultMeta = null;
     attackTurnEndChoicePending = false;
@@ -9506,7 +9572,7 @@
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
-      if (currentTurnPlayerId() === attackTurnOwnerUid){
+      if (currentTurnPlayerId() === attackTurnOwnerUid && !isGodwinReviveResolutionBlocked()){
         await doEndTurn(attackTurnOwnerUid);
       }
       attackFlowUiLockActive = false;
@@ -14713,6 +14779,10 @@
   }
 
   async function doEndTurn(expectedCurrentPlayerId = ""){
+    if (isGodwinReviveSelectionPending() || isGodwinReviveResolutionBlocked()){
+      renderTurnEndButton();
+      return;
+    }
     lastAttackWatch = null;
     await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
     attackTurnEndChoicePending = false;
