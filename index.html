@@ -6511,6 +6511,9 @@
     const runKeepAbility = async () => {
       const role = myRoleInfo();
       const roleId = safeText(role?.id || "");
+      if (pending?.rows?.length){
+        pending.rows = applyAttackResultBonusRows(pending.rows);
+      }
       const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
       const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
@@ -9806,6 +9809,24 @@
     });
   }
 
+  function applyAttackResultBonusRows(rows = []){
+    return (Array.isArray(rows) ? rows : []).map(item => {
+      const uid = safeText(item?.uid || "");
+      const baseDamage = Math.max(0, Number(item?.damage || 0));
+      const bonusAmount = Math.max(0, Number(item?.bonusLabelAmount || 0));
+      if (!uid || bonusAmount <= 0){
+        return { ...item, uid, damage: baseDamage, bonusLabelAmount: 0 };
+      }
+      const addDamage = applyIncomingDamageModifiers(uid, bonusAmount, { source:"attack" });
+      return {
+        ...item,
+        uid,
+        damage: Math.max(0, baseDamage + addDamage),
+        bonusLabelAmount: 0
+      };
+    });
+  }
+
   function buildExcaliburAttackMeta({ attackerUid, targetUid, attackSucceeded, d6, d4 }){
     const uid = safeText(attackerUid);
     if (uid !== state.userId) return null;
@@ -10972,12 +10993,12 @@
             ? applyIncomingDamageModifiers(normalizedUid, damage, { source:"attack" })
             : 0;
           let bonusLabelAmount = 0;
-          if (hiddenFreddie && targetRevealed){
+          if (hiddenFreddie && attackSucceeded && targetRevealed){
             bonusLabelAmount += 2;
             if (hasExcalibur){
               bonusLabelAmount += 2;
             }
-          } else if (hiddenExcaliburPreview){
+          } else if (hiddenExcaliburPreview && attackSucceeded){
             bonusLabelAmount += 2;
           }
           return {
@@ -11001,7 +11022,13 @@
           && (hasAttackerSageRobe || hasTargetSageRobe)
           && Math.abs((Number(finalD6) || 0) - (Number(finalD4) || 0)) === 1
           && resolvedRows.some(row => Number(row.damage || 0) === 0);
-        if (hasExcaliburPreviewZero){
+        const hasFreddiePreviewZero = hiddenFreddie
+          && attackSucceeded
+          && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) > 0)
+          && (hasAttackerSageRobe || hasTargetSageRobe)
+          && Math.abs((Number(finalD6) || 0) - (Number(finalD4) || 0)) === 1
+          && resolvedRows.some(row => Number(row.damage || 0) === 0);
+        if (hasExcaliburPreviewZero || hasFreddiePreviewZero){
           pendingAttackResultMeta.zeroDamagePreview = true;
         }
         if (isMyRole("RAI_G2") && !isMyIdentityRevealed() && !isMyAbilitySealed()){
