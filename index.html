@@ -2519,6 +2519,16 @@
   let turnStartBoardTurnKey = "";
   let autoIdentityRevealTimer = null;
   let autoIdentityRevealTimerKey = "";
+  let npcTurnRunnerKey = "";
+  let npcAttackGuardKey = "";
+
+  const NPC_TOTAL_PLAYERS = 5;
+  const NPC_UID_PREFIX = "npc_";
+  const NPC_NAME_POOL = [
+    "Ethan Walker","Olivia Bennett","Noah Carter","Amelia Brooks","Liam Foster",
+    "Sophia Reed","Mason Cooper","Chloe Morgan","Lucas Hayes","Grace Turner",
+    "Henry Collins","Avery Mitchell","Julian Price","Stella Hughes","Caleb Parker"
+  ];
 
   const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
@@ -8086,6 +8096,189 @@
     return `${cur}:${updatedAt}`;
   }
 
+  async function setNpcBubble(uid, text, durationMs = 1500){
+    if (!state.roomCode || !uid || !text) return;
+    await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/npc_${uid}`), {
+      responderId: uid,
+      answerLabel: safeText(text),
+      at: Date.now()
+    });
+    setTimeout(() => {
+      remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/npc_${uid}`)).catch(() => {});
+    }, Math.max(300, Number(durationMs) || 1500));
+  }
+
+  async function npcDrawCardByRoom(uid, roomId){
+    const rid = Number(roomId || 0);
+    if (rid === 1) return drawFromDeckAs(uid, "white");
+    if (rid === 2) return drawFromDeckAs(uid, "black");
+    if (rid === 5) return drawFromDeckAs(uid, "green");
+    if (rid === 6){
+      const type = ["green","white","black"][Math.floor(Math.random() * 3)];
+      return drawFromDeckAs(uid, type);
+    }
+    return false;
+  }
+
+  async function drawFromDeckAs(uid, type){
+    if (!state.roomCode || !uid || !type) return false;
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    let drawn = null;
+    await runTransaction(roomRef, (cur) => {
+      if (!cur || !cur.turn) return cur;
+      if (safeText(cur.turn.currentPlayerId || "") !== uid) return cur;
+      if (!cur.turn.moveDone || cur.turn.attackDone || cur.turn.deckDrawDone) return cur;
+      const deck = cur?.deckState?.[type];
+      if (!deck || !Array.isArray(deck.order)) return cur;
+      const idx = Number(deck.idx || 0);
+      if (idx >= deck.order.length) return cur;
+      drawn = deck.order[idx];
+      deck.idx = idx + 1;
+      cur.turn.deckDrawDone = true;
+      cur.turn.drawnTypes = {
+        green: !!(cur.turn?.drawnTypes?.green || type === "green"),
+        white: !!(cur.turn?.drawnTypes?.white || type === "white"),
+        black: !!(cur.turn?.drawnTypes?.black || type === "black")
+      };
+      cur.turn.updatedAt = Date.now();
+      return cur;
+    });
+    if (!drawn) return false;
+    if (type === "green"){
+      await handleNpcGreenCard(uid, drawn);
+    }
+    await scheduleDeckRebuildIfEmpty(type).catch(() => {});
+    return true;
+  }
+
+  async function transferEquipmentCard(fromUid, toUid, cardKey){
+    if (!state.roomCode || !fromUid || !toUid || !cardKey) return false;
+    let moved = false;
+    await runTransaction(ref(db, `rooms/${state.roomCode}/equipment`), (cur) => {
+      if (!cur || !cur[fromUid] || !cur[fromUid][cardKey]) return cur;
+      const card = cur[fromUid][cardKey];
+      delete cur[fromUid][cardKey];
+      if (Object.keys(cur[fromUid]).length === 0) delete cur[fromUid];
+      if (!cur[toUid]) cur[toUid] = {};
+      cur[toUid][`npc_${Date.now()}_${Math.floor(Math.random()*9999)}`] = { ...card, movedAt:Date.now() };
+      moved = true;
+      return cur;
+    });
+    return moved;
+  }
+
+  async function handleNpcGreenCard(uid, card){
+    const others = latestPlayers.filter(p => p.id !== uid && !isPlayerEliminated(p.id));
+    if (!others.length || !state.roomCode) return;
+    const target = others[Math.floor(Math.random() * others.length)];
+    const requestId = `npc_req_${Date.now()}_${Math.floor(Math.random()*9999)}`;
+    await set(ref(db, `rooms/${state.roomCode}/greenInbox/${target.id}`), {
+      from: uid,
+      to: target.id,
+      requestId,
+      card,
+      at: Date.now()
+    });
+    if (isNpcUid(target.id)){
+      const roleId = roleIdForUid(target.id);
+      const faction = ROLE_BY_ID[roleId]?.faction || "";
+      const answerLabel = faction ? `${faction}です。` : "はい";
+      await set(ref(db, `rooms/${state.roomCode}/greenResponses/${uid}`), {
+        from: uid,
+        to: target.id,
+        requestId,
+        answerId: "yes",
+        answerLabel,
+        card,
+        at: Date.now()
+      });
+      await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${target.id}`)).catch(() => {});
+    }
+    await set(ref(db, `rooms/${state.roomCode}/greenCloseSignals/${uid}`), { requestId, at:Date.now() });
+  }
+
+  async function processNpcTurn(){
+    if (!state.isHost || !isGameStarted() || !state.roomCode) return;
+    const uid = currentTurnPlayerId();
+    if (!isNpcUid(uid) || isPlayerEliminated(uid)) return;
+    const key = turnCycleKey();
+    if (!key || npcTurnRunnerKey === key) return;
+    npcTurnRunnerKey = key;
+
+    const marker = markerCache?.[uid] || null;
+    const currentRoom = markerRoomId(marker);
+    let targetRoom = currentRoom;
+    await setNpcBubble(uid, "ふります！", 1500);
+    await waitMs(1500);
+
+    if (currentRoom === 7){
+      const choices = [1,2,3,4,5,6];
+      targetRoom = choices[Math.floor(Math.random()*choices.length)];
+    } else {
+      const d6 = 1 + Math.floor(Math.random()*6);
+      const d4 = 1 + Math.floor(Math.random()*4);
+      await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), { uid, d6, d4, at:Date.now() });
+      targetRoom = diceTotalToRoomId(d6 + d4) || currentRoom || 1;
+    }
+    await waitMs(200);
+    await placePlayerMarkerInRoom(uid, targetRoom || 1);
+    await runTransaction(ref(db, `rooms/${state.roomCode}/turn`), (t) => {
+      if (!t || safeText(t.currentPlayerId || "") !== uid) return t;
+      t.moveDone = true;
+      t.movedByDiceRoomId = targetRoom || null;
+      t.updatedAt = Date.now();
+      return t;
+    });
+    await waitMs(2000);
+
+    if (Number(targetRoom) === 4){
+      const targets = latestPlayers.filter(p => p.id !== uid && !isPlayerEliminated(p.id) && hasAnyEquipment(p.id));
+      if (targets.length){
+        const victim = targets[Math.floor(Math.random()*targets.length)];
+        const cards = listEquipForUid(victim.id).filter(v => !isIdentityEquipItem(v));
+        const picked = cards[Math.floor(Math.random()*cards.length)];
+        if (picked?.key){
+          await transferEquipmentCard(victim.id, uid, picked.key);
+          await runTransaction(ref(db, `rooms/${state.roomCode}/turn`), (t) => { if (!t || safeText(t.currentPlayerId||"")!==uid) return t; t.room4StealUsed = true; t.updatedAt = Date.now(); return t; });
+        }
+      }
+    } else if (Number(targetRoom) === 3){
+      if (Math.random() < 0.5){
+        const targets = latestPlayers.filter(p => p.id !== uid && !isPlayerEliminated(p.id));
+        if (targets.length){
+          const t = targets[Math.floor(Math.random()*targets.length)];
+          await addDamageToPlayer(t.id, 2, { source:"room3" });
+        }
+      } else {
+        await healDamageToPlayer(uid, 1, "room3_heal");
+      }
+      await runTransaction(ref(db, `rooms/${state.roomCode}/turn`), (t) => { if (!t || safeText(t.currentPlayerId||"")!==uid) return t; t.room3ActionUsed = true; t.updatedAt = Date.now(); return t; });
+    }
+
+    await npcDrawCardByRoom(uid, targetRoom);
+    await waitMs(2000);
+
+    const inRange = [...attackRangeTargetUidsFor(uid)].filter(tid => tid !== uid && !isPlayerEliminated(tid));
+    if (inRange.length){
+      const targetUid = inRange[Math.floor(Math.random()*inRange.length)];
+      const attackerName = playerById(targetUid)?.name || "対象";
+      await setNpcBubble(uid, `${attackerName}さんを攻撃！`, 1500);
+      await waitMs(1500);
+      const d6 = 1 + Math.floor(Math.random()*6);
+      const d4 = 1 + Math.floor(Math.random()*4);
+      await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), { uid, targetUid, d6, d4, x:window.innerWidth/2, y:window.innerHeight/2, at:Date.now() });
+      const attackKey = `${key}:${uid}`;
+      if (npcAttackGuardKey !== attackKey){
+        npcAttackGuardKey = attackKey;
+        await waitMs(200);
+        if (didAttackRollSucceed(d6, d4)) await addDamageToPlayer(targetUid, 1, { source:"attack" });
+      }
+    }
+
+    await waitMs(2000);
+    await advanceTurnToNextPlayer(uid);
+  }
+
   function maybeAutoRollMoveDiceOnTurnStart(){
     if (!isGameStarted()) return;
     if (!canUseMoveDice()) return;
@@ -12463,6 +12656,7 @@
       restorePendingMoveChoiceFromSeat();
       updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
+      processNpcTurn().catch(() => {});
       syncAutoIdentityRevealTimer();
       evaluateAutoIdentityRevealTrigger();
       syncTurnStartBoard();
@@ -12884,6 +13078,50 @@
     return (mp >= 2) ? mp : SEAT_COLORS.length;
   }
   function occupiedCount(){ return latestPlayers.length; }
+  function isNpcUid(uid){ return safeText(uid || "").startsWith(NPC_UID_PREFIX); }
+  function activeHumanPlayers(){ return latestPlayers.filter(p => !isNpcUid(p.id)); }
+  function activeNpcPlayers(){ return latestPlayers.filter(p => isNpcUid(p.id)); }
+
+  function randomNpcName(used = new Set()){
+    const shuffled = shuffle([...NPC_NAME_POOL]);
+    for (const candidate of shuffled){
+      if (!used.has(candidate)) return candidate;
+    }
+    return `Alex ${Math.floor(Math.random() * 900 + 100)}`;
+  }
+
+  async function ensureComputerModeSeats(roomData){
+    const tables = roomData?.tables || {};
+    const seated = Object.entries(tables)
+      .map(([seatIndex, t]) => (t && t.playerId ? { seatIndex:Number(seatIndex), id:safeText(t.playerId || ""), name:safeText(t.playerName || "") } : null))
+      .filter(Boolean)
+      .sort((a,b) => a.seatIndex - b.seatIndex);
+    const humans = seated.filter(p => !isNpcUid(p.id));
+    if (humans.length < 1 || humans.length > 3) return;
+    const npcsNeeded = Math.max(0, NPC_TOTAL_PLAYERS - humans.length);
+    const usedColors = new Set(humans.map(p => SEAT_COLORS[(p.seatIndex || 1) - 1]).filter(Boolean));
+    const usedNames = new Set(seated.map(p => p.name));
+    const freeSeats = [];
+    for (let i = 1; i <= SEAT_COLORS.length; i++){
+      if (!tables[String(i)]?.playerId) freeSeats.push(i);
+    }
+    const preferredSeats = freeSeats
+      .filter(idx => !usedColors.has(SEAT_COLORS[idx - 1]))
+      .concat(freeSeats.filter(idx => usedColors.has(SEAT_COLORS[idx - 1])));
+    const updates = { maxPlayers: NPC_TOTAL_PLAYERS, computerMode:true };
+    for (let i = 0; i < npcsNeeded && i < preferredSeats.length; i++){
+      const seat = preferredSeats[i];
+      const npcUid = `${NPC_UID_PREFIX}${seat}`;
+      updates[`tables/${seat}`] = {
+        playerId: npcUid,
+        playerName: randomNpcName(usedNames),
+        color: SEAT_COLORS[seat - 1] || "#ddd",
+        joinedAt: Date.now(),
+        isNpc: true
+      };
+    }
+    await update(ref(db, `rooms/${state.roomCode}`), updates);
+  }
 
   let pendingSeatIndexToSteal = null;
   let pendingSeatPlayerIdToSteal = null;
@@ -13408,7 +13646,11 @@
 
     if (roomData.gameStarted || roomData.startedAt) return;
 
-    const tables = roomData.tables || {};
+    await ensureComputerModeSeats(roomData);
+    const refreshedRoomSnap = await get(roomRef);
+    const refreshedRoomData = refreshedRoomSnap.val() || roomData;
+
+    const tables = refreshedRoomData.tables || {};
     const players = Object.entries(tables)
       .map(([seatIndex, t]) => (t && t.playerId ? {
         id: t.playerId,
@@ -13439,7 +13681,7 @@
       updatedAt: Date.now(),
     };
 
-    const markers = { ...(roomData.markers || {}) };
+    const markers = { ...(refreshedRoomData.markers || {}) };
     for (const p of players){
       if (safeText(p.name).trim().toLowerCase() !== "test") continue;
       const pt = randomPointInRoom(4, 14);
