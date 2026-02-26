@@ -4731,6 +4731,10 @@
           toColor: safeText(p.color || ""),
           answerLabel: isRevealIdentityGreenCard(greenShareCard) ? "私の正体です。" : ""
         }).catch(() => {});
+
+        if (isNpcPlayerUid(p.id) && !isRevealIdentityGreenCard(greenShareCard)){
+          resolveNpcGreenInboxPayload(payload).catch(() => {});
+        }
       });
 
       greenShareList.appendChild(btn);
@@ -8249,6 +8253,171 @@
     return { id:"no", label:"いいえ" };
   }
 
+  async function resolveNpcGreenInboxPayload(payload){
+    if (!state.roomCode || !payload?.from || !payload?.to || !payload?.requestId || !payload?.card) return;
+    const responderUid = safeText(payload.to || "");
+    if (!responderUid || !isNpcPlayerUid(responderUid)) return;
+    await waitMs(450);
+    const opt = pickNpcGreenAnswer(payload.card, responderUid);
+    await set(ref(db, `rooms/${state.roomCode}/greenResponses/${payload.from}`), {
+      from: safeText(payload.from || ""),
+      to: responderUid,
+      requestId: safeText(payload.requestId || ""),
+      answerId: opt.id,
+      answerLabel: opt.label,
+      card: payload.card,
+      at: Date.now()
+    });
+    await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${payload.requestId}`), {
+      from: safeText(payload.from || ""),
+      responderId: responderUid,
+      requestId: safeText(payload.requestId || ""),
+      answerLabel: opt.label,
+      at: Date.now()
+    });
+    await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${responderUid}`)).catch(() => {});
+    await applyNpcGreenAnswerEffect(responderUid, payload.card, opt.id);
+  }
+
+  function npcYesNoByDamage(uid){
+    const dmg = clampDamage(damageCache?.[uid]);
+    if (dmg <= 3) return false;
+    if (dmg <= 5) return Math.random() < 0.5;
+    return true;
+  }
+
+  function pickRandomAliveUidForNpc(actorUid, { includeSelf=false } = {}){
+    const pool = latestPlayers
+      .filter((p) => includeSelf || p.id !== actorUid)
+      .filter((p) => !isPlayerEliminated(p.id));
+    if (!pool.length) return "";
+    const picked = pool[Math.floor(Math.random() * pool.length)] || null;
+    return safeText(picked?.id || "");
+  }
+
+  async function applyNpcImmediateDeckCardEffect(uid, cardObj, theme){
+    const name = safeText(cardObj?.name || "");
+    if (!uid || !name) return;
+    const role = roleInfoByUid(uid);
+    const chooseYes = npcYesNoByDamage(uid);
+
+    if (name === "応急手当"){
+      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:true });
+      if (!targetUid) return;
+      await setDamageToPlayer(targetUid, 7, "first_aid_set");
+      return;
+    }
+    if (name === "恩恵"){
+      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:false });
+      if (!targetUid) return;
+      const eye = 1 + Math.floor(Math.random() * 6);
+      await emitCardDiceEvent({ kind:"blessing", uid, d6:eye });
+      await healDamageToPlayer(targetUid, eye, "card_blessing_heal");
+      return;
+    }
+    if (name === "吸血コウモリ"){
+      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:false });
+      if (!targetUid) return;
+      if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
+      await healDamageToPlayer(uid, 1, "card_vampire_bat_heal");
+      return;
+    }
+    if (name === "三つ目の黒犬"){
+      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:false });
+      if (!targetUid) return;
+      if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
+      if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 2);
+      return;
+    }
+    if (name === "呪いの人形"){
+      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:true });
+      if (!targetUid) return;
+      const eye = 1 + Math.floor(Math.random() * 6);
+      await emitCardDiceEvent({ kind:"curse_doll", uid, d6:eye });
+      if (eye <= 4){
+        if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 3);
+      } else if (!hasEquipmentByName(uid, "いにしえの聖杯")){
+        await addDamageToPlayer(uid, 3);
+      }
+      return;
+    }
+    if (name === "光臨"){
+      if (chooseYes && role?.faction === "レイダー"){
+        await revealIdentityToEquipmentForUid(uid);
+        await setDamageToPlayer(uid, 0, "card_kohrin_heal");
+      }
+      return;
+    }
+    if (name === "戦慄の闇儀式"){
+      if (chooseYes && role?.faction === "シャドウ"){
+        await revealIdentityToEquipmentForUid(uid);
+        await setDamageToPlayer(uid, 0, "card_kohrin_heal");
+      }
+      return;
+    }
+    if (name === "幸せのクッキー"){
+      if (chooseYes && (role?.initial === "A" || role?.initial === "U")){
+        await revealIdentityToEquipmentForUid(uid, identityPromptRevealOptions(name));
+        await setDamageToPlayer(uid, 0, "card_kohrin_heal");
+      }
+      return;
+    }
+    if (name === "闇を祓う鏡"){
+      if (role?.faction === "シャドウ" && role?.name !== "ウルリッヒ"){
+        await revealIdentityToEquipmentForUid(uid);
+      }
+      return;
+    }
+    if (name === "いやしの聖水"){
+      await healDamageToPlayer(uid, 2, "card_holy_water_heal");
+      return;
+    }
+    if (name === "裁きの閃光"){
+      await addDamageToAllOtherPlayers(uid, 2);
+      return;
+    }
+    if (name === "人魚の涙"){
+      const topUids = maxDamageAlivePlayerIds();
+      for (const targetUid of topUids){
+        await healDamageToPlayer(targetUid, 3, "card_mermaid_tears_heal");
+      }
+      return;
+    }
+    if (name === "封印の知恵"){
+      const turn = turnState();
+      if (safeText(turn?.currentPlayerId || "") === uid){
+        await update(ref(db, `rooms/${state.roomCode}/turn`), {
+          repeatTurnRemaining: 1,
+          repeatTurnTotal: 1,
+          sealWisdomBonus: true,
+          updatedAt: Date.now()
+        });
+      }
+      return;
+    }
+    if (name === "守護天使"){
+      await enableGuardianAngelShieldForPlayer(uid);
+      return;
+    }
+    if (name === "暴動"){
+      const rolled = { d6: 1 + Math.floor(Math.random() * 6), d4: 1 + Math.floor(Math.random() * 4) };
+      await emitCardDiceEvent({ kind:"riot", uid, d6: rolled.d6, d4: rolled.d4 });
+      const targetRoomId = diceTotalToRoomId(Number(rolled?.d6 || 0) + Number(rolled?.d4 || 0));
+      await addDamageToPlayers(playerIdsInRoom(targetRoomId), 3);
+      return;
+    }
+    if (name === "オリバーの子分"){
+      await npcStealRandomEquipment(uid);
+      return;
+    }
+    if (name === "バナナの皮"){
+      const myItems = listEquipForUid(uid).filter(it => !isIdentityEquipItem(it));
+      if (myItems.length === 0){
+        await addDamageToPlayer(uid, 1);
+      }
+    }
+  }
+
   async function handleNpcGreenRoom5(senderUid, cardObj){
     if (!state.roomCode || !cardObj) return;
     const aliveOthers = latestPlayers.filter(p => p.id !== senderUid && !isPlayerEliminated(p.id));
@@ -8282,25 +8451,7 @@
       return;
     }
 
-    const opt = pickNpcGreenAnswer(cardObj, targetUid);
-    await set(ref(db, `rooms/${state.roomCode}/greenResponses/${senderUid}`), {
-      from: senderUid,
-      to: targetUid,
-      requestId,
-      answerId: opt.id,
-      answerLabel: opt.label,
-      card: cardObj,
-      at: Date.now()
-    });
-    await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`), {
-      from: senderUid,
-      responderId: targetUid,
-      requestId,
-      answerLabel: opt.label,
-      at: Date.now()
-    });
-    await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${targetUid}`)).catch(() => {});
-    await applyNpcGreenAnswerEffect(targetUid, cardObj, opt.id);
+    await resolveNpcGreenInboxPayload(payload);
     await waitMs(500);
     await Promise.all([
       remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`)).catch(() => {}),
@@ -8331,11 +8482,21 @@
       if (idx >= deck.order.length) return cur;
       drawn = deck.order[idx];
       deck.idx = idx + 1;
+      cur.deckState.reveal = cur.deckState.reveal || { slot3:null, slot5:null };
+      if (drawType === "white"){
+        cur.deckState.reveal.slot3 = { theme:"white", card: drawn, at: Date.now() };
+      } else if (drawType === "black"){
+        cur.deckState.reveal.slot5 = { theme:"black", card: drawn, at: Date.now() };
+      }
       cur.deckState.updatedAt = Date.now();
       return cur;
     });
     if (drawn && (drawType === "white" || drawType === "black")){
-      await grantEquipmentToPlayer(uid, drawn, drawType);
+      await showNpcSpeech(uid, `${safeText(drawn?.name || "カード")}を引きました！`, 1200);
+      const granted = await grantEquipmentToPlayer(uid, drawn, drawType);
+      if (!granted){
+        await applyNpcImmediateDeckCardEffect(uid, drawn, drawType);
+      }
     } else if (drawn && drawType === "green"){
       await handleNpcGreenRoom5(uid, drawn);
     }
