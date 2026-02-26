@@ -4356,7 +4356,7 @@
       });
       greenShareList.appendChild(btn);
     }
-    if (roleId === "RAI_E3" || roleId === "SHA_U2"){
+    if (roleId === "RAI_E3" || roleId === "SHA_U2" || roleId === "RAI_G3"){
       const skipBtn = document.createElement("button");
       skipBtn.type = "button";
       skipBtn.className = "green-share-btn";
@@ -4374,6 +4374,9 @@
           if (selectionBusy) return;
           selectionBusy = true;
           lockRoleSelectionButtons();
+          if (roleId === "RAI_G3"){
+            await markRoleAbilityUsed("RAI_G3");
+          }
           await setRoleAbilitySelectionState(null);
           if (roleId === "RAI_E3" && !!entry?.endTurnAfterResolve){
             await doEndTurn();
@@ -8053,6 +8056,11 @@
     }
   }
 
+  function hasPendingGodwinAbilitySelection(){
+    const entry = state.room?.roleAbilitySelection || null;
+    return safeText(entry?.roleId || "") === "RAI_G3";
+  }
+
   function canShowEndTurnButton(){
     if (!isMyTurn()) return false;
     if (!identityPromptPop?.classList.contains("hidden")) return false;
@@ -8062,6 +8070,7 @@
     if (mustAttackWithMasamune()) return false;
     if (attackTurnEndChoicePending) return false;
     if (attackFlowUiLockActive) return false;
+    if (hasPendingGodwinAbilitySelection()) return false;
     if (suppressEndTurnButton) return false;
     if (hpBoardAnimationActive) return false;
     if (hasUnresolvedAttackLootSelection()) return false;
@@ -9506,7 +9515,7 @@
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
-      if (currentTurnPlayerId() === attackTurnOwnerUid){
+      if (currentTurnPlayerId() === attackTurnOwnerUid && !hasPendingGodwinAbilitySelection()){
         await doEndTurn(attackTurnOwnerUid);
       }
       attackFlowUiLockActive = false;
