@@ -2519,11 +2519,140 @@
   let turnStartBoardTurnKey = "";
   let autoIdentityRevealTimer = null;
   let autoIdentityRevealTimerKey = "";
+  let npcTurnInFlightKey = "";
+  let npcTurnLock = false;
+  let npcLastHandledTurnUpdatedAt = 0;
+
+  const NPC_UID_PREFIX = "npc_";
+  const NPC_FOREIGN_NAMES = [
+    "Oliver", "Sophia", "Ethan", "Liam", "Emma", "Lucas", "Noah", "Ava", "Mia", "Logan",
+    "Chloe", "Leo", "Nora", "Grace", "Henry", "Jack", "Isla", "Ruby", "Ella", "Mason"
+  ];
 
   const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const isNpcUid = (uid) => safeText(uid).startsWith(NPC_UID_PREFIX);
+
+  function pickNpcNames(count){
+    const shuffled = shuffle(NPC_FOREIGN_NAMES.slice());
+    return shuffled.slice(0, Math.max(0, count));
+  }
+
+  function rollDicePair(){
+    return { d6:1 + Math.floor(Math.random() * 6), d4:1 + Math.floor(Math.random() * 4) };
+  }
+
+  async function npcStealOneEquipment(actorUid){
+    if (!state.roomCode || !actorUid) return false;
+    const candidates = latestPlayers
+      .filter(p => p.id !== actorUid && !isPlayerEliminated(p.id))
+      .filter(p => listEquipForUid(p.id).some(it => !isIdentityEquipItem(it)));
+    if (!candidates.length) return false;
+    const target = candidates[Math.floor(Math.random() * candidates.length)];
+    const targetList = listEquipForUid(target.id).filter(it => !isIdentityEquipItem(it));
+    const pick = targetList[Math.floor(Math.random() * targetList.length)];
+    if (!pick?.sourceKey) return false;
+    const srcRef = ref(db, `rooms/${state.roomCode}/equipment/${target.id}/${pick.sourceKey}`);
+    const dstRef = ref(db, `rooms/${state.roomCode}/equipment/${actorUid}/${Date.now()}_${Math.random().toString(36).slice(2,8)}`);
+    const snap = await get(srcRef);
+    const val = snap.val();
+    if (!val) return false;
+    await Promise.all([set(dstRef, { ...val, at: Date.now(), stolenByNpc:true }), remove(srcRef)]);
+    return true;
+  }
+
+  async function runNpcTurn(actorUid){
+    if (!state.roomCode || !actorUid || !isNpcUid(actorUid) || npcTurnLock) return;
+    const turn = turnState() || {};
+    const turnUpdatedAt = Number(turn.updatedAt || 0);
+    if (!turnUpdatedAt || npcLastHandledTurnUpdatedAt === turnUpdatedAt) return;
+    npcTurnLock = true;
+    npcLastHandledTurnUpdatedAt = turnUpdatedAt;
+    try {
+      await waitMs(2000);
+      showTemporaryRoleTag(actorUid, "ふります！", 1500);
+      await waitMs(1500);
+
+      const marker = markerCache?.[actorUid] || null;
+      const nowRoom = markerRoomId(marker) || 7;
+      const rolledMove = rollDicePair();
+      const rolledTotal = rolledMove.d6 + rolledMove.d4;
+      const movedRoom = (nowRoom === 7)
+        ? (1 + Math.floor(Math.random() * 6))
+        : (diceTotalToRoomId(rolledTotal) || nowRoom);
+
+      await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), { uid:actorUid, d6:rolledMove.d6, d4:rolledMove.d4, total:rolledTotal, npc:true, at:Date.now() });
+      await waitMs(200);
+      await placePlayerMarkerInRoom(actorUid, movedRoom);
+      await update(ref(db, `rooms/${state.roomCode}/turn`), {
+        moveDone:true,
+        moveAt:Date.now(),
+        movedByDiceRoomId:movedRoom,
+        room3ActionUsed:false,
+        room4StealUsed:false,
+        drawnTypes:{ green:false, white:false, black:false }
+      });
+
+      await waitMs(2000);
+      if (movedRoom === 1 || movedRoom === 2){
+        await update(ref(db, `rooms/${state.roomCode}/turn`), {
+          deckDrawDone:true,
+          drawnTypes: movedRoom === 1 ? { green:false, white:true, black:false } : { green:false, white:false, black:true }
+        });
+      } else if (movedRoom === 6){
+        const picked = ["green", "white", "black"][Math.floor(Math.random() * 3)];
+        await update(ref(db, `rooms/${state.roomCode}/turn`), {
+          deckDrawDone:true,
+          drawnTypes: { green:picked === "green", white:picked === "white", black:picked === "black" }
+        });
+      } else if (movedRoom === 3){
+        const mode = Math.random() < 0.5 ? "damage" : "heal";
+        if (mode === "heal"){
+          await healDamageToPlayer(actorUid, 1, "npc_room3");
+        } else {
+          const targets = latestPlayers.filter(p => p.id !== actorUid && !isPlayerEliminated(p.id));
+          if (targets.length){
+            const target = targets[Math.floor(Math.random() * targets.length)];
+            await addDamageToPlayer(target.id, 2, { source:"npc_room3" });
+          }
+        }
+        await update(ref(db, `rooms/${state.roomCode}/turn`), { room3ActionUsed:true, deckDrawDone:true });
+      } else if (movedRoom === 4){
+        await npcStealOneEquipment(actorUid);
+        await update(ref(db, `rooms/${state.roomCode}/turn`), { room4StealUsed:true, deckDrawDone:true });
+      } else {
+        await update(ref(db, `rooms/${state.roomCode}/turn`), { deckDrawDone:true });
+      }
+
+      await waitMs(2000);
+      const targetSet = attackRangeTargetUidsFor(actorUid);
+      const targets = [...targetSet];
+      if (targets.length){
+        const targetUid = targets[Math.floor(Math.random() * targets.length)];
+        const targetPlayer = playerById(targetUid);
+        showTemporaryRoleTag(actorUid, `${safeText(targetPlayer?.name || "") || "相手"}さんを攻撃！`, 1500);
+        await waitMs(1500);
+        const rolledAttack = rollDicePair();
+        await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), { uid:actorUid, targetUid, d6:rolledAttack.d6, d4:rolledAttack.d4, npc:true, at:Date.now() });
+        const success = didAttackRollSucceed(rolledAttack.d6, rolledAttack.d4);
+        if (success){
+          const dmg = calcAttackDamageFromRoll(actorUid, rolledAttack.d6, rolledAttack.d4, { targetUid });
+          if (dmg > 0){
+            await waitMs(200);
+            await addDamageToPlayer(targetUid, dmg, { source:"npc_attack" });
+          }
+        }
+      }
+
+      await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, deckDrawDone:true, updatedAt:Date.now() });
+      await waitMs(2000);
+      await advanceTurnToNextPlayer(actorUid);
+    } finally {
+      npcTurnLock = false;
+    }
+  }
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -13409,7 +13538,34 @@
     if (roomData.gameStarted || roomData.startedAt) return;
 
     const tables = roomData.tables || {};
-    const players = Object.entries(tables)
+    const humanPlayers = Object.entries(tables)
+      .map(([seatIndex, t]) => (t && t.playerId ? {
+        id: t.playerId,
+        seatIndex: Number(seatIndex),
+        name: String(t.playerName || "")
+      } : null))
+      .filter(Boolean)
+      .sort((a,b) => a.seatIndex - b.seatIndex);
+
+    let nextTables = { ...tables };
+    if (humanPlayers.length === 1){
+      const mySeat = Number(humanPlayers[0].seatIndex || 0);
+      const seats = shuffle([1,2,3,4,5].filter(v => v !== mySeat));
+      const npcNames = pickNpcNames(4);
+      for (let i = 0; i < seats.length && i < 4; i++){
+        const seat = seats[i];
+        const uid = `${NPC_UID_PREFIX}${Date.now()}_${i}_${Math.random().toString(36).slice(2,7)}`;
+        nextTables[String(seat)] = {
+          playerId: uid,
+          playerName: npcNames[i] || `NPC${i+1}`,
+          color: SEAT_COLORS[seat-1] || null,
+          seatedAt: Date.now(),
+          npc: true
+        };
+      }
+    }
+
+    const players = Object.entries(nextTables)
       .map(([seatIndex, t]) => (t && t.playerId ? {
         id: t.playerId,
         seatIndex: Number(seatIndex),
@@ -13458,6 +13614,7 @@
     }
 
     await update(roomRef, {
+      tables: nextTables,
       hands,
       deckState: freshDeckState,
       guardianAngelShield: null,
@@ -13726,6 +13883,20 @@
       applyEquipCols();
     });
   });
+
+
+  setInterval(() => {
+    if (!state.isHost || !state.roomCode || !isGameStarted()) return;
+    const turn = turnState() || {};
+    const uid = safeText(turn.currentPlayerId || "");
+    if (!uid || !isNpcUid(uid)) return;
+    const turnKey = `${uid}@${Number(turn.updatedAt || 0)}`;
+    if (!turnKey || turnKey === npcTurnInFlightKey || npcTurnLock) return;
+    npcTurnInFlightKey = turnKey;
+    runNpcTurn(uid).finally(() => {
+      if (npcTurnInFlightKey === turnKey) npcTurnInFlightKey = "";
+    });
+  }, 500);
 
   copyLinkBtn.addEventListener('click', async () => {
     const url = `${location.origin}${location.pathname}?room=${state.roomCode}`;
