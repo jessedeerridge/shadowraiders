@@ -13171,6 +13171,10 @@
         card.style.cursor = 'pointer';
         card.addEventListener('click', async (e) => {
           e.stopPropagation();
+          if (isTestPlayer() && (theme === 'white' || theme === 'black')){
+            await setDeckToSingleCardForTest(theme, cardObj);
+            return;
+          }
           if (isTestPlayer() && isEquipCard(cardObj)){
             await grantEquipmentToMe(cardObj, theme);
             return;
