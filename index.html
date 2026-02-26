@@ -3134,22 +3134,22 @@
     await advanceTurnToNextPlayer();
   }
 
-  async function resolveVenomCounterChoice(choice, sourceKey = ""){
+  async function resolveVenomCounterChoiceForUid(actorUid, choice, sourceKey = ""){
     if (!state.roomCode) return false;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
-    const actorUid = safeText(state.userId || "");
+    const resolvedActorUid = safeText(actorUid || "");
     const action = safeText(choice || "");
     const srcKey = safeText(sourceKey || "");
     const result = await runTransaction(roomRef, (cur) => {
-      if (!cur || !actorUid) return cur;
+      if (!cur || !resolvedActorUid) return cur;
       const counterMap = cur.counterPromptState || {};
-      const entry = counterMap[actorUid];
+      const entry = counterMap[resolvedActorUid];
       if (!isVenomSelectionEntry(entry)) return cur;
       const venomUid = safeText(entry.venomUid || "");
       if (!venomUid) return cur;
 
       if (action === "give"){
-        const mine = cur.equipment?.[actorUid] || {};
+        const mine = cur.equipment?.[resolvedActorUid] || {};
         const item = mine[srcKey];
         if (!item || item.kind === "identity") return cur;
         const oldCount = Math.max(1, Math.floor(Number(item.count ?? item.qty ?? item.quantity ?? 1) || 1));
@@ -3171,14 +3171,14 @@
           at: Date.now()
         };
       } else if (action === "damage"){
-        const before = clampDamage(cur.damage?.[actorUid]);
+        const before = clampDamage(cur.damage?.[resolvedActorUid]);
         cur.damage = cur.damage || {};
-        cur.damage[actorUid] = before + 1;
+        cur.damage[resolvedActorUid] = before + 1;
       } else {
         return cur;
       }
 
-      delete counterMap[actorUid];
+      delete counterMap[resolvedActorUid];
       if (Object.keys(counterMap).length === 0) delete cur.counterPromptState;
       else cur.counterPromptState = counterMap;
 
@@ -3221,6 +3221,10 @@
     return !!result.committed;
   }
 
+  async function resolveVenomCounterChoice(choice, sourceKey = ""){
+    return resolveVenomCounterChoiceForUid(state.userId, choice, sourceKey);
+  }
+
   function hideCounterAbilityPrompt(){
     if (counterAbilityCountdownTimer){
       clearInterval(counterAbilityCountdownTimer);
@@ -3250,6 +3254,34 @@
     await waitMs(1000);
 
     const baseDamage = calcAttackDamageFromRoll(state.userId, rolled.d6, rolled.d4, {
+      masamuneMode,
+      targetUid
+    });
+    if (baseDamage <= 0) return;
+    await addDamageToPlayer(targetUid, baseDamage, { source:"attack" });
+  }
+
+  async function runWerewolfCounterAttackForUid(werewolfUid, attackerUid){
+    const actorUid = safeText(werewolfUid || "");
+    const targetUid = safeText(attackerUid || "");
+    if (!actorUid || !targetUid || !state.roomCode) return;
+    const masamuneMode = hasEquipmentByName(actorUid, "妖刀マサムネ");
+    const rolled = {
+      d6: 1 + Math.floor(Math.random() * 6),
+      d4: 1 + Math.floor(Math.random() * 4)
+    };
+
+    await emitCardDiceEvent({
+      kind:"role_werewolf_counter",
+      uid: actorUid,
+      targetUid,
+      d6: rolled.d6,
+      d4: rolled.d4,
+      masamuneMode
+    });
+    await waitMs(1000);
+
+    const baseDamage = calcAttackDamageFromRoll(actorUid, rolled.d6, rolled.d4, {
       masamuneMode,
       targetUid
     });
@@ -8461,6 +8493,66 @@
     return pool[Math.floor(Math.random() * pool.length)] || "";
   }
 
+  function isNpcCertainShadowByIntel(attackerUid, targetUid){
+    const a = safeText(attackerUid || "");
+    const t = safeText(targetUid || "");
+    if (!a || !t) return false;
+    const attackerFaction = safeText(roleInfoByUid(a)?.faction || "");
+    if (attackerFaction !== "レイダー") return false;
+    const hint = state.room?.npcIntel?.factionHints?.[a]?.[t] || null;
+    return !!hint?.sameImpossible;
+  }
+
+  async function resolveNpcCounterPromptsIfNeeded(){
+    if (!state.isHost || !state.roomCode || !state.room?.computerMode) return;
+    const map = state.room?.counterPromptState || {};
+    const entries = Object.entries(map)
+      .map(([uid, entry]) => ({ uid: safeText(uid), entry }))
+      .filter((row) => row.uid && isNpcPlayerUid(row.uid) && !!row.entry);
+    if (!entries.length) return;
+
+    for (const row of entries){
+      const uid = row.uid;
+      const entry = row.entry || {};
+      const roleId = safeText(entry.roleId || "");
+      const attackerUid = safeText(entry.attackerUid || "");
+
+      if (roleId === "SHA_W3"){
+        if (!attackerUid || !isIdentityRevealedFor(attackerUid)) continue;
+        await runWerewolfCounterAttackForUid(uid, attackerUid);
+        await remove(ref(db, `rooms/${state.roomCode}/counterPromptState/${uid}`)).catch(() => {});
+        continue;
+      }
+
+      if (roleId === "SHA_V1" && safeText(entry.mode || "") === "venom_resolution"){
+        const venomUid = safeText(entry.venomUid || "");
+        if (!venomUid) continue;
+        const role = roleInfoByUid(uid);
+        const hp = Number(role?.hp || 0);
+        const curDamage = clampDamage(damageCache?.[uid]);
+        const hasEquip = hasAnyEquipment(uid);
+        const damageNonLethal = hp > 0 ? (curDamage + 1 < hp) : true;
+        const shouldDamage = (!hasEquip) || damageNonLethal;
+
+        if (shouldDamage){
+          await resolveVenomCounterChoiceForUid(uid, "damage");
+        } else {
+          const items = listEquipForUid(uid).filter(it => !isIdentityEquipItem(it));
+          const choice = items[Math.floor(Math.random() * items.length)] || null;
+          const sourceKey = safeText(choice?.sourceKey || "");
+          if (!sourceKey){
+            await resolveVenomCounterChoiceForUid(uid, "damage");
+            continue;
+          }
+          await resolveVenomCounterChoiceForUid(uid, "give", sourceKey);
+          const venomName = safeText(playerById(venomUid)?.name || "プレイヤー");
+          const cardName = safeText(choice?.name || "装備");
+          await showNpcSpeech(uid, `${venomName}さんに${cardName}をあげますよ...`, 1600);
+        }
+      }
+    }
+  }
+
   async function applyNpcImmediateDeckCardEffect(uid, cardObj, theme){
     const name = safeText(cardObj?.name || "");
     if (!uid || !name) return;
@@ -8861,6 +8953,14 @@
         const targets = [...attackRangeTargetUidsFor(turnUid)].filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
         const targetUid = chooseNpcAttackTarget(turnUid, targets);
         if (targetUid){
+          const npcRole = roleInfoByUid(turnUid);
+          const shouldExcaliburReveal = !!(npcRole?.faction === "レイダー"
+            && hasEquipmentByName(turnUid, "エクスカリバー")
+            && !isIdentityRevealedFor(turnUid)
+            && (revealedFactionForUid(targetUid) === "シャドウ" || isNpcCertainShadowByIntel(turnUid, targetUid)));
+          if (shouldExcaliburReveal){
+            await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"excalibur_attack" });
+          }
           const targetName = safeText(playerById(targetUid)?.name || "");
           await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 1500);
 
@@ -10600,8 +10700,8 @@
     let damage = d4OnlyMode ? b : Math.abs(a - b);
     damage += plusDamageFromEquipment;
 
-    const role = myRoleInfo();
-    if (uid === state.userId && role && hasEquipmentByName(uid, "エクスカリバー") && isMyIdentityRevealed() && role.faction === "レイダー"){
+    const role = roleInfoByUid(uid);
+    if (role && hasEquipmentByName(uid, "エクスカリバー") && isIdentityRevealedFor(uid) && role.faction === "レイダー"){
       damage += 2;
     }
 
@@ -13288,6 +13388,7 @@
       updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
       runNpcTurnIfNeeded();
+      resolveNpcCounterPromptsIfNeeded().catch(() => {});
       syncAutoIdentityRevealTimer();
       evaluateAutoIdentityRevealTrigger();
       syncTurnStartBoard();
