@@ -3565,7 +3565,7 @@
     if (roleId === "CIT_B1" && maxDamage >= 2){
       return { abilityName:"念力の懐中時計", description:"ダメージの代わりに相手の装備カードを獲得しますか。" };
     }
-    if (roleId === "RAI_F3" && !isMyIdentityRevealed() && pendingAttackResultMeta?.freddieSpecial && hasRevealedTargetInRows(normalizedRows)){
+    if (roleId === "RAI_F3" && !isMyIdentityRevealed() && pendingAttackResultMeta?.freddieSpecial && hasRevealedTargetInRows(normalizedRows) && hasSuccessDamage){
       return { abilityName:"ドラゴンアタック", description:"正体を公開している相手へのダメージが+2になります。" };
     }
     if (roleId === "RAI_G2" && hasMyEquipmentByName("エクスカリバー") && attackFailed){
@@ -6515,6 +6515,28 @@
       const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
       if (roleId === "RAI_F3"){
+        pending.rows = (pending?.rows || []).map(item => {
+          const uid = safeText(item?.uid || "");
+          const baseDamage = Math.max(0, Number(item?.damage || 0));
+          const bonusDamage = Math.max(0, Number(item?.bonusLabelAmount || 0));
+          if (!uid || bonusDamage <= 0) return { ...item, uid, damage: baseDamage, bonusLabelAmount: 0 };
+          return {
+            ...item,
+            uid,
+            damage: Math.max(0, baseDamage + bonusDamage),
+            bonusLabelAmount: 0
+          };
+        });
+        pendingAttackResultMeta = {
+          ...(pendingAttackResultMeta || {}),
+          showBonusLabel: false,
+          freddieSpecial: false,
+          zeroDamagePreview: false
+        };
+        pending.meta = normalizeAttackResultMeta(pendingAttackResultMeta);
+        showAttackResultPop(pending.rows);
+        cachePendingAttackResolution(pending);
+        await upsertPendingAttackResolution(pending.rows, pending.turnKey || turnCycleKey(), pendingAttackResultMeta);
         await requestAttackLootAutoEndForCurrentTurn({ syncPending:false });
       }
 
@@ -10959,6 +10981,9 @@
         const hiddenFreddie = isMyRole("RAI_F3") && !isMyIdentityRevealed() && !isMyAbilitySealed();
         const hiddenExcaliburPreview = !!exMeta?.allowExcaliburButton;
         const hasExcalibur = hasEquipmentByName(state.userId, "エクスカリバー");
+        const hasUnrevealedTarget = targetUids.some(uid => !isIdentityRevealedFor(uid));
+        const hasRevealedTarget = targetUids.some(uid => isIdentityRevealedFor(uid));
+        const hiddenFreddieExcaliburVsUnrevealed = hiddenFreddie && hasExcalibur && hasUnrevealedTarget && !hasRevealedTarget;
         let resolvedRows = targetUids.map(uid => {
           const normalizedUid = safeText(uid);
           const targetRevealed = isIdentityRevealedFor(normalizedUid);
@@ -10977,7 +11002,7 @@
             if (hasExcalibur){
               bonusLabelAmount += 2;
             }
-          } else if (hiddenExcaliburPreview){
+          } else if (hiddenExcaliburPreview || (hiddenFreddieExcaliburVsUnrevealed && attackSucceeded)){
             bonusLabelAmount += 2;
           }
           return {
@@ -10989,9 +11014,14 @@
         const freddieHiddenExcaliburRevealHit = hiddenFreddie
           && hasExcalibur
           && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 4);
+        const shouldForceExcaliburButtonForHiddenFreddie = !!exMeta?.allowExcaliburButton && hiddenFreddieExcaliburVsUnrevealed;
+        const shouldHideExcaliburButtonForHiddenFreddie = hiddenFreddie && hasRevealedTarget;
+        const allowExcaliburButton = shouldHideExcaliburButtonForHiddenFreddie
+          ? false
+          : ((!!exMeta?.allowExcaliburButton && !freddieHiddenExcaliburRevealHit) || shouldForceExcaliburButtonForHiddenFreddie);
         pendingAttackResultMeta = {
           showBonusLabel: !!exMeta?.showBonusLabel,
-          allowExcaliburButton: !!exMeta?.allowExcaliburButton && !freddieHiddenExcaliburRevealHit,
+          allowExcaliburButton,
           freddieSpecial: hiddenFreddie && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 2),
           zeroDamagePreview: false
         };
