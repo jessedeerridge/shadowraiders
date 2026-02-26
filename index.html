@@ -8747,6 +8747,62 @@
     ]);
   }
 
+  async function handleNpcGreenRequestToTarget(senderUid, targetUid, cardObj){
+    const fromUid = safeText(senderUid || "");
+    const toUid = safeText(targetUid || "");
+    if (!state.roomCode || !fromUid || !toUid || !cardObj) return;
+    await npcAnnounceSelectedPlayer(fromUid, toUid);
+    const requestId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    const payload = { from: fromUid, to: toUid, requestId, card: cardObj, at: Date.now() };
+    await set(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`), payload);
+    await set(ref(db, `rooms/${state.roomCode}/greenInbox/${toUid}`), payload);
+
+    if (!isNpcPlayerUid(toUid)){
+      const waitStart = Date.now();
+      while (Date.now() - waitStart < 25000){
+        const snap = await get(ref(db, `rooms/${state.roomCode}/greenResponses/${fromUid}`));
+        const row = snap.val() || null;
+        if (safeText(row?.requestId || "") === requestId){
+          await recordNpcFactionInference(fromUid, toUid, cardObj, safeText(row?.answerId || ""));
+          break;
+        }
+        await waitMs(300);
+      }
+    } else {
+      await resolveNpcGreenInboxPayload(payload);
+      const npcRes = pickNpcGreenAnswer(cardObj, toUid);
+      await recordNpcFactionInference(fromUid, toUid, cardObj, npcRes.id);
+    }
+
+    await waitMs(500);
+    await Promise.all([
+      remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`)).catch(() => {}),
+      remove(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`)).catch(() => {}),
+      remove(ref(db, `rooms/${state.roomCode}/greenResponses/${fromUid}`)).catch(() => {})
+    ]);
+  }
+
+  async function npcUseParasolGreenOnTarget(senderUid, targetUid){
+    const fromUid = safeText(senderUid || "");
+    const toUid = safeText(targetUid || "");
+    if (!state.roomCode || !fromUid || !toUid) return false;
+    let drawn = null;
+    await runTransaction(ref(db, `rooms/${state.roomCode}`), (cur) => {
+      if (!cur) return cur;
+      const deck = cur.deckState?.green;
+      if (!deck || !Array.isArray(deck.order)) return cur;
+      const idx = Number(deck.idx || 0);
+      if (idx >= deck.order.length) return cur;
+      drawn = deck.order[idx];
+      deck.idx = idx + 1;
+      cur.deckState.updatedAt = Date.now();
+      return cur;
+    });
+    if (!drawn) return false;
+    await handleNpcGreenRequestToTarget(fromUid, toUid, drawn);
+    return true;
+  }
+
   async function npcDrawFromRoom(uid, roomId){
     const types = allowedTypesByRoom(roomId);
     if (!types.length || !state.roomCode) return;
@@ -8831,7 +8887,11 @@
       return;
     }
     if (rid === 3){
-      const doDamage = Math.random() < 0.5;
+      const hasAnyGordonProtectedAlive = latestPlayers.some((p) => {
+        if (!p?.id || isPlayerEliminated(p.id)) return false;
+        return hasGordonBarrier(p.id);
+      });
+      const doDamage = hasAnyGordonProtectedAlive ? false : (Math.random() < 0.5);
       if (doDamage){
         const targets = latestPlayers.filter((p) => {
           if (p.id === uid || isPlayerEliminated(p.id)) return false;
@@ -8951,7 +9011,26 @@
       if (turnCycleKey() !== turnKey) return;
       if (!turnState()?.attackDone){
         const targets = [...attackRangeTargetUidsFor(turnUid)].filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
-        const targetUid = chooseNpcAttackTarget(turnUid, targets);
+        let targetUid = chooseNpcAttackTarget(turnUid, targets);
+        const attackerRole = roleInfoByUid(turnUid);
+        const hasMasamune = hasEquipmentByName(turnUid, "妖刀マサムネ");
+        const hasParasol = hasEquipmentByName(turnUid, "虹色のパラソル");
+        const masamuneOnlySameFaction = (hasMasamune && targets.length === 1 && !!attackerRole && !!targets[0]
+          && safeText(roleInfoByUid(targets[0])?.faction || "") === safeText(attackerRole.faction || ""));
+        if (masamuneOnlySameFaction){
+          targetUid = safeText(targets[0] || "");
+          if (hasParasol && targetUid){
+            const usedParasol = await npcUseParasolGreenOnTarget(turnUid, targetUid);
+            if (usedParasol){
+              await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
+              await waitMs(2000);
+              if (turnCycleKey() !== turnKey) return;
+              await advanceTurnToNextPlayer(turnUid);
+              return;
+            }
+          }
+        }
+
         if (targetUid){
           const npcRole = roleInfoByUid(turnUid);
           const shouldExcaliburReveal = !!(npcRole?.faction === "レイダー"
