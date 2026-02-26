@@ -10995,8 +10995,10 @@
           freddieSpecial: hiddenFreddie && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 2),
           zeroDamagePreview: false
         };
+        const hasAttackerSageRobe = hasEquipmentByName(state.userId, "賢者のローブ");
+        const hasTargetSageRobe = targetUids.some(uid => hasEquipmentByName(uid, "賢者のローブ"));
         const hasExcaliburPreviewZero = !!pendingAttackResultMeta.allowExcaliburButton
-          && hasEquipmentByName(state.userId, "賢者のローブ")
+          && (hasAttackerSageRobe || hasTargetSageRobe)
           && Math.abs((Number(finalD6) || 0) - (Number(finalD4) || 0)) === 1
           && resolvedRows.some(row => Number(row.damage || 0) === 0);
         if (hasExcaliburPreviewZero){
