@@ -2519,8 +2519,11 @@
   let turnStartBoardTurnKey = "";
   let autoIdentityRevealTimer = null;
   let autoIdentityRevealTimerKey = "";
+  let npcAiTurnKey = "";
 
   const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
+  const NPC_UID_PREFIX = "npc_";
+  const NPC_FOREIGN_NAMES = ["Alex","Chris","Emma","Noah","Liam","Mia","Lucas","Ethan","Olivia","Sophia","James","Henry","Ava","Grace"];
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -7435,6 +7438,14 @@
     return !!cur && cur === state.userId;
   }
 
+  function isNpcUid(uid){
+    return safeText(uid || "").startsWith(NPC_UID_PREFIX);
+  }
+
+  function currentTurnIsNpc(){
+    return isNpcUid(currentTurnPlayerId());
+  }
+
   function isTestPlayer(){
     return safeText(state.userName).trim().toLowerCase() === "test";
   }
@@ -8103,6 +8114,121 @@
     setTimeout(() => triggerMoveDiceForAll(), 80);
   }
 
+  function npcAttackTargetsFor(attackerUid){
+    const marker = markerCache?.[attackerUid] || null;
+    const roomId = markerRoomId(marker);
+    if (!roomId) return [];
+    const deadScopeCount = countEquipmentByNames(attackerUid, ["死神スコープ"]);
+    const attackRooms = attackTargetRoomIdsFromRoom(roomId, deadScopeCount);
+    return latestPlayers
+      .filter(p => p.id !== attackerUid && !isPlayerEliminated(p.id))
+      .filter(p => attackRooms.has(markerRoomId(markerCache?.[p.id] || null)));
+  }
+
+  async function runNpcTurnIfNeeded(){
+    if (!state.isHost || !isGameStarted() || !state.room?.npcMode) return;
+    const npcUid = currentTurnPlayerId();
+    if (!isNpcUid(npcUid)) return;
+    if (isPlayerEliminated(npcUid)){
+      await advanceTurnToNextPlayer(npcUid);
+      return;
+    }
+    const key = turnCycleKey();
+    if (!key || key === npcAiTurnKey) return;
+    npcAiTurnKey = key;
+
+    showTemporaryRoleTag(npcUid, "ふります！", 1500);
+    await waitMs(1600);
+    const d6 = 1 + Math.floor(Math.random() * 6);
+    const d4 = 1 + Math.floor(Math.random() * 4);
+    const motion = createDiceMotion(window.innerWidth, window.innerHeight, window.innerWidth/2, window.innerHeight/2);
+    await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), {
+      uid: npcUid,
+      controllerUid: state.userId,
+      d6, d4, compass:false,
+      motion,
+      at: Date.now()
+    });
+    await waitMs(2200);
+
+    const nowRoomId = markerRoomId(markerCache?.[npcUid] || null);
+    const roomId = Number(nowRoomId || diceTotalToRoomId(d6 + d4));
+    if ([1,2,5,6].includes(roomId)){
+      await update(ref(db, `rooms/${state.roomCode}/turn`), {
+        deckDrawDone: true,
+        drawnTypes: {
+          green: roomId === 5 || (roomId === 6 && Math.random() < 0.34),
+          white: roomId === 1 || (roomId === 6 && Math.random() < 0.5),
+          black: roomId === 2 || (roomId === 6 && Math.random() < 0.5)
+        },
+        updatedAt: Date.now()
+      });
+    }
+
+    if (roomId === 3){
+      const cands = latestPlayers.filter(p => p.id !== npcUid && !isPlayerEliminated(p.id));
+      if (cands.length){
+        const target = cands[Math.floor(Math.random() * cands.length)];
+        if (Math.random() < 0.5){
+          await addDamageToPlayer(target.id, 2);
+        } else {
+          await healDamageToPlayer(npcUid, 1, "room3_heal");
+        }
+      }
+      await updateTurnRoomActionState({ room3ActionUsed:true });
+    }
+
+    if (roomId === 4){
+      const stealTargets = latestPlayers.filter(p => p.id !== npcUid && !isPlayerEliminated(p.id) && hasAnyEquipment(p.id));
+      if (stealTargets.length){
+        const target = stealTargets[Math.floor(Math.random() * stealTargets.length)];
+        const roomRef = ref(db, `rooms/${state.roomCode}`);
+        await runTransaction(roomRef, (cur) => {
+          if (!cur) return cur;
+          const from = cur.equipment?.[target.id];
+          if (!from || typeof from !== "object") return cur;
+          const entries = Object.entries(from).filter(([,v]) => v && !isIdentityEquipItem(v));
+          if (!entries.length) return cur;
+          const [key, item] = entries[Math.floor(Math.random() * entries.length)];
+          delete from[key];
+          cur.equipment = cur.equipment || {};
+          cur.equipment[npcUid] = cur.equipment[npcUid] || {};
+          cur.equipment[npcUid][`npc_steal_${Date.now()}`] = item;
+          return cur;
+        });
+      }
+      await updateTurnRoomActionState({ room4StealUsed:true });
+    }
+
+    const targets = npcAttackTargetsFor(npcUid);
+    if (targets.length > 0){
+      const target = targets[Math.floor(Math.random() * targets.length)];
+      showTemporaryRoleTag(npcUid, `${safeText(target.name || "") }さんを攻撃！`, 1500);
+      await waitMs(1600);
+      const ad6 = 1 + Math.floor(Math.random() * 6);
+      const ad4 = 1 + Math.floor(Math.random() * 4);
+      const landing = randomCenterLandingPoint(window.innerWidth, window.innerHeight);
+      await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
+        uid: npcUid,
+        controllerUid: state.userId,
+        targetUid: target.id,
+        x: Number(landing.x || (window.innerWidth/2)),
+        y: Number(landing.y || (window.innerHeight/2)),
+        d6: ad6,
+        d4: ad4,
+        motion: createDiceMotion(window.innerWidth, window.innerHeight, Number(landing.x || (window.innerWidth/2)), Number(landing.y || (window.innerHeight/2))),
+        at: Date.now()
+      });
+      await waitMs(2200);
+      await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now(), updatedAt:Date.now() });
+    } else {
+      await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now(), updatedAt:Date.now() });
+    }
+
+    await waitMs(600);
+    await doEndTurn(npcUid);
+  }
+
   async function triggerMoveDiceForAll(){
     if (!state.roomCode || !canUseMoveDice()) return;
     const selectedSum = chooseSumForTestPlayer("移動");
@@ -8707,6 +8833,7 @@
     positionLine.classList.remove("hidden");
     updateRoomChoiceUi();
     renderTurnEndButton();
+    runNpcTurnIfNeeded().catch(() => {});
   }
 
 
@@ -8858,7 +8985,8 @@
         secondD6:Number(ev.secondD6 || 1),
         secondD4:Number(ev.secondD4 || 1),
         compass: !!ev.compass,
-        applyMove: safeText(ev.uid || "") === state.userId,
+        applyMove: safeText(ev.uid || "") === state.userId || safeText(ev.controllerUid || "") === state.userId,
+        moveUid: safeText(ev.uid || ""),
         motion: ev.motion || null
       });
     });
@@ -8881,7 +9009,8 @@
         masamuneMode: !!ev.masamuneMode,
         vendettaMode: !!ev.vendettaMode,
         gatlingTargetUids: Array.isArray(ev.gatlingTargetUids) ? ev.gatlingTargetUids : [],
-        applyDamage: safeText(ev.uid || "") === state.userId,
+        applyDamage: safeText(ev.uid || "") === state.userId || safeText(ev.controllerUid || "") === state.userId,
+        attackerUid: safeText(ev.uid || ""),
         motion: ev.motion || null
       });
     });
@@ -10863,6 +10992,7 @@
   async function runAttackDiceAnimation(targetUid, clickClientX, clickClientY, options = {}){
     if (!diceRollOverlay || !targetUid) return;
     const applyDamage = options.applyDamage !== false;
+    const attackerUid = safeText(options.attackerUid || state.userId || "");
     const masamuneMode = !!options.masamuneMode;
     const vendettaMode = !!options.vendettaMode;
     const d4OnlyMode = masamuneMode || vendettaMode;
@@ -10976,14 +11106,14 @@
         const targetUids = (gatlingTargets.length > 0) ? gatlingTargets : [targetUid];
         const exMeta = d4OnlyMode
           ? null
-          : buildExcaliburAttackMeta({ attackerUid:state.userId, targetUid, attackSucceeded, d6:finalD6, d4:finalD4 });
-        const hiddenFreddie = isMyRole("RAI_F3") && !isMyIdentityRevealed() && !isMyAbilitySealed();
+          : buildExcaliburAttackMeta({ attackerUid, targetUid, attackSucceeded, d6:finalD6, d4:finalD4 });
+        const hiddenFreddie = (attackerUid === state.userId) && isMyRole("RAI_F3") && !isMyIdentityRevealed() && !isMyAbilitySealed();
         const hiddenExcaliburPreview = !!exMeta?.allowExcaliburButton;
-        const hasExcalibur = hasEquipmentByName(state.userId, "エクスカリバー");
+        const hasExcalibur = hasEquipmentByName(attackerUid, "エクスカリバー");
         let resolvedRows = targetUids.map(uid => {
           const normalizedUid = safeText(uid);
           const targetRevealed = isIdentityRevealedFor(normalizedUid);
-          const damage = calcAttackDamageFromRoll(state.userId, finalD6, finalD4, {
+          const damage = calcAttackDamageFromRoll(attackerUid, finalD6, finalD4, {
             masamuneMode,
             vendettaMode,
             excaliburRevealBoost: false,
@@ -11016,7 +11146,7 @@
           freddieSpecial: hiddenFreddie && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 2),
           zeroDamagePreview: false
         };
-        const hasAttackerSageRobe = hasEquipmentByName(state.userId, "賢者のローブ");
+        const hasAttackerSageRobe = hasEquipmentByName(attackerUid, "賢者のローブ");
         const hasTargetSageRobe = targetUids.some(uid => hasEquipmentByName(uid, "賢者のローブ"));
         const hasExcaliburPreviewZero = !!pendingAttackResultMeta.allowExcaliburButton
           && (hasAttackerSageRobe || hasTargetSageRobe)
@@ -11031,7 +11161,7 @@
         if (hasExcaliburPreviewZero || hasFreddiePreviewZero){
           pendingAttackResultMeta.zeroDamagePreview = true;
         }
-        if (isMyRole("RAI_G2") && !isMyIdentityRevealed() && !isMyAbilitySealed()){
+        if ((attackerUid === state.userId) && isMyRole("RAI_G2") && !isMyIdentityRevealed() && !isMyAbilitySealed()){
           const hasZeroDamage = resolvedRows.some(row => Number(row.damage || 0) === 0);
           if (!attackSucceeded || hasZeroDamage){
             pendingAttackResultMeta.allowExcaliburButton = false;
@@ -11056,6 +11186,7 @@
     const force = !!options.force;
     if (!force && !canUseMoveDice()) return;
     const applyMove = options.applyMove !== false;
+    const moveUid = safeText(options.moveUid || state.userId || "");
     const compass = !!options.compass;
     if (!diceRollOverlay) return;
     pendingMoveChoice = null;
@@ -11143,13 +11274,25 @@
       runSingleRoll({ motion: options.motion || null, finalD6, finalD4 });
 
       const placeMarkerTimer = setTimeout(async () => {
-        if (applyMove) await placeMarkerByDice(finalD6 + finalD4);
-        if (applyMove && state.roomCode && isMyTurn()){
-          await update(ref(db, `rooms/${state.roomCode}/turn`), {
-            moveDone: true,
-            moveAt: Date.now()
-          });
-          remove(ref(db, `rooms/${state.roomCode}/godwinRevivePendingMove/${state.userId}`)).catch(() => {});
+        if (applyMove){
+          if (moveUid === state.userId){
+            await placeMarkerByDice(finalD6 + finalD4);
+          } else {
+            await placePlayerMarkerInRoom(moveUid, diceTotalToRoomId(finalD6 + finalD4));
+            renderMarkers();
+          }
+        }
+        if (applyMove && state.roomCode){
+          const turnUid = safeText(turnState()?.currentPlayerId || "");
+          if (turnUid && turnUid === moveUid){
+            await update(ref(db, `rooms/${state.roomCode}/turn`), {
+              moveDone: true,
+              movedByDiceRoomId: diceTotalToRoomId(finalD6 + finalD4),
+              moveAt: Date.now(),
+              updatedAt: Date.now()
+            });
+            remove(ref(db, `rooms/${state.roomCode}/godwinRevivePendingMove/${moveUid}`)).catch(() => {});
+          }
         }
       }, 1900);
       diceRollTimers.push(placeMarkerTimer);
@@ -13418,17 +13561,48 @@
       .filter(Boolean)
       .sort((a,b) => a.seatIndex - b.seatIndex);
 
-    const n = players.length;
-    if (n < 1 || n > 10) return;
+    const humanCount = players.length;
+    if (humanCount < 1 || humanCount > 10) return;
 
+    let allPlayers = [...players];
+    let tablesNext = { ...tables };
+    let npcMode = false;
+    if (humanCount === 1){
+      npcMode = true;
+      const usedColors = new Set(players.map(p => safeText(tables[p.seatIndex]?.color || "")).filter(Boolean));
+      const availableSeats = Array.from({ length: effectiveSeatCount() }, (_, i) => i + 1).filter(idx => !tables[idx]);
+      const need = Math.min(4, availableSeats.length);
+      const randomSeats = shuffle(availableSeats).slice(0, need);
+      for (let i = 0; i < randomSeats.length; i++){
+        const seatIndex = randomSeats[i];
+        const npcUid = `${NPC_UID_PREFIX}${Date.now()}_${i}_${Math.floor(Math.random()*9999)}`;
+        const name = NPC_FOREIGN_NAMES[Math.floor(Math.random() * NPC_FOREIGN_NAMES.length)] + `${i+1}`;
+        const colorCandidates = SEAT_COLORS.filter(c => !usedColors.has(c));
+        const colorPool = colorCandidates.length ? colorCandidates : SEAT_COLORS;
+        const color = colorPool[Math.floor(Math.random() * colorPool.length)] || "#ddd";
+        usedColors.add(color);
+        tablesNext[seatIndex] = {
+          playerId: npcUid,
+          playerName: name,
+          color,
+          updatedAt: Date.now(),
+          joinedAt: Date.now(),
+          isNpc: true
+        };
+        allPlayers.push({ id:npcUid, seatIndex, name });
+      }
+      allPlayers = allPlayers.sort((a,b) => a.seatIndex - b.seatIndex);
+    }
+
+    const n = allPlayers.length;
     const deck = buildDeckByPlayerCount(n);
 
     const hands = {};
     for (let i=0;i<n;i++){
-      hands[players[i].id] = { roleId: deck[i].id, dealtAt: Date.now() };
+      hands[allPlayers[i].id] = { roleId: deck[i].id, dealtAt: Date.now() };
     }
 
-    const positionOrder = shuffle(players.map(p => p.id));
+    const positionOrder = shuffle(allPlayers.map(p => p.id));
     const startPlayerId = positionOrder[Math.floor(Math.random()*positionOrder.length)] || null;
     const freshDeckState = {
       green: { order: shuffle(toGreenOrder()), idx: 0 },
@@ -13440,7 +13614,7 @@
     };
 
     const markers = { ...(roomData.markers || {}) };
-    for (const p of players){
+    for (const p of allPlayers){
       if (safeText(p.name).trim().toLowerCase() !== "test") continue;
       const pt = randomPointInRoom(4, 14);
       if (!pt) continue;
@@ -13466,6 +13640,7 @@
       gameStarted: true,
       startedAt: Date.now(),
       playerCountAtStart: n,
+      npcMode,
       markers,
       positionOrder,
       startPlayerId,
@@ -13485,7 +13660,10 @@
       }
     });
 
-    await initDamageAllToZero(players);
+    if (npcMode){
+      await update(ref(db, `rooms/${state.roomCode}/tables`), tablesNext);
+    }
+    await initDamageAllToZero(allPlayers);
   }
 
   function refreshStartBadge(){
