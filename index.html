@@ -6515,6 +6515,7 @@
       const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
       if (roleId === "RAI_F3"){
+        pending.rows = freddieDragonAttackRows(pending?.rows || []);
         await requestAttackLootAutoEndForCurrentTurn({ syncPending:false });
       }
 
@@ -9803,6 +9804,16 @@
       if (!uid) return { ...item, damage: base };
       const add = applyIncomingDamageModifiers(uid, plus, { source:"attack" });
       return { ...item, uid, damage: Math.max(0, base + add) };
+    });
+  }
+
+  function freddieDragonAttackRows(rows = []){
+    return (rows || []).map(item => {
+      const uid = safeText(item?.uid || "");
+      const base = Math.max(0, Number(item?.damage || 0));
+      const bonus = Math.max(0, Number(item?.bonusLabelAmount || 0));
+      if (!uid || bonus <= 0) return { ...item, uid, damage: base };
+      return { ...item, uid, damage: Math.max(0, base + bonus) };
     });
   }
 
