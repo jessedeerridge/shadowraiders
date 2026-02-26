@@ -2532,6 +2532,7 @@
   let turnStartBoardTurnKey = "";
   let autoIdentityRevealTimer = null;
   let autoIdentityRevealTimerKey = "";
+  let lastEliminationBatch = { uids: [], at: 0 };
 
   const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
@@ -7262,7 +7263,15 @@
   function autoIdentityRevealReason(){
     if (!isGameStarted()) return "";
 
-    if (teamEliminationReached("レイダー")) return "all_raiders_eliminated";
+    if (teamEliminationReached("レイダー")){
+      const recentUids = Array.isArray(lastEliminationBatch?.uids) ? lastEliminationBatch.uids : [];
+      const recent = (Date.now() - Number(lastEliminationBatch?.at || 0)) <= 15000;
+      const hasRecentGodwinElimination = recent && recentUids.some(uid => {
+        if (factionForUid(uid) !== "レイダー") return false;
+        return roleIdForUid(uid) === "RAI_G3";
+      });
+      if (!hasRecentGodwinElimination) return "all_raiders_eliminated";
+    }
     if (teamEliminationReached("シャドウ")) return "all_shadows_eliminated";
 
     if (isRoleAlive("CIT_B2")){
@@ -9762,6 +9771,13 @@
       const justEliminatedUids = latestPlayers
         .map(p => p.id)
         .filter(uid => !!eliminatedNow[uid] && !previousEliminatedMap[uid]);
+
+      if (justEliminatedUids.length){
+        lastEliminationBatch = {
+          uids: [...justEliminatedUids],
+          at: Date.now()
+        };
+      }
 
       if (myRoleId === "CIT_B3" && attackDefeatedUids.length && !isMyIdentityRevealed() && !bruceAutoRevealTimer && !isMyAbilitySealed()){
         const hadHiddenRevealTarget = attackDefeatedUids.some(uid => justEliminatedUids.includes(uid) && !isIdentityRevealedFor(uid));
