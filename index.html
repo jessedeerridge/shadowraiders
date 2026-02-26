@@ -4356,7 +4356,7 @@
       });
       greenShareList.appendChild(btn);
     }
-    if (roleId === "RAI_E3" || roleId === "SHA_U2"){
+    if (roleId === "RAI_E3" || roleId === "SHA_U2" || roleId === "RAI_G3"){
       const skipBtn = document.createElement("button");
       skipBtn.type = "button";
       skipBtn.className = "green-share-btn";
@@ -8065,7 +8065,12 @@
     if (suppressEndTurnButton) return false;
     if (hpBoardAnimationActive) return false;
     if (hasUnresolvedAttackLootSelection()) return false;
+    if (isGodwinRoleSelectionPending()) return false;
     return !!turnState()?.moveDone;
+  }
+
+  function isGodwinRoleSelectionPending(){
+    return safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3";
   }
 
   function hasUnresolvedAttackLootSelection(){
@@ -9759,6 +9764,9 @@
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
+      while (currentTurnPlayerId() === attackTurnOwnerUid && isGodwinRoleSelectionPending()){
+        await waitMs(120);
+      }
       if (currentTurnPlayerId() === attackTurnOwnerUid){
         await doEndTurn(attackTurnOwnerUid);
       }
