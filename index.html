@@ -2524,6 +2524,27 @@
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
 
   const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const NPC_UID_PREFIX = "npc_";
+  const NPC_TOTAL_PLAYERS = 5;
+  const NPC_FOREIGN_NAMES = [
+    "Alex","Chris","Sam","Taylor","Jordan","Morgan","Casey","Cameron",
+    "Dylan","Logan","Ethan","Liam","Noah","Oliver","Lucas","Mason",
+    "Emma","Sophia","Olivia","Ava","Mia","Charlotte","Amelia","Grace"
+  ];
+
+  let npcTurnRunnerBusy = false;
+  let npcTurnRunnerKey = "";
+  const npcGreenHandled = new Set();
+
+  function isNpcUid(uid){
+    return safeText(uid || "").startsWith(NPC_UID_PREFIX);
+  }
+
+  function randomNpcName(used = new Set()){
+    const pool = shuffle(NPC_FOREIGN_NAMES.slice()).filter(name => !used.has(name));
+    if (pool.length) return pool[0];
+    return `NPC${1 + Math.floor(Math.random() * 999)}`;
+  }
 
   const revealPop = document.getElementById("revealPop");
   const revealMsg = document.getElementById("revealMsg");
@@ -10254,6 +10275,212 @@
     return !!turnRoomActionState()?.movedByDiceRoomId;
   }
 
+
+  function roleTeamFromRoleId(roleId){
+    const id = safeText(roleId || "");
+    if (id.startsWith("RAI_")) return "RAI";
+    if (id.startsWith("SHA_")) return "SHA";
+    return "CIT";
+  }
+
+  async function showNpcBubble(uid, text, durationMs = 1500){
+    if (!state.roomCode || !uid || !text) return;
+    const key = `npc_bubble_${uid}`;
+    await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${key}`), {
+      responderId: uid,
+      answerLabel: safeText(text),
+      at: Date.now()
+    });
+    await waitMs(Math.max(300, Number(durationMs) || 1500));
+    await remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${key}`)).catch(() => {});
+  }
+
+  async function npcMoveByDice(uid){
+    const d6 = 1 + Math.floor(Math.random() * 6);
+    const d4 = 1 + Math.floor(Math.random() * 4);
+    await showNpcBubble(uid, "ふります！", 1500);
+    await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), { uid, d6, d4, at: Date.now() });
+    await waitMs(1200);
+    const roomId = diceTotalToRoomId(d6 + d4);
+    await waitMs(200);
+    const target = randomPointInRoom(roomId, 14);
+    const player = playerById(uid);
+    await update(ref(db, `rooms/${state.roomCode}/markers/${uid}`), {
+      x: Number(target?.x || 180),
+      y: Number(target?.y || 180),
+      roomId,
+      color: safeText(player?.color || "") || "#ddd",
+      initial: firstChar(player?.name || "N"),
+      updatedAt: Date.now()
+    });
+    await update(ref(db, `rooms/${state.roomCode}/turn`), {
+      moveDone: true,
+      movedByDiceRoomId: roomId,
+      room3ActionUsed: false,
+      room4StealUsed: false,
+      updatedAt: Date.now()
+    });
+    return roomId;
+  }
+
+  async function npcDrawDeckType(uid, type){
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    let drawn = null;
+    await runTransaction(roomRef, (cur) => {
+      if (!cur || !cur.turn || safeText(cur.turn.currentPlayerId || "") !== uid) return cur;
+      const deck = cur.deckState?.[type];
+      if (!deck || !Array.isArray(deck.order)) return cur;
+      const idx = Number(deck.idx || 0);
+      if (idx >= deck.order.length) return cur;
+      drawn = deck.order[idx];
+      deck.idx = idx + 1;
+      cur.turn.drawnTypes = cur.turn.drawnTypes || { green:false, white:false, black:false };
+      cur.turn.drawnTypes[type] = true;
+      cur.turn.deckDrawDone = true;
+      cur.turn.updatedAt = Date.now();
+      return cur;
+    });
+    if (!drawn) return null;
+    if ((type === "white" || type === "black") && isEquipCard(drawn)){
+      const key = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      await set(ref(db, `rooms/${state.roomCode}/equipment/${uid}/${key}`), {
+        theme: type,
+        name: safeText(drawn.name),
+        effect: safeText(drawn.effect),
+        at: Date.now()
+      });
+    }
+    return drawn;
+  }
+
+  async function npcApplyRoomAction(uid, roomId){
+    if (roomId === 1) return npcDrawDeckType(uid, "white");
+    if (roomId === 2) return npcDrawDeckType(uid, "black");
+    if (roomId === 3){
+      const targets = latestPlayers.filter(p => p.id !== uid && !isPlayerEliminated(p.id));
+      const t = targets[Math.floor(Math.random() * targets.length)];
+      if (t){
+        const healSelf = Math.random() < 0.5;
+        await addDamageToPlayer(t.id, 2);
+        if (healSelf) await healDamageToPlayer(uid, 1, "npc_room3");
+      }
+      await update(ref(db, `rooms/${state.roomCode}/turn`), { room3ActionUsed:true, updatedAt:Date.now() });
+      return true;
+    }
+    if (roomId === 4){
+      const targets = latestPlayers.filter(p => p.id !== uid && listEquipForUid(p.id).some(it => !isIdentityEquipItem(it)));
+      const t = targets[Math.floor(Math.random() * targets.length)];
+      if (t){
+        const cards = listEquipForUid(t.id).filter(it => !isIdentityEquipItem(it));
+        const pick = cards[Math.floor(Math.random() * cards.length)];
+        if (pick?.sourceKey){
+          const data = equipCache?.[t.id]?.[pick.sourceKey] || null;
+          if (data){
+            await set(ref(db, `rooms/${state.roomCode}/equipment/${uid}/${Date.now()}_${Math.random().toString(16).slice(2,7)}`), data);
+            await remove(ref(db, `rooms/${state.roomCode}/equipment/${t.id}/${pick.sourceKey}`));
+          }
+        }
+      }
+      await update(ref(db, `rooms/${state.roomCode}/turn`), { room4StealUsed:true, updatedAt:Date.now() });
+      return true;
+    }
+    if (roomId === 5 || roomId === 6){
+      const types = roomId === 5 ? ["green"] : ["green","white","black"];
+      const type = types[Math.floor(Math.random() * types.length)];
+      const card = await npcDrawDeckType(uid, type);
+      if (type === "green" && card){
+        const others = latestPlayers.filter(p => p.id !== uid && !isPlayerEliminated(p.id));
+        const to = others[Math.floor(Math.random() * others.length)];
+        if (to){
+          const requestId = `npc_green_${uid}_${Date.now()}`;
+          await set(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`), {
+            requestId, fromUid: uid, toUid: to.id, card: card, at: Date.now()
+          });
+          const npcRole = state.hands?.[uid]?.roleId;
+          const toRole = state.hands?.[to.id]?.roleId;
+          const same = roleTeamFromRoleId(npcRole) === roleTeamFromRoleId(toRole);
+          await set(ref(db, `rooms/${state.roomCode}/greenResponses/${uid}`), {
+            requestId, responderId: to.id, answerLabel: same ? "YES" : "NO", at: Date.now()
+          });
+          await set(ref(db, `rooms/${state.roomCode}/greenCloseSignals/${uid}`), { requestId, at: Date.now() });
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  async function npcAttackIfNeeded(uid){
+    const targets = [...attackRangeTargetUidsFor(uid)].filter(tid => !isPlayerEliminated(tid));
+    if (!targets.length){
+      await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, updatedAt: Date.now() });
+      return;
+    }
+    const targetUid = targets[Math.floor(Math.random() * targets.length)];
+    const target = playerById(targetUid);
+    await showNpcBubble(uid, `${safeText(target?.name || "対象")}さんを攻撃！`, 1500);
+    const d6 = 1 + Math.floor(Math.random() * 6);
+    const d4 = 1 + Math.floor(Math.random() * 4);
+    const marker = markerCache?.[targetUid] || {};
+    await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
+      uid, targetUid, d6, d4, x:Number(marker.x || 0), y:Number(marker.y || 0), at:Date.now()
+    });
+    await waitMs(1200);
+    await waitMs(200);
+    const dmg = Math.max(0, d6 - d4);
+    if (dmg > 0) await addDamageToPlayer(targetUid, dmg, { source:"attack" });
+    await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, updatedAt: Date.now() });
+  }
+
+  async function runNpcGreenAutoReplies(){
+    if (!state.isHost || !state.roomCode) return;
+    const inbox = state.room?.greenInbox || {};
+    for (const [toUid, msg] of Object.entries(inbox)){
+      if (!isNpcUid(toUid)) continue;
+      const requestId = safeText(msg?.requestId || "");
+      if (!requestId || npcGreenHandled.has(requestId)) continue;
+      npcGreenHandled.add(requestId);
+      const fromUid = safeText(msg?.fromUid || "");
+      const fromRole = state.hands?.[fromUid]?.roleId;
+      const toRole = state.hands?.[toUid]?.roleId;
+      const same = roleTeamFromRoleId(fromRole) === roleTeamFromRoleId(toRole);
+      await set(ref(db, `rooms/${state.roomCode}/greenResponses/${fromUid}`), {
+        requestId,
+        responderId: toUid,
+        answerLabel: same ? "YES" : "NO",
+        at: Date.now()
+      });
+      await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${toUid}`)).catch(() => {});
+      await set(ref(db, `rooms/${state.roomCode}/greenCloseSignals/${fromUid}`), { requestId, at: Date.now() });
+    }
+  }
+
+  async function runNpcTurnIfNeeded(){
+    if (!state.isHost || !state.roomCode || !isGameStarted()) return;
+    const turn = turnState() || {};
+    const uid = safeText(turn.currentPlayerId || "");
+    if (!isNpcUid(uid)) return;
+    const key = `${uid}:${Number(turn.updatedAt || 0)}`;
+    if (!key || key === npcTurnRunnerKey || npcTurnRunnerBusy) return;
+    npcTurnRunnerBusy = true;
+    npcTurnRunnerKey = key;
+    try {
+      await waitMs(2000);
+      const roomId = await npcMoveByDice(uid);
+      await waitMs(2000);
+      await npcApplyRoomAction(uid, roomId);
+      await waitMs(2000);
+      await npcAttackIfNeeded(uid);
+      await waitMs(1000);
+      const curTurnOwner = safeText(turnState()?.currentPlayerId || "");
+      if (curTurnOwner === uid){
+        await advanceTurnToNextPlayer(uid);
+      }
+    } finally {
+      npcTurnRunnerBusy = false;
+    }
+  }
+
   function highlightedMarkerUids(){
     if (mustResolveUranusMeteorStrike()){
       return new Set(uranusMeteorTargetUids());
@@ -12463,6 +12690,8 @@
       restorePendingMoveChoiceFromSeat();
       updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
+      runNpcGreenAutoReplies();
+      runNpcTurnIfNeeded();
       syncAutoIdentityRevealTimer();
       evaluateAutoIdentityRevealTrigger();
       syncTurnStartBoard();
@@ -13417,6 +13646,36 @@
       } : null))
       .filter(Boolean)
       .sort((a,b) => a.seatIndex - b.seatIndex);
+
+    if (players.length === 1){
+      const human = players[0];
+      const usedNames = new Set(players.map(p => safeText(p.name || "")));
+      const emptySeats = [];
+      for (let i = 1; i <= SEAT_COLORS.length; i++){
+        if (!players.some(p => p.seatIndex === i)) emptySeats.push(i);
+      }
+      const pickedSeats = shuffle(emptySeats).slice(0, Math.max(0, NPC_TOTAL_PLAYERS - 1));
+      const npcUpdates = {};
+      for (let i = 0; i < pickedSeats.length; i++){
+        const seatIndex = pickedSeats[i];
+        const npcId = `${NPC_UID_PREFIX}${Date.now()}_${i}_${Math.random().toString(16).slice(2, 8)}`;
+        const npcName = randomNpcName(usedNames);
+        usedNames.add(npcName);
+        const npcColor = SEAT_COLORS[seatIndex - 1] || "#ddd";
+        players.push({ id:npcId, seatIndex, name:npcName, color:npcColor, isNpc:true });
+        npcUpdates[`tables/${seatIndex}`] = {
+          playerId: npcId,
+          playerName: npcName,
+          color: npcColor,
+          joinedAt: Date.now(),
+          isNpc: true
+        };
+      }
+      if (Object.keys(npcUpdates).length){
+        await update(roomRef, npcUpdates);
+      }
+      players.sort((a,b) => a.seatIndex - b.seatIndex);
+    }
 
     const n = players.length;
     if (n < 1 || n > 10) return;
