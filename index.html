@@ -979,6 +979,13 @@
     border:7px solid transparent;
     border-top-color:#111;
   }
+  .position-bubble.white-text{
+    background:#fff;
+    border:1px solid #111;
+    color:#111;
+  }
+  .position-bubble.white-text::after{ border-top-color:#fff; }
+  .position-bubble.white-text::before{ border-top-color:#111; }
   .position-bubble::before{
     content:"";
     position:absolute;
@@ -8256,7 +8263,24 @@
     await set(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`), payload);
     await set(ref(db, `rooms/${state.roomCode}/greenInbox/${targetUid}`), payload);
 
-    if (!isNpcPlayerUid(targetUid)) return;
+    if (!isNpcPlayerUid(targetUid)){
+      const waitStart = Date.now();
+      while (Date.now() - waitStart < 25000){
+        const snap = await get(ref(db, `rooms/${state.roomCode}/greenResponses/${senderUid}`));
+        const row = snap.val() || null;
+        if (safeText(row?.requestId || "") === requestId){
+          await waitMs(500);
+          await Promise.all([
+            remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`)).catch(() => {}),
+            remove(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`)).catch(() => {}),
+            remove(ref(db, `rooms/${state.roomCode}/greenResponses/${senderUid}`)).catch(() => {})
+          ]);
+          return;
+        }
+        await waitMs(300);
+      }
+      return;
+    }
 
     const opt = pickNpcGreenAnswer(cardObj, targetUid);
     await set(ref(db, `rooms/${state.roomCode}/greenResponses/${senderUid}`), {
@@ -8322,14 +8346,16 @@
       .filter((p) => p.id !== uid && !isPlayerEliminated(p.id))
       .map((p) => ({ uid:p.id, cards:listEquipForUid(p.id).filter((it) => !isIdentityEquipItem(it)) }))
       .filter((row) => row.cards.length > 0);
-    if (!others.length || !state.roomCode) return;
+    if (!others.length || !state.roomCode) return null;
     const target = others[Math.floor(Math.random() * others.length)];
     const card = target.cards[Math.floor(Math.random() * target.cards.length)];
-    if (!card?.sourceKey) return;
+    if (!card?.sourceKey) return null;
+    let stolenName = safeText(card?.name || "装備");
     await runTransaction(ref(db, `rooms/${state.roomCode}`), (cur) => {
       if (!cur) return cur;
       const item = cur?.equipment?.[target.uid]?.[card.sourceKey];
       if (!item || safeText(item.kind || "") === "identity") return cur;
+      stolenName = safeText(item?.name || stolenName || "装備");
       cur.equipment = cur.equipment || {};
       cur.equipment[target.uid] = cur.equipment[target.uid] || {};
       delete cur.equipment[target.uid][card.sourceKey];
@@ -8338,6 +8364,7 @@
       cur.equipment[uid][nextKey] = { ...item, at: Date.now() };
       return cur;
     });
+    return { ownerUid:target.uid, cardName:stolenName };
   }
 
   async function executeNpcRoomAction(uid, roomId){
@@ -8347,7 +8374,12 @@
       return;
     }
     if (rid === 4){
-      await npcStealRandomEquipment(uid);
+      const stolen = await npcStealRandomEquipment(uid);
+      if (stolen?.ownerUid){
+        const ownerName = safeText(playerById(stolen.ownerUid)?.name || "プレイヤー");
+        const cardName = safeText(stolen.cardName || "装備");
+        await showNpcSpeech(uid, `${ownerName}さんから${cardName}をもらいます！`, 1500);
+      }
       return;
     }
     if (rid === 3){
@@ -8356,9 +8388,26 @@
         const targets = latestPlayers.filter((p) => p.id !== uid && !isPlayerEliminated(p.id));
         if (!targets.length) return;
         const t = targets[Math.floor(Math.random() * targets.length)];
+        const targetName = safeText(playerById(t.id)?.name || "プレイヤー");
+        await showNpcSpeech(uid, `${targetName}さんに2ダメージ！`, 1500);
         await addDamageToPlayer(t.id, 2, { source:"room3" });
       } else {
-        await healDamageToPlayer(uid, 1, "room3_heal");
+        const recoverSelf = Math.random() < 0.5;
+        if (recoverSelf){
+          await showNpcSpeech(uid, "1回復します！", 1500);
+          await healDamageToPlayer(uid, 1, "room3_heal");
+        } else {
+          const targets = latestPlayers.filter((p) => p.id !== uid && !isPlayerEliminated(p.id));
+          if (!targets.length){
+            await showNpcSpeech(uid, "1回復します！", 1500);
+            await healDamageToPlayer(uid, 1, "room3_heal");
+            return;
+          }
+          const t = targets[Math.floor(Math.random() * targets.length)];
+          const targetName = safeText(playerById(t.id)?.name || "プレイヤー");
+          await showNpcSpeech(uid, `${targetName}を1回復！`, 1500);
+          await healDamageToPlayer(t.id, 1, "room3_heal");
+        }
       }
     }
   }
@@ -8469,25 +8518,6 @@
     } finally {
       npcAutoTurnRunning = false;
       scheduleNpcTurnRetry(120);
-    }
-  }
-
-  async function syncNpcGreenSenderAutoClose(){
-    if (!state.isHost || !state.roomCode || !state.room?.computerMode) return;
-    const responses = state.room?.greenResponses || {};
-    for (const [senderUidRaw, row] of Object.entries(responses)){
-      const senderUid = safeText(senderUidRaw || "");
-      const at = Number(row?.at || 0);
-      if (!senderUid || !at) continue;
-      if (!isNpcPlayerUid(senderUid)) continue;
-      if (Number(npcGreenAutoHandledResponseAtBySender[senderUid] || 0) >= at) continue;
-      npcGreenAutoHandledResponseAtBySender[senderUid] = at;
-      const requestId = safeText(row?.requestId || "");
-      await Promise.all([
-        requestId ? remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`)).catch(() => {}) : Promise.resolve(),
-        requestId ? remove(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`)).catch(() => {}) : Promise.resolve(),
-        remove(ref(db, `rooms/${state.roomCode}/greenResponses/${senderUid}`)).catch(() => {})
-      ]);
     }
   }
 
@@ -9051,10 +9081,15 @@
       if (tempRole && Number(tempRole.until || 0) <= Date.now()){
         delete temporaryRoleTagByUid[p.id];
       }
-      const bubbleText = safeText((temporaryRoleTagByUid?.[p.id]?.text) || (activeNpcSpeechByUid?.[p.id] || "") || (activeGreenReplies?.[p.id] || ""));
+      const tempBubbleText = safeText(temporaryRoleTagByUid?.[p.id]?.text || "");
+      const npcBubbleText = safeText(activeNpcSpeechByUid?.[p.id] || "");
+      const greenBubbleText = safeText(activeGreenReplies?.[p.id] || "");
+      const bubbleText = safeText(tempBubbleText || npcBubbleText || greenBubbleText);
       if (bubbleText){
         const bubble = document.createElement("div");
         bubble.className = "position-bubble";
+        const isGreenReplyBubble = !!greenBubbleText && !tempBubbleText && !npcBubbleText;
+        bubble.classList.toggle("white-text", !isGreenReplyBubble);
         bubble.textContent = bubbleText;
         chipWrap.appendChild(bubble);
       }
@@ -12870,7 +12905,6 @@
       updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
       runNpcTurnIfNeeded();
-      syncNpcGreenSenderAutoClose();
       syncAutoIdentityRevealTimer();
       evaluateAutoIdentityRevealTrigger();
       syncTurnStartBoard();
