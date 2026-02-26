@@ -8065,7 +8065,14 @@
     if (suppressEndTurnButton) return false;
     if (hpBoardAnimationActive) return false;
     if (hasUnresolvedAttackLootSelection()) return false;
+    if (isGodwinReviveSelectionPending()) return false;
     return !!turnState()?.moveDone;
+  }
+
+  function isGodwinReviveSelectionPending(){
+    const selection = state.room?.roleAbilitySelection || null;
+    if (!selection || typeof selection !== "object") return false;
+    return safeText(selection.roleId || "") === "RAI_G3";
   }
 
   function hasUnresolvedAttackLootSelection(){
@@ -14713,6 +14720,10 @@
   }
 
   async function doEndTurn(expectedCurrentPlayerId = ""){
+    if (isGodwinReviveSelectionPending()){
+      renderTurnEndButton();
+      return;
+    }
     lastAttackWatch = null;
     await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
     attackTurnEndChoicePending = false;
