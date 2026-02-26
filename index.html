@@ -10981,6 +10981,8 @@
         const hiddenFreddie = isMyRole("RAI_F3") && !isMyIdentityRevealed() && !isMyAbilitySealed();
         const hiddenExcaliburPreview = !!exMeta?.allowExcaliburButton;
         const hasExcalibur = hasEquipmentByName(state.userId, "エクスカリバー");
+        const hasUnrevealedTarget = targetUids.some(uid => !isIdentityRevealedFor(uid));
+        const hiddenFreddieExcaliburVsUnrevealed = hiddenFreddie && hasExcalibur && hasUnrevealedTarget;
         let resolvedRows = targetUids.map(uid => {
           const normalizedUid = safeText(uid);
           const targetRevealed = isIdentityRevealedFor(normalizedUid);
@@ -10999,7 +11001,7 @@
             if (hasExcalibur){
               bonusLabelAmount += 2;
             }
-          } else if (hiddenExcaliburPreview){
+          } else if (hiddenExcaliburPreview || (hiddenFreddieExcaliburVsUnrevealed && attackSucceeded)){
             bonusLabelAmount += 2;
           }
           return {
@@ -11011,9 +11013,10 @@
         const freddieHiddenExcaliburRevealHit = hiddenFreddie
           && hasExcalibur
           && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 4);
+        const shouldForceExcaliburButtonForHiddenFreddie = !!exMeta?.allowExcaliburButton && hiddenFreddieExcaliburVsUnrevealed;
         pendingAttackResultMeta = {
           showBonusLabel: !!exMeta?.showBonusLabel,
-          allowExcaliburButton: !!exMeta?.allowExcaliburButton && !freddieHiddenExcaliburRevealHit,
+          allowExcaliburButton: (!!exMeta?.allowExcaliburButton && !freddieHiddenExcaliburRevealHit) || shouldForceExcaliburButtonForHiddenFreddie,
           freddieSpecial: hiddenFreddie && resolvedRows.some(row => Number(row.bonusLabelAmount || 0) >= 2),
           zeroDamagePreview: false
         };
