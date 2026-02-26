@@ -10859,7 +10859,7 @@
     if (!isGordonBarrierHpChangeAllowed(targetUid, options.source || "")){
       return 0;
     }
-    if (hasEquipmentByName(targetUid, "賢者のローブ")){
+    if (options.source === "attack" && hasEquipmentByName(targetUid, "賢者のローブ")){
       add -= 1;
     }
     return Math.max(0, add);
