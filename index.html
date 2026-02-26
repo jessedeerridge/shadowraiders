@@ -2425,6 +2425,7 @@
   let npcSpeechInitialized = false;
   let npcSpeechSeenAt = 0;
   let activeNpcSpeechByUid = {};
+  let npcGreenAutoHandledResponseAtBySender = {};
   let greenZoomLocked = false;
   let pendingGreenRequestId = "";
   let pendingGreenAnswerMsg = null;
@@ -8174,12 +8175,129 @@
     return true;
   }
 
+  function roleInfoByUid(uid){
+    const rid = safeText(state.room?.hands?.[safeText(uid || "")]?.roleId || state.hands?.[safeText(uid || "")]?.roleId || "");
+    return ROLE_BY_ID[rid] || null;
+  }
+
+  function npcGreenConditionMatchedForUid(cardObj, uid){
+    const text = safeText(cardObj?.effect || cardObj?.text || "");
+    const compactText = text.replace(/[\s　]+/g, "");
+    const role = roleInfoByUid(uid);
+    if (!role) return null;
+    if (text.includes("A / B / C / E / U")) return ["A","B","C","E","U"].includes(role.initial) && Number(role.hp) <= 11;
+    if (text.includes("D / F / G / V / W")) return ["D","F","G","V","W"].includes(role.initial) && Number(role.hp) >= 12;
+    if (compactText.includes("シチズンかシャドウ")) return role.faction === "シチズン" || role.faction === "シャドウ";
+    if (compactText.includes("シチズンかレイダー")) return role.faction === "シチズン" || role.faction === "レイダー";
+    if (compactText.includes("レイダーかシャドウ")) return role.faction === "レイダー" || role.faction === "シャドウ";
+    if (text.includes("シャドウ？")) return role.faction === "シャドウ";
+    if (text.includes("レイダー？")) return role.faction === "レイダー";
+    if (text.includes("シチズン？")) return role.faction === "シチズン";
+    return null;
+  }
+
+  async function applyNpcGreenAnswerEffect(targetUid, cardObj, answerId){
+    const text = safeText(cardObj?.effect || cardObj?.text || "");
+    if (answerId === "take_damage"){
+      await addDamageToPlayer(targetUid, 1);
+      return;
+    }
+    const isPositive = (answerId === "yes" || answerId === "reveal_identity");
+    if (!isPositive) return;
+    if (text.includes("1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ")){
+      const cur = clampDamage(damageCache?.[targetUid]);
+      if (cur <= 0) await addDamageToPlayer(targetUid, 1);
+      else await healDamageToPlayer(targetUid, 1, "green_heal");
+    } else if (!text.includes("❿に移動せよ")) {
+      const m = text.match(/(\d+)ダメージ受けよ/);
+      const dmg = m ? Number(m[1] || 0) : 0;
+      if (dmg > 0) await addDamageToPlayer(targetUid, dmg);
+    }
+    if (text.includes("❿に移動せよ")){
+      const nowRoom = markerRoomId(markerCache?.[targetUid]);
+      if (nowRoom === 7) await addDamageToPlayer(targetUid, 1);
+      else await placePlayerMarkerInRoom(targetUid, 7);
+    }
+  }
+
+  function pickNpcGreenAnswer(cardObj, targetUid){
+    const text = safeText(cardObj?.effect || cardObj?.text || "");
+    const matched = npcGreenConditionMatchedForUid(cardObj, targetUid);
+    if (text.includes("正体カードを見せよ")) return { id:"reveal_identity", label:"私の正体です。" };
+    if (text.includes("装備を渡すか、1ダメージ受けよ")){
+      if (matched) return { id:"take_damage", label:"1ダメージうける" };
+      return { id:"no", label:"いいえ" };
+    }
+    if (text.includes("❿に移動せよ")){
+      if (!matched) return { id:"no", label:"いいえ" };
+      const nowRoom = markerRoomId(markerCache?.[targetUid]);
+      return { id:"yes", label:(nowRoom === 7 ? "1ダメージうける" : "➓に移動する") };
+    }
+    if (text.includes("1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ")){
+      if (!matched) return { id:"no", label:"いいえ" };
+      const cur = clampDamage(damageCache?.[targetUid]);
+      return { id:"yes", label:(cur <= 0 ? "1ダメージうける" : "1ダメージ回復する") };
+    }
+    if (matched) return { id:"yes", label:(text.match(/(\d+)ダメージ受けよ/) ? `${text.match(/(\d+)ダメージ受けよ/)[1]}ダメージうける` : "はい") };
+    return { id:"no", label:"いいえ" };
+  }
+
+  async function handleNpcGreenRoom5(senderUid, cardObj){
+    if (!state.roomCode || !cardObj) return;
+    const aliveOthers = latestPlayers.filter(p => p.id !== senderUid && !isPlayerEliminated(p.id));
+    if (!aliveOthers.length) return;
+    const inRange = [...attackRangeTargetUidsFor(senderUid)].filter(uid => uid !== senderUid && !isPlayerEliminated(uid));
+    const pool = inRange.length ? inRange : aliveOthers.map(p => p.id);
+    const targetUid = pool[Math.floor(Math.random() * pool.length)];
+    if (!targetUid) return;
+
+    const requestId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    const payload = { from: senderUid, to: targetUid, requestId, card: cardObj, at: Date.now() };
+    await set(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`), payload);
+    await set(ref(db, `rooms/${state.roomCode}/greenInbox/${targetUid}`), payload);
+
+    if (!isNpcPlayerUid(targetUid)) return;
+
+    const opt = pickNpcGreenAnswer(cardObj, targetUid);
+    await set(ref(db, `rooms/${state.roomCode}/greenResponses/${senderUid}`), {
+      from: senderUid,
+      to: targetUid,
+      requestId,
+      answerId: opt.id,
+      answerLabel: opt.label,
+      card: cardObj,
+      at: Date.now()
+    });
+    await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`), {
+      from: senderUid,
+      responderId: targetUid,
+      requestId,
+      answerLabel: opt.label,
+      at: Date.now()
+    });
+    await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${targetUid}`)).catch(() => {});
+    await applyNpcGreenAnswerEffect(targetUid, cardObj, opt.id);
+    await waitMs(500);
+    await Promise.all([
+      remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`)).catch(() => {}),
+      remove(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`)).catch(() => {}),
+      remove(ref(db, `rooms/${state.roomCode}/greenResponses/${senderUid}`)).catch(() => {})
+    ]);
+  }
+
   async function npcDrawFromRoom(uid, roomId){
     const types = allowedTypesByRoom(roomId);
     if (!types.length || !state.roomCode) return;
-    const drawType = (roomId === 6)
-      ? (types[Math.floor(Math.random() * types.length)] || "white")
-      : types[0];
+    let drawType = types[0];
+    if (roomId === 6){
+      drawType = types[Math.floor(Math.random() * types.length)] || "white";
+    } else if (roomId === 1){
+      drawType = "white";
+    } else if (roomId === 2){
+      drawType = "black";
+    } else if (roomId === 5){
+      drawType = "green";
+    }
     let drawn = null;
     await runTransaction(ref(db, `rooms/${state.roomCode}`), (cur) => {
       if (!cur) return cur;
@@ -8194,6 +8312,8 @@
     });
     if (drawn && (drawType === "white" || drawType === "black")){
       await grantEquipmentToPlayer(uid, drawn, drawType);
+    } else if (drawn && drawType === "green"){
+      await handleNpcGreenRoom5(uid, drawn);
     }
   }
 
@@ -8282,7 +8402,9 @@
         const d4 = 1 + Math.floor(Math.random() * 4);
         const width = window.innerWidth;
         const height = window.innerHeight;
-        const motion = createDiceMotion(width, height, width / 2, height / 2);
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const motion = createDiceMotion(width, height, centerX, centerY);
         await set(ref(db, `rooms/${state.roomCode}/diceEvents/move`), {
           uid: turnUid,
           d6,
@@ -8313,18 +8435,17 @@
         const targetName = safeText(playerById(targetUid)?.name || "");
         await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 1500);
 
-        const tMarker = markerCache?.[targetUid] || null;
-        const tx = Number(tMarker?.x || (window.innerWidth / 2));
-        const ty = Number(tMarker?.y || (window.innerHeight / 2));
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
         const d6 = 1 + Math.floor(Math.random() * 6);
         const d4 = 1 + Math.floor(Math.random() * 4);
-        const motion = createDiceMotion(window.innerWidth, window.innerHeight, tx, ty);
+        const motion = createDiceMotion(window.innerWidth, window.innerHeight, centerX, centerY);
         await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
           uid: turnUid,
           targetUid,
           gatlingTargetUids:[],
-          x: tx,
-          y: ty,
+          x: centerX,
+          y: centerY,
           d6,
           d4,
           masamuneMode:false,
@@ -8348,6 +8469,25 @@
     } finally {
       npcAutoTurnRunning = false;
       scheduleNpcTurnRetry(120);
+    }
+  }
+
+  async function syncNpcGreenSenderAutoClose(){
+    if (!state.isHost || !state.roomCode || !state.room?.computerMode) return;
+    const responses = state.room?.greenResponses || {};
+    for (const [senderUidRaw, row] of Object.entries(responses)){
+      const senderUid = safeText(senderUidRaw || "");
+      const at = Number(row?.at || 0);
+      if (!senderUid || !at) continue;
+      if (!isNpcPlayerUid(senderUid)) continue;
+      if (Number(npcGreenAutoHandledResponseAtBySender[senderUid] || 0) >= at) continue;
+      npcGreenAutoHandledResponseAtBySender[senderUid] = at;
+      const requestId = safeText(row?.requestId || "");
+      await Promise.all([
+        requestId ? remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`)).catch(() => {}) : Promise.resolve(),
+        requestId ? remove(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`)).catch(() => {}) : Promise.resolve(),
+        remove(ref(db, `rooms/${state.roomCode}/greenResponses/${senderUid}`)).catch(() => {})
+      ]);
     }
   }
 
@@ -12730,6 +12870,7 @@
       updateCardInteractivity();
       maybeAutoRollMoveDiceOnTurnStart();
       runNpcTurnIfNeeded();
+      syncNpcGreenSenderAutoClose();
       syncAutoIdentityRevealTimer();
       evaluateAutoIdentityRevealTrigger();
       syncTurnStartBoard();
