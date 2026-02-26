@@ -2452,6 +2452,7 @@
   let roleAbilitySelectionInitialized = false;
   let roleAbilitySelectionSeenAt = 0;
   let activeRoleAbilitySelection = null;
+  let deferredEndTurnRequest = null;
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
     "CIT_D3", // デボラ
@@ -8065,7 +8066,17 @@
     if (suppressEndTurnButton) return false;
     if (hpBoardAnimationActive) return false;
     if (hasUnresolvedAttackLootSelection()) return false;
+    if (hasPendingGodwinReviveSelection()) return false;
     return !!turnState()?.moveDone;
+  }
+
+  function hasPendingGodwinReviveSelection(){
+    const entry = activeRoleAbilitySelection || state.room?.roleAbilitySelection || null;
+    if (!entry) return false;
+    if (safeText(entry.roleId || "") !== "RAI_G3") return false;
+    const actorUid = safeText(entry.actorUid || "");
+    if (!actorUid) return false;
+    return isPlayerEliminated(actorUid);
   }
 
   function hasUnresolvedAttackLootSelection(){
@@ -13724,6 +13735,11 @@
         renderTurnEndButton();
         updateCardInteractivity();
         if (!zoomBackdrop?.classList.contains("hidden")) closeZoom();
+        const pendingEndTurn = deferredEndTurnRequest;
+        if (pendingEndTurn && isMyTurn()){
+          deferredEndTurnRequest = null;
+          doEndTurn(safeText(pendingEndTurn.expectedCurrentPlayerId || "")).catch(() => {});
+        }
         return;
       }
       if (!at || at <= roleAbilitySelectionSeenAt) return;
@@ -14713,6 +14729,15 @@
   }
 
   async function doEndTurn(expectedCurrentPlayerId = ""){
+    if (hasPendingGodwinReviveSelection()){
+      deferredEndTurnRequest = {
+        expectedCurrentPlayerId: safeText(expectedCurrentPlayerId || "") || safeText(currentTurnPlayerId() || ""),
+        requestedAt: Date.now()
+      };
+      renderTurnEndButton();
+      return;
+    }
+    deferredEndTurnRequest = null;
     lastAttackWatch = null;
     await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
     attackTurnEndChoicePending = false;
