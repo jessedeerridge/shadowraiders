@@ -14807,7 +14807,7 @@
 
     let tables = roomData.tables || {};
     const humanCount = Object.values(tables).filter((row) => !!row?.playerId && !row?.isNpc).length;
-    const useComputerMode = humanCount >= 1 && humanCount <= 3;
+    const useComputerMode = humanCount >= 0 && humanCount <= 3;
     if (useComputerMode){
       const filled = buildComputerModeTables(tables, 5);
       tables = filled.tables;
