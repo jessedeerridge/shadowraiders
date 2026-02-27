@@ -2452,6 +2452,7 @@
   let roleAbilitySelectionInitialized = false;
   let roleAbilitySelectionSeenAt = 0;
   let pendingAutoEndTurnAfterGodwinSelection = null;
+  let pendingGodwinSelectionAfterUiClose = false;
   let activeRoleAbilitySelection = null;
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
@@ -5122,6 +5123,7 @@
     refreshEquipDockLayer();
     syncPersistentVenomOverlay();
     ensureDavidOverlayVisibleForAll();
+    tryOpenPendingGodwinSelection();
   }
   zoomBackdrop.addEventListener("click", async (e) => {
     const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
@@ -5409,6 +5411,7 @@
     attackLootBackdrop?.classList.add("hidden");
     if (attackLootBody) attackLootBody.innerHTML = "";
     if (attackLootHeader) attackLootHeader.textContent = "脱落者の装備カード";
+    tryOpenPendingGodwinSelection();
   }
 
   function closeEquipmentDockBeforeLootResolve(){
@@ -5581,6 +5584,7 @@
     }
     if (!payload){
       closeAttackLootPanel();
+      tryOpenPendingGodwinSelection();
       return;
     }
 
@@ -9796,10 +9800,12 @@
       }
 
       if (justEliminatedUids.includes(state.userId) && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3")){
-        setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+        pendingGodwinSelectionAfterUiClose = true;
+        tryOpenPendingGodwinSelection();
       }
 
       if (activeRoleAbilitySelection?.roleId === "RAI_G3" && isRoleAbilityUsed("RAI_G3")){
+        pendingGodwinSelectionAfterUiClose = false;
         activeRoleAbilitySelection = null;
         cardPlayerSelectActive = false;
         greenShareDock?.classList.add("hidden");
@@ -13707,6 +13713,25 @@
     } finally {
       cardTargetSessionRestoring = false;
     }
+  }
+
+  function canOpenGodwinSelectionNow(){
+    if (!state.roomCode || !state.userId) return false;
+    if (!isMyRole("RAI_G3")) return false;
+    if (isRoleAbilityUsed("RAI_G3")) return false;
+    if (!isPlayerEliminated(state.userId)) return false;
+    if (safeText(state.room?.roleAbilitySelection?.roleId || "")) return false;
+    if (activeRoleAbilitySelection) return false;
+    if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) return false;
+    if (attackLootBackdrop && !attackLootBackdrop.classList.contains("hidden")) return false;
+    return true;
+  }
+
+  function tryOpenPendingGodwinSelection(){
+    if (!pendingGodwinSelectionAfterUiClose) return;
+    if (!canOpenGodwinSelectionNow()) return;
+    pendingGodwinSelectionAfterUiClose = false;
+    setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
   }
 
   function subscribeRoleAbilitySelectionState(){
