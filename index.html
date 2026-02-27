@@ -2451,6 +2451,8 @@
   let pendingCardTargetSessionEntry = null;
   let roleAbilitySelectionInitialized = false;
   let roleAbilitySelectionSeenAt = 0;
+  let pendingAutoEndTurnAfterGodwinSelection = null;
+  let pendingGodwinSelectionAfterUiClose = false;
   let activeRoleAbilitySelection = null;
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
@@ -5121,6 +5123,7 @@
     refreshEquipDockLayer();
     syncPersistentVenomOverlay();
     ensureDavidOverlayVisibleForAll();
+    tryOpenPendingGodwinSelection();
   }
   zoomBackdrop.addEventListener("click", async (e) => {
     const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
@@ -5408,6 +5411,7 @@
     attackLootBackdrop?.classList.add("hidden");
     if (attackLootBody) attackLootBody.innerHTML = "";
     if (attackLootHeader) attackLootHeader.textContent = "脱落者の装備カード";
+    tryOpenPendingGodwinSelection();
   }
 
   function closeEquipmentDockBeforeLootResolve(){
@@ -5580,6 +5584,7 @@
     }
     if (!payload){
       closeAttackLootPanel();
+      tryOpenPendingGodwinSelection();
       return;
     }
 
@@ -8065,6 +8070,7 @@
     if (suppressEndTurnButton) return false;
     if (hpBoardAnimationActive) return false;
     if (hasUnresolvedAttackLootSelection()) return false;
+    if (safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3") return false;
     return !!turnState()?.moveDone;
   }
 
@@ -9794,10 +9800,12 @@
       }
 
       if (justEliminatedUids.includes(state.userId) && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3")){
-        setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+        pendingGodwinSelectionAfterUiClose = true;
+        tryOpenPendingGodwinSelection();
       }
 
       if (activeRoleAbilitySelection?.roleId === "RAI_G3" && isRoleAbilityUsed("RAI_G3")){
+        pendingGodwinSelectionAfterUiClose = false;
         activeRoleAbilitySelection = null;
         cardPlayerSelectActive = false;
         greenShareDock?.classList.add("hidden");
@@ -10169,6 +10177,12 @@
       const curTurn = cur.turn || {};
       const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || aliveOrder[0] || "");
       if (expectedUid && curId !== expectedUid) return cur;
+
+      const pendingRoleSelection = cur.roleAbilitySelection;
+      if (pendingRoleSelection && typeof pendingRoleSelection === "object"){
+        const pendingRoleId = safeText(pendingRoleSelection.roleId || "");
+        if (pendingRoleId === "RAI_G3") return cur;
+      }
 
       const nonIdentityEquipCountInRoom = (uid) => {
         if (!uid) return 0;
@@ -13701,6 +13715,25 @@
     }
   }
 
+  function canOpenGodwinSelectionNow(){
+    if (!state.roomCode || !state.userId) return false;
+    if (!isMyRole("RAI_G3")) return false;
+    if (isRoleAbilityUsed("RAI_G3")) return false;
+    if (!isPlayerEliminated(state.userId)) return false;
+    if (safeText(state.room?.roleAbilitySelection?.roleId || "")) return false;
+    if (activeRoleAbilitySelection) return false;
+    if (zoomBackdrop && !zoomBackdrop.classList.contains("hidden")) return false;
+    if (attackLootBackdrop && !attackLootBackdrop.classList.contains("hidden")) return false;
+    return true;
+  }
+
+  function tryOpenPendingGodwinSelection(){
+    if (!pendingGodwinSelectionAfterUiClose) return;
+    if (!canOpenGodwinSelectionNow()) return;
+    pendingGodwinSelectionAfterUiClose = false;
+    setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+  }
+
   function subscribeRoleAbilitySelectionState(){
     const selectionRef = ref(db, `rooms/${state.roomCode}/roleAbilitySelection`);
     onValue(selectionRef, snap => {
@@ -13713,6 +13746,10 @@
         return;
       }
       if (!data){
+        const shouldAutoEndTurn = !!(pendingAutoEndTurnAfterGodwinSelection
+          && safeText(currentTurnPlayerId() || "") === safeText(pendingAutoEndTurnAfterGodwinSelection.expectedUid || ""));
+        const expectedUidForAutoEnd = safeText(pendingAutoEndTurnAfterGodwinSelection?.expectedUid || "");
+        pendingAutoEndTurnAfterGodwinSelection = null;
         activeRoleAbilitySelection = null;
         if (pendingEquipAction?.type === "benjamin_give"){
           pendingEquipAction = null;
@@ -13724,6 +13761,9 @@
         renderTurnEndButton();
         updateCardInteractivity();
         if (!zoomBackdrop?.classList.contains("hidden")) closeZoom();
+        if (shouldAutoEndTurn && expectedUidForAutoEnd){
+          doEndTurn(expectedUidForAutoEnd).catch(() => {});
+        }
         return;
       }
       if (!at || at <= roleAbilitySelectionSeenAt) return;
@@ -14715,6 +14755,20 @@
   async function doEndTurn(expectedCurrentPlayerId = ""){
     lastAttackWatch = null;
     await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
+    const expectedUid = safeText(expectedCurrentPlayerId || currentTurnPlayerId() || "");
+    const waitingGodwinSelection = safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3";
+    const waitingDeferredGodwinSelection = !!pendingGodwinSelectionAfterUiClose;
+    if ((waitingGodwinSelection || waitingDeferredGodwinSelection) && expectedUid){
+      pendingAutoEndTurnAfterGodwinSelection = {
+        expectedUid,
+        at: Date.now()
+      };
+      if (waitingDeferredGodwinSelection){
+        tryOpenPendingGodwinSelection();
+      }
+      return;
+    }
+    pendingAutoEndTurnAfterGodwinSelection = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
     pendingAttackResultMeta = null;
