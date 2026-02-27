@@ -2550,6 +2550,8 @@
   let autoIdentityRevealTimer = null;
   let autoIdentityRevealTimerKey = "";
   let lastEliminationBatch = { uids: [], at: 0 };
+  let godwinSelectionLaunchPending = false;
+  let godwinSelectionLaunchToken = 0;
 
   const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
@@ -5110,6 +5112,53 @@
       await new Promise(resolve => setTimeout(resolve, Math.max(20, Number(pollMs) || 60)));
     }
     return !!zoomBackdrop?.classList.contains("hidden");
+  }
+
+  function isAttackLootPanelOpen(){
+    return !!attackLootBackdrop && !attackLootBackdrop.classList.contains("hidden");
+  }
+
+  function isEquipExpandOpen(){
+    return !!equipExpandBackdrop && !equipExpandBackdrop.classList.contains("hidden");
+  }
+
+  async function waitUntilPostAttackUiClosed({ maxWaitMs = 20000, pollMs = 80 } = {}){
+    const startedAt = Date.now();
+    const limit = Math.max(400, Number(maxWaitMs) || 20000);
+    const interval = Math.max(20, Number(pollMs) || 80);
+    while ((Date.now() - startedAt) < limit){
+      const zoomClosed = !!zoomBackdrop?.classList.contains("hidden");
+      if (zoomClosed && !isEquipExpandOpen() && !isAttackLootPanelOpen()) return true;
+      await waitMs(interval);
+    }
+    return !!zoomBackdrop?.classList.contains("hidden") && !isEquipExpandOpen() && !isAttackLootPanelOpen();
+  }
+
+  async function waitForGodwinSelectionCompletion({ maxWaitMs = 45000, pollMs = 100 } = {}){
+    const startedAt = Date.now();
+    const limit = Math.max(1000, Number(maxWaitMs) || 45000);
+    const interval = Math.max(40, Number(pollMs) || 100);
+    while ((Date.now() - startedAt) < limit){
+      const roleSelectionId = safeText(state.room?.roleAbilitySelection?.roleId || "");
+      if (!godwinSelectionLaunchPending && roleSelectionId !== "RAI_G3") return true;
+      await waitMs(interval);
+    }
+    return !godwinSelectionLaunchPending && safeText(state.room?.roleAbilitySelection?.roleId || "") !== "RAI_G3";
+  }
+
+  async function scheduleGodwinSelectionWhenReady(){
+    if (!isMyRole("RAI_G3") || isRoleAbilityUsed("RAI_G3")) return;
+    const token = ++godwinSelectionLaunchToken;
+    godwinSelectionLaunchPending = true;
+    await waitUntilPostAttackUiClosed({ maxWaitMs: 30000, pollMs: 80 });
+    if (token !== godwinSelectionLaunchToken) return;
+    const alreadyActive = safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3";
+    if (!alreadyActive && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3") && isPlayerEliminated(state.userId)){
+      await setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+    }
+    if (token === godwinSelectionLaunchToken){
+      godwinSelectionLaunchPending = false;
+    }
   }
   function closeZoom(){
     zoomBackdrop.classList.add("hidden");
@@ -9778,6 +9827,7 @@
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
+      await waitForGodwinSelectionCompletion({ maxWaitMs: 45000, pollMs: 100 });
       if (currentTurnPlayerId() === attackTurnOwnerUid){
         await doEndTurn(attackTurnOwnerUid);
       }
@@ -10066,10 +10116,13 @@
       }
 
       if (justEliminatedUids.includes(state.userId) && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3")){
-        setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+        scheduleGodwinSelectionWhenReady().catch(() => {
+          godwinSelectionLaunchPending = false;
+        });
       }
 
       if (activeRoleAbilitySelection?.roleId === "RAI_G3" && isRoleAbilityUsed("RAI_G3")){
+        godwinSelectionLaunchPending = false;
         activeRoleAbilitySelection = null;
         cardPlayerSelectActive = false;
         greenShareDock?.classList.add("hidden");
