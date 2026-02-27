@@ -8539,8 +8539,8 @@
   }
 
   function factionRuleForCurrentPlayers(){
-    const aliveCount = Math.max(1, latestPlayers.filter((p) => !isPlayerEliminated(p.id)).length || latestPlayers.length || 1);
-    return DEAL_RULE[aliveCount] || DEAL_RULE[Math.max(1, latestPlayers.length || 1)] || null;
+    const totalCount = Math.max(1, latestPlayers.length || 1);
+    return DEAL_RULE[totalCount] || DEAL_RULE[1] || null;
   }
 
   function npcEnemyLikelihoodByIntel(observerUid, targetUid){
@@ -8559,16 +8559,17 @@
     const rule = factionRuleForCurrentPlayers();
     const totalRival = Math.max(0, Number(rule?.[rivalFaction] || 0));
     const totalObserverFaction = Math.max(0, Number(rule?.[observerFaction] || 0));
-    const aliveOthers = latestPlayers.filter((p) => p.id !== observer && !isPlayerEliminated(p.id));
-    const revealedRaiderCount = aliveOthers.filter((p) => revealedFactionForUid(p.id) === "レイダー").length;
-    const revealedShadowCount = aliveOthers.filter((p) => revealedFactionForUid(p.id) === "シャドウ").length;
-    const revealedSameCount = aliveOthers.filter((p) => revealedFactionForUid(p.id) === observerFaction).length;
-    const revealedRivalCount = aliveOthers.filter((p) => revealedFactionForUid(p.id) === rivalFaction).length;
-    const unrevealedOthers = aliveOthers.filter((p) => !revealedFactionForUid(p.id));
+    const allOthers = latestPlayers.filter((p) => p.id !== observer);
+    const aliveOthers = allOthers.filter((p) => !isPlayerEliminated(p.id));
+    const revealedRaiderCount = allOthers.filter((p) => revealedFactionForUid(p.id) === "レイダー").length;
+    const revealedShadowCount = allOthers.filter((p) => revealedFactionForUid(p.id) === "シャドウ").length;
+    const revealedSameCount = allOthers.filter((p) => revealedFactionForUid(p.id) === observerFaction).length;
+    const revealedRivalCount = allOthers.filter((p) => revealedFactionForUid(p.id) === rivalFaction).length;
+    const unrevealedAliveOthers = aliveOthers.filter((p) => !revealedFactionForUid(p.id));
 
     const remainingRival = Math.max(0, totalRival - revealedRivalCount);
-    if (unrevealedOthers.length > 0){
-      likelihood = Math.max(likelihood, Math.min(1, remainingRival / unrevealedOthers.length));
+    if (unrevealedAliveOthers.length > 0){
+      likelihood = Math.max(likelihood, Math.min(1, remainingRival / unrevealedAliveOthers.length));
     }
     if (totalObserverFaction === 2 && revealedSameCount >= 1) likelihood = Math.max(likelihood, 0.75);
     if (revealedRaiderCount === 1 && revealedShadowCount === 1) likelihood = Math.max(likelihood, 0.5);
