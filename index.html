@@ -4574,6 +4574,7 @@
         title:"吸血コウモリ：対象プレイヤーを選択してください。",
         nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
         resolver: async (uid) => {
+          await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "enemy", "card_attack_target_revealed");
           await waitMs(1000);
           if (!hasEquipmentByName(uid, "いにしえの聖杯")){
             await addDamageToPlayer(uid, 2);
@@ -4589,6 +4590,7 @@
         onlyAlive:true,
         nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
         resolver: async (uid) => {
+          await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "enemy", "card_attack_target_revealed");
           await waitMs(1000);
           const targetHasChalice = hasEquipmentByName(uid, "いにしえの聖杯");
           const myHasChalice = hasEquipmentByName(state.userId, "いにしえの聖杯");
@@ -4604,6 +4606,7 @@
         onlyAlive:true,
         nameSuffixForUid: (uid) => hasEquipmentByName(uid, "いにしえの聖杯") ? "🏺" : "",
         resolver: async (uid) => {
+          await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "enemy", "card_attack_target_revealed");
           const eye = 1 + Math.floor(Math.random() * 6);
           await emitCardDiceEvent({ kind:"curse_doll", uid: state.userId, d6: eye });
           await waitMs(1000);
@@ -7107,6 +7110,7 @@
           greenShareDock?.classList.add("hidden");
           const ok = await moveEquipmentCardBetweenPlayers(state.userId, uid, chosenSource);
           if (ok){
+            await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "same", "banana_give_target_revealed");
             closeZoom();
             renderEquipmentDock();
           }
@@ -8699,6 +8703,63 @@
       next.attackedByUid[attacker][target] = Number(next.attackedByUid[attacker][target] || 0) + 1;
       return next;
     });
+    await recordNpcFactionCertaintyFromRevealedAttack(attacker, target);
+  }
+
+  async function recordFactionRelationInferenceFromRevealedTarget(actorUid, targetUid, relation = "enemy", reason = ""){
+    const actor = safeText(actorUid || "");
+    const target = safeText(targetUid || "");
+    const rel = safeText(relation || "");
+    if (!state.roomCode || !actor || !target || actor === target) return;
+    const targetFaction = safeText(revealedFactionForUid(target) || "");
+    if (targetFaction !== "レイダー" && targetFaction !== "シャドウ") return;
+
+    let inferredFaction = "";
+    if (rel === "same"){
+      inferredFaction = targetFaction;
+    } else if (rel === "enemy"){
+      inferredFaction = targetFaction === "レイダー" ? "シャドウ" : "レイダー";
+    }
+    if (!inferredFaction) return;
+
+    await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
+      const next = cur && typeof cur === "object" ? cur : {};
+      const observers = new Set();
+      for (const uid of Object.keys(cur?.users || {})) observers.add(safeText(uid));
+      for (const uid of Object.keys(cur?.hands || {})) observers.add(safeText(uid));
+      for (const row of Object.values(cur?.tables || {})){
+        const uid = safeText(row?.playerId || "");
+        if (uid) observers.add(uid);
+      }
+      const observerUids = [...observers].filter(Boolean);
+      if (!observerUids.length) return next;
+
+      next.factionHints = next.factionHints || {};
+      for (const observerUid of observerUids){
+        const observerRoleId = safeText(cur?.hands?.[observerUid]?.roleId || "");
+        const observerFaction = safeText(ROLE_BY_ID?.[observerRoleId]?.faction || "");
+        const samePossible = !!observerFaction && observerFaction === inferredFaction;
+        const sameImpossible = !!observerFaction && observerFaction !== inferredFaction;
+        next.factionHints[observerUid] = next.factionHints[observerUid] || {};
+        const prev = next.factionHints[observerUid][actor] || {};
+        next.factionHints[observerUid][actor] = {
+          ...prev,
+          possibleFactions: [inferredFaction],
+          samePossible,
+          sameImpossible,
+          sameConfirmed: samePossible,
+          enemyCertain: !!observerFaction && isRivalFactionPair(observerFaction, inferredFaction),
+          confirmedFaction: inferredFaction,
+          confirmedBy: safeText(reason || (rel === "same" ? "revealed_target_same" : "revealed_target_enemy")),
+          at: Date.now()
+        };
+      }
+      return next;
+    });
+  }
+
+  async function recordNpcFactionCertaintyFromRevealedAttack(attackerUid, targetUid){
+    await recordFactionRelationInferenceFromRevealedTarget(attackerUid, targetUid, "enemy", "attack_revealed_faction");
   }
 
   function chooseNpcAttackTarget(attackerUid, candidateUids){
@@ -8890,6 +8951,7 @@
       const targetUid = chooseNpcTargetForCard(uid, { purpose:"attack", includeSelf:false });
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
+      await recordFactionRelationInferenceFromRevealedTarget(uid, targetUid, "enemy", "card_attack_target_revealed");
       if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
       await healDamageToPlayer(uid, 1, "card_vampire_bat_heal");
       return;
@@ -8898,6 +8960,7 @@
       const targetUid = chooseNpcTargetForCard(uid, { purpose:"attack", includeSelf:false });
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
+      await recordFactionRelationInferenceFromRevealedTarget(uid, targetUid, "enemy", "card_attack_target_revealed");
       if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
       if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 2);
       return;
@@ -8906,6 +8969,7 @@
       const targetUid = chooseNpcTargetForCard(uid, { purpose:"attack", includeSelf:true });
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
+      await recordFactionRelationInferenceFromRevealedTarget(uid, targetUid, "enemy", "card_attack_target_revealed");
       const eye = 1 + Math.floor(Math.random() * 6);
       await emitCardDiceEvent({ kind:"curse_doll", uid, d6:eye });
       if (eye <= 4){
@@ -9011,6 +9075,7 @@
       if (!sourceKey) return;
       const ok = await moveEquipmentCardBetweenPlayers(uid, targetUid, sourceKey);
       if (!ok) return;
+      await recordFactionRelationInferenceFromRevealedTarget(uid, targetUid, "same", "banana_give_target_revealed");
       const targetName = safeText(playerById(targetUid)?.name || "プレイヤー");
       const cardName = safeText(choice?.name || "装備");
       await showNpcSpeech(uid, `${targetName}さんに${cardName}をあげますよ...`, 1600);
@@ -9225,6 +9290,7 @@
         if (!targetUid) return;
         const targetName = safeText(playerById(targetUid)?.name || "プレイヤー");
         await showNpcSpeech(uid, `${targetName}さんに2ダメージ！`, 1500);
+        await recordFactionRelationInferenceFromRevealedTarget(uid, targetUid, "enemy", "room3_damage_target_revealed");
         await addDamageToPlayer(targetUid, 2, { source:"room3" });
         await recordNpcAttackTarget(uid, targetUid);
         return;
@@ -9253,6 +9319,7 @@
       if (!healTargetUid) return;
       const targetName = safeText(playerById(healTargetUid)?.name || "プレイヤー");
       await showNpcSpeech(uid, `${targetName}を1回復！`, 1500);
+      await recordFactionRelationInferenceFromRevealedTarget(uid, healTargetUid, "same", "room3_heal_target_revealed");
       await healDamageToPlayer(healTargetUid, 1, "room3_heal");
     }
   }
@@ -9774,6 +9841,10 @@
       return;
     }
     pending.applied = true;
+    const attackedUids = [...new Set((pending.rows || []).map((row) => safeText(row?.uid || "")).filter(Boolean))];
+    for (const attackedUid of attackedUids){
+      await recordNpcAttackTarget(attackTurnOwnerUid, attackedUid);
+    }
     await addResolvedDamageToPlayers(pending.rows || [], { advanceTurnOnResolve: advanceTurnOnCounterResolve });
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
@@ -12735,6 +12806,7 @@
             room3ActionUsed = true;
             await updateTurnRoomActionState({ room3ActionUsed:true });
             showTurnHint("");
+            await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "enemy", "room3_damage_target_revealed");
             await new Promise(resolve => setTimeout(resolve, 1000));
             await addDamageToPlayer(uid, 2);
             renderMarkers();
@@ -12806,6 +12878,7 @@
           room3ActionUsed = true;
           await updateTurnRoomActionState({ room3ActionUsed:true });
           showTurnHint("");
+          await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "same", "room3_heal_target_revealed");
           await new Promise(resolve => setTimeout(resolve, 1000));
           await healDamageToPlayer(uid, 1, "room3_heal");
           renderMarkers();
@@ -12819,6 +12892,7 @@
             room3ActionUsed = true;
             await updateTurnRoomActionState({ room3ActionUsed:true });
             showTurnHint("");
+            await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "enemy", "room3_damage_target_revealed");
             await new Promise(resolve => setTimeout(resolve, 1000));
             await addDamageToPlayer(uid, 2);
             renderMarkers();
