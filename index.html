@@ -652,6 +652,31 @@
   }
   .host-settings-btn.visible{display:flex;}
 
+  .action-chat-btn{
+    position:fixed;
+    left:16px;
+    bottom:124px;
+    width:44px;height:44px;border-radius:50%;
+    border:1px solid #ddd;background:#fff;box-shadow:0 8px 20px rgba(0,0,0,.18);
+    display:none;align-items:center;justify-content:center;font-size:18px;cursor:pointer;
+    z-index:274;
+  }
+  .action-chat-btn.visible{display:flex;}
+
+  .action-chat-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:320;
+    display:flex;align-items:flex-end;justify-content:center;padding:14px;
+  }
+  .action-chat-backdrop.hidden{display:none;}
+  .action-chat-pop{
+    width:min(900px, 100%); max-height:min(78vh, 720px);
+    background:#fff;border-radius:14px;border:1px solid #ddd;overflow:hidden;
+    display:flex;flex-direction:column;
+  }
+  .action-chat-header{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #eee;font-weight:900;}
+  .action-chat-body{padding:10px 12px;overflow:auto;display:flex;flex-direction:column;gap:8px;background:#fafafa;}
+  .action-chat-row{font-size:12px;line-height:1.5;background:#fff;border:1px solid #eee;border-radius:8px;padding:6px 8px;white-space:pre-wrap;word-break:break-word;}
+
   .start-pop{
     position:fixed;
     left:16px;
@@ -1961,9 +1986,19 @@
 </div>
 
 <button id="hostSettingsBtn" class="host-settings-btn" title="設定">⚙</button>
+<button id="actionChatBtn" class="action-chat-btn" title="行動ログ" aria-label="行動ログ">💬</button>
 <button id="roomGuideBtn" class="room-guide-btn" title="ルーム効果" aria-label="ルーム効果"><img src="map.png" alt="map"></button>
 <button id="helpBtn" class="help-btn" title="カードリスト">？</button>
 
+<div id="actionChatBackdrop" class="action-chat-backdrop hidden">
+  <div class="action-chat-pop" role="dialog" aria-modal="true" aria-label="行動ログ">
+    <div class="action-chat-header">
+      <div>行動ログ</div>
+      <button id="actionChatCloseBtn" class="btn ghost" type="button">閉じる</button>
+    </div>
+    <div id="actionChatBody" class="action-chat-body"></div>
+  </div>
+</div>
 
 <div id="helpBackdrop" class="help-pop-backdrop hidden">
   <div class="help-pop" role="dialog" aria-modal="true" aria-label="カードリスト">
@@ -6560,14 +6595,18 @@
     e.stopPropagation();
     const closeZoomOnNo = !!pendingRoomAction?.closeZoomOnNo;
     const onNo = pendingRoomAction?.onNo;
+    const msg = safeText(roomActionMsg?.textContent || "");
     hideRoomActionPop();
+    appendActionChatLog(state.userId, `${msg || "選択"}：いいえ`).catch(() => {});
     if (typeof onNo === "function") await onNo();
     if (closeZoomOnNo) closeZoom();
   });
   btnRoomActionYes?.addEventListener("click", async (e) => {
     e.stopPropagation();
     const handler = pendingRoomAction?.onYes;
+    const msg = safeText(roomActionMsg?.textContent || "");
     hideRoomActionPop();
+    appendActionChatLog(state.userId, `${msg || "選択"}：はい`).catch(() => {});
     if (handler) await handler();
   });
   btnAttackYes.addEventListener("click", async (e) => {
@@ -6577,6 +6616,8 @@
       return;
     }
     const uid = pendingAttackTargetUid;
+    const targetName = safeText(playerById(uid)?.name || "プレイヤー");
+    appendActionChatLog(state.userId, `攻撃対象:${targetName}さん`).catch(() => {});
     const target = markerCache?.[uid] || null;
     if (!uid || !target){
       hideAttackPop();
@@ -6659,6 +6700,7 @@
 
   btnAttackResultKeep?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    appendActionChatLog(state.userId, `攻撃時の選択:${safeText(btnAttackResultKeep?.textContent || "OK")}`).catch(() => {});
     const pending = pendingAttackResolution;
     const spec = attackAbilitySpecFromRows(pending?.rows || []);
     if (!spec){
@@ -6787,6 +6829,7 @@
 
   btnAttackResultExcalibur?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    appendActionChatLog(state.userId, "攻撃時の選択:エクスカリバー").catch(() => {});
     if (attackResultChoiceBusy) return;
     const pending = pendingAttackResolution;
     if (!pending || !pendingAttackResultMeta?.allowExcaliburButton) return;
@@ -6814,6 +6857,7 @@
 
   btnAttackResultEnd?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    appendActionChatLog(state.userId, `攻撃時の選択:${safeText(btnAttackResultEnd?.textContent || "OKおわる")}`).catch(() => {});
     const pending = pendingAttackResolution;
     const spec = attackAbilitySpecFromRows(pending?.rows || []);
     const shouldConfirmEmmaEnd = isMyRole("RAI_E3") && isMyIdentityRevealed();
@@ -8379,6 +8423,64 @@
     const line2 = targetName ? `
 ${targetName}さん...` : "";
     await showNpcSpeech(actorUid, `${name}！！${line2}`, 1200, { style:npcSpeechStyleByFaction(actorUid) });
+    const logTail = targetName ? `（${targetName}さん）` : "";
+    appendActionChatLog(actorUid, `${name}${logTail}`);
+  }
+
+  function npcHumanPlayerCount(){
+    const tables = state.room?.tables || {};
+    return Object.values(tables).filter((row) => !!row?.playerId && !row?.isNpc).length;
+  }
+
+  function isNpcActionChatMode(){
+    return !!state.room?.computerMode && npcHumanPlayerCount() <= 1;
+  }
+
+  function roleNameForUid(uid){
+    return safeText(roleInfoByUid(uid)?.name || "?");
+  }
+
+  async function appendActionChatLog(uid, actionText){
+    const actorUid = safeText(uid || "");
+    const action = safeText(actionText || "").trim();
+    if (!state.roomCode || !actorUid || !action) return;
+    if (!isNpcActionChatMode()) return;
+    const name = safeText(playerById(actorUid)?.name || "プレイヤー");
+    const roleName = roleNameForUid(actorUid);
+    const key = `${Date.now()}_${Math.random().toString(16).slice(2,8)}`;
+    const path = `rooms/${state.roomCode}/actionChatLog/${key}`;
+    await set(ref(db, path), {
+      uid: actorUid,
+      playerName: name,
+      roleName,
+      action,
+      at: Date.now()
+    }).catch(() => {});
+  }
+
+  function renderActionChatLog(){
+    if (!actionChatBody) return;
+    const rows = Object.values(state.room?.actionChatLog || {})
+      .filter((row) => !!row && !!safeText(row.playerName || "") && !!safeText(row.action || ""))
+      .sort((a,b) => Number(a?.at || 0) - Number(b?.at || 0));
+    actionChatBody.innerHTML = "";
+    if (!rows.length){
+      const empty = document.createElement("div");
+      empty.className = "action-chat-row";
+      empty.textContent = "ログはまだありません。";
+      actionChatBody.appendChild(empty);
+      return;
+    }
+    for (const row of rows){
+      const line = document.createElement("div");
+      line.className = "action-chat-row";
+      const playerName = safeText(row.playerName || "プレイヤー");
+      const roleName = safeText(row.roleName || "?");
+      const action = safeText(row.action || "");
+      line.textContent = `${playerName}[${roleName}]：${action}`;
+      actionChatBody.appendChild(line);
+    }
+    actionChatBody.scrollTop = actionChatBody.scrollHeight;
   }
 
   async function grantEquipmentToPlayer(uid, cardObj, theme){
@@ -10938,6 +11040,13 @@ ${targetName}さん...` : "";
       if (diceRollOverlay) diceRollOverlay.innerHTML = '';
       openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false, showCloseButton:false });
       openGreenShareDock(drawn, { attackRangeOnly: viaParasol });
+    }
+
+    if (drawn){
+      const cardName = safeText(drawn?.name || "カード");
+      const cardEffect = safeText(drawn?.effect || "");
+      const tail = (type === "green" && cardEffect) ? `（質問:${cardEffect}）` : "";
+      appendActionChatLog(state.userId, `ドロー:${cardName}${tail}`).catch(() => {});
     }
 
     scheduleDeckRebuildIfEmpty(type).catch(() => {});
@@ -13590,6 +13699,10 @@ ${targetName}さん...` : "";
   const btnKickNo = document.getElementById('btnKickNo');
 
   const hostSettingsBtn = document.getElementById('hostSettingsBtn');
+  const actionChatBtn = document.getElementById('actionChatBtn');
+  const actionChatBackdrop = document.getElementById('actionChatBackdrop');
+  const actionChatBody = document.getElementById('actionChatBody');
+  const actionChatCloseBtn = document.getElementById('actionChatCloseBtn');
   const startPop = document.getElementById('startPop');
   const btnStartPopClose = document.getElementById('btnStartPopClose');
   const btnGameStart = document.getElementById('btnGameStart');
@@ -14097,6 +14210,7 @@ ${targetName}さん...` : "";
 
   function updateHostUI(){
     refreshRoomLabels();
+    const showActionChat = state.isHost && isNpcActionChatMode();
     if (state.isHost){
       hostSettingsBtn.classList.add('visible');
       roomGuideBtn.classList.remove('visible');
@@ -14107,6 +14221,8 @@ ${targetName}さん...` : "";
       roomGuideBtn.classList.add('visible');
       roomGuideBtn.classList.remove('host-position');
     }
+    actionChatBtn?.classList.toggle('visible', showActionChat);
+    if (!showActionChat) actionChatBackdrop?.classList.add('hidden');
     helpBtn.classList.add('visible');
   }
 
@@ -14132,6 +14248,7 @@ ${targetName}さん...` : "";
       syncDavidOverlayFloatingButtons();
       ensureDavidOverlayVisibleForAll();
       renderMarkers();
+      renderActionChatLog();
       syncPendingMoveChoiceOwnership();
       restorePendingMoveChoiceFromSeat();
       updateCardInteractivity();
@@ -15254,6 +15371,16 @@ ${targetName}さん...` : "";
     if (!state.isHost) return;
     startPop.classList.toggle('hidden');
   });
+  actionChatBtn?.addEventListener('click', () => {
+    if (!state.isHost || !isNpcActionChatMode()) return;
+    renderActionChatLog();
+    actionChatBackdrop?.classList.remove('hidden');
+  });
+  actionChatCloseBtn?.addEventListener('click', () => actionChatBackdrop?.classList.add('hidden'));
+  actionChatBackdrop?.addEventListener('click', (e) => {
+    if (e.target !== actionChatBackdrop) return;
+    actionChatBackdrop.classList.add('hidden');
+  });
   btnStartPopClose.addEventListener('click', () => startPop.classList.add('hidden'));
   btnHostDice?.addEventListener('click', async () => {
     if (!state.isHost) return;
@@ -15296,6 +15423,7 @@ ${targetName}さん...` : "";
       remove(ref(db, `${base}/npcSpeech`)),
       remove(ref(db, `${base}/greenReveals`)),
       remove(ref(db, `${base}/greenRequests`)),
+      remove(ref(db, `${base}/actionChatLog`)),
       remove(ref(db, `${base}/roleAbilitySelection`)),
       remove(ref(db, `${base}/turn`)),
       remove(ref(db, `${base}/attackResolutionPending`)),
