@@ -8065,6 +8065,7 @@
     if (suppressEndTurnButton) return false;
     if (hpBoardAnimationActive) return false;
     if (hasUnresolvedAttackLootSelection()) return false;
+    if (safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3") return false;
     return !!turnState()?.moveDone;
   }
 
@@ -10169,6 +10170,13 @@
       const curTurn = cur.turn || {};
       const curId = safeText(curTurn.currentPlayerId || cur.startPlayerId || aliveOrder[0] || "");
       if (expectedUid && curId !== expectedUid) return cur;
+
+      const pendingRoleSelection = cur.roleAbilitySelection;
+      if (pendingRoleSelection && typeof pendingRoleSelection === "object"){
+        const pendingRoleId = safeText(pendingRoleSelection.roleId || "");
+        if (pendingRoleId === "RAI_G3") return cur;
+      }
+
 
       const nonIdentityEquipCountInRoom = (uid) => {
         if (!uid) return 0;
