@@ -14304,6 +14304,7 @@ ${targetName}さん...` : "";
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     onValue(roomRef, snap => {
       state.room = snap.val() || {};
+      updateHostUI();
       restorePendingAttackResolutionFromRoom();
       restoreAttackLootPendingFromRoom();
       if (isGameStarted() && !currentTurnPlayerId() && state.isHost){
@@ -14712,6 +14713,7 @@ ${targetName}さん...` : "";
         .sort((a,b) => a.seatIndex - b.seatIndex);
 
       latestPlayers = players;
+      updateHostUI();
       tryRestorePendingGreenSession();
       tryRestorePendingCardTargetSession().catch(() => {});
       if (activeRoleAbilitySelection){
