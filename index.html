@@ -4268,7 +4268,8 @@
     await markRoleAbilityUsed(roleId);
     await setRoleAbilitySelectionState(null);
     if (roleId === "RAI_E3" || !!entry?.endTurnAfterResolve){
-      await doEndTurn();
+      const expectedUid = safeText(entry?.endTurnExpectedUid || "") || safeText(currentTurnPlayerId() || "");
+      await doEndTurn(expectedUid);
     }
   }
 
@@ -4375,8 +4376,9 @@
           selectionBusy = true;
           lockRoleSelectionButtons();
           await setRoleAbilitySelectionState(null);
-          if (roleId === "RAI_E3" && !!entry?.endTurnAfterResolve){
-            await doEndTurn();
+          if ((roleId === "RAI_E3" || roleId === "RAI_G3") && !!entry?.endTurnAfterResolve){
+            const expectedUid = safeText(entry?.endTurnExpectedUid || "") || safeText(currentTurnPlayerId() || "");
+            await doEndTurn(expectedUid);
           }
         }, {
           messageHtml: `<span class="ability-pill">${escapeHtml(abilityName)}</span>を使いませんか。`,
@@ -5304,6 +5306,7 @@
   let previousEliminatedMap = {};
   let pendingAttackLoot = null;
   let pendingAttackLootEndTurnRequest = null;
+  let pendingGodwinReviveEndTurnRequest = null;
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
   const attackLootBody = document.getElementById("attackLootBody");
   const attackLootHeader = document.getElementById("attackLootHeader");
@@ -5372,6 +5375,25 @@
     pendingAttackLootEndTurnRequest = null;
     if (isExpired || !sameTurnOwner) return null;
     return req;
+  }
+
+  function consumePendingGodwinReviveEndTurnRequest(){
+    const req = pendingGodwinReviveEndTurnRequest;
+    if (!req) return null;
+    const isExpired = Number(req.expiresAt || 0) <= Date.now();
+    const sameTurnOwner = safeText(req.turnOwnerUid || "") === safeText(currentTurnPlayerId() || "");
+    pendingGodwinReviveEndTurnRequest = null;
+    if (isExpired || !sameTurnOwner) return null;
+    return req;
+  }
+
+  async function requestGodwinReviveAutoEndForCurrentTurn(options = {}){
+    const turnOwnerUid = safeText(currentTurnPlayerId() || "");
+    if (!turnOwnerUid) return;
+    pendingGodwinReviveEndTurnRequest = {
+      turnOwnerUid,
+      expiresAt: Date.now() + Math.max(1000, Number(options.expiresInMs || 15000))
+    };
   }
 
   async function requestAttackLootAutoEndForCurrentTurn(options = {}){
@@ -6633,15 +6655,7 @@
         await resolveVampireHealAfterAttack();
         const shouldOpenLoot = !hasMyEquipmentByName("銀のロザリオ") && eliminationPreview.eliminatedUids.length;
         if (shouldOpenLoot){
-          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids, {
-            endTurnAfterResolve:true,
-            endTurnExpectedUid: safeText(currentTurnPlayerId() || "")
-          });
-          return;
-        }
-        const turnOwnerUid = currentTurnPlayerId();
-        if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
-          await doEndTurn(turnOwnerUid);
+          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids);
         }
         return;
       }
@@ -6717,6 +6731,7 @@
         attackResultChoiceBusy = true;
         try {
           await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
+          await requestGodwinReviveAutoEndForCurrentTurn();
           await finalizePendingAttackResolution(true, true);
         } finally {
           attackResultChoiceBusy = false;
@@ -6725,6 +6740,7 @@
       return;
     }
     await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
+    await requestGodwinReviveAutoEndForCurrentTurn();
     await finalizePendingAttackResolution(true, true);
   });
 
@@ -9795,7 +9811,20 @@
       }
 
       if (justEliminatedUids.includes(state.userId) && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3")){
-        setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+        const autoEndReq = consumePendingGodwinReviveEndTurnRequest();
+        waitUntilZoomClosed().then(() => {
+          const payload = {
+            roleId:"RAI_G3",
+            actorUid: state.userId
+          };
+          if (autoEndReq){
+            payload.endTurnAfterResolve = true;
+            payload.endTurnExpectedUid = safeText(autoEndReq.turnOwnerUid || "");
+          }
+          setRoleAbilitySelectionState(payload).catch(() => {});
+        }).catch(() => {
+          setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+        });
       }
 
       if (activeRoleAbilitySelection?.roleId === "RAI_G3" && isRoleAbilityUsed("RAI_G3")){
