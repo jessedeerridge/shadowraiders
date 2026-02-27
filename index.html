@@ -4267,6 +4267,7 @@
 
     await markRoleAbilityUsed(roleId);
     await setRoleAbilitySelectionState(null);
+    await tryAutoEndTurnAfterPending();
     if (roleId === "RAI_E3" || !!entry?.endTurnAfterResolve){
       await doEndTurn();
     }
@@ -5304,6 +5305,7 @@
   let previousEliminatedMap = {};
   let pendingAttackLoot = null;
   let pendingAttackLootEndTurnRequest = null;
+  let pendingTurnAutoEndRequest = null;
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
   const attackLootBody = document.getElementById("attackLootBody");
   const attackLootHeader = document.getElementById("attackLootHeader");
@@ -5395,6 +5397,51 @@
     await setAttackLootPending(pendingAttackLoot);
     renderAttackLootPanel();
   }
+
+  function hasPendingGodwinReviveSelection(){
+    return safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3";
+  }
+
+  function hasPendingAttackLootResolutionFor(uid){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return false;
+    const roomPending = normalizeAttackLootPayload(state.room?.attackLootPending?.[targetUid] || null);
+    const localPending = (targetUid === safeText(state.userId || "")) ? normalizeAttackLootPayload(pendingAttackLoot || null) : null;
+    const payload = roomPending || localPending;
+    if (!payload) return false;
+    const mode = safeText(payload.mode || "defeated") || "defeated";
+    if (mode === "byron"){
+      const selectedByOwner = payload.selectedByOwner || {};
+      const targetUids = payload.targetUids || [];
+      return targetUids.some(ownerUid => !!selectedByOwner[ownerUid]);
+    }
+    return hasUnresolvedAttackLootSelection();
+  }
+
+  function registerPendingTurnAutoEnd(turnOwnerUid){
+    const uid = safeText(turnOwnerUid || "");
+    if (!uid) return;
+    pendingTurnAutoEndRequest = {
+      turnOwnerUid: uid,
+      expiresAt: Date.now() + 30000
+    };
+  }
+
+  async function tryAutoEndTurnAfterPending(){
+    const req = pendingTurnAutoEndRequest;
+    if (!req) return;
+    const expectedUid = safeText(req.turnOwnerUid || "");
+    const nowOwner = safeText(currentTurnPlayerId() || "");
+    if (!expectedUid || nowOwner !== expectedUid || Number(req.expiresAt || 0) <= Date.now()){
+      pendingTurnAutoEndRequest = null;
+      return;
+    }
+    if (hasPendingGodwinReviveSelection()) return;
+    if (hasPendingAttackLootResolutionFor(expectedUid)) return;
+    pendingTurnAutoEndRequest = null;
+    await doEndTurn(expectedUid);
+  }
+
 
   async function setAttackLootPending(payload){
     const roomCode = safeText(state.roomCode || "");
@@ -5727,7 +5774,8 @@
         const expectedUid = safeText(pendingAttackLoot?.endTurnExpectedUid || "") || safeText(currentTurnPlayerId() || "");
         await clearAttackLootPending();
         if (shouldEndTurn && expectedUid && expectedUid === safeText(currentTurnPlayerId() || "")){
-          await doEndTurn(expectedUid);
+          registerPendingTurnAutoEnd(expectedUid);
+          await tryAutoEndTurnAfterPending();
         }
       }, { fixedLower:true, closeZoomOnNo:true });
       return;
@@ -5745,7 +5793,8 @@
       closeZoom();
       renderEquipmentDock();
       if (shouldEndTurn && expectedUid && expectedUid === safeText(currentTurnPlayerId() || "")){
-        await doEndTurn(expectedUid);
+        registerPendingTurnAutoEnd(expectedUid);
+        await tryAutoEndTurnAfterPending();
       }
     }
   }
@@ -6571,10 +6620,6 @@
       const followupTargetUid = primaryAttackTargetUidFromRows(pending?.rows || []);
       const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
-      if (roleId === "RAI_F3"){
-        await requestAttackLootAutoEndForCurrentTurn({ syncPending:false });
-      }
-
       if (roleId === "CIT_B1"){
         const byronTargets = (pending?.rows || [])
           .filter(item => Math.max(0, Number(item?.damage || 0)) >= 2)
@@ -6584,9 +6629,7 @@
         await finalizePendingAttackResolution(false, true);
         await resolveAttackAbilityReveal(role);
         if (hasMyEquipmentByName("銀のロザリオ")){
-          const turnOwnerUid = currentTurnPlayerId();
           await runRosaryAutoLootFlow(byronTargets);
-          await doEndTurn(turnOwnerUid);
           return;
         }
         await createByronAttackLootPending(byronTargets);
@@ -6638,10 +6681,6 @@
             endTurnExpectedUid: safeText(currentTurnPlayerId() || "")
           });
           return;
-        }
-        const turnOwnerUid = currentTurnPlayerId();
-        if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
-          await doEndTurn(turnOwnerUid);
         }
         return;
       }
@@ -9507,9 +9546,8 @@
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
-      if (currentTurnPlayerId() === attackTurnOwnerUid){
-        await doEndTurn(attackTurnOwnerUid);
-      }
+      registerPendingTurnAutoEnd(attackTurnOwnerUid);
+      await tryAutoEndTurnAfterPending();
       attackFlowUiLockActive = false;
       suppressEndTurnButton = false;
       renderTurnEndButton();
@@ -13732,6 +13770,7 @@
         renderTurnEndButton();
         updateCardInteractivity();
         if (!zoomBackdrop?.classList.contains("hidden")) closeZoom();
+        tryAutoEndTurnAfterPending().catch(() => {});
         return;
       }
       if (!at || at <= roleAbilitySelectionSeenAt) return;
