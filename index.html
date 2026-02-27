@@ -5913,6 +5913,45 @@
     }
   }
 
+  async function revealIdentityToEquipmentForUid(uid, options = {}){
+    const targetUid = safeText(uid || "");
+    if (!state.roomCode || !targetUid) return;
+    const hand = state.hands?.[targetUid] || null;
+    const roleId = safeText(hand?.roleId || "");
+    if (!roleId) return;
+
+    const revealedBy = safeText(options.revealedBy || "");
+    const useAgathaAbilityOnReveal = options.useAgathaAbilityOnReveal !== false;
+    const eRef = ref(db, `rooms/${state.roomCode}/equipment/${targetUid}/identity`);
+    let revealedNow = false;
+    await runTransaction(eRef, (cur) => {
+      if (cur && cur.kind === "identity" && cur.roleId) return cur;
+      revealedNow = true;
+      const next = {
+        kind: "identity",
+        roleId,
+        at: 0,
+        revealedAt: Date.now()
+      };
+      if (revealedBy) next.revealedBy = revealedBy;
+      return next;
+    });
+
+    if (!revealedNow) return;
+    if (roleId === "CIT_C2" && !isAbilitySealedForPlayer(targetUid, roleId)){
+      await healDamageToPlayer(targetUid, 2, "carol_reveal_heal");
+      if (targetUid === state.userId && isMyTurn()){
+        carolTurnHealKey = turnCycleKey();
+      }
+    }
+    if (roleId === "CIT_A3" && useAgathaAbilityOnReveal){
+      if (targetUid === state.userId && zoomBackdrop && !zoomBackdrop.classList.contains("hidden")){
+        closeZoom();
+      }
+      if (targetUid === state.userId) await triggerAgathaRevealAbility();
+    }
+  }
+
   function hasNonIdentityEquipment(uid){
     return listEquipForUid(uid).some(it => !isIdentityEquipItem(it));
   }
