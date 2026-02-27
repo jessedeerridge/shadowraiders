@@ -5913,6 +5913,45 @@
     }
   }
 
+  async function revealIdentityToEquipmentForUid(uid, options = {}){
+    const targetUid = safeText(uid || "");
+    if (!state.roomCode || !targetUid) return;
+    const hand = state.hands?.[targetUid] || null;
+    const roleId = safeText(hand?.roleId || "");
+    if (!roleId) return;
+
+    const revealedBy = safeText(options.revealedBy || "");
+    const useAgathaAbilityOnReveal = options.useAgathaAbilityOnReveal !== false;
+    const eRef = ref(db, `rooms/${state.roomCode}/equipment/${targetUid}/identity`);
+    let revealedNow = false;
+    await runTransaction(eRef, (cur) => {
+      if (cur && cur.kind === "identity" && cur.roleId) return cur;
+      revealedNow = true;
+      const next = {
+        kind: "identity",
+        roleId,
+        at: 0,
+        revealedAt: Date.now()
+      };
+      if (revealedBy) next.revealedBy = revealedBy;
+      return next;
+    });
+
+    if (!revealedNow) return;
+    if (roleId === "CIT_C2" && !isAbilitySealedForPlayer(targetUid, roleId)){
+      await healDamageToPlayer(targetUid, 2, "carol_reveal_heal");
+      if (targetUid === state.userId && isMyTurn()){
+        carolTurnHealKey = turnCycleKey();
+      }
+    }
+    if (roleId === "CIT_A3" && useAgathaAbilityOnReveal){
+      if (targetUid === state.userId && zoomBackdrop && !zoomBackdrop.classList.contains("hidden")){
+        closeZoom();
+      }
+      if (targetUid === state.userId) await triggerAgathaRevealAbility();
+    }
+  }
+
   function hasNonIdentityEquipment(uid){
     return listEquipForUid(uid).some(it => !isIdentityEquipItem(it));
   }
@@ -8337,6 +8376,42 @@
     return ROLE_BY_ID[rid] || null;
   }
 
+  function isRoleAbilityUsedByUid(roleId, uid){
+    const rid = safeText(roleId || "");
+    const targetUid = safeText(uid || "");
+    if (!rid || !targetUid) return false;
+    const spec = roleSelectionSpec(rid);
+    if (spec){
+      if (spec.perTurn){
+        const usedTurn = safeText(state.room?.abilityUsage?.[spec.usageKey]?.[targetUid] || "");
+        return !!usedTurn && usedTurn === currentTurnKey();
+      }
+      return !!state.room?.abilityUsage?.[spec.usageKey]?.[targetUid];
+    }
+    if (rid === "RAI_G1") return !!state.room?.abilityUsage?.gordon?.[targetUid];
+    if (rid === "SHA_W1") return !!state.room?.abilityUsage?.wight?.[targetUid];
+    return false;
+  }
+
+  async function markRoleAbilityUsedByUid(roleId, uid){
+    const rid = safeText(roleId || "");
+    const targetUid = safeText(uid || "");
+    if (!rid || !targetUid || !state.roomCode) return;
+    const spec = roleSelectionSpec(rid);
+    if (spec){
+      const value = spec.perTurn ? currentTurnKey() : true;
+      await set(ref(db, `rooms/${state.roomCode}/abilityUsage/${spec.usageKey}/${targetUid}`), value);
+      return;
+    }
+    if (rid === "RAI_G1"){
+      await set(ref(db, `rooms/${state.roomCode}/abilityUsage/gordon/${targetUid}`), true);
+      return;
+    }
+    if (rid === "SHA_W1"){
+      await set(ref(db, `rooms/${state.roomCode}/abilityUsage/wight/${targetUid}`), true);
+    }
+  }
+
   function npcGreenConditionMatchedForUid(cardObj, uid){
     const text = safeText(cardObj?.effect || cardObj?.text || "");
     const compactText = text.replace(/[\s　]+/g, "");
@@ -8529,14 +8604,34 @@
       next.factionHints = next.factionHints || {};
       next.factionHints[asker] = next.factionHints[asker] || {};
       const prev = next.factionHints[asker][target] || {};
+      const prevPossible = prev?.possibleFactions && typeof prev.possibleFactions === "object"
+        ? new Set(Object.entries(prev.possibleFactions).filter(([,v]) => !!v).map(([k]) => safeText(k)))
+        : new Set(["シチズン","レイダー","シャドウ"]);
+      const mergedPossible = [...prevPossible].filter(f => possible.has(f));
+      const mergedMap = {};
+      for (const f of mergedPossible) mergedMap[f] = true;
       next.factionHints[asker][target] = {
         ...prev,
         samePossible: !!(prev.samePossible || samePossible),
         sameImpossible: !!(prev.sameImpossible || sameImpossible),
+        possibleFactions: mergedMap,
         at: Date.now()
       };
       return next;
     });
+  }
+
+  function npcCertainFactionByIntel(observerUid, targetUid, faction){
+    const o = safeText(observerUid || "");
+    const t = safeText(targetUid || "");
+    const f = safeText(faction || "");
+    if (!o || !t || !f) return false;
+    const hint = state.room?.npcIntel?.factionHints?.[o]?.[t] || null;
+    const possible = hint?.possibleFactions && typeof hint.possibleFactions === "object"
+      ? Object.entries(hint.possibleFactions).filter(([,v]) => !!v).map(([k]) => safeText(k)).filter(Boolean)
+      : [];
+    if (!possible.length) return false;
+    return possible.length === 1 && possible[0] === f;
   }
 
   async function recordNpcAttackTarget(attackerUid, targetUid){
@@ -8594,6 +8689,10 @@
       if (certainEnemy.length){
         return certainEnemy.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
       }
+      const likelyEnemyByAllyReveal = pool.filter((uid) => npcLikelyEnemyByRevealedAlly(attacker, uid));
+      if (likelyEnemyByAllyReveal.length){
+        return likelyEnemyByAllyReveal.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
+      }
       pool = pool.filter((uid) => !hints?.[uid]?.samePossible);
       if (!pool.length) return "";
     }
@@ -8611,6 +8710,7 @@
     if (!a || !t) return false;
     const attackerFaction = safeText(roleInfoByUid(a)?.faction || "");
     if (attackerFaction !== "レイダー") return false;
+    if (npcCertainFactionByIntel(a, t, "シャドウ")) return true;
     const hint = state.room?.npcIntel?.factionHints?.[a]?.[t] || null;
     return !!hint?.sameImpossible;
   }
@@ -8621,6 +8721,18 @@
     if (!o || !t) return false;
     const hint = state.room?.npcIntel?.factionHints?.[o]?.[t] || null;
     return !!hint?.sameImpossible;
+  }
+
+  function npcLikelyEnemyByRevealedAlly(observerUid, targetUid){
+    const observer = safeText(observerUid || "");
+    const target = safeText(targetUid || "");
+    if (!observer || !target) return false;
+    const observerFaction = safeText(roleInfoByUid(observer)?.faction || "");
+    if (observerFaction !== "レイダー" && observerFaction !== "シャドウ") return false;
+    if (revealedFactionForUid(target) === observerFaction) return false;
+    const revealedAlly = latestPlayers.some((p) => p.id !== observer && !isPlayerEliminated(p.id)
+      && revealedFactionForUid(p.id) === observerFaction);
+    return !!revealedAlly;
   }
 
   async function resolveNpcCounterPromptsIfNeeded(){
@@ -8860,6 +8972,65 @@
     }
   }
 
+  async function applyRoleAbilityEffectForActor(roleId, actorUid, selectedUid){
+    const rid = safeText(roleId || "");
+    const actor = safeText(actorUid || "");
+    const target = safeText(selectedUid || "");
+    if (!rid || !actor || !target || !state.roomCode) return false;
+    if (rid === "RAI_F2"){
+      await setDamageToPlayer(target, 7, "felicia_set");
+    } else if (rid === "RAI_F1"){
+      const eye = 1 + Math.floor(Math.random() * 6);
+      await emitCardDiceEvent({ kind:"role_felix", uid: actor, d6: eye });
+      await waitMs(1000);
+      await addDamageToPlayer(target, eye);
+    } else if (rid === "RAI_E3"){
+      const eye = 1 + Math.floor(Math.random() * 4);
+      await emitCardDiceEvent({ kind:"role_emma", uid: actor, d4: eye });
+      await waitMs(1000);
+      await healDamageToPlayer(target, eye, "emma_ability_heal");
+    } else if (rid === "RAI_G3"){
+      const roomRef = ref(db, `rooms/${state.roomCode}`);
+      await runTransaction(roomRef, (cur) => {
+        if (!cur) return cur;
+        cur.damage = cur.damage || {};
+        cur.damage[target] = clampDamage(7);
+        recycleRevivedPlayerEquipIntoDeck(cur, target);
+        cur.markers = cur.markers || {};
+        delete cur.markers[target];
+        cur.godwinRevivePendingMove = cur.godwinRevivePendingMove || {};
+        cur.godwinRevivePendingMove[target] = true;
+        if (cur.deckState && typeof cur.deckState === "object"){
+          cur.deckState.updatedAt = Date.now();
+        }
+        return cur;
+      });
+    } else if (rid === "SHA_U2"){
+      await addDamageToPlayer(target, 3);
+      uranusMeteorResolved = true;
+    } else {
+      return false;
+    }
+    await markRoleAbilityUsedByUid(rid, actor);
+    return true;
+  }
+
+  function chooseNpcCertainFactionTarget(observerUid, faction, candidates = []){
+    const observer = safeText(observerUid || "");
+    const targetFaction = safeText(faction || "");
+    if (!observer || !targetFaction) return "";
+    const pool = (candidates || []).map((uid) => safeText(uid)).filter(Boolean);
+    const revealed = pool.filter((uid) => revealedFactionForUid(uid) === targetFaction);
+    if (revealed.length){
+      return revealed.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
+    }
+    const byIntel = pool.filter((uid) => npcCertainFactionByIntel(observer, uid, targetFaction));
+    if (byIntel.length){
+      return byIntel.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
+    }
+    return "";
+  }
+
   async function handleNpcGreenRoom5(senderUid, cardObj){
     if (!state.roomCode || !cardObj) return;
     const aliveOthers = latestPlayers.filter(p => p.id !== senderUid && !isPlayerEliminated(p.id));
@@ -9088,6 +9259,51 @@
     }
   }
 
+  async function npcRunSingleAttack(attackerUid, targetUid){
+    const attacker = safeText(attackerUid || "");
+    const target = safeText(targetUid || "");
+    if (!attacker || !target) return { hit:false, damage:0 };
+    const npcRole = roleInfoByUid(attacker);
+    const shouldExcaliburReveal = !!(npcRole?.faction === "レイダー"
+      && hasEquipmentByName(attacker, "エクスカリバー")
+      && !isIdentityRevealedFor(attacker)
+      && (revealedFactionForUid(target) === "シャドウ" || isNpcCertainShadowByIntel(attacker, target)));
+    if (shouldExcaliburReveal){
+      await revealIdentityToEquipmentForUid(attacker, { revealedBy:"excalibur_attack" });
+    }
+    const targetName = safeText(playerById(target)?.name || "");
+    await showNpcSpeech(attacker, `${targetName}さんを攻撃！`, 1500);
+
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    const d6 = 1 + Math.floor(Math.random() * 6);
+    const d4 = 1 + Math.floor(Math.random() * 4);
+    const motion = createDiceMotion(window.innerWidth, window.innerHeight, centerX, centerY);
+    await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
+      uid: attacker,
+      targetUid: target,
+      gatlingTargetUids:[],
+      x: centerX,
+      y: centerY,
+      d6,
+      d4,
+      masamuneMode:false,
+      vendettaMode:false,
+      motion,
+      at: Date.now()
+    });
+    await waitMs(1200);
+    const hit = didAttackRollSucceed(d6, d4, { masamuneMode:false, vendettaMode:false });
+    await waitMs(200);
+    let damage = 0;
+    if (hit){
+      damage = calcAttackDamageFromRoll(attacker, d6, d4, { targetUid: target });
+      if (damage > 0) await addDamageToPlayer(target, damage, { source:"attack" });
+    }
+    await recordNpcAttackTarget(attacker, target);
+    return { hit, damage };
+  }
+
   let npcAutoTurnRunning = false;
   let npcAutoTurnKey = "";
   let npcAutoTurnRetryTimer = null;
@@ -9117,6 +9333,30 @@
       if (turnCycleKey() !== turnKey) return;
 
       const currentTurn = turnState() || {};
+      const turnRoleId = safeText(roleInfoByUid(turnUid)?.id || "");
+      if (!currentTurn.moveDone){
+        if ((turnRoleId === "RAI_F2" || turnRoleId === "RAI_F1")
+          && !isAbilitySealedForPlayer(turnUid, turnRoleId)
+          && !isRoleAbilityUsedByUid(turnRoleId, turnUid)){
+          const allOthers = latestPlayers.filter((p) => p.id !== turnUid && !isPlayerEliminated(p.id)).map((p) => p.id);
+          const shadowTarget = chooseNpcCertainFactionTarget(turnUid, "シャドウ", allOthers);
+          if (shadowTarget){
+            await revealIdentityToEquipmentForUid(turnUid);
+            await applyRoleAbilityEffectForActor(turnRoleId, turnUid, shadowTarget);
+          }
+        }
+        if (turnRoleId === "SHA_U2"
+          && !isAbilitySealedForPlayer(turnUid, turnRoleId)
+          && !isRoleAbilityUsedByUid(turnRoleId, turnUid)){
+          const meteorCandidates = roleSelectionTargetPlayers({ roleId:"SHA_U2", actorUid:turnUid }).map((p) => p.id)
+            .filter((uid) => !hasGordonBarrier(uid));
+          const raiderTarget = chooseNpcCertainFactionTarget(turnUid, "レイダー", meteorCandidates);
+          if (raiderTarget){
+            await revealIdentityToEquipmentForUid(turnUid);
+            await applyRoleAbilityEffectForActor("SHA_U2", turnUid, raiderTarget);
+          }
+        }
+      }
       if (!currentTurn.moveDone){
         const marker = markerCache?.[turnUid] || null;
         const nowRoom = markerRoomId(marker);
@@ -9191,45 +9431,80 @@
         }
 
         if (targetUid){
-          const npcRole = roleInfoByUid(turnUid);
-          const shouldExcaliburReveal = !!(npcRole?.faction === "レイダー"
-            && hasEquipmentByName(turnUid, "エクスカリバー")
-            && !isIdentityRevealedFor(turnUid)
-            && (revealedFactionForUid(targetUid) === "シャドウ" || isNpcCertainShadowByIntel(turnUid, targetUid)));
-          if (shouldExcaliburReveal){
-            await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"excalibur_attack" });
-          }
-          const targetName = safeText(playerById(targetUid)?.name || "");
-          await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 1500);
+          let attackResult = await npcRunSingleAttack(turnUid, targetUid);
 
-          const centerX = window.innerWidth / 2;
-          const centerY = window.innerHeight / 2;
-          const d6 = 1 + Math.floor(Math.random() * 6);
-          const d4 = 1 + Math.floor(Math.random() * 4);
-          const motion = createDiceMotion(window.innerWidth, window.innerHeight, centerX, centerY);
-          await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
-            uid: turnUid,
-            targetUid,
-            gatlingTargetUids:[],
-            x: centerX,
-            y: centerY,
-            d6,
-            d4,
-            masamuneMode:false,
-            vendettaMode:false,
-            motion,
-            at: Date.now()
-          });
-          await waitMs(1200);
-          const hit = didAttackRollSucceed(d6, d4, { masamuneMode:false, vendettaMode:false });
-          await waitMs(200);
-          if (hit){
-            const dmg = calcAttackDamageFromRoll(turnUid, d6, d4, { targetUid });
-            if (dmg > 0) await addDamageToPlayer(targetUid, dmg, { source:"attack" });
+          if (!attackResult.hit
+            && safeText(attackerRole?.id || "") === "RAI_G2"
+            && hasEquipmentByName(turnUid, "エクスカリバー")
+            && !isAbilitySealedForPlayer(turnUid, "RAI_G2")
+            && (revealedFactionForUid(targetUid) === "シャドウ" || isNpcCertainShadowByIntel(turnUid, targetUid))){
+            await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"attack_ability" });
           }
-          await recordNpcAttackTarget(turnUid, targetUid);
+
+          if (safeText(attackerRole?.id || "") === "SHA_V2"
+            && !isAbilitySealedForPlayer(turnUid, "SHA_V2")
+            && clampDamage(damageCache?.[turnUid]) >= 5
+            && attackResult.hit){
+            await healDamageToPlayer(turnUid, 2, "vampire_role_heal");
+          }
+
+          if (safeText(attackerRole?.id || "") === "SHA_U3"
+            && !isAbilitySealedForPlayer(turnUid, "SHA_U3")
+            && (revealedFactionForUid(targetUid) === "レイダー" || npcCertainFactionByIntel(turnUid, targetUid, "レイダー"))){
+            await revealIdentityToEquipmentForUid(turnUid);
+            const secondRangeTargets = [...attackRangeTargetUidsFor(turnUid)].filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
+            const secondRaider = chooseNpcCertainFactionTarget(turnUid, "レイダー", secondRangeTargets);
+            if (secondRaider){
+              await npcRunSingleAttack(turnUid, secondRaider);
+            } else {
+              const fallback = secondRangeTargets[Math.floor(Math.random() * secondRangeTargets.length)] || "";
+              if (fallback) await npcRunSingleAttack(turnUid, fallback);
+            }
+            const stillRaider = chooseNpcCertainFactionTarget(turnUid, "レイダー", [...attackRangeTargetUidsFor(turnUid)]);
+            if (!stillRaider) targetUid = "";
+          }
         }
         await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
+
+        if (safeText(attackerRole?.id || "") === "RAI_E3"
+          && !isAbilitySealedForPlayer(turnUid, "RAI_E3")
+          && !isRoleAbilityUsedByUid("RAI_E3", turnUid)){
+          const actorRoom = markerRoomId(markerCache?.[turnUid]);
+          const roomPlayers = latestPlayers
+            .filter((p) => p.id !== turnUid && !isPlayerEliminated(p.id) && markerRoomId(markerCache?.[p.id]) === actorRoom)
+            .map((p) => p.id);
+          const ally = roomPlayers.find((uid) => revealedFactionForUid(uid) === "レイダー")
+            || roomPlayers.find((uid) => npcCertainFactionByIntel(turnUid, uid, "レイダー"));
+          if (ally){
+            await revealIdentityToEquipmentForUid(turnUid);
+            await applyRoleAbilityEffectForActor("RAI_E3", turnUid, ally);
+          }
+        }
+
+        if (safeText(attackerRole?.id || "") === "RAI_G1"
+          && !isAbilitySealedForPlayer(turnUid, "RAI_G1")
+          && !isRoleAbilityUsedByUid("RAI_G1", turnUid)){
+          const dmg = clampDamage(damageCache?.[turnUid]);
+          if (dmg >= 10 && dmg <= 14){
+            await revealIdentityToEquipmentForUid(turnUid);
+            await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${turnUid}`), true);
+            await markRoleAbilityUsedByUid("RAI_G1", turnUid);
+          }
+        }
+
+        if (safeText(attackerRole?.id || "") === "SHA_W1"
+          && !isAbilitySealedForPlayer(turnUid, "SHA_W1")
+          && !isRoleAbilityUsedByUid("SHA_W1", turnUid)
+          && eliminatedPlayerCount() > 0
+          && Math.random() < 0.5){
+          await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"wight_ability" });
+          await markRoleAbilityUsedByUid("SHA_W1", turnUid);
+          await update(ref(db, `rooms/${state.roomCode}/turn`), {
+            repeatTurnRemaining: eliminatedPlayerCount(),
+            repeatTurnTotal: eliminatedPlayerCount(),
+            updatedAt: Date.now()
+          });
+        }
       }
 
       await waitMs(2000);
@@ -9898,6 +10173,22 @@
 
       if (justEliminatedUids.includes(state.userId) && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3")){
         setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+      }
+
+      if (state.isHost && state.room?.computerMode){
+        for (const uid of justEliminatedUids){
+          if (!isNpcPlayerUid(uid)) continue;
+          const roleId = safeText(roleInfoByUid(uid)?.id || "");
+          if (roleId !== "RAI_G3" || isRoleAbilityUsedByUid("RAI_G3", uid) || isAbilitySealedForPlayer(uid, "RAI_G3")) continue;
+          const eliminatedRaiders = latestPlayers
+            .filter((p) => p.id !== uid && isPlayerEliminated(p.id))
+            .map((p) => p.id)
+            .filter((pid) => revealedFactionForUid(pid) === "レイダー");
+          const reviveTarget = eliminatedRaiders[Math.floor(Math.random() * eliminatedRaiders.length)] || "";
+          if (!reviveTarget) continue;
+          revealIdentityToEquipmentForUid(uid).catch(() => {});
+          applyRoleAbilityEffectForActor("RAI_G3", uid, reviveTarget).catch(() => {});
+        }
       }
 
       if (activeRoleAbilitySelection?.roleId === "RAI_G3" && isRoleAbilityUsed("RAI_G3")){
