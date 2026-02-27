@@ -4267,6 +4267,7 @@
 
     await markRoleAbilityUsed(roleId);
     await setRoleAbilitySelectionState(null);
+    if (roleId === "RAI_G3") await tryProcessPostAttackAutoEndRequest();
     if (roleId === "RAI_E3" || !!entry?.endTurnAfterResolve){
       await doEndTurn();
     }
@@ -4375,6 +4376,7 @@
           selectionBusy = true;
           lockRoleSelectionButtons();
           await setRoleAbilitySelectionState(null);
+          if (roleId === "RAI_G3") await tryProcessPostAttackAutoEndRequest();
           if (roleId === "RAI_E3" && !!entry?.endTurnAfterResolve){
             await doEndTurn();
           }
@@ -5304,6 +5306,8 @@
   let previousEliminatedMap = {};
   let pendingAttackLoot = null;
   let pendingAttackLootEndTurnRequest = null;
+  let pendingPostAttackAutoEndRequest = null;
+  let postAttackAutoEndInFlight = false;
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
   const attackLootBody = document.getElementById("attackLootBody");
   const attackLootHeader = document.getElementById("attackLootHeader");
@@ -5372,6 +5376,43 @@
     pendingAttackLootEndTurnRequest = null;
     if (isExpired || !sameTurnOwner) return null;
     return req;
+  }
+
+  function clearPendingPostAttackAutoEndRequest(){
+    pendingPostAttackAutoEndRequest = null;
+  }
+
+  function requestPostAttackAutoEndForCurrentTurn(options = {}){
+    const turnOwnerUid = safeText(currentTurnPlayerId() || "");
+    if (!turnOwnerUid) return;
+    pendingPostAttackAutoEndRequest = {
+      turnOwnerUid,
+      expiresAt: Date.now() + Math.max(1000, Number(options.expiresInMs || 20000))
+    };
+  }
+
+  async function tryProcessPostAttackAutoEndRequest(){
+    if (postAttackAutoEndInFlight) return;
+    const req = pendingPostAttackAutoEndRequest;
+    if (!req) return;
+    if (Number(req.expiresAt || 0) <= Date.now()){
+      clearPendingPostAttackAutoEndRequest();
+      return;
+    }
+    const turnOwnerUid = safeText(currentTurnPlayerId() || "");
+    if (!turnOwnerUid || turnOwnerUid !== safeText(req.turnOwnerUid || "")){
+      clearPendingPostAttackAutoEndRequest();
+      return;
+    }
+    postAttackAutoEndInFlight = true;
+    try {
+      await doEndTurn(turnOwnerUid);
+      if (safeText(currentTurnPlayerId() || "") !== turnOwnerUid){
+        clearPendingPostAttackAutoEndRequest();
+      }
+    } finally {
+      postAttackAutoEndInFlight = false;
+    }
   }
 
   async function requestAttackLootAutoEndForCurrentTurn(options = {}){
@@ -5719,6 +5760,7 @@
       closeZoom();
       renderEquipmentDock();
       await doEndTurn(turnOwnerUid);
+      await tryProcessPostAttackAutoEndRequest();
       return;
     }
     if (selection?.noSteal){
@@ -5728,6 +5770,7 @@
         await clearAttackLootPending();
         if (shouldEndTurn && expectedUid && expectedUid === safeText(currentTurnPlayerId() || "")){
           await doEndTurn(expectedUid);
+          await tryProcessPostAttackAutoEndRequest();
         }
       }, { fixedLower:true, closeZoomOnNo:true });
       return;
@@ -5746,6 +5789,7 @@
       renderEquipmentDock();
       if (shouldEndTurn && expectedUid && expectedUid === safeText(currentTurnPlayerId() || "")){
         await doEndTurn(expectedUid);
+        await tryProcessPostAttackAutoEndRequest();
       }
     }
   }
@@ -6552,6 +6596,7 @@
 
   btnAttackResultKeep?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    clearPendingPostAttackAutoEndRequest();
     const pending = pendingAttackResolution;
     const spec = attackAbilitySpecFromRows(pending?.rows || []);
     if (!spec){
@@ -6572,6 +6617,7 @@
       const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
       if (roleId === "RAI_F3"){
+        requestPostAttackAutoEndForCurrentTurn();
         await requestAttackLootAutoEndForCurrentTurn({ syncPending:false });
       }
 
@@ -6606,6 +6652,7 @@
           hideRevealPop();
           if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
             await doEndTurn(turnOwnerUid);
+            await tryProcessPostAttackAutoEndRequest();
           }
           return;
         }
@@ -6641,7 +6688,9 @@
         }
         const turnOwnerUid = currentTurnPlayerId();
         if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
+          requestPostAttackAutoEndForCurrentTurn();
           await doEndTurn(turnOwnerUid);
+          await tryProcessPostAttackAutoEndRequest();
         }
         return;
       }
@@ -6716,6 +6765,7 @@
         if (attackResultChoiceBusy) return;
         attackResultChoiceBusy = true;
         try {
+          requestPostAttackAutoEndForCurrentTurn();
           await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
           await finalizePendingAttackResolution(true, true);
         } finally {
@@ -6724,6 +6774,7 @@
       }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
       return;
     }
+    requestPostAttackAutoEndForCurrentTurn();
     await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
     await finalizePendingAttackResolution(true, true);
   });
@@ -9509,6 +9560,7 @@
       await new Promise(resolve => setTimeout(resolve, 2000));
       if (currentTurnPlayerId() === attackTurnOwnerUid){
         await doEndTurn(attackTurnOwnerUid);
+        await tryProcessPostAttackAutoEndRequest();
       }
       attackFlowUiLockActive = false;
       suppressEndTurnButton = false;
@@ -9795,7 +9847,10 @@
       }
 
       if (justEliminatedUids.includes(state.userId) && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3")){
-        setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+        (async () => {
+          await waitUntilZoomClosed();
+          await setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId });
+        })().catch(() => {});
       }
 
       if (activeRoleAbilitySelection?.roleId === "RAI_G3" && isRoleAbilityUsed("RAI_G3")){
@@ -9851,6 +9906,7 @@
       }
 
       evaluateAutoIdentityRevealTrigger();
+      tryProcessPostAttackAutoEndRequest().catch(() => {});
 
       renderEquipmentDock();
       const myRoleBack = myRoleCard?.querySelector('.role-back');
