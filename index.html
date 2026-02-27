@@ -6625,7 +6625,8 @@
       if (roleId === "CIT_C1"){
         const preview = attackEliminationPreview(pending?.rows || []);
         if (preview.allAttackedEliminated){
-          await finalizePendingAttackResolution(false, false);
+          markPendingAttackResolutionEndTurnIntent();
+          await finalizePendingAttackResolution(false, false, true);
           showRevealPopAt(null, {
             mode:"notice",
             message:"この結果プレイヤーは脱落するため、能力を使用しません。"
@@ -6636,7 +6637,11 @@
         }
       }
 
-      await finalizePendingAttackResolution(false, false);
+      const shouldCarryEndTurnIntent = roleId === "SHA_V2" || roleId === "RAI_F3";
+      if (shouldCarryEndTurnIntent){
+        markPendingAttackResolutionEndTurnIntent();
+      }
+      await finalizePendingAttackResolution(false, false, shouldCarryEndTurnIntent);
       if (roleId !== "SHA_U3") await resolveAttackAbilityReveal(role);
 
       if (roleId === "CIT_C1"){
@@ -6660,6 +6665,13 @@
         if (shouldOpenLoot){
           await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids);
           return;
+        }
+        return;
+      }
+      if (roleId === "RAI_F3"){
+        const shouldOpenLoot = !hasMyEquipmentByName("銀のロザリオ") && eliminationPreview.eliminatedUids.length;
+        if (shouldOpenLoot){
+          await createOrMergeAttackLootPending(eliminationPreview.eliminatedUids);
         }
         return;
       }
@@ -9500,16 +9512,20 @@
     }
   }
 
-  async function finalizePendingAttackResolution(endTurnAfterApply, advanceTurnOnCounterResolve = false){
+  function markPendingAttackResolutionEndTurnIntent(){
+    pendingAttackResolutionEndTurnIntent = {
+      attackerUid: safeText(currentTurnPlayerId() || ""),
+      turnKey: safeText(turnCycleKey() || ""),
+      expiresAt: Date.now() + 20000
+    };
+  }
+
+  async function finalizePendingAttackResolution(endTurnAfterApply, advanceTurnOnCounterResolve = false, preservePendingEndTurnIntent = false){
     const pending = pendingAttackResolution;
     const attackTurnOwnerUid = currentTurnPlayerId();
     if (endTurnAfterApply){
-      pendingAttackResolutionEndTurnIntent = {
-        attackerUid: safeText(attackTurnOwnerUid || ""),
-        turnKey: safeText(turnCycleKey() || ""),
-        expiresAt: Date.now() + 20000
-      };
-    } else {
+      markPendingAttackResolutionEndTurnIntent();
+    } else if (!preservePendingEndTurnIntent){
       pendingAttackResolutionEndTurnIntent = null;
     }
     pendingAttackResolution = null;
@@ -9535,7 +9551,13 @@
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
       if (currentTurnPlayerId() === attackTurnOwnerUid){
-        await doEndTurn(attackTurnOwnerUid);
+        const pendingSelection = state.room?.roleAbilitySelection || null;
+        const waitingGodwinSelection = safeText(pendingSelection?.roleId || "") === "RAI_G3"
+          && !!pendingSelection?.endTurnAfterResolve
+          && safeText(pendingSelection?.endTurnExpectedUid || "") === safeText(attackTurnOwnerUid || "");
+        if (!waitingGodwinSelection){
+          await doEndTurn(attackTurnOwnerUid);
+        }
       }
       attackFlowUiLockActive = false;
       suppressEndTurnButton = false;
