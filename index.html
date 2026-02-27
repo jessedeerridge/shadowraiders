@@ -4269,7 +4269,9 @@
     await setRoleAbilitySelectionState(null);
     if (roleId === "RAI_E3" || !!entry?.endTurnAfterResolve){
       await doEndTurn();
+      return;
     }
+    await tryResolveDeferredEndTurnRequest();
   }
 
   function openRoleAbilitySelectionUI(entry){
@@ -4377,7 +4379,9 @@
           await setRoleAbilitySelectionState(null);
           if (roleId === "RAI_E3" && !!entry?.endTurnAfterResolve){
             await doEndTurn();
+            return;
           }
+          await tryResolveDeferredEndTurnRequest();
         }, {
           messageHtml: `<span class="ability-pill">${escapeHtml(abilityName)}</span>を使いませんか。`,
           yesLabel: "はい",
@@ -5304,6 +5308,7 @@
   let previousEliminatedMap = {};
   let pendingAttackLoot = null;
   let pendingAttackLootEndTurnRequest = null;
+  let pendingDeferredEndTurnRequest = null;
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
   const attackLootBody = document.getElementById("attackLootBody");
   const attackLootHeader = document.getElementById("attackLootHeader");
@@ -5374,12 +5379,53 @@
     return req;
   }
 
+  function hasPendingLootableAttackLootFor(uid){
+    const ownerUid = safeText(uid || "");
+    if (!ownerUid) return false;
+    const pending = normalizeAttackLootPayload(state.room?.attackLootPending?.[ownerUid] || null);
+    if (!pending) return false;
+    const mode = safeText(pending.mode || "defeated") || "defeated";
+    const targetUids = (mode === "byron" ? pending.targetUids : pending.defeatedUids) || [];
+    return Array.isArray(targetUids) && targetUids.some((targetUidRaw) => {
+      const targetUid = safeText(targetUidRaw || "");
+      if (!targetUid || targetUid === ownerUid) return false;
+      return listEquipForUid(targetUid).some(it => !isIdentityEquipItem(it));
+    });
+  }
+
+  async function tryResolveDeferredEndTurnRequest(){
+    const req = pendingDeferredEndTurnRequest;
+    if (!req) return false;
+    const expiresAt = Number(req.expiresAt || 0);
+    if (expiresAt > 0 && expiresAt <= Date.now()){
+      pendingDeferredEndTurnRequest = null;
+      return false;
+    }
+    const turnOwnerUid = safeText(req.turnOwnerUid || "");
+    const currentUid = safeText(currentTurnPlayerId() || "");
+    if (!turnOwnerUid || turnOwnerUid !== currentUid || state.userId !== turnOwnerUid){
+      pendingDeferredEndTurnRequest = null;
+      return false;
+    }
+    if (safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3") return false;
+    if (hasPendingLootableAttackLootFor(turnOwnerUid)) return false;
+
+    pendingDeferredEndTurnRequest = null;
+    await doEndTurn(turnOwnerUid, { skipDeferredRequest:true });
+    return true;
+  }
+
   async function requestAttackLootAutoEndForCurrentTurn(options = {}){
     const turnOwnerUid = safeText(currentTurnPlayerId() || "");
     if (!turnOwnerUid) return;
+    const expiresInMs = Math.max(1000, Number(options.expiresInMs || 15000));
     pendingAttackLootEndTurnRequest = {
       turnOwnerUid,
-      expiresAt: Date.now() + Math.max(1000, Number(options.expiresInMs || 15000))
+      expiresAt: Date.now() + expiresInMs
+    };
+    pendingDeferredEndTurnRequest = {
+      turnOwnerUid,
+      expiresAt: Date.now() + Math.max(expiresInMs, 60000)
     };
     const shouldSyncPending = options.syncPending !== false;
     if (!shouldSyncPending) return;
@@ -5419,6 +5465,7 @@
     pendingAttackLoot = null;
     closeAttackLootPanel();
     await setAttackLootPending(null);
+    await tryResolveDeferredEndTurnRequest();
   }
 
   async function createOrMergeAttackLootPending(defeatedUids = [], options = {}){
@@ -9805,6 +9852,7 @@
         renderTurnEndButton();
         updateCardInteractivity();
         if (!zoomBackdrop?.classList.contains("hidden")) closeZoom();
+        tryResolveDeferredEndTurnRequest().catch(() => {});
       }
 
       previousEliminatedMap = eliminatedNow;
@@ -14720,9 +14768,11 @@
     return true;
   }
 
-  async function doEndTurn(expectedCurrentPlayerId = ""){
+  async function doEndTurn(expectedCurrentPlayerId = "", options = {}){
     lastAttackWatch = null;
-    await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
+    if (!options.skipDeferredRequest){
+      await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
+    }
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
     pendingAttackResultMeta = null;
