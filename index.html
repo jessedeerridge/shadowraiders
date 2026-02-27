@@ -14756,14 +14756,19 @@
     lastAttackWatch = null;
     await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
     const expectedUid = safeText(expectedCurrentPlayerId || currentTurnPlayerId() || "");
-    if (safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3" && expectedUid){
+    const waitingGodwinSelection = safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3";
+    const waitingDeferredGodwinSelection = !!pendingGodwinSelectionAfterUiClose;
+    if ((waitingGodwinSelection || waitingDeferredGodwinSelection) && expectedUid){
       pendingAutoEndTurnAfterGodwinSelection = {
         expectedUid,
         at: Date.now()
       };
-    } else {
-      pendingAutoEndTurnAfterGodwinSelection = null;
+      if (waitingDeferredGodwinSelection){
+        tryOpenPendingGodwinSelection();
+      }
+      return;
     }
+    pendingAutoEndTurnAfterGodwinSelection = null;
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
     pendingAttackResultMeta = null;
