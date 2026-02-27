@@ -2452,6 +2452,7 @@
   let roleAbilitySelectionInitialized = false;
   let roleAbilitySelectionSeenAt = 0;
   let activeRoleAbilitySelection = null;
+  let roleAbilitySelectionOpenToken = 0;
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
     "CIT_D3", // デボラ
@@ -4268,11 +4269,45 @@
     await markRoleAbilityUsed(roleId);
     await setRoleAbilitySelectionState(null);
     if (roleId === "RAI_E3" || !!entry?.endTurnAfterResolve){
-      await doEndTurn();
+      await doEndTurn(safeText(entry?.endTurnExpectedUid || ""));
     }
   }
 
+  function hasBlockingOverlayForGodwinSelection(){
+    if (!attackResultPop?.classList.contains("hidden")) return true;
+    if (!attackLootBackdrop?.classList.contains("hidden")) return true;
+    if (!equipExpandBackdrop?.classList.contains("hidden")) return true;
+    if (!roomActionPop?.classList.contains("hidden")) return true;
+    if (!zoomBackdrop?.classList.contains("hidden")) return true;
+    return false;
+  }
+
+  async function waitForGodwinSelectionUiReady(maxWaitMs = 12000){
+    const startedAt = Date.now();
+    while ((Date.now() - startedAt) < Math.max(500, Number(maxWaitMs) || 12000)){
+      if (!hasBlockingOverlayForGodwinSelection()) return true;
+      await waitMs(60);
+    }
+    return !hasBlockingOverlayForGodwinSelection();
+  }
+
   function openRoleAbilitySelectionUI(entry){
+    const roleId = safeText(entry?.roleId || "");
+    if (roleId !== "RAI_G3"){
+      openRoleAbilitySelectionUIInner(entry);
+      return;
+    }
+    const token = ++roleAbilitySelectionOpenToken;
+    waitForGodwinSelectionUiReady().then(() => {
+      if (token !== roleAbilitySelectionOpenToken) return;
+      const current = state.room?.roleAbilitySelection || null;
+      if (!current) return;
+      if (Number(current?.at || 0) !== Number(entry?.at || 0)) return;
+      openRoleAbilitySelectionUIInner(current);
+    }).catch(() => {});
+  }
+
+  function openRoleAbilitySelectionUIInner(entry){
     const roleId = safeText(entry?.roleId || "");
     const actorUid = safeText(entry?.actorUid || "");
     let selectionBusy = false;
@@ -4375,8 +4410,8 @@
           selectionBusy = true;
           lockRoleSelectionButtons();
           await setRoleAbilitySelectionState(null);
-          if (roleId === "RAI_E3" && !!entry?.endTurnAfterResolve){
-            await doEndTurn();
+          if (!!entry?.endTurnAfterResolve){
+            await doEndTurn(safeText(entry?.endTurnExpectedUid || ""));
           }
         }, {
           messageHtml: `<span class="ability-pill">${escapeHtml(abilityName)}</span>を使いませんか。`,
@@ -4396,6 +4431,7 @@
     updateCardInteractivity();
     renderTurnEndButton();
   }
+
 
   async function setCardTargetSessionState(payload){
     if (cardTargetSessionRestoring) return;
@@ -9795,7 +9831,14 @@
       }
 
       if (justEliminatedUids.includes(state.userId) && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3")){
-        setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+        const expectedTurnOwnerUid = safeText(currentTurnPlayerId() || "");
+        const shouldEndTurnAfterResolve = !!turnState()?.attackDone && expectedTurnOwnerUid && expectedTurnOwnerUid !== safeText(state.userId || "");
+        setRoleAbilitySelectionState({
+          roleId:"RAI_G3",
+          actorUid: state.userId,
+          endTurnAfterResolve: shouldEndTurnAfterResolve,
+          endTurnExpectedUid: shouldEndTurnAfterResolve ? expectedTurnOwnerUid : ""
+        }).catch(() => {});
       }
 
       if (activeRoleAbilitySelection?.roleId === "RAI_G3" && isRoleAbilityUsed("RAI_G3")){
@@ -13721,6 +13764,7 @@
         return;
       }
       if (!data){
+        roleAbilitySelectionOpenToken++;
         activeRoleAbilitySelection = null;
         if (pendingEquipAction?.type === "benjamin_give"){
           pendingEquipAction = null;
