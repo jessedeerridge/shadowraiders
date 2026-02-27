@@ -9539,6 +9539,48 @@
     }
   }
 
+  function godwinEliminatedByAttackRows(rows = []){
+    const list = [];
+    for (const item of (rows || [])){
+      const uid = safeText(item?.uid || "");
+      if (!uid) continue;
+      const roleId = safeText(state.hands?.[uid]?.roleId || "");
+      if (roleId !== "RAI_G3") continue;
+      const hp = Number(ROLE_BY_ID?.[roleId]?.hp || 0);
+      if (hp <= 0) continue;
+      const before = clampDamage(damageCache?.[uid]);
+      const add = Math.max(0, Number(item?.damage || 0));
+      const after = clampDamage(before + add);
+      if (before < hp && after >= hp){
+        list.push(uid);
+      }
+    }
+    return list;
+  }
+
+  async function waitForGodwinSelectionResolution(godwinUids = [], attackTurnOwnerUid = ""){
+    const targets = Array.from(new Set((godwinUids || []).map(uid => safeText(uid || "")).filter(Boolean)));
+    if (!targets.length) return;
+
+    const startedAt = Date.now();
+    let sawSelection = false;
+
+    while (currentTurnPlayerId() === attackTurnOwnerUid){
+      const selection = state.room?.roleAbilitySelection || null;
+      const roleId = safeText(selection?.roleId || "");
+      const actorUid = safeText(selection?.actorUid || "");
+      const isTargetSelection = roleId === "RAI_G3" && targets.includes(actorUid);
+      if (isTargetSelection){
+        sawSelection = true;
+      }
+      if (!isTargetSelection){
+        if (sawSelection) return;
+        if ((Date.now() - startedAt) >= 4000) return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+  }
+
   async function finalizePendingAttackResolution(endTurnAfterApply, advanceTurnOnCounterResolve = false){
     const pending = pendingAttackResolution;
     const attackTurnOwnerUid = currentTurnPlayerId();
@@ -9560,10 +9602,14 @@
       return;
     }
     pending.applied = true;
+    const godwinDefeatedByThisAttack = godwinEliminatedByAttackRows(pending.rows || []);
     await addResolvedDamageToPlayers(pending.rows || [], { advanceTurnOnResolve: advanceTurnOnCounterResolve });
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
+      if (godwinDefeatedByThisAttack.length){
+        await waitForGodwinSelectionResolution(godwinDefeatedByThisAttack, attackTurnOwnerUid);
+      }
       if (currentTurnPlayerId() === attackTurnOwnerUid){
         await doEndTurn(attackTurnOwnerUid);
       }
