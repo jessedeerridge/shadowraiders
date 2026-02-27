@@ -5304,6 +5304,7 @@
   let previousEliminatedMap = {};
   let pendingAttackLoot = null;
   let pendingAttackLootEndTurnRequest = null;
+  let pendingAttackPostResolutionEndTurnRequest = null;
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
   const attackLootBody = document.getElementById("attackLootBody");
   const attackLootHeader = document.getElementById("attackLootHeader");
@@ -5396,6 +5397,48 @@
     renderAttackLootPanel();
   }
 
+  function hasPendingGodwinSelection(){
+    return safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3";
+  }
+
+  async function tryResolvePendingAttackPostResolutionEndTurn(){
+    const req = pendingAttackPostResolutionEndTurnRequest;
+    if (!req) return;
+    const turnOwnerUid = safeText(req.turnOwnerUid || "");
+    const currentOwnerUid = safeText(currentTurnPlayerId() || "");
+    const expired = Number(req.expiresAt || 0) <= Date.now();
+    if (!turnOwnerUid || expired || turnOwnerUid !== currentOwnerUid){
+      pendingAttackPostResolutionEndTurnRequest = null;
+      return;
+    }
+    if (req.waitGodwin && hasPendingGodwinSelection()) return;
+    const waitLoot = !!req.waitLoot;
+    const lootWaiting = waitLoot
+      && !!pendingAttackLoot?.endTurnAfterResolve
+      && safeText(pendingAttackLoot?.endTurnExpectedUid || "") === turnOwnerUid;
+    if (lootWaiting) return;
+    pendingAttackPostResolutionEndTurnRequest = null;
+    await doEndTurn(turnOwnerUid);
+  }
+
+  async function requestAttackPostResolutionEndTurnForCurrentTurn(options = {}){
+    const turnOwnerUid = safeText(options.turnOwnerUid || "") || safeText(currentTurnPlayerId() || "");
+    if (!turnOwnerUid) return;
+    pendingAttackPostResolutionEndTurnRequest = {
+      turnOwnerUid,
+      waitLoot: options.waitLoot !== false,
+      waitGodwin: options.waitGodwin !== false,
+      expiresAt: Date.now() + Math.max(3000, Number(options.expiresInMs || 20000))
+    };
+    if (options.syncLootPending !== false){
+      await requestAttackLootAutoEndForCurrentTurn({
+        syncPending: options.syncPending !== false,
+        expiresInMs: options.expiresInMs
+      });
+    }
+    await tryResolvePendingAttackPostResolutionEndTurn();
+  }
+
   async function setAttackLootPending(payload){
     const roomCode = safeText(state.roomCode || "");
     const uid = safeText(state.userId || "");
@@ -5419,6 +5462,7 @@
     pendingAttackLoot = null;
     closeAttackLootPanel();
     await setAttackLootPending(null);
+    await tryResolvePendingAttackPostResolutionEndTurn();
   }
 
   async function createOrMergeAttackLootPending(defeatedUids = [], options = {}){
@@ -5727,7 +5771,12 @@
         const expectedUid = safeText(pendingAttackLoot?.endTurnExpectedUid || "") || safeText(currentTurnPlayerId() || "");
         await clearAttackLootPending();
         if (shouldEndTurn && expectedUid && expectedUid === safeText(currentTurnPlayerId() || "")){
-          await doEndTurn(expectedUid);
+          await requestAttackPostResolutionEndTurnForCurrentTurn({
+            turnOwnerUid: expectedUid,
+            waitLoot:false,
+            waitGodwin:true,
+            syncLootPending:false
+          });
         }
       }, { fixedLower:true, closeZoomOnNo:true });
       return;
@@ -5745,7 +5794,12 @@
       closeZoom();
       renderEquipmentDock();
       if (shouldEndTurn && expectedUid && expectedUid === safeText(currentTurnPlayerId() || "")){
-        await doEndTurn(expectedUid);
+        await requestAttackPostResolutionEndTurnForCurrentTurn({
+          turnOwnerUid: expectedUid,
+          waitLoot:false,
+          waitGodwin:true,
+          syncLootPending:false
+        });
       }
     }
   }
@@ -6572,7 +6626,7 @@
       const eliminationPreview = attackEliminationPreview(pending?.rows || []);
 
       if (roleId === "RAI_F3"){
-        await requestAttackLootAutoEndForCurrentTurn({ syncPending:false });
+        await requestAttackPostResolutionEndTurnForCurrentTurn({ syncPending:false, waitLoot:true, waitGodwin:true });
       }
 
       if (roleId === "CIT_B1"){
@@ -6586,7 +6640,12 @@
         if (hasMyEquipmentByName("銀のロザリオ")){
           const turnOwnerUid = currentTurnPlayerId();
           await runRosaryAutoLootFlow(byronTargets);
-          await doEndTurn(turnOwnerUid);
+          await requestAttackPostResolutionEndTurnForCurrentTurn({
+            turnOwnerUid,
+            waitLoot:true,
+            waitGodwin:true,
+            syncLootPending:false
+          });
           return;
         }
         await createByronAttackLootPending(byronTargets);
@@ -6605,7 +6664,12 @@
           await waitMs(2000);
           hideRevealPop();
           if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
-            await doEndTurn(turnOwnerUid);
+            await requestAttackPostResolutionEndTurnForCurrentTurn({
+              turnOwnerUid,
+              waitLoot:true,
+              waitGodwin:true,
+              syncLootPending:false
+            });
           }
           return;
         }
@@ -6641,7 +6705,12 @@
         }
         const turnOwnerUid = currentTurnPlayerId();
         if (turnOwnerUid && currentTurnPlayerId() === turnOwnerUid){
-          await doEndTurn(turnOwnerUid);
+          await requestAttackPostResolutionEndTurnForCurrentTurn({
+            turnOwnerUid,
+            waitLoot:true,
+            waitGodwin:true,
+            syncLootPending:false
+          });
         }
         return;
       }
@@ -6716,7 +6785,7 @@
         if (attackResultChoiceBusy) return;
         attackResultChoiceBusy = true;
         try {
-          await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
+          await requestAttackPostResolutionEndTurnForCurrentTurn({ syncPending:true, waitLoot:true, waitGodwin:true });
           await finalizePendingAttackResolution(true, true);
         } finally {
           attackResultChoiceBusy = false;
@@ -6724,7 +6793,7 @@
       }, { fixedLower:true, noCaret:true, dismissOnOutside:true });
       return;
     }
-    await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
+    await requestAttackPostResolutionEndTurnForCurrentTurn({ syncPending:true, waitLoot:true, waitGodwin:true });
     await finalizePendingAttackResolution(true, true);
   });
 
@@ -9508,7 +9577,12 @@
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
       if (currentTurnPlayerId() === attackTurnOwnerUid){
-        await doEndTurn(attackTurnOwnerUid);
+        await requestAttackPostResolutionEndTurnForCurrentTurn({
+          turnOwnerUid: attackTurnOwnerUid,
+          waitLoot:true,
+          waitGodwin:true,
+          syncLootPending:false
+        });
       }
       attackFlowUiLockActive = false;
       suppressEndTurnButton = false;
@@ -9795,7 +9869,13 @@
       }
 
       if (justEliminatedUids.includes(state.userId) && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3")){
-        setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+        (async () => {
+          await waitUntilZoomClosed({ maxWaitMs:16000, pollMs:80 });
+          if (!isPlayerEliminated(state.userId)) return;
+          if (!isMyRole("RAI_G3")) return;
+          if (isRoleAbilityUsed("RAI_G3")) return;
+          setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+        })();
       }
 
       if (activeRoleAbilitySelection?.roleId === "RAI_G3" && isRoleAbilityUsed("RAI_G3")){
@@ -13722,6 +13802,7 @@
       }
       if (!data){
         activeRoleAbilitySelection = null;
+        tryResolvePendingAttackPostResolutionEndTurn().catch(() => {});
         if (pendingEquipAction?.type === "benjamin_give"){
           pendingEquipAction = null;
           setSeatEquipSelectionState(null).catch(() => {});
