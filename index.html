@@ -4005,6 +4005,7 @@
   async function sendGreenResponse(msg, opt, overrideLabel=""){
     if (!state.roomCode || !msg?.from || !msg?.requestId || !opt?.id) return;
     const answerLabel = safeText(overrideLabel || opt.label || "");
+    const responseRoleId = (opt.id === "reveal_identity") ? safeText(state.hands?.[state.userId]?.roleId || "") : "";
     let requesterUid = safeText(msg.from || "");
     try {
       const reqSnap = await get(ref(db, `rooms/${state.roomCode}/greenRequests/${msg.requestId}`));
@@ -4018,6 +4019,7 @@
       requestId: msg.requestId,
       answerId: opt.id,
       answerLabel,
+      roleId: responseRoleId,
       card: msg.card,
       at: Date.now()
     });
@@ -4755,36 +4757,23 @@
         };
         await set(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`), payload);
         await set(ref(db, `rooms/${state.roomCode}/greenInbox/${p.id}`), payload);
-        if (isRevealIdentityGreenCard(greenShareCard)){
-          await set(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`), {
-            from: state.userId,
-            responderId: p.id,
-            requestId,
-            answerLabel: "私の正体です。",
-            at: Date.now()
-          });
-          setGreenDockMeta({ title:"回答が届きました", subtitle:"私の正体です。" });
-          greenShareActions?.classList.remove("hidden");
-        }
 
         pendingGreenRequestId = requestId;
         renderGreenWaitingSelection(p.id, p.name, firstChar(p.name || ""), safeText(p.color || ""));
-        if (!isRevealIdentityGreenCard(greenShareCard)){
-          setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
-          greenShareActions?.classList.add("hidden");
-        }
+        setGreenDockMeta({ title:"回答待ち...", subtitle:"" });
+        greenShareActions?.classList.add("hidden");
         setGreenSessionState({
-          phase: isRevealIdentityGreenCard(greenShareCard) ? "confirm" : "waiting",
+          phase: "waiting",
           card: greenShareCard,
           requestId,
           toUid: p.id,
           toName: safeText(p.name || ""),
           toInitial: firstChar(p.name || ""),
           toColor: safeText(p.color || ""),
-          answerLabel: isRevealIdentityGreenCard(greenShareCard) ? "私の正体です。" : ""
+          answerLabel: ""
         }).catch(() => {});
 
-        if (isNpcPlayerUid(p.id) && !isRevealIdentityGreenCard(greenShareCard)){
+        if (isNpcPlayerUid(p.id)){
           resolveNpcGreenInboxPayload(payload).catch(() => {});
         }
       });
@@ -8436,17 +8425,19 @@
   }
 
   async function resolveNpcGreenInboxPayload(payload){
-    if (!state.roomCode || !payload?.from || !payload?.to || !payload?.requestId || !payload?.card) return;
+    if (!state.roomCode || !payload?.from || !payload?.to || !payload?.requestId || !payload?.card) return null;
     const responderUid = safeText(payload.to || "");
-    if (!responderUid || !isNpcPlayerUid(responderUid)) return;
+    if (!responderUid || !isNpcPlayerUid(responderUid)) return null;
     await waitMs(450);
     const opt = pickNpcGreenAnswer(payload.card, responderUid);
+    const roleId = (opt.id === "reveal_identity") ? safeText(state.hands?.[responderUid]?.roleId || "") : "";
     await set(ref(db, `rooms/${state.roomCode}/greenResponses/${payload.from}`), {
       from: safeText(payload.from || ""),
       to: responderUid,
       requestId: safeText(payload.requestId || ""),
       answerId: opt.id,
       answerLabel: opt.label,
+      roleId,
       card: payload.card,
       at: Date.now()
     });
@@ -8457,8 +8448,18 @@
       answerLabel: opt.label,
       at: Date.now()
     });
+    if (roleId){
+      await set(ref(db, `rooms/${state.roomCode}/greenReveals/${payload.requestId}`), {
+        requestId: safeText(payload.requestId || ""),
+        from: safeText(payload.from || ""),
+        responderId: responderUid,
+        roleId,
+        at: Date.now()
+      });
+    }
     await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${responderUid}`)).catch(() => {});
     await applyNpcGreenAnswerEffect(responderUid, payload.card, opt.id);
+    return { answerId: opt.id, roleId };
   }
 
   function npcYesNoByDamage(uid){
@@ -8591,18 +8592,44 @@
     return null;
   }
 
-  async function recordNpcFactionInference(fromUid, toUid, cardObj, answerId){
+  async function recordNpcFactionInference(fromUid, toUid, cardObj, answerId, revealedRoleId=""){
     const asker = safeText(fromUid || "");
     const target = safeText(toUid || "");
     if (!state.roomCode || !asker || !target || asker === target) return;
     if (!isNpcPlayerUid(asker)) return;
     const askerFaction = safeText(roleInfoByUid(asker)?.faction || "");
     if (!askerFaction || askerFaction === "シチズン") return;
+    const ans = safeText(answerId || "");
+    if (ans !== "yes" && ans !== "reveal_identity" && ans !== "no") return;
+
+    const revealCard = isRevealIdentityGreenCard(cardObj);
+    if (revealCard && ans === "reveal_identity"){
+      const roleId = safeText(revealedRoleId || "");
+      const revealedFaction = safeText(ROLE_BY_ID[roleId]?.faction || "");
+      if (!revealedFaction) return;
+      const samePossible = revealedFaction === askerFaction;
+      const sameImpossible = !samePossible;
+      await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
+        const next = cur && typeof cur === "object" ? cur : {};
+        next.factionHints = next.factionHints || {};
+        next.factionHints[asker] = next.factionHints[asker] || {};
+        const prev = next.factionHints[asker][target] || {};
+        next.factionHints[asker][target] = {
+          ...prev,
+          samePossible,
+          sameImpossible,
+          confirmedFaction: revealedFaction,
+          confirmedBy: "green_reveal_identity",
+          at: Date.now()
+        };
+        return next;
+      });
+      return;
+    }
+
     const setAsked = greenFactionSetFromCard(cardObj);
     if (!(setAsked instanceof Set)) return;
     const allSet = new Set(["シチズン","レイダー","シャドウ"]);
-    const ans = safeText(answerId || "");
-    if (ans !== "yes" && ans !== "reveal_identity" && ans !== "no") return;
     const possible = new Set(ans === "no" ? [...allSet].filter(f => !setAsked.has(f)) : [...setAsked]);
     const samePossible = possible.has(askerFaction);
     const sameImpossible = !samePossible;
@@ -8975,7 +9002,7 @@
         const snap = await get(ref(db, `rooms/${state.roomCode}/greenResponses/${senderUid}`));
         const row = snap.val() || null;
         if (safeText(row?.requestId || "") === requestId){
-          await recordNpcFactionInference(senderUid, targetUid, cardObj, safeText(row?.answerId || ""));
+          await recordNpcFactionInference(senderUid, targetUid, cardObj, safeText(row?.answerId || ""), safeText(row?.roleId || ""));
           await waitMs(500);
           await Promise.all([
             remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`)).catch(() => {}),
@@ -8989,9 +9016,8 @@
       return;
     }
 
-    await resolveNpcGreenInboxPayload(payload);
-    const npcRes = pickNpcGreenAnswer(cardObj, targetUid);
-    await recordNpcFactionInference(senderUid, targetUid, cardObj, npcRes.id);
+    const npcRes = await resolveNpcGreenInboxPayload(payload);
+    await recordNpcFactionInference(senderUid, targetUid, cardObj, safeText(npcRes?.answerId || ""), safeText(npcRes?.roleId || ""));
     await waitMs(500);
     await Promise.all([
       remove(ref(db, `rooms/${state.roomCode}/greenReplyBubbles/${requestId}`)).catch(() => {}),
@@ -9016,15 +9042,14 @@
         const snap = await get(ref(db, `rooms/${state.roomCode}/greenResponses/${fromUid}`));
         const row = snap.val() || null;
         if (safeText(row?.requestId || "") === requestId){
-          await recordNpcFactionInference(fromUid, toUid, cardObj, safeText(row?.answerId || ""));
+          await recordNpcFactionInference(fromUid, toUid, cardObj, safeText(row?.answerId || ""), safeText(row?.roleId || ""));
           break;
         }
         await waitMs(300);
       }
     } else {
-      await resolveNpcGreenInboxPayload(payload);
-      const npcRes = pickNpcGreenAnswer(cardObj, toUid);
-      await recordNpcFactionInference(fromUid, toUid, cardObj, npcRes.id);
+      const npcRes = await resolveNpcGreenInboxPayload(payload);
+      await recordNpcFactionInference(fromUid, toUid, cardObj, safeText(npcRes?.answerId || ""), safeText(npcRes?.roleId || ""));
     }
 
     await waitMs(500);
