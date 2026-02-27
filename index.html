@@ -8326,18 +8326,33 @@
     return !!table?.isNpc || targetUid.startsWith("npc_");
   }
 
-  async function showNpcSpeech(uid, text, durationMs = 1500){
+  const NPC_TURN_PACING = {
+    turnStartDelayMs: 700,
+    phaseIntervalMs: 700,
+    speechMinMs: 250,
+    speechDefaultMs: 900,
+    speechMaxMs: 1200,
+    diceAfterMs: 150,
+    attackAfterMs: 150,
+    retryMs: 80
+  };
+
+  async function showNpcSpeech(uid, text, durationMs = NPC_TURN_PACING.speechDefaultMs){
     const targetUid = safeText(uid || "");
     const label = safeText(text || "").trim();
     if (!state.roomCode || !targetUid || !label) return;
+    const resolvedMs = Math.max(
+      NPC_TURN_PACING.speechMinMs,
+      Math.min(NPC_TURN_PACING.speechMaxMs, Number(durationMs || NPC_TURN_PACING.speechDefaultMs))
+    );
     const at = Date.now();
     await set(ref(db, `rooms/${state.roomCode}/npcSpeech`), {
       uid: targetUid,
       text: label,
       at,
-      expiresAt: at + Math.max(400, Number(durationMs || 1500))
+      expiresAt: at + resolvedMs
     });
-    await waitMs(Math.max(400, Number(durationMs || 1500)));
+    await waitMs(resolvedMs);
   }
 
   async function grantEquipmentToPlayer(uid, cardObj, theme){
@@ -9204,7 +9219,7 @@
     npcAutoTurnKey = turnKey;
     npcAutoTurnRunning = true;
     try {
-      await waitMs(2000);
+      await waitMs(NPC_TURN_PACING.turnStartDelayMs);
       if (turnCycleKey() !== turnKey) return;
 
       const currentTurn = turnState() || {};
@@ -9215,7 +9230,7 @@
           const nextRoom = 1 + Math.floor(Math.random() * 6);
           await placePlayerMarkerInRoom(turnUid, nextRoom);
         } else {
-          await showNpcSpeech(turnUid, "ふります！", 1500);
+          await showNpcSpeech(turnUid, "ふります！", 700);
           const hasCompass = hasEquipmentByName(turnUid, "神秘のコンパス");
           const d6 = 1 + Math.floor(Math.random() * 6);
           const d4 = 1 + Math.floor(Math.random() * 4);
@@ -9238,8 +9253,8 @@
             secondMotion,
             at: Date.now()
           });
-          await waitMs(hasCompass ? 4200 : 1200);
-          await waitMs(200);
+          await waitMs(hasCompass ? 3200 : 900);
+          await waitMs(NPC_TURN_PACING.diceAfterMs);
           const roomA = diceTotalToRoomId(d6 + d4);
           const roomB = diceTotalToRoomId(secondD6 + secondD4);
           const candidateRooms = hasCompass ? [roomA, roomB].filter((rid) => Number.isFinite(Number(rid))) : [roomA];
@@ -9249,7 +9264,7 @@
         await update(ref(db, `rooms/${state.roomCode}/turn`), { moveDone:true, moveAt:Date.now() });
       }
 
-      await waitMs(2000);
+      await waitMs(NPC_TURN_PACING.phaseIntervalMs);
       if (turnCycleKey() !== turnKey) return;
       const roomAfterMove = markerRoomId(markerCache?.[turnUid]);
       if (!turnState()?.deckDrawDone){
@@ -9257,7 +9272,7 @@
         await update(ref(db, `rooms/${state.roomCode}/turn`), { deckDrawDone:true });
       }
 
-      await waitMs(2000);
+      await waitMs(NPC_TURN_PACING.phaseIntervalMs);
       if (turnCycleKey() !== turnKey) return;
       if (!turnState()?.attackDone){
         const targets = [...attackRangeTargetUidsFor(turnUid)].filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
@@ -9273,7 +9288,7 @@
             const usedParasol = await npcUseParasolGreenOnTarget(turnUid, targetUid);
             if (usedParasol){
               await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
-              await waitMs(2000);
+              await waitMs(NPC_TURN_PACING.phaseIntervalMs);
               if (turnCycleKey() !== turnKey) return;
               await advanceTurnToNextPlayer(turnUid);
               return;
@@ -9291,7 +9306,7 @@
             await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"excalibur_attack" });
           }
           const targetName = safeText(playerById(targetUid)?.name || "");
-          await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 1500);
+          await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 700);
 
           const centerX = window.innerWidth / 2;
           const centerY = window.innerHeight / 2;
@@ -9311,9 +9326,9 @@
             motion,
             at: Date.now()
           });
-          await waitMs(1200);
+          await waitMs(900);
           const hit = didAttackRollSucceed(d6, d4, { masamuneMode:false, vendettaMode:false });
-          await waitMs(200);
+          await waitMs(NPC_TURN_PACING.attackAfterMs);
           if (hit){
             const dmg = calcAttackDamageFromRoll(turnUid, d6, d4, { targetUid });
             if (dmg > 0) await addDamageToPlayer(targetUid, dmg, { source:"attack" });
@@ -9323,12 +9338,12 @@
         await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
       }
 
-      await waitMs(2000);
+      await waitMs(NPC_TURN_PACING.phaseIntervalMs);
       if (turnCycleKey() !== turnKey) return;
       await advanceTurnToNextPlayer(turnUid);
     } finally {
       npcAutoTurnRunning = false;
-      scheduleNpcTurnRetry(120);
+      scheduleNpcTurnRetry(NPC_TURN_PACING.retryMs);
     }
   }
 
