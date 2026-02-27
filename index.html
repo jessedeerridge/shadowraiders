@@ -8575,14 +8575,36 @@
     if (totalObserverFaction === 2 && revealedSameCount >= 1) likelihood = Math.max(likelihood, 0.75);
     if (revealedRaiderCount === 1 && revealedShadowCount === 1) likelihood = Math.max(likelihood, 0.5);
     if ((revealedRaiderCount + revealedShadowCount) === 1 && revealedSameCount >= 1) likelihood = Math.max(likelihood, 2 / 3);
+    const hintPossible = Array.isArray(hint?.possibleFactions)
+      ? hint.possibleFactions.map((f) => safeText(f)).filter(Boolean)
+      : [];
+    if (hintPossible.length){
+      const totalInHint = hintPossible.reduce((sum, f) => sum + Math.max(0, Number(rule?.[f] || 0)), 0);
+      const rivalInHint = hintPossible.includes(rivalFaction) ? Math.max(0, Number(rule?.[rivalFaction] || 0)) : 0;
+      if (totalInHint > 0){
+        likelihood = Math.max(likelihood, Math.min(1, rivalInHint / totalInHint));
+      }
+      if (!hintPossible.includes(rivalFaction)) likelihood = 0;
+      if (hintPossible.length === 1 && hintPossible[0] === rivalFaction) likelihood = 1;
+    }
     if (hint?.sameImpossible) likelihood = Math.max(likelihood, 0.9);
     if (hint?.samePossible) likelihood = Math.min(likelihood, 0.2);
+    const attackedMeCount = Number(state.room?.npcIntel?.attackedByUid?.[target]?.[observer] || 0);
+    if (attackedMeCount > 0 && !!hint?.sameConfirmed && !hint?.sameImpossible){
+      likelihood = Math.max(likelihood, 0.85);
+    }
     return Math.max(0, Math.min(1, likelihood));
   }
 
-  function greenFactionSetFromCard(cardObj){
+  function greenFactionSetFromCard(cardObj, askerFaction=""){
     const text = safeText(cardObj?.effect || cardObj?.text || "");
     const compact = text.replace(/[\s　]+/g, "");
+    const faction = safeText(askerFaction || "");
+    const rivalFaction = faction === "レイダー" ? "シャドウ" : faction === "シャドウ" ? "レイダー" : "";
+    if (compact.includes("同陣営") && compact.includes("シチズン") && faction) return new Set([faction, "シチズン"]);
+    if (compact.includes("敵陣営") && compact.includes("シチズン") && rivalFaction) return new Set([rivalFaction, "シチズン"]);
+    if (compact.includes("同陣営") && faction) return new Set([faction]);
+    if (compact.includes("敵陣営") && rivalFaction) return new Set([rivalFaction]);
     if (text.includes("シャドウ？")) return new Set(["シャドウ"]);
     if (text.includes("レイダー？")) return new Set(["レイダー"]);
     if (text.includes("シチズン？")) return new Set(["シチズン"]);
@@ -8609,6 +8631,7 @@
       if (!revealedFaction) return;
       const samePossible = revealedFaction === askerFaction;
       const sameImpossible = !samePossible;
+      const rivalFaction = askerFaction === "レイダー" ? "シャドウ" : askerFaction === "シャドウ" ? "レイダー" : "";
       await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
         const next = cur && typeof cur === "object" ? cur : {};
         next.factionHints = next.factionHints || {};
@@ -8618,6 +8641,9 @@
           ...prev,
           samePossible,
           sameImpossible,
+          sameConfirmed: samePossible,
+          enemyCertain: !!rivalFaction && revealedFaction === rivalFaction,
+          possibleFactions: [revealedFaction],
           confirmedFaction: revealedFaction,
           confirmedBy: "green_reveal_identity",
           at: Date.now()
@@ -8627,22 +8653,33 @@
       return;
     }
 
-    const setAsked = greenFactionSetFromCard(cardObj);
+    const setAsked = greenFactionSetFromCard(cardObj, askerFaction);
     if (!(setAsked instanceof Set)) return;
     const allSet = new Set(["シチズン","レイダー","シャドウ"]);
     const possible = new Set(ans === "no" ? [...allSet].filter(f => !setAsked.has(f)) : [...setAsked]);
-    const samePossible = possible.has(askerFaction);
-    const sameImpossible = !samePossible;
+    const rivalFaction = askerFaction === "レイダー" ? "シャドウ" : askerFaction === "シャドウ" ? "レイダー" : "";
 
     await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
       const next = cur && typeof cur === "object" ? cur : {};
       next.factionHints = next.factionHints || {};
       next.factionHints[asker] = next.factionHints[asker] || {};
       const prev = next.factionHints[asker][target] || {};
+      const prevPossible = Array.isArray(prev.possibleFactions)
+        ? new Set(prev.possibleFactions.map((f) => safeText(f)).filter(Boolean))
+        : new Set(allSet);
+      const mergedPossible = new Set([...prevPossible].filter((f) => possible.has(f)));
+      const decidedPossible = mergedPossible.size ? mergedPossible : possible;
+      const samePossible = decidedPossible.has(askerFaction);
+      const sameImpossible = !samePossible;
+      const sameConfirmed = decidedPossible.size === 1 && decidedPossible.has(askerFaction);
+      const enemyCertain = !!rivalFaction && decidedPossible.size === 1 && decidedPossible.has(rivalFaction);
       next.factionHints[asker][target] = {
         ...prev,
-        samePossible: !!(prev.samePossible || samePossible),
-        sameImpossible: !!(prev.sameImpossible || sameImpossible),
+        possibleFactions: [...decidedPossible],
+        samePossible,
+        sameImpossible,
+        sameConfirmed,
+        enemyCertain,
         at: Date.now()
       };
       return next;
@@ -8700,7 +8737,7 @@
     }
 
     if (attackerFaction !== "シチズン"){
-      const certainEnemy = pool.filter((uid) => npcEnemyLikelihoodByIntel(attacker, uid) >= 0.9 || !!hints?.[uid]?.sameImpossible);
+      const certainEnemy = pool.filter((uid) => npcEnemyLikelihoodByIntel(attacker, uid) >= 0.9 || !!hints?.[uid]?.sameImpossible || !!hints?.[uid]?.enemyCertain);
       if (certainEnemy.length){
         return certainEnemy.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
       }
