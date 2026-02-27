@@ -9634,6 +9634,9 @@
       if (turnRoleId === "RAI_G1" && !isAbilitySealedForPlayer(turnUid, "RAI_G1") && !state.room?.abilityUsage?.gordon?.[turnUid]){
         const dmg = clampDamage(damageCache?.[turnUid]);
         if (dmg >= 10 && dmg <= 14){
+          if (!isIdentityRevealedFor(turnUid)){
+            await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"npc_gordon_barrier" });
+          }
           await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${turnUid}`), true);
           await set(ref(db, `rooms/${state.roomCode}/abilityUsage/gordon/${turnUid}`), true);
         }
@@ -10768,6 +10771,9 @@
       };
       if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
         delete cur.guardianAngelShield[nextPlayerId];
+      }
+      if (cur.gordonBarrier && cur.gordonBarrier[nextPlayerId]){
+        delete cur.gordonBarrier[nextPlayerId];
       }
       advanced = true;
       return cur;
