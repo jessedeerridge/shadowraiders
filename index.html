@@ -145,6 +145,10 @@
   .room-guide-btn.host-position{bottom:124px;}
   .room-guide-btn.visible{display:flex;}
  .room-guide-btn.active{background:#111;color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.35), 0 8px 20px rgba(0,0,0,.25);}
+  body.green-interaction-active .help-btn.visible,
+  body.green-interaction-active .room-guide-btn.visible{
+    z-index:295;
+  }
   body.david-overlay-active .help-btn.visible,
   body.david-overlay-active .room-guide-btn.visible{
     z-index:295;
@@ -414,6 +418,9 @@
     display:none;
   }
   .my-role-dock.visible{ display:block; }
+  body.green-interaction-active .my-role-dock.visible{
+    z-index:297;
+  }
 
   /* =========================
      装備枠（★カードパネル直下まで上に伸ばす）
@@ -1581,6 +1588,16 @@
     transform:scale(2);
     transform-origin:top left;
   }
+  .role-hold-preview{
+    position:fixed;
+    left:50%;
+    top:50%;
+    transform:translate(-50%, -50%) scale(1.9);
+    transform-origin:center center;
+    z-index:296;
+    pointer-events:none;
+  }
+  .role-hold-preview.hidden{display:none;}
   .eliminated-dim{
     opacity:.7;
   }
@@ -4776,6 +4793,7 @@
     }
     greenShareDock.classList.remove("hidden");
     updateGreenShareDockPosition();
+    syncGreenInteractionUiState();
     setGreenSessionState({ phase:"selecting", card:greenShareCard, attackRangeOnly: !!attackRangeOnly }).catch(() => {});
   }
 
@@ -4846,6 +4864,7 @@
     }
     greenShareDock.classList.remove("hidden");
     updateGreenShareDockPosition();
+    syncGreenInteractionUiState();
   }
 
   function hideGreenShareDock(){
@@ -4864,6 +4883,7 @@
     renderTurnEndButton();
     setGreenSessionState(null).catch(() => {});
     pendingGreenSessionEntry = null;
+    syncGreenInteractionUiState();
   }
 
   function restoreGreenSessionUI(entry){
@@ -4906,6 +4926,7 @@
       }
     } finally {
       greenSessionRestoring = false;
+      syncGreenInteractionUiState();
     }
   }
 
@@ -4980,6 +5001,7 @@
     greenZoomLocked = !showCloseButton;
     zoomStage.appendChild(contentEl);
     zoomBackdrop.classList.remove("hidden");
+    syncGreenInteractionUiState();
     refreshEquipDockLayer();
     syncPersistentVenomOverlay();
   }
@@ -5121,6 +5143,7 @@
     refreshEquipDockLayer();
     syncPersistentVenomOverlay();
     ensureDavidOverlayVisibleForAll();
+    syncGreenInteractionUiState();
   }
   zoomBackdrop.addEventListener("click", async (e) => {
     const canClose = zoomCloseOnAnyClick || (e.target === zoomBackdrop && zoomCloseOnBackdrop);
@@ -8110,6 +8133,26 @@
     }
   }
 
+  function isGreenSessionEntryActive(entry){
+    const phase = safeText(entry?.phase || "");
+    return phase === "selecting" || phase === "waiting" || phase === "confirm" || phase === "answering";
+  }
+
+  function isGreenInteractionActive(){
+    if (isGreenSessionEntryActive(state.room?.greenSessions?.[state.userId])) return true;
+    if (isGreenSessionEntryActive(pendingGreenSessionEntry)) return true;
+    if (!!pendingGreenAnswerMsg || !!pendingGreenRequestId) return true;
+    if (!!greenShareCard && !greenShareDock?.classList.contains("hidden")) return true;
+    if (!zoomBackdrop?.classList.contains("hidden") && isDeductionZoomActive()) return true;
+    return false;
+  }
+
+  function syncGreenInteractionUiState(){
+    const active = isGreenInteractionActive();
+    document.body?.classList.toggle("green-interaction-active", active);
+    if (!active) hideRoleHoldPreview();
+  }
+
   function canShowEndTurnButton(){
     if (!isMyTurn()) return false;
     if (!identityPromptPop?.classList.contains("hidden")) return false;
@@ -8123,6 +8166,7 @@
     if (hpBoardAnimationActive) return false;
     if (hasUnresolvedAttackLootSelection()) return false;
     if (safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3") return false;
+    if (isGreenInteractionActive()) return false;
     return !!turnState()?.moveDone;
   }
 
@@ -8177,6 +8221,7 @@
 
   function renderTurnEndButton(){
     syncRoomAbilityTurnState();
+    syncGreenInteractionUiState();
     if (!turnEndWrap) return;
     if (suppressTurnButtonUntilNextTurnStart){
       const moved = !!turnState()?.moveDone;
@@ -13020,6 +13065,10 @@
 
   const myRoleDock = document.getElementById('myRoleDock');
   const myRoleCard = document.getElementById('myRoleCard');
+  const roleHoldPreview = document.createElement('div');
+  roleHoldPreview.className = 'role-hold-preview hidden';
+  roleHoldPreview.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(roleHoldPreview);
 
   const kickDialog = document.getElementById('kickDialog');
   const kickMessage = document.getElementById('kickMessage');
@@ -14417,6 +14466,40 @@
     pendingMode = "prestart";
   }
 
+  function showRoleHoldPreview(role){
+    if (!role || !roleHoldPreview) return;
+    roleHoldPreview.innerHTML = "";
+    roleHoldPreview.appendChild(createIdentityCard(role));
+    roleHoldPreview.classList.remove("hidden");
+  }
+
+  function hideRoleHoldPreview(){
+    if (!roleHoldPreview) return;
+    roleHoldPreview.classList.add("hidden");
+    roleHoldPreview.innerHTML = "";
+  }
+
+  function bindMyRoleCardInteraction(cardEl, role){
+    if (!cardEl || !role) return;
+    cardEl.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      if (!e.isPrimary || e.button !== 0) return;
+      if (activeRoleAbilitySelection && safeText(activeRoleAbilitySelection.actorUid || "") === safeText(state.userId || "")) return;
+      if (isGreenInteractionActive()){
+        showRoleHoldPreview(role);
+        return;
+      }
+      const action = captureSelectionRestoreAction();
+      openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
+      if (action){
+        setZoomPassthrough(false);
+        zoomDismissHandler = async () => {
+          await restoreSelectionAction(action);
+        };
+      }
+    });
+  }
+
   /* =========================================================
      ★④右下：正体カードは「裏面(browncard.jpg)」で表示し、
         クリックで「オモテ(拡大)」を表示
@@ -14425,6 +14508,7 @@
     myRoleCard.innerHTML = '';
     const isSeatedNow = latestPlayers.some(p => p.id === state.userId && Number(p.seatIndex || 0) > 0);
     if (!isSeatedNow || !role){
+      hideRoleHoldPreview();
       myRoleDock.classList.remove('visible');
       renderEquipmentDock();
       return;
@@ -14437,18 +14521,7 @@
       const face = createIdentityCard(role);
       face.title = "公開済みの正体カード";
       face.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
-      face.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (activeRoleAbilitySelection && safeText(activeRoleAbilitySelection.actorUid || "") === safeText(state.userId || "")) return;
-        const action = captureSelectionRestoreAction();
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false });
-        if (action){
-          setZoomPassthrough(false);
-          zoomDismissHandler = async () => {
-            await restoreSelectionAction(action);
-          };
-        }
-      });
+      bindMyRoleCardInteraction(face, role);
       myRoleCard.appendChild(face);
     } else {
       const back = document.createElement('div');
@@ -14456,26 +14529,23 @@
       back.style.backgroundImage = `url('browncard.jpg')`;
       back.title = "クリックで拡大表示";
       back.classList.toggle('eliminated-dim', isPlayerEliminated(state.userId));
-
-      back.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (activeRoleAbilitySelection && safeText(activeRoleAbilitySelection.actorUid || "") === safeText(state.userId || "")) return;
-        const action = captureSelectionRestoreAction();
-        openZoomFromRole(role, { enableRevealPop:true, showCloseButton:false }); // 拡大はオモテ（id72）
-        if (action){
-          setZoomPassthrough(false);
-          zoomDismissHandler = async () => {
-            await restoreSelectionAction(action);
-          };
-        }
-      });
-
+      bindMyRoleCardInteraction(back, role);
       myRoleCard.appendChild(back);
     }
 
     myRoleDock.classList.add('visible');
     renderEquipmentDock();
   }
+
+  document.addEventListener('pointerup', () => {
+    hideRoleHoldPreview();
+  }, true);
+  document.addEventListener('pointercancel', () => {
+    hideRoleHoldPreview();
+  }, true);
+  window.addEventListener('blur', () => {
+    hideRoleHoldPreview();
+  });
 
   function renderHands(){
     const started = isGameStarted();
