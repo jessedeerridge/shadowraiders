@@ -8326,18 +8326,33 @@
     return !!table?.isNpc || targetUid.startsWith("npc_");
   }
 
-  async function showNpcSpeech(uid, text, durationMs = 1500){
+  const NPC_TURN_PACING = {
+    turnStartDelayMs: 700,
+    phaseIntervalMs: 700,
+    speechMinMs: 250,
+    speechDefaultMs: 900,
+    speechMaxMs: 1200,
+    diceAfterMs: 150,
+    attackAfterMs: 150,
+    retryMs: 80
+  };
+
+  async function showNpcSpeech(uid, text, durationMs = NPC_TURN_PACING.speechDefaultMs){
     const targetUid = safeText(uid || "");
     const label = safeText(text || "").trim();
     if (!state.roomCode || !targetUid || !label) return;
+    const resolvedMs = Math.max(
+      NPC_TURN_PACING.speechMinMs,
+      Math.min(NPC_TURN_PACING.speechMaxMs, Number(durationMs || NPC_TURN_PACING.speechDefaultMs))
+    );
     const at = Date.now();
     await set(ref(db, `rooms/${state.roomCode}/npcSpeech`), {
       uid: targetUid,
       text: label,
       at,
-      expiresAt: at + Math.max(400, Number(durationMs || 1500))
+      expiresAt: at + resolvedMs
     });
-    await waitMs(Math.max(400, Number(durationMs || 1500)));
+    await waitMs(resolvedMs);
   }
 
   async function grantEquipmentToPlayer(uid, cardObj, theme){
@@ -8476,12 +8491,18 @@
 
     if (purpose === "heal"){
       if (actorFaction !== "シチズン"){
-        const revealedAlly = pool.filter((uid) => revealedFactionForUid(uid) === actorFaction);
+        const revealedAlly = pool.filter((uid) => revealedFactionForUid(uid) === actorFaction && clampDamage(damageCache?.[uid]) > 0);
         if (revealedAlly.length){
           return revealedAlly.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
         }
+        const safeUnknown = pool.filter((uid) => npcEnemyLikelihoodByIntel(actor, uid) < 0.5 && clampDamage(damageCache?.[uid]) > 0);
+        if (safeUnknown.length){
+          return safeUnknown.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
+        }
       }
-      return pool[Math.floor(Math.random() * pool.length)] || "";
+      const damagedPool = pool.filter((uid) => clampDamage(damageCache?.[uid]) > 0);
+      if (!damagedPool.length) return "";
+      return damagedPool[Math.floor(Math.random() * damagedPool.length)] || "";
     }
 
     if (purpose === "first_aid"){
@@ -8515,6 +8536,46 @@
     if (!targetUid || !isIdentityRevealedFor(targetUid)) return "";
     const rid = safeText(equipCache?.[targetUid]?.identity?.roleId || "");
     return safeText(ROLE_BY_ID[rid]?.faction || "");
+  }
+
+  function factionRuleForCurrentPlayers(){
+    const aliveCount = Math.max(1, latestPlayers.filter((p) => !isPlayerEliminated(p.id)).length || latestPlayers.length || 1);
+    return DEAL_RULE[aliveCount] || DEAL_RULE[Math.max(1, latestPlayers.length || 1)] || null;
+  }
+
+  function npcEnemyLikelihoodByIntel(observerUid, targetUid){
+    const observer = safeText(observerUid || "");
+    const target = safeText(targetUid || "");
+    if (!observer || !target || observer === target || isPlayerEliminated(target)) return 0;
+    const observerFaction = safeText(roleInfoByUid(observer)?.faction || "");
+    if (observerFaction !== "レイダー" && observerFaction !== "シャドウ") return 0;
+    const rivalFaction = observerFaction === "レイダー" ? "シャドウ" : "レイダー";
+    const revealedTargetFaction = revealedFactionForUid(target);
+    if (revealedTargetFaction) return isRivalFactionPair(observerFaction, revealedTargetFaction) ? 1 : 0;
+
+    const hint = state.room?.npcIntel?.factionHints?.[observer]?.[target] || null;
+    let likelihood = 0.34;
+
+    const rule = factionRuleForCurrentPlayers();
+    const totalRival = Math.max(0, Number(rule?.[rivalFaction] || 0));
+    const totalObserverFaction = Math.max(0, Number(rule?.[observerFaction] || 0));
+    const aliveOthers = latestPlayers.filter((p) => p.id !== observer && !isPlayerEliminated(p.id));
+    const revealedRaiderCount = aliveOthers.filter((p) => revealedFactionForUid(p.id) === "レイダー").length;
+    const revealedShadowCount = aliveOthers.filter((p) => revealedFactionForUid(p.id) === "シャドウ").length;
+    const revealedSameCount = aliveOthers.filter((p) => revealedFactionForUid(p.id) === observerFaction).length;
+    const revealedRivalCount = aliveOthers.filter((p) => revealedFactionForUid(p.id) === rivalFaction).length;
+    const unrevealedOthers = aliveOthers.filter((p) => !revealedFactionForUid(p.id));
+
+    const remainingRival = Math.max(0, totalRival - revealedRivalCount);
+    if (unrevealedOthers.length > 0){
+      likelihood = Math.max(likelihood, Math.min(1, remainingRival / unrevealedOthers.length));
+    }
+    if (totalObserverFaction === 2 && revealedSameCount >= 1) likelihood = Math.max(likelihood, 0.75);
+    if (revealedRaiderCount === 1 && revealedShadowCount === 1) likelihood = Math.max(likelihood, 0.5);
+    if ((revealedRaiderCount + revealedShadowCount) === 1 && revealedSameCount >= 1) likelihood = Math.max(likelihood, 2 / 3);
+    if (hint?.sameImpossible) likelihood = Math.max(likelihood, 0.9);
+    if (hint?.samePossible) likelihood = Math.min(likelihood, 0.2);
+    return Math.max(0, Math.min(1, likelihood));
   }
 
   function greenFactionSetFromCard(cardObj){
@@ -8611,10 +8672,15 @@
     }
 
     if (attackerFaction !== "シチズン"){
-      const certainEnemy = pool.filter((uid) => !!hints?.[uid]?.sameImpossible);
+      const certainEnemy = pool.filter((uid) => npcEnemyLikelihoodByIntel(attacker, uid) >= 0.9 || !!hints?.[uid]?.sameImpossible);
       if (certainEnemy.length){
         return certainEnemy.sort((a,b) => clampDamage(damageCache?.[b]) - clampDamage(damageCache?.[a]))[0] || "";
       }
+      const likelyPool = pool
+        .map((uid) => ({ uid, likelihood:npcEnemyLikelihoodByIntel(attacker, uid), attacked:Number(attackedMap?.[uid] || 0), damage:clampDamage(damageCache?.[uid]) }))
+        .filter((row) => row.likelihood >= 0.5)
+        .sort((a,b) => (b.likelihood - a.likelihood) || (b.damage - a.damage) || (b.attacked - a.attacked));
+      if (likelyPool.length) return safeText(likelyPool[0]?.uid || "");
       pool = pool.filter((uid) => !hints?.[uid]?.samePossible);
       if (!pool.length) return "";
     }
@@ -8867,7 +8933,13 @@
         await addDamageToPlayer(uid, 1);
         return;
       }
-      const targetUid = pickRandomAliveUidForNpc(uid, { includeSelf:false });
+      const aliveOthers = latestPlayers
+        .filter((p) => p.id !== uid)
+        .filter((p) => !isPlayerEliminated(p.id))
+        .map((p) => p.id);
+      const friendPool = aliveOthers.filter((targetUid) => npcEnemyLikelihoodByIntel(uid, targetUid) < 0.5);
+      const sourcePool = friendPool.length ? friendPool : aliveOthers;
+      const targetUid = sourcePool[Math.floor(Math.random() * sourcePool.length)] || "";
       if (!targetUid) return;
       const choice = myItems[Math.floor(Math.random() * myItems.length)] || null;
       const sourceKey = safeText(choice?.sourceKey || "");
@@ -9026,12 +9098,15 @@
   }
 
   async function npcStealRandomEquipment(uid){
+    const actor = safeText(uid || "");
     const others = latestPlayers
-      .filter((p) => p.id !== uid)
+      .filter((p) => p.id !== actor)
       .map((p) => ({ uid:p.id, cards:listEquipForUid(p.id).filter((it) => !isIdentityEquipItem(it)) }))
       .filter((row) => row.cards.length > 0);
     if (!others.length || !state.roomCode) return null;
-    const target = others[Math.floor(Math.random() * others.length)];
+    const enemyPool = others.filter((row) => npcEnemyLikelihoodByIntel(actor, row.uid) >= 0.5);
+    const sourcePool = enemyPool.length ? enemyPool : others;
+    const target = sourcePool[Math.floor(Math.random() * sourcePool.length)];
     const card = target.cards[Math.floor(Math.random() * target.cards.length)];
     if (!card?.sourceKey) return null;
     let stolenName = safeText(card?.name || "装備");
@@ -9043,9 +9118,9 @@
       cur.equipment = cur.equipment || {};
       cur.equipment[target.uid] = cur.equipment[target.uid] || {};
       delete cur.equipment[target.uid][card.sourceKey];
-      cur.equipment[uid] = cur.equipment[uid] || {};
+      cur.equipment[actor] = cur.equipment[actor] || {};
       const nextKey = `${Date.now()}_${Math.random().toString(16).slice(2,8)}`;
-      cur.equipment[uid][nextKey] = { ...item, at: Date.now() };
+      cur.equipment[actor][nextKey] = { ...item, at: Date.now() };
       return cur;
     });
     return { ownerUid:target.uid, cardName:stolenName };
@@ -9067,45 +9142,55 @@
       return;
     }
     if (rid === 3){
-      const hasAnyGordonProtectedAlive = latestPlayers.some((p) => {
-        if (!p?.id || isPlayerEliminated(p.id)) return false;
-        return hasGordonBarrier(p.id);
+      const attackableTargets = latestPlayers.filter((p) => {
+        if (p.id === uid || isPlayerEliminated(p.id)) return false;
+        if (hasGuardianAngelShield(p.id)) return false;
+        if (hasGordonBarrier(p.id)) return false;
+        if (hasEquipmentByName(p.id, "幸運のブローチ")) return false;
+        return true;
       });
-      const doDamage = hasAnyGordonProtectedAlive ? false : (Math.random() < 0.5);
-      if (doDamage){
-        const targets = latestPlayers.filter((p) => {
-          if (p.id === uid || isPlayerEliminated(p.id)) return false;
-          if (hasGuardianAngelShield(p.id)) return false;
-          if (hasGordonBarrier(p.id)) return false;
-          if (hasEquipmentByName(p.id, "幸運のブローチ")) return false;
-          return true;
-        });
-        if (!targets.length) return;
-        const targetUid = chooseNpcAttackTarget(uid, targets.map((v) => v.id));
+      const enemyPriorityTargets = attackableTargets
+        .map((p) => ({
+          uid: p.id,
+          likelihood: npcEnemyLikelihoodByIntel(uid, p.id),
+          damage: clampDamage(damageCache?.[p.id])
+        }))
+        .filter((row) => row.likelihood >= 0.5)
+        .sort((a,b) => (b.likelihood - a.likelihood) || (b.damage - a.damage));
+      if (enemyPriorityTargets.length){
+        const targetUid = safeText(enemyPriorityTargets[0]?.uid || "");
         if (!targetUid) return;
-        const t = playerById(targetUid) || targets[Math.floor(Math.random() * targets.length)];
-        const targetName = safeText(playerById(t.id)?.name || "プレイヤー");
+        const targetName = safeText(playerById(targetUid)?.name || "プレイヤー");
         await showNpcSpeech(uid, `${targetName}さんに2ダメージ！`, 1500);
-        await addDamageToPlayer(t.id, 2, { source:"room3" });
-        await recordNpcAttackTarget(uid, t.id);
-      } else {
-        const recoverSelf = Math.random() < 0.5;
-        if (recoverSelf){
-          await showNpcSpeech(uid, "1回復します！", 1500);
-          await healDamageToPlayer(uid, 1, "room3_heal");
-        } else {
-          const targets = latestPlayers.filter((p) => p.id !== uid && !isPlayerEliminated(p.id));
-          if (!targets.length){
-            await showNpcSpeech(uid, "1回復します！", 1500);
-            await healDamageToPlayer(uid, 1, "room3_heal");
-            return;
-          }
-          const t = targets[Math.floor(Math.random() * targets.length)];
-          const targetName = safeText(playerById(t.id)?.name || "プレイヤー");
-          await showNpcSpeech(uid, `${targetName}を1回復！`, 1500);
-          await healDamageToPlayer(t.id, 1, "room3_heal");
-        }
+        await addDamageToPlayer(targetUid, 2, { source:"room3" });
+        await recordNpcAttackTarget(uid, targetUid);
+        return;
       }
+
+      const myDamage = clampDamage(damageCache?.[uid]);
+      if (myDamage > 0){
+        await showNpcSpeech(uid, "1回復します！", 1500);
+        await healDamageToPlayer(uid, 1, "room3_heal");
+        return;
+      }
+
+      const healableAllies = latestPlayers
+        .filter((p) => p.id !== uid && !isPlayerEliminated(p.id))
+        .map((p) => ({ uid:p.id, dmg:clampDamage(damageCache?.[p.id]), likelihood:npcEnemyLikelihoodByIntel(uid, p.id), revealed:revealedFactionForUid(p.id) }))
+        .filter((row) => row.dmg > 0)
+        .filter((row) => row.likelihood < 0.5)
+        .sort((a,b) => b.dmg - a.dmg);
+      if (!healableAllies.length) return;
+
+      const myFaction = safeText(roleInfoByUid(uid)?.faction || "");
+      const revealedFriend = healableAllies.filter((row) => row.revealed && row.revealed === myFaction);
+      const healTargetUid = (revealedFriend.length && Math.random() < 0.2)
+        ? safeText(revealedFriend[0]?.uid || "")
+        : safeText(healableAllies[0]?.uid || "");
+      if (!healTargetUid) return;
+      const targetName = safeText(playerById(healTargetUid)?.name || "プレイヤー");
+      await showNpcSpeech(uid, `${targetName}を1回復！`, 1500);
+      await healDamageToPlayer(healTargetUid, 1, "room3_heal");
     }
   }
 
@@ -9134,7 +9219,7 @@
     npcAutoTurnKey = turnKey;
     npcAutoTurnRunning = true;
     try {
-      await waitMs(2000);
+      await waitMs(NPC_TURN_PACING.turnStartDelayMs);
       if (turnCycleKey() !== turnKey) return;
 
       const currentTurn = turnState() || {};
@@ -9145,7 +9230,7 @@
           const nextRoom = 1 + Math.floor(Math.random() * 6);
           await placePlayerMarkerInRoom(turnUid, nextRoom);
         } else {
-          await showNpcSpeech(turnUid, "ふります！", 1500);
+          await showNpcSpeech(turnUid, "ふります！", 700);
           const hasCompass = hasEquipmentByName(turnUid, "神秘のコンパス");
           const d6 = 1 + Math.floor(Math.random() * 6);
           const d4 = 1 + Math.floor(Math.random() * 4);
@@ -9168,8 +9253,8 @@
             secondMotion,
             at: Date.now()
           });
-          await waitMs(hasCompass ? 4200 : 1200);
-          await waitMs(200);
+          await waitMs(hasCompass ? 3200 : 900);
+          await waitMs(NPC_TURN_PACING.diceAfterMs);
           const roomA = diceTotalToRoomId(d6 + d4);
           const roomB = diceTotalToRoomId(secondD6 + secondD4);
           const candidateRooms = hasCompass ? [roomA, roomB].filter((rid) => Number.isFinite(Number(rid))) : [roomA];
@@ -9179,7 +9264,7 @@
         await update(ref(db, `rooms/${state.roomCode}/turn`), { moveDone:true, moveAt:Date.now() });
       }
 
-      await waitMs(2000);
+      await waitMs(NPC_TURN_PACING.phaseIntervalMs);
       if (turnCycleKey() !== turnKey) return;
       const roomAfterMove = markerRoomId(markerCache?.[turnUid]);
       if (!turnState()?.deckDrawDone){
@@ -9187,7 +9272,7 @@
         await update(ref(db, `rooms/${state.roomCode}/turn`), { deckDrawDone:true });
       }
 
-      await waitMs(2000);
+      await waitMs(NPC_TURN_PACING.phaseIntervalMs);
       if (turnCycleKey() !== turnKey) return;
       if (!turnState()?.attackDone){
         const targets = [...attackRangeTargetUidsFor(turnUid)].filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
@@ -9203,7 +9288,7 @@
             const usedParasol = await npcUseParasolGreenOnTarget(turnUid, targetUid);
             if (usedParasol){
               await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
-              await waitMs(2000);
+              await waitMs(NPC_TURN_PACING.phaseIntervalMs);
               if (turnCycleKey() !== turnKey) return;
               await advanceTurnToNextPlayer(turnUid);
               return;
@@ -9221,7 +9306,7 @@
             await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"excalibur_attack" });
           }
           const targetName = safeText(playerById(targetUid)?.name || "");
-          await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 1500);
+          await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 700);
 
           const centerX = window.innerWidth / 2;
           const centerY = window.innerHeight / 2;
@@ -9241,9 +9326,9 @@
             motion,
             at: Date.now()
           });
-          await waitMs(1200);
+          await waitMs(900);
           const hit = didAttackRollSucceed(d6, d4, { masamuneMode:false, vendettaMode:false });
-          await waitMs(200);
+          await waitMs(NPC_TURN_PACING.attackAfterMs);
           if (hit){
             const dmg = calcAttackDamageFromRoll(turnUid, d6, d4, { targetUid });
             if (dmg > 0) await addDamageToPlayer(targetUid, dmg, { source:"attack" });
@@ -9253,12 +9338,12 @@
         await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
       }
 
-      await waitMs(2000);
+      await waitMs(NPC_TURN_PACING.phaseIntervalMs);
       if (turnCycleKey() !== turnKey) return;
       await advanceTurnToNextPlayer(turnUid);
     } finally {
       npcAutoTurnRunning = false;
-      scheduleNpcTurnRetry(120);
+      scheduleNpcTurnRetry(NPC_TURN_PACING.retryMs);
     }
   }
 
