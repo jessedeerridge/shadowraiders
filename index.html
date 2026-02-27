@@ -10144,10 +10144,7 @@
           const eliminatedRaiders = latestPlayers
             .filter((p) => p.id !== uid && isPlayerEliminated(p.id))
             .map((p) => p.id)
-            .filter((pid) => {
-              if (revealedFactionForUid(pid) === "レイダー") return true;
-              return npcCertainFactionByIntel(uid, pid, "レイダー");
-            });
+            .filter((pid) => revealedFactionForUid(pid) === "レイダー");
           const reviveTarget = eliminatedRaiders[Math.floor(Math.random() * eliminatedRaiders.length)] || "";
           if (!reviveTarget) continue;
           revealIdentityToEquipmentForUid(uid).catch(() => {});
