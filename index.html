@@ -5913,6 +5913,27 @@
     }
   }
 
+  async function revealIdentityToEquipmentForUid(uid, options = {}){
+    const targetUid = safeText(uid || "");
+    if (!state.roomCode || !targetUid) return;
+    const hand = state.hands?.[targetUid];
+    if (!hand || !hand.roleId) return;
+
+    const revealedBy = safeText(options.revealedBy || "");
+    const eRef = ref(db, `rooms/${state.roomCode}/equipment/${targetUid}/identity`);
+    await runTransaction(eRef, (cur) => {
+      if (cur && cur.kind === "identity" && cur.roleId) return cur;
+      const next = {
+        kind: "identity",
+        roleId: String(hand.roleId),
+        at: 0,
+        revealedAt: Date.now()
+      };
+      if (revealedBy) next.revealedBy = revealedBy;
+      return next;
+    });
+  }
+
   function hasNonIdentityEquipment(uid){
     return listEquipForUid(uid).some(it => !isIdentityEquipItem(it));
   }
