@@ -2451,6 +2451,7 @@
   let pendingCardTargetSessionEntry = null;
   let roleAbilitySelectionInitialized = false;
   let roleAbilitySelectionSeenAt = 0;
+  let pendingAutoEndTurnAfterGodwinSelection = null;
   let activeRoleAbilitySelection = null;
   const TURN_START_ONLY_REVEAL_ROLE_IDS = new Set([
     "CIT_D2", // デーヴィッド
@@ -13720,6 +13721,10 @@
         return;
       }
       if (!data){
+        const shouldAutoEndTurn = !!(pendingAutoEndTurnAfterGodwinSelection
+          && safeText(currentTurnPlayerId() || "") === safeText(pendingAutoEndTurnAfterGodwinSelection.expectedUid || ""));
+        const expectedUidForAutoEnd = safeText(pendingAutoEndTurnAfterGodwinSelection?.expectedUid || "");
+        pendingAutoEndTurnAfterGodwinSelection = null;
         activeRoleAbilitySelection = null;
         if (pendingEquipAction?.type === "benjamin_give"){
           pendingEquipAction = null;
@@ -13731,6 +13736,9 @@
         renderTurnEndButton();
         updateCardInteractivity();
         if (!zoomBackdrop?.classList.contains("hidden")) closeZoom();
+        if (shouldAutoEndTurn && expectedUidForAutoEnd){
+          doEndTurn(expectedUidForAutoEnd).catch(() => {});
+        }
         return;
       }
       if (!at || at <= roleAbilitySelectionSeenAt) return;
@@ -14722,6 +14730,15 @@
   async function doEndTurn(expectedCurrentPlayerId = ""){
     lastAttackWatch = null;
     await requestAttackLootAutoEndForCurrentTurn({ syncPending:true });
+    const expectedUid = safeText(expectedCurrentPlayerId || currentTurnPlayerId() || "");
+    if (safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3" && expectedUid){
+      pendingAutoEndTurnAfterGodwinSelection = {
+        expectedUid,
+        at: Date.now()
+      };
+    } else {
+      pendingAutoEndTurnAfterGodwinSelection = null;
+    }
     attackTurnEndChoicePending = false;
     pendingAttackResolution = null;
     pendingAttackResultMeta = null;
