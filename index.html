@@ -2771,6 +2771,16 @@
     }
     return !!state.room?.abilityUsage?.[spec.usageKey]?.[state.userId];
   }
+  function isRoleAbilityUsedByUid(roleId, uid){
+    const spec = roleSelectionSpec(roleId);
+    const targetUid = safeText(uid || "");
+    if (!spec || !targetUid) return false;
+    if (spec.perTurn){
+      const usedTurn = safeText(state.room?.abilityUsage?.[spec.usageKey]?.[targetUid] || "");
+      return usedTurn && usedTurn === currentTurnKey();
+    }
+    return !!state.room?.abilityUsage?.[spec.usageKey]?.[targetUid];
+  }
   async function markRoleAbilityUsed(roleId){
     const spec = roleSelectionSpec(roleId);
     if (!spec || !state.roomCode || !state.userId) return;
@@ -9542,6 +9552,10 @@
   async function finalizePendingAttackResolution(endTurnAfterApply, advanceTurnOnCounterResolve = false){
     const pending = pendingAttackResolution;
     const attackTurnOwnerUid = currentTurnPlayerId();
+    const eliminationPreview = attackEliminationPreview(pending?.rows || []);
+    const eliminatedGodwinUids = eliminationPreview.eliminatedUids
+      .filter(uid => roleIdForUid(uid) === "RAI_G3")
+      .filter(uid => !isRoleAbilityUsedByUid("RAI_G3", uid));
     pendingAttackResolution = null;
     pendingAttackResultMeta = null;
     attackTurnEndChoicePending = false;
@@ -9564,6 +9578,21 @@
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
+      if (eliminatedGodwinUids.length){
+        const waitStartedAt = Date.now();
+        while (Date.now() - waitStartedAt < 15000){
+          const hasActiveGodwinSelection = eliminatedGodwinUids.some(uid => {
+            const roleSelection = state.room?.roleAbilitySelection || null;
+            const selectionRoleId = safeText(roleSelection?.roleId || "");
+            const selectionActorUid = safeText(roleSelection?.actorUid || "");
+            if (selectionRoleId === "RAI_G3" && selectionActorUid === uid) return true;
+            if (isRoleAbilityUsedByUid("RAI_G3", uid)) return false;
+            return Date.now() - waitStartedAt < 3000;
+          });
+          if (!hasActiveGodwinSelection) break;
+          await waitMs(120);
+        }
+      }
       if (currentTurnPlayerId() === attackTurnOwnerUid){
         await doEndTurn(attackTurnOwnerUid);
       }
