@@ -5304,6 +5304,7 @@
   let previousEliminatedMap = {};
   let pendingAttackLoot = null;
   let pendingAttackLootEndTurnRequest = null;
+  let deferredTurnEndRequest = null;
   const attackLootBackdrop = document.getElementById("attackLootBackdrop");
   const attackLootBody = document.getElementById("attackLootBody");
   const attackLootHeader = document.getElementById("attackLootHeader");
@@ -5372,6 +5373,62 @@
     pendingAttackLootEndTurnRequest = null;
     if (isExpired || !sameTurnOwner) return null;
     return req;
+  }
+
+  function roomNonIdentityEquipCount(roomData, uid){
+    if (!uid || !roomData || typeof roomData !== "object") return 0;
+    const equip = roomData.equipment?.[uid];
+    if (!equip || typeof equip !== "object") return 0;
+    let count = 0;
+    for (const value of Object.values(equip)){
+      if (!value || typeof value !== "object") continue;
+      if (safeText(value.kind || "") === "identity") continue;
+      const copies = Math.max(1, Math.floor(Number(value.count || 1)));
+      count += copies;
+    }
+    return count;
+  }
+
+  function hasLootableAttackLootPending(roomData, turnOwnerUid){
+    const uid = safeText(turnOwnerUid || "");
+    if (!uid || !roomData || typeof roomData !== "object") return false;
+    const pending = roomData.attackLootPending?.[uid];
+    if (!pending || typeof pending !== "object") return false;
+    const mode = safeText(pending.mode || "defeated") || "defeated";
+    const targets = (mode === "byron" ? pending.targetUids : pending.defeatedUids) || [];
+    if (!Array.isArray(targets)) return false;
+    return targets.some((rawUid) => {
+      const targetUid = safeText(rawUid || "");
+      if (!targetUid || targetUid === uid) return false;
+      return roomNonIdentityEquipCount(roomData, targetUid) > 0;
+    });
+  }
+
+  function hasPendingGodwinSelection(roomData){
+    const pendingRoleSelection = roomData?.roleAbilitySelection;
+    if (!pendingRoleSelection || typeof pendingRoleSelection !== "object") return false;
+    return safeText(pendingRoleSelection.roleId || "") === "RAI_G3";
+  }
+
+  function hasDeferredTurnEndBlockers(roomData, turnOwnerUid){
+    return hasPendingGodwinSelection(roomData) || hasLootableAttackLootPending(roomData, turnOwnerUid);
+  }
+
+  async function tryResolveDeferredTurnEnd(){
+    const req = deferredTurnEndRequest;
+    if (!req) return;
+    const ownerUid = safeText(req.ownerUid || "");
+    if (!ownerUid || ownerUid !== safeText(state.userId || "")){
+      deferredTurnEndRequest = null;
+      return;
+    }
+    if (safeText(currentTurnPlayerId() || "") !== ownerUid){
+      deferredTurnEndRequest = null;
+      return;
+    }
+    if (hasDeferredTurnEndBlockers(state.room || {}, ownerUid)) return;
+    deferredTurnEndRequest = null;
+    await doEndTurn(ownerUid);
   }
 
   async function requestAttackLootAutoEndForCurrentTurn(options = {}){
@@ -10143,9 +10200,10 @@
   }
 
   async function advanceTurnToNextPlayer(expectedCurrentPlayerId = ""){
-    if (!state.roomCode) return;
+    if (!state.roomCode) return false;
     const expectedUid = safeText(expectedCurrentPlayerId || "");
     const roomRef = ref(db, `rooms/${state.roomCode}`);
+    let advanced = false;
     await runTransaction(roomRef, (cur) => {
       if (!cur || !(cur.gameStarted || cur.startedAt)) return cur;
       const order = Array.isArray(cur.positionOrder) ? cur.positionOrder : [];
@@ -10178,31 +10236,7 @@
       }
 
 
-      const nonIdentityEquipCountInRoom = (uid) => {
-        if (!uid) return 0;
-        const equip = cur.equipment?.[uid];
-        if (!equip || typeof equip !== "object") return 0;
-        let count = 0;
-        for (const value of Object.values(equip)){
-          if (!value || typeof value !== "object") continue;
-          if (safeText(value.kind || "") === "identity") continue;
-          const copies = Math.max(1, Math.floor(Number(value.count || 1)));
-          count += copies;
-        }
-        return count;
-      };
-
-      const pendingLoot = cur.attackLootPending?.[curId];
-      if (pendingLoot && typeof pendingLoot === "object"){
-        const mode = safeText(pendingLoot.mode || "defeated") || "defeated";
-        const targetUids = (mode === "byron" ? pendingLoot.targetUids : pendingLoot.defeatedUids) || [];
-        const hasLootableTarget = Array.isArray(targetUids) && targetUids.some((uidRaw) => {
-          const uid = safeText(uidRaw || "");
-          if (!uid || uid === curId) return false;
-          return nonIdentityEquipCountInRoom(uid) > 0;
-        });
-        if (hasLootableTarget) return cur;
-      }
+      if (hasLootableAttackLootPending(cur, curId)) return cur;
 
       const rest = Math.max(0, Number(curTurn.repeatTurnRemaining || 0));
       const total = Math.max(0, Number(curTurn.repeatTurnTotal || 0));
@@ -10237,8 +10271,10 @@
       if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
         delete cur.guardianAngelShield[nextPlayerId];
       }
+      advanced = true;
       return cur;
     });
+    return advanced;
   }
 
   function toGreenOrder(){
@@ -13542,6 +13578,7 @@
       syncAutoIdentityRevealTimer();
       evaluateAutoIdentityRevealTrigger();
       syncTurnStartBoard();
+      tryResolveDeferredTurnEnd().catch(() => {});
     });
   }
 
@@ -14731,7 +14768,14 @@
     suppressEndTurnButton = false;
     resetAttackAbilityUsageTurnState();
     cachePendingAttackResolution(null);
-    await advanceTurnToNextPlayer(expectedCurrentPlayerId);
+    const ownerUid = safeText(expectedCurrentPlayerId || currentTurnPlayerId() || "");
+    const advanced = await advanceTurnToNextPlayer(expectedCurrentPlayerId);
+    if (!advanced && ownerUid && ownerUid === safeText(state.userId || "") && hasDeferredTurnEndBlockers(state.room || {}, ownerUid)){
+      deferredTurnEndRequest = {
+        ownerUid,
+        requestedAt: Date.now()
+      };
+    }
     hideAttackPop();
     hideAttackResultPop();
     clearAttackResultDice();
