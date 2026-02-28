@@ -9077,6 +9077,7 @@ ${targetName}さん...` : "";
   function greenFactionSetFromCard(cardObj, askerFaction=""){
     const text = safeText(cardObj?.effect || cardObj?.text || "");
     const compact = text.replace(/[\s　]+/g, "");
+    const hasBoth = (a, b) => compact.includes(`${a}か${b}`) || compact.includes(`${b}か${a}`);
     const faction = safeText(askerFaction || "");
     const rivalFaction = faction === "レイダー" ? "シャドウ" : faction === "シャドウ" ? "レイダー" : "";
     if (compact.includes("同陣営") && compact.includes("シチズン") && faction) return new Set([faction, "シチズン"]);
@@ -9086,9 +9087,9 @@ ${targetName}さん...` : "";
     if (text.includes("シャドウ？")) return new Set(["シャドウ"]);
     if (text.includes("レイダー？")) return new Set(["レイダー"]);
     if (text.includes("シチズン？")) return new Set(["シチズン"]);
-    if (compact.includes("シチズンかシャドウ")) return new Set(["シチズン","シャドウ"]);
-    if (compact.includes("シチズンかレイダー")) return new Set(["シチズン","レイダー"]);
-    if (compact.includes("レイダーかシャドウ")) return new Set(["レイダー","シャドウ"]);
+    if (hasBoth("シチズン", "シャドウ")) return new Set(["シチズン","シャドウ"]);
+    if (hasBoth("シチズン", "レイダー")) return new Set(["シチズン","レイダー"]);
+    if (hasBoth("レイダー", "シャドウ")) return new Set(["レイダー","シャドウ"]);
     return null;
   }
 
@@ -9110,12 +9111,13 @@ ${targetName}さん...` : "";
     const ans = safeText(answerId || "");
     if (ans !== "yes" && ans !== "reveal_identity" && ans !== "no") return;
     const compact = safeText(cardObj?.effect || cardObj?.text || "").replace(/[\s\u3000]+/g, "");
+    const hasBoth = (a, b) => compact.includes(`${a}か${b}`) || compact.includes(`${b}か${a}`);
     const isRaiderOnly = compact.includes("レイダー？") && !compact.includes("か");
     const isShadowOnly = compact.includes("シャドウ？") && !compact.includes("か");
     const isCitizenOnly = compact.includes("シチズン？") && !compact.includes("か");
-    const isRaiderOrCitizen = compact.includes("レイダーかシチズン");
-    const isShadowOrCitizen = compact.includes("シャドウかシチズン");
-    const isRaiderOrShadow = compact.includes("レイダーかシャドウ");
+    const isRaiderOrCitizen = hasBoth("レイダー", "シチズン");
+    const isShadowOrCitizen = hasBoth("シャドウ", "シチズン");
+    const isRaiderOrShadow = hasBoth("レイダー", "シャドウ");
     const revealCard = isRevealIdentityGreenCard(cardObj);
 
     const prevSnapshot = JSON.parse(JSON.stringify(state.room?.npcIntel?.greenInference?.[asker] || {}));
