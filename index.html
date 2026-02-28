@@ -652,6 +652,31 @@
   }
   .host-settings-btn.visible{display:flex;}
 
+  .action-chat-btn{
+    position:fixed;
+    left:16px;
+    bottom:124px;
+    width:44px;height:44px;border-radius:50%;
+    border:1px solid #ddd;background:#fff;box-shadow:0 8px 20px rgba(0,0,0,.18);
+    display:none;align-items:center;justify-content:center;font-size:18px;cursor:pointer;
+    z-index:274;
+  }
+  .action-chat-btn.visible{display:flex;}
+
+  .action-chat-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:320;
+    display:flex;align-items:flex-end;justify-content:center;padding:14px;
+  }
+  .action-chat-backdrop.hidden{display:none;}
+  .action-chat-pop{
+    width:min(900px, 100%); max-height:min(78vh, 720px);
+    background:#fff;border-radius:14px;border:1px solid #ddd;overflow:hidden;
+    display:flex;flex-direction:column;
+  }
+  .action-chat-header{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #eee;font-weight:900;}
+  .action-chat-body{padding:10px 12px;overflow:auto;display:flex;flex-direction:column;gap:8px;background:#fafafa;}
+  .action-chat-row{font-size:12px;line-height:1.5;background:#fff;border:1px solid #eee;border-radius:8px;padding:6px 8px;white-space:pre-wrap;word-break:break-word;}
+
   .start-pop{
     position:fixed;
     left:16px;
@@ -995,6 +1020,20 @@
   }
   .position-bubble.white-text::after{ border-top-color:#fff; }
   .position-bubble.white-text::before{ border-top-color:#111; }
+  .position-bubble.faction-raider{
+    background:#d13636;
+    border:1px solid #fff;
+    color:#fff;
+  }
+  .position-bubble.faction-raider::after{ border-top-color:#d13636; }
+  .position-bubble.faction-raider::before{ border-top-color:#fff; }
+  .position-bubble.faction-shadow{
+    background:#1f2f6b;
+    border:1px solid #fff;
+    color:#fff;
+  }
+  .position-bubble.faction-shadow::after{ border-top-color:#1f2f6b; }
+  .position-bubble.faction-shadow::before{ border-top-color:#fff; }
   .position-bubble::before{
     content:"";
     position:absolute;
@@ -1947,9 +1986,19 @@
 </div>
 
 <button id="hostSettingsBtn" class="host-settings-btn" title="設定">⚙</button>
+<button id="actionChatBtn" class="action-chat-btn" title="行動ログ" aria-label="行動ログ">💬</button>
 <button id="roomGuideBtn" class="room-guide-btn" title="ルーム効果" aria-label="ルーム効果"><img src="map.png" alt="map"></button>
 <button id="helpBtn" class="help-btn" title="カードリスト">？</button>
 
+<div id="actionChatBackdrop" class="action-chat-backdrop hidden">
+  <div class="action-chat-pop" role="dialog" aria-modal="true" aria-label="行動ログ">
+    <div class="action-chat-header">
+      <div>行動ログ</div>
+      <button id="actionChatCloseBtn" class="btn ghost" type="button">閉じる</button>
+    </div>
+    <div id="actionChatBody" class="action-chat-body"></div>
+  </div>
+</div>
 
 <div id="helpBackdrop" class="help-pop-backdrop hidden">
   <div class="help-pop" role="dialog" aria-modal="true" aria-label="カードリスト">
@@ -2448,6 +2497,7 @@
   let greenInboxInitialized = false;
   let greenReplySeenAt = 0;
   let greenReplyInitialized = false;
+  const greenHistoryLoggedRequestIds = new Set();
   let npcSpeechInitialized = false;
   let npcSpeechSeenAt = 0;
   let activeNpcSpeechByUid = {};
@@ -2550,6 +2600,9 @@
   let autoIdentityRevealTimer = null;
   let autoIdentityRevealTimerKey = "";
   let lastEliminationBatch = { uids: [], at: 0 };
+  const lastKnownNameByUid = {};
+  const lastKnownRoleNameByUid = {};
+  let lastAttackRollLogContext = null;
 
   const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
@@ -3276,7 +3329,7 @@
       targetUid
     });
     if (baseDamage <= 0) return;
-    await addDamageToPlayer(targetUid, baseDamage, { source:"attack" });
+    await addDamageToPlayer(targetUid, baseDamage, { source:"attack", actorUid: state.userId });
   }
 
   async function runWerewolfCounterAttackForUid(werewolfUid, attackerUid){
@@ -3304,7 +3357,7 @@
       targetUid
     });
     if (baseDamage <= 0) return;
-    await addDamageToPlayer(targetUid, baseDamage, { source:"attack" });
+    await addDamageToPlayer(targetUid, baseDamage, { source:"attack", actorUid: actorUid });
   }
 
   function renderCounterAbilityPrompt(){
@@ -4005,6 +4058,15 @@
   async function sendGreenResponse(msg, opt, overrideLabel=""){
     if (!state.roomCode || !msg?.from || !msg?.requestId || !opt?.id) return;
     const answerLabel = safeText(overrideLabel || opt.label || "");
+    const q = safeText(msg?.card?.effect || msg?.card?.text || "");
+    const greenLog = greenHistoryLogLine({
+      responderUid: state.userId,
+      cardText: q,
+      answerLabel: answerLabel || safeText(opt?.id || ""),
+      answerId: safeText(opt?.id || ""),
+      useCurrentDamage: false
+    });
+    if (greenLog) appendActionChatLog(safeText(msg?.from || state.userId), greenLog).catch(() => {});
     const responseRoleId = (opt.id === "reveal_identity") ? safeText(state.hands?.[state.userId]?.roleId || "") : "";
     let requesterUid = safeText(msg.from || "");
     try {
@@ -4037,7 +4099,7 @@
     const text = safeText(msg?.card?.effect || msg?.card?.text || "");
 
     if (opt?.id === "take_damage"){
-      setTimeout(() => { addDamageToPlayer(state.userId, 1); }, 1000);
+      setTimeout(() => { addDamageToPlayer(state.userId, 1, { skipActionLog:true }); }, 1000);
       return;
     }
 
@@ -4047,21 +4109,21 @@
     if (text.includes("1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ")){
       setTimeout(() => {
         const cur = clampDamage(damageCache?.[state.userId]);
-        if (cur <= 0) addDamageToPlayer(state.userId, 1);
-        else healDamageToPlayer(state.userId, 1, "green_heal");
+        if (cur <= 0) addDamageToPlayer(state.userId, 1, { skipActionLog:true });
+        else healDamageToPlayer(state.userId, 1, "green_heal", { skipActionLog:true });
       }, 1000);
     } else if (!text.includes("❿に移動せよ")) {
       const damageMatch = text.match(/(\d+)ダメージ受けよ/);
       const damage = damageMatch ? Number(damageMatch[1] || 0) : 0;
       if (damage > 0){
-        setTimeout(() => { addDamageToPlayer(state.userId, damage); }, 1000);
+        setTimeout(() => { addDamageToPlayer(state.userId, damage, { skipActionLog:true }); }, 1000);
       }
     }
 
     if (text.includes("❿に移動せよ")){
       setTimeout(() => {
         const nowRoom = markerRoomId(markerCache?.[state.userId]);
-        if (nowRoom === 7) addDamageToPlayer(state.userId, 1);
+        if (nowRoom === 7) addDamageToPlayer(state.userId, 1, { skipActionLog:true });
         else placePlayerMarkerInRoom(state.userId, 7);
       }, 1000);
     }
@@ -4550,7 +4612,8 @@
         instantCloseOnSelect:true,
         resolver: async (uid) => {
           await waitMs(1000);
-          await setDamageToPlayer(uid, 7, "first_aid_set");
+          await setDamageToPlayer(uid, 7, "first_aid_set", { skipActionLog:true });
+          appendActionChatLog(state.userId, `白ドロー：[応急手当] 7に設定>${displayNameForUid(uid)}`).catch(() => {});
         }
       };
     }
@@ -4564,7 +4627,8 @@
           await emitCardDiceEvent({ kind:"blessing", uid:state.userId, d6:eye });
           await runCornerD6Roll(eye);
           await waitMs(1000);
-          await healDamageToPlayer(uid, eye, "card_blessing_heal");
+          await healDamageToPlayer(uid, eye, "card_blessing_heal", { skipActionLog:true });
+          appendActionChatLog(state.userId, `[恩恵] (6d${eye}) ${actionDeltaText(-eye)}>${actionTargetWithDamage(uid, -eye)}`).catch(() => {});
         }
       };
     }
@@ -4576,10 +4640,13 @@
         resolver: async (uid) => {
           await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "enemy", "card_attack_target_revealed");
           await waitMs(1000);
+          let dmg = 0;
           if (!hasEquipmentByName(uid, "いにしえの聖杯")){
-            await addDamageToPlayer(uid, 2);
+            await addDamageToPlayer(uid, 2, { skipActionLog:true });
+            dmg = 2;
           }
-          await healDamageToPlayer(state.userId, 1, "card_vampire_bat_heal");
+          await healDamageToPlayer(state.userId, 1, "card_vampire_bat_heal", { skipActionLog:true });
+          appendActionChatLog(state.userId, `[吸血コウモリ] ${actionDeltaText(-1)}>${actionTargetWithDamage(state.userId, -1)}, ${actionDeltaText(dmg)}>${actionTargetWithDamage(uid, dmg)}`).catch(() => {});
         }
       };
     }
@@ -4611,7 +4678,7 @@
           await emitCardDiceEvent({ kind:"curse_doll", uid: state.userId, d6: eye });
           await waitMs(1000);
           if (eye <= 4){
-            if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 3);
+            if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 3, { actorUid:state.userId });
           } else if (!hasEquipmentByName(state.userId, "いにしえの聖杯")){
             await addDamageToPlayer(state.userId, 3);
           }
@@ -4654,6 +4721,7 @@
     try {
       await spec.resolver(targetUid);
     } finally {
+
       pendingCardTargetSelection = null;
       cardPlayerSelectActive = false;
       updateCardInteractivity();
@@ -4760,6 +4828,7 @@
         };
         await set(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`), payload);
         await set(ref(db, `rooms/${state.roomCode}/greenInbox/${p.id}`), payload);
+        appendActionChatLog(state.userId, `緑ドロー：[${safeText(greenShareCard?.effect || greenShareCard?.text || "")}]>${displayNameForUid(p.id)}　回答待ち`).catch(() => {});
 
         pendingGreenRequestId = requestId;
         renderGreenWaitingSelection(p.id, p.name, firstChar(p.name || ""), safeText(p.color || ""));
@@ -4935,6 +5004,7 @@
     }
     greenShareActions?.classList.remove("hidden");
     const responder = playerById(safeText(msg.to || ""));
+    appendGreenHistoryLogFromResponse(msg);
     await setGreenSessionState({
       phase:"confirm",
       card: greenShareCard || msg.card || null,
@@ -5829,13 +5899,15 @@
     if (!isEquipCard(cardObj)) return;
 
     const key = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const cardName = safeText(cardObj.name || "装備");
     const eRef = ref(db, `rooms/${state.roomCode}/equipment/${state.userId}/${key}`);
     await set(eRef, {
       theme: theme || "white",
-      name: safeText(cardObj.name),
+      name: cardName,
       effect: safeText(cardObj.effect),
       at: Date.now()
     });
+    appendActionChatLog(state.userId, `装備獲得:${cardName}`).catch(() => {});
   }
 
   async function setDeckToSingleCardForTest(theme, cardObj){
@@ -5893,6 +5965,10 @@
       if (revealedBy) next.revealedBy = revealedBy;
       return next;
     });
+    if (revealedNow){
+      const roleName = safeText(ROLE_BY_ID?.[safeText(my.roleId)]?.name || "?");
+      appendActionChatLog(state.userId, `カード公開:${roleName}`).catch(() => {});
+    }
     if (revealedNow && safeText(my.roleId) === "CIT_C2" && !isMyAbilitySealed()){
       await healDamageToPlayer(state.userId, 2, "carol_reveal_heal");
       if (isMyTurn()){
@@ -5913,8 +5989,10 @@
 
     const revealedBy = safeText(options.revealedBy || "");
     const eRef = ref(db, `rooms/${state.roomCode}/equipment/${targetUid}/identity`);
+    let revealedNow = false;
     await runTransaction(eRef, (cur) => {
       if (cur && cur.kind === "identity" && cur.roleId) return cur;
+      revealedNow = true;
       const next = {
         kind: "identity",
         roleId: String(hand.roleId),
@@ -5924,6 +6002,10 @@
       if (revealedBy) next.revealedBy = revealedBy;
       return next;
     });
+    if (revealedNow){
+      const roleName = safeText(ROLE_BY_ID?.[safeText(hand.roleId)]?.name || "?");
+      appendActionChatLog(targetUid, `カード公開:${roleName}`).catch(() => {});
+    }
   }
 
   function hasNonIdentityEquipment(uid){
@@ -6546,14 +6628,18 @@
     e.stopPropagation();
     const closeZoomOnNo = !!pendingRoomAction?.closeZoomOnNo;
     const onNo = pendingRoomAction?.onNo;
+    const msg = safeText(roomActionMsg?.textContent || "");
     hideRoomActionPop();
+    appendActionChatLog(state.userId, `${msg || "選択"}：いいえ`).catch(() => {});
     if (typeof onNo === "function") await onNo();
     if (closeZoomOnNo) closeZoom();
   });
   btnRoomActionYes?.addEventListener("click", async (e) => {
     e.stopPropagation();
     const handler = pendingRoomAction?.onYes;
+    const msg = safeText(roomActionMsg?.textContent || "");
     hideRoomActionPop();
+    appendActionChatLog(state.userId, `${msg || "選択"}：はい`).catch(() => {});
     if (handler) await handler();
   });
   btnAttackYes.addEventListener("click", async (e) => {
@@ -6563,6 +6649,8 @@
       return;
     }
     const uid = pendingAttackTargetUid;
+    const targetName = safeText(playerById(uid)?.name || "プレイヤー");
+    appendActionChatLog(state.userId, `攻撃対象:${targetName}さん`).catch(() => {});
     const target = markerCache?.[uid] || null;
     if (!uid || !target){
       hideAttackPop();
@@ -6645,6 +6733,7 @@
 
   btnAttackResultKeep?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    appendActionChatLog(state.userId, `攻撃時の選択:${safeText(btnAttackResultKeep?.textContent || "OK")}`).catch(() => {});
     const pending = pendingAttackResolution;
     const spec = attackAbilitySpecFromRows(pending?.rows || []);
     if (!spec){
@@ -6773,6 +6862,7 @@
 
   btnAttackResultExcalibur?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    appendActionChatLog(state.userId, "攻撃時の選択:エクスカリバー").catch(() => {});
     if (attackResultChoiceBusy) return;
     const pending = pendingAttackResolution;
     if (!pending || !pendingAttackResultMeta?.allowExcaliburButton) return;
@@ -6800,6 +6890,7 @@
 
   btnAttackResultEnd?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    appendActionChatLog(state.userId, `攻撃時の選択:${safeText(btnAttackResultEnd?.textContent || "OKおわる")}`).catch(() => {});
     const pending = pendingAttackResolution;
     const spec = attackAbilitySpecFromRows(pending?.rows || []);
     const shouldConfirmEmmaEnd = isMyRole("RAI_E3") && isMyIdentityRevealed();
@@ -7919,12 +8010,14 @@
   async function stealEquipmentFromPlayer(targetUid, sourceKey){
     if (!state.roomCode || !targetUid || !sourceKey) return false;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
+    let stolenName = "";
     const result = await runTransaction(roomRef, (cur) => {
       if (!cur) return cur;
       const targetRow = cur.equipment?.[targetUid];
       if (!targetRow) return cur;
       const item = targetRow[sourceKey];
       if (!item || item.kind === "identity") return cur;
+      stolenName = safeText(item.name || "装備");
 
       const oldCount = Math.max(1, Math.floor(Number(item.count ?? item.qty ?? item.quantity ?? 1) || 1));
       if (oldCount > 1){
@@ -7946,6 +8039,10 @@
       };
       return cur;
     });
+    if (!!result.committed){
+      const ownerName = safeText(playerById(targetUid)?.name || "プレイヤー");
+      appendActionChatLog(state.userId, `装備奪取:${ownerName}さんから${stolenName || "装備"}`).catch(() => {});
+    }
     return !!result.committed;
   }
 
@@ -8009,12 +8106,14 @@
   async function moveEquipmentCardBetweenPlayers(fromUid, toUid, sourceKey){
     if (!state.roomCode || !fromUid || !toUid || !sourceKey) return false;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
+    let movedName = "";
     const result = await runTransaction(roomRef, (cur) => {
       if (!cur) return cur;
       const fromRow = cur.equipment?.[fromUid];
       if (!fromRow) return cur;
       const item = fromRow[sourceKey];
       if (!item || item.kind === "identity") return cur;
+      movedName = safeText(item.name || "装備");
 
       const oldCount = Math.max(1, Math.floor(Number(item.count ?? item.qty ?? item.quantity ?? 1) || 1));
       if (oldCount > 1){
@@ -8037,6 +8136,11 @@
       };
       return cur;
     });
+    if (!!result.committed){
+      const fromName = safeText(playerById(fromUid)?.name || "プレイヤー");
+      const toName = safeText(playerById(toUid)?.name || "プレイヤー");
+      appendActionChatLog(fromUid, `装備譲渡:${toName}さんへ${movedName || "装備"}（元:${fromName}）`).catch(() => {});
+    }
     return !!result.committed;
   }
 
@@ -8307,6 +8411,10 @@
       motion,
       at: Date.now()
     });
+    const moveRollText = compass
+      ? `移動ロール：合計${d6 + d4} (6d${d6},4d${d4}) / 合計${secondD6 + secondD4} (6d${secondD6},4d${secondD4})`
+      : `移動ロール：合計${d6 + d4} (6d${d6},4d${d4})`;
+    appendActionChatLog(state.userId, moveRollText).catch(() => {});
   }
 
 
@@ -8330,7 +8438,7 @@
     retryMs: 80
   };
 
-  async function showNpcSpeech(uid, text, durationMs = NPC_TURN_PACING.speechDefaultMs){
+  async function showNpcSpeech(uid, text, durationMs = NPC_TURN_PACING.speechDefaultMs, options = {}){
     const targetUid = safeText(uid || "");
     const label = safeText(text || "").trim();
     if (!state.roomCode || !targetUid || !label) return;
@@ -8338,14 +8446,279 @@
       NPC_TURN_PACING.speechMinMs,
       Math.min(NPC_TURN_PACING.speechMaxMs, Number(durationMs || NPC_TURN_PACING.speechDefaultMs))
     );
+    const style = safeText(options?.style || "");
     const at = Date.now();
     await set(ref(db, `rooms/${state.roomCode}/npcSpeech`), {
       uid: targetUid,
       text: label,
+      style,
       at,
       expiresAt: at + resolvedMs
     });
     await waitMs(resolvedMs);
+  }
+
+  function npcSpeechStyleByFaction(uid){
+    const faction = safeText(roleInfoByUid(uid)?.faction || "");
+    if (faction === "レイダー") return "raider";
+    if (faction === "シャドウ") return "shadow";
+    return "";
+  }
+
+  async function npcAnnounceAbilityUse(uid, abilityName = "", targetUid = "", options = {}){
+    const actorUid = safeText(uid || "");
+    const name = safeText(abilityName || "").trim();
+    const target = safeText(targetUid || "");
+    if (!actorUid || !name) return;
+    const targetName = safeText(playerById(target)?.name || "");
+    const line2 = targetName ? `
+${targetName}さん...` : "";
+    await showNpcSpeech(actorUid, `${name}！！${line2}`, 1200, { style:npcSpeechStyleByFaction(actorUid) });
+
+    const hasDelta = Number.isFinite(Number(options?.delta));
+    if (target && hasDelta){
+      const delta = Number(options.delta || 0);
+      const useCurrent = !!options?.useCurrentDamage;
+      const dmgText = useCurrent
+        ? currentDamageForUid(target)
+        : clampProjectedDamageValue(currentDamageForUid(target), delta);
+      appendActionChatLog(actorUid, `${name} ${actionDeltaText(delta)}>${displayNameRoleForUid(target)} (${dmgText})`);
+      return;
+    }
+
+    const logTail = target ? `>${displayNameRoleForUid(target)}` : "";
+    appendActionChatLog(actorUid, `${name}${logTail}`);
+  }
+
+  function npcHumanPlayerCount(){
+    const tables = state.room?.tables || {};
+    return Object.values(tables).filter((row) => !!row?.playerId && !row?.isNpc).length;
+  }
+
+  function isNpcActionChatMode(){
+    return !!state.room?.computerMode && npcHumanPlayerCount() <= 1;
+  }
+
+  function isActionLogPlaceholderText(text, kind = "name"){
+    const v = safeText(text || "");
+    if (!v) return true;
+    if (kind === "name"){
+      return v === "プレイヤー" || v.includes("プレイヤー名") || v.includes("[プレイヤー名]");
+    }
+    return v === "?" || v.includes("正体名");
+  }
+
+  function displayNameForUid(uid){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return "プレイヤー";
+    const fromPlayers = safeText(playerById(targetUid)?.name || "");
+    if (!isActionLogPlaceholderText(fromPlayers, "name")) return fromPlayers;
+    for (const row of Object.values(state.room?.tables || {})){
+      if (safeText(row?.playerId || "") !== targetUid) continue;
+      const n = safeText(row?.playerName || "");
+      if (!isActionLogPlaceholderText(n, "name")) return n;
+    }
+    const cached = safeText(lastKnownNameByUid[targetUid] || "");
+    if (!isActionLogPlaceholderText(cached, "name")) return cached;
+    return "プレイヤー";
+  }
+
+  function roleNameForUid(uid){
+    const targetUid = safeText(uid || "");
+    const roleId = safeText(state.room?.hands?.[targetUid]?.roleId || state.hands?.[targetUid]?.roleId || "");
+    const name = safeText(ROLE_BY_ID?.[roleId]?.name || roleInfoByUid(targetUid)?.name || "");
+    if (!isActionLogPlaceholderText(name, "role")) return name;
+    const cached = safeText(lastKnownRoleNameByUid[targetUid] || "");
+    if (!isActionLogPlaceholderText(cached, "role")) return cached;
+    return "?";
+  }
+
+  function actionSourceLabel(sourceRaw){
+    const src = safeText(sourceRaw || "");
+    if (!src) return "";
+    const map = {
+      card_blessing_heal: "恩恵",
+      card_vampire_bat_heal: "吸血コウモリ",
+      card_holy_water_heal: "いやしの聖水",
+      card_mermaid_tears_heal: "人魚の涙",
+      first_aid_set: "応急手当",
+      felicia_set: "スラム街の天使"
+    };
+    return safeText(map[src] || src);
+  }
+
+  function displayRoleOrHiddenForUid(uid){
+    const roleName = roleNameForUid(uid);
+    return roleName && roleName !== "?" ? roleName : "正体名";
+  }
+
+  function displayNameRoleForUid(uid){
+    return `${displayNameForUid(uid)}[${displayRoleOrHiddenForUid(uid)}]`;
+  }
+
+  function currentDamageForUid(uid){
+    return clampDamage(Number(state.room?.damage?.[uid] || 0));
+  }
+
+  function actionDeltaText(delta){
+    const v = Number(delta || 0);
+    if (!Number.isFinite(v) || v === 0) return "0";
+    return v > 0 ? `${v}` : `${v}`;
+  }
+
+  function actionTargetWithDamage(uid, delta){
+    const total = currentDamageForUid(uid);
+    return `${displayNameForUid(uid)} (${total})`;
+  }
+
+  function displayNameBracketRoleForUid(uid){
+    return `${displayNameForUid(uid)} [${displayRoleOrHiddenForUid(uid)}]`;
+  }
+
+  function clampProjectedDamageValue(base, delta){
+    return clampDamage(Number(base || 0) + Number(delta || 0));
+  }
+
+  function greenAnswerDeltaForLog(cardText, answerId, targetUid){
+    const text = safeText(cardText || "");
+    const aid = safeText(answerId || "");
+    if (aid === "take_damage") return 1;
+    if (aid !== "yes") return null;
+    if (text.includes("1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ")){
+      const cur = currentDamageForUid(targetUid);
+      return cur <= 0 ? 1 : -1;
+    }
+    if (text.includes("❿に移動せよ")){
+      const nowRoom = markerRoomId(markerCache?.[targetUid]);
+      return nowRoom === 7 ? 1 : null;
+    }
+    const m = text.match(/(\d+)ダメージ受けよ/);
+    const dmg = m ? Number(m[1] || 0) : 0;
+    return dmg > 0 ? dmg : null;
+  }
+
+  function greenHistoryLogLine({ responderUid, cardText, answerLabel, answerId, useCurrentDamage=false } = {}){
+    const uid = safeText(responderUid || "");
+    const q = safeText(cardText || "");
+    const aid = safeText(answerId || "");
+    const answer = (aid === "reveal_identity") ? "" : safeText(answerLabel || aid || "");
+    if (!uid || !q) return "";
+    const delta = greenAnswerDeltaForLog(q, aid, uid);
+    const target = displayNameBracketRoleForUid(uid);
+    if (delta == null){
+      return `[${q}] >${target}${answer ? ` ${answer}` : ""}`.trim();
+    }
+    const damageText = useCurrentDamage
+      ? ` (${currentDamageForUid(uid)})`
+      : ` (${clampProjectedDamageValue(currentDamageForUid(uid), delta)})`;
+    return `[${q}] ${actionDeltaText(delta)}>${target}${answer ? ` ${answer}` : ""}${damageText}`.trim();
+  }
+
+  function appendGreenHistoryLogFromResponse(msg, options = {}){
+    const requestId = safeText(msg?.requestId || "");
+    if (!requestId) return;
+    if (greenHistoryLoggedRequestIds.has(requestId)) return;
+    const responderUid = safeText(msg?.to || options?.responderUid || "");
+    const q = safeText(msg?.card?.effect || msg?.card?.text || options?.cardText || "");
+    const answerLabel = safeText(msg?.answerLabel || options?.answerLabel || "");
+    const answerId = safeText(msg?.answerId || options?.answerId || "");
+    const line = greenHistoryLogLine({
+      responderUid,
+      cardText: q,
+      answerLabel,
+      answerId,
+      useCurrentDamage: true
+    });
+    if (!line) return;
+    greenHistoryLoggedRequestIds.add(requestId);
+    appendActionChatLog(safeText(msg?.from || options?.actorUid || responderUid || state.userId), line).catch(() => {});
+  }
+
+  async function appendActionChatLog(uid, actionText){
+    const actorUid = safeText(uid || state.userId || "");
+    const action = safeText(actionText || "").trim();
+    if (!state.roomCode || !actorUid || !action) return;
+    if (!isNpcActionChatMode()) return;
+    const name = displayNameForUid(actorUid);
+    const roleName = roleNameForUid(actorUid);
+    if (!isActionLogPlaceholderText(name, "name")) lastKnownNameByUid[actorUid] = name;
+    if (!isActionLogPlaceholderText(roleName, "role")) lastKnownRoleNameByUid[actorUid] = roleName;
+    const key = `${Date.now()}_${Math.random().toString(16).slice(2,8)}`;
+    const path = `rooms/${state.roomCode}/actionChatLog/${key}`;
+    await set(ref(db, path), {
+      uid: actorUid,
+      playerName: name,
+      roleName,
+      action,
+      at: Date.now()
+    }).catch(() => {});
+  }
+
+  function renderActionChatLog(){
+    if (!actionChatBody) return;
+    const rows = Object.values(state.room?.actionChatLog || {})
+      .filter((row) => !!row && !!safeText(row.action || ""))
+      .sort((a,b) => Number(a?.at || 0) - Number(b?.at || 0));
+    actionChatBody.innerHTML = "";
+    if (!rows.length){
+      const empty = document.createElement("div");
+      empty.className = "action-chat-row";
+      empty.textContent = "ログはまだありません。";
+      actionChatBody.appendChild(empty);
+      return;
+    }
+    for (const row of rows){
+      const line = document.createElement("div");
+      line.className = "action-chat-row";
+      const uid = safeText(row.uid || "");
+      const rawName = safeText(row.playerName || "");
+      const rawRole = safeText(row.roleName || "");
+      const playerName = isActionLogPlaceholderText(rawName, "name") ? displayNameForUid(uid) : rawName;
+      const roleName = isActionLogPlaceholderText(rawRole, "role") ? roleNameForUid(uid) : rawRole;
+      const action = safeText(row.action || "");
+      line.textContent = `${playerName}[${roleName}]：${action}`;
+      actionChatBody.appendChild(line);
+    }
+  }
+
+  function factionPercentMapFromHint(hint){
+    const map = { "レイダー":34, "シャドウ":33, "シチズン":33 };
+    const row = hint && typeof hint === "object" ? hint : {};
+    const confirmed = safeText(row.confirmedFaction || "");
+    if (confirmed && map[confirmed] != null){
+      for (const key of Object.keys(map)) map[key] = (key === confirmed) ? 100 : 0;
+      return map;
+    }
+    const possible = Array.isArray(row.possibleFactions)
+      ? [...new Set(row.possibleFactions.map((f) => safeText(f)).filter((f) => map[f] != null))]
+      : [];
+    if (possible.length){
+      for (const key of Object.keys(map)) map[key] = 0;
+      const base = Math.floor(100 / possible.length);
+      let rest = 100 - (base * possible.length);
+      for (const f of possible){
+        map[f] = base + (rest > 0 ? 1 : 0);
+        if (rest > 0) rest -= 1;
+      }
+    }
+    return map;
+  }
+
+  function appendFactionInferenceChangeLog(observerUid, targetUid, prevHint, nextHint){
+    const observer = safeText(observerUid || "");
+    const target = safeText(targetUid || "");
+    if (!observer || !target) return;
+    const before = factionPercentMapFromHint(prevHint || null);
+    const after = factionPercentMapFromHint(nextHint || null);
+    const deltas = [];
+    for (const faction of ["レイダー", "シャドウ", "シチズン"]){
+      const diff = Number(after[faction] || 0) - Number(before[faction] || 0);
+      if (Math.abs(diff) < 5) continue;
+      const sign = diff > 0 ? "+" : "";
+      deltas.push(`${safeText(playerById(target)?.name || "プレイヤー")}→${faction}${sign}${diff}%`);
+    }
+    if (!deltas.length) return;
+    appendActionChatLog(observer, deltas.join(" / ")).catch(() => {});
   }
 
   async function grantEquipmentToPlayer(uid, cardObj, theme){
@@ -8385,23 +8758,23 @@
   async function applyNpcGreenAnswerEffect(targetUid, cardObj, answerId){
     const text = safeText(cardObj?.effect || cardObj?.text || "");
     if (answerId === "take_damage"){
-      await addDamageToPlayer(targetUid, 1);
+      await addDamageToPlayer(targetUid, 1, { skipActionLog:true });
       return;
     }
     const isPositive = (answerId === "yes" || answerId === "reveal_identity");
     if (!isPositive) return;
     if (text.includes("1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ")){
       const cur = clampDamage(damageCache?.[targetUid]);
-      if (cur <= 0) await addDamageToPlayer(targetUid, 1);
-      else await healDamageToPlayer(targetUid, 1, "green_heal");
+      if (cur <= 0) await addDamageToPlayer(targetUid, 1, { skipActionLog:true });
+      else await healDamageToPlayer(targetUid, 1, "green_heal", { skipActionLog:true });
     } else if (!text.includes("❿に移動せよ")) {
       const m = text.match(/(\d+)ダメージ受けよ/);
       const dmg = m ? Number(m[1] || 0) : 0;
-      if (dmg > 0) await addDamageToPlayer(targetUid, dmg);
+      if (dmg > 0) await addDamageToPlayer(targetUid, dmg, { skipActionLog:true });
     }
     if (text.includes("❿に移動せよ")){
       const nowRoom = markerRoomId(markerCache?.[targetUid]);
-      if (nowRoom === 7) await addDamageToPlayer(targetUid, 1);
+      if (nowRoom === 7) await addDamageToPlayer(targetUid, 1, { skipActionLog:true });
       else await placePlayerMarkerInRoom(targetUid, 7);
     }
   }
@@ -8463,6 +8836,15 @@
     }
     await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${responderUid}`)).catch(() => {});
     await applyNpcGreenAnswerEffect(responderUid, payload.card, opt.id);
+    const q = safeText(payload?.card?.effect || payload?.card?.text || "");
+    appendGreenHistoryLogFromResponse({
+      requestId: safeText(payload?.requestId || ""),
+      from: safeText(payload?.from || ""),
+      to: responderUid,
+      card: payload?.card || null,
+      answerLabel: safeText(opt?.label || opt?.id || ""),
+      answerId: safeText(opt?.id || "")
+    });
     return { answerId: opt.id, roleId };
   }
 
@@ -8628,6 +9010,7 @@
     const ans = safeText(answerId || "");
     if (ans !== "yes" && ans !== "reveal_identity" && ans !== "no") return;
 
+    const prevHint = state.room?.npcIntel?.factionHints?.[asker]?.[target] || null;
     const revealCard = isRevealIdentityGreenCard(cardObj);
     if (revealCard && ans === "reveal_identity"){
       const roleId = safeText(revealedRoleId || "");
@@ -8636,6 +9019,17 @@
       const samePossible = revealedFaction === askerFaction;
       const sameImpossible = !samePossible;
       const rivalFaction = askerFaction === "レイダー" ? "シャドウ" : askerFaction === "シャドウ" ? "レイダー" : "";
+      const nextHint = {
+        ...(prevHint || {}),
+        samePossible,
+        sameImpossible,
+        sameConfirmed: samePossible,
+        enemyCertain: !!rivalFaction && revealedFaction === rivalFaction,
+        possibleFactions: [revealedFaction],
+        confirmedFaction: revealedFaction,
+        confirmedBy: "green_reveal_identity",
+        at: Date.now()
+      };
       await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
         const next = cur && typeof cur === "object" ? cur : {};
         next.factionHints = next.factionHints || {};
@@ -8643,17 +9037,11 @@
         const prev = next.factionHints[asker][target] || {};
         next.factionHints[asker][target] = {
           ...prev,
-          samePossible,
-          sameImpossible,
-          sameConfirmed: samePossible,
-          enemyCertain: !!rivalFaction && revealedFaction === rivalFaction,
-          possibleFactions: [revealedFaction],
-          confirmedFaction: revealedFaction,
-          confirmedBy: "green_reveal_identity",
-          at: Date.now()
+          ...nextHint
         };
         return next;
       });
+      appendFactionInferenceChangeLog(asker, target, prevHint, nextHint);
       return;
     }
 
@@ -8663,32 +9051,39 @@
     const possible = new Set(ans === "no" ? [...allSet].filter(f => !setAsked.has(f)) : [...setAsked]);
     const rivalFaction = askerFaction === "レイダー" ? "シャドウ" : askerFaction === "シャドウ" ? "レイダー" : "";
 
+    const prevPossible = Array.isArray(prevHint?.possibleFactions)
+      ? new Set(prevHint.possibleFactions.map((f) => safeText(f)).filter(Boolean))
+      : new Set(allSet);
+    const mergedPossible = new Set([...prevPossible].filter((f) => possible.has(f)));
+    const decidedPossible = mergedPossible.size ? mergedPossible : possible;
+    const samePossible = decidedPossible.has(askerFaction);
+    const sameImpossible = !samePossible;
+    const sameConfirmed = decidedPossible.size === 1 && decidedPossible.has(askerFaction);
+    const enemyCertain = !!rivalFaction && decidedPossible.size === 1 && decidedPossible.has(rivalFaction);
+    const nextHint = {
+      ...(prevHint || {}),
+      possibleFactions: [...decidedPossible],
+      samePossible,
+      sameImpossible,
+      sameConfirmed,
+      enemyCertain,
+      at: Date.now()
+    };
+
     await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
       const next = cur && typeof cur === "object" ? cur : {};
       next.factionHints = next.factionHints || {};
       next.factionHints[asker] = next.factionHints[asker] || {};
       const prev = next.factionHints[asker][target] || {};
-      const prevPossible = Array.isArray(prev.possibleFactions)
-        ? new Set(prev.possibleFactions.map((f) => safeText(f)).filter(Boolean))
-        : new Set(allSet);
-      const mergedPossible = new Set([...prevPossible].filter((f) => possible.has(f)));
-      const decidedPossible = mergedPossible.size ? mergedPossible : possible;
-      const samePossible = decidedPossible.has(askerFaction);
-      const sameImpossible = !samePossible;
-      const sameConfirmed = decidedPossible.size === 1 && decidedPossible.has(askerFaction);
-      const enemyCertain = !!rivalFaction && decidedPossible.size === 1 && decidedPossible.has(rivalFaction);
       next.factionHints[asker][target] = {
         ...prev,
-        possibleFactions: [...decidedPossible],
-        samePossible,
-        sameImpossible,
-        sameConfirmed,
-        enemyCertain,
-        at: Date.now()
+        ...nextHint
       };
       return next;
     });
+    appendFactionInferenceChangeLog(asker, target, prevHint, nextHint);
   }
+
 
   async function recordNpcAttackTarget(attackerUid, targetUid){
     const attacker = safeText(attackerUid || "");
@@ -8721,6 +9116,9 @@
       inferredFaction = targetFaction === "レイダー" ? "シャドウ" : "レイダー";
     }
     if (!inferredFaction) return;
+
+    const prevHintsMap = state.room?.npcIntel?.factionHints || {};
+    const observerUidsForLog = latestPlayers.map((p) => safeText(p.id || "")).filter(Boolean);
 
     await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
       const next = cur && typeof cur === "object" ? cur : {};
@@ -8756,6 +9154,24 @@
       }
       return next;
     });
+
+    for (const observerUid of observerUidsForLog){
+      const observerFaction = safeText(roleInfoByUid(observerUid)?.faction || "");
+      if (!observerFaction) continue;
+      const prevHint = prevHintsMap?.[observerUid]?.[actor] || null;
+      const nextHint = {
+        ...(prevHint || {}),
+        possibleFactions: [inferredFaction],
+        samePossible: observerFaction === inferredFaction,
+        sameImpossible: observerFaction !== inferredFaction,
+        sameConfirmed: observerFaction === inferredFaction,
+        enemyCertain: isRivalFactionPair(observerFaction, inferredFaction),
+        confirmedFaction: inferredFaction,
+        confirmedBy: safeText(reason || (rel === "same" ? "revealed_target_same" : "revealed_target_enemy")),
+        at: Date.now()
+      };
+      appendFactionInferenceChangeLog(observerUid, actor, prevHint, nextHint);
+    }
   }
 
   async function recordNpcFactionCertaintyFromRevealedAttack(attackerUid, targetUid){
@@ -8836,6 +9252,87 @@
     return !!hint?.sameImpossible;
   }
 
+  function npcRoleAbilityUsedByUid(roleId, uid){
+    const rid = safeText(roleId || "");
+    const actorUid = safeText(uid || "");
+    const spec = roleSelectionSpec(rid);
+    if (!spec || !actorUid) return false;
+    const value = state.room?.abilityUsage?.[spec.usageKey]?.[actorUid];
+    if (spec.perTurn){
+      return safeText(value || "") === currentTurnKey();
+    }
+    return !!value;
+  }
+
+  async function markNpcRoleAbilityUsed(roleId, uid){
+    const rid = safeText(roleId || "");
+    const actorUid = safeText(uid || "");
+    const spec = roleSelectionSpec(rid);
+    if (!spec || !state.roomCode || !actorUid) return;
+    const value = spec.perTurn ? currentTurnKey() : true;
+    await set(ref(db, `rooms/${state.roomCode}/abilityUsage/${spec.usageKey}/${actorUid}`), value);
+  }
+
+  function npcKnownEnemyTarget(actorUid, { rivalFaction = "", threshold = 0.9, roomId = 0, includeRevealedOnly = false } = {}){
+    const actor = safeText(actorUid || "");
+    if (!actor) return "";
+    const role = roleInfoByUid(actor);
+    const myFaction = safeText(role?.faction || "");
+    const enemyFaction = safeText(rivalFaction || (myFaction === "レイダー" ? "シャドウ" : myFaction === "シャドウ" ? "レイダー" : ""));
+    const pool = latestPlayers
+      .filter((p) => p.id !== actor)
+      .filter((p) => !isPlayerEliminated(p.id))
+      .filter((p) => !roomId || markerRoomId(markerCache?.[p.id]) === Number(roomId));
+    if (!pool.length) return "";
+
+    const revealed = pool
+      .filter((p) => revealedFactionForUid(p.id) === enemyFaction)
+      .sort((a,b) => clampDamage(damageCache?.[b.id]) - clampDamage(damageCache?.[a.id]));
+    if (revealed.length) return safeText(revealed[0]?.id || "");
+    if (includeRevealedOnly) return "";
+
+    const likely = pool
+      .map((p) => ({ uid:p.id, likelihood:npcEnemyLikelihoodByIntel(actor, p.id) }))
+      .filter((row) => row.likelihood >= Math.max(0.1, Number(threshold) || 0.9))
+      .sort((a,b) => b.likelihood - a.likelihood);
+    return safeText(likely[0]?.uid || "");
+  }
+
+  async function npcPerformAttackRoll(attackerUid, targetUid){
+    const actor = safeText(attackerUid || "");
+    const target = safeText(targetUid || "");
+    if (!actor || !target || !state.roomCode) return { hit:false, damage:0, d6:0, d4:0 };
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    const d6 = 1 + Math.floor(Math.random() * 6);
+    const d4 = 1 + Math.floor(Math.random() * 4);
+    const motion = createDiceMotion(window.innerWidth, window.innerHeight, centerX, centerY);
+    await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
+      uid: actor,
+      targetUid: target,
+      gatlingTargetUids:[],
+      x: centerX,
+      y: centerY,
+      d6,
+      d4,
+      masamuneMode:false,
+      vendettaMode:false,
+      motion,
+      at: Date.now()
+    });
+    await waitMs(900);
+    const hit = didAttackRollSucceed(d6, d4, { masamuneMode:false, vendettaMode:false });
+    await waitMs(NPC_TURN_PACING.attackAfterMs);
+    let damage = 0;
+    if (hit){
+      damage = calcAttackDamageFromRoll(actor, d6, d4, { targetUid:target });
+      if (damage > 0) await addDamageToPlayer(target, damage, { source:"attack", actorUid: actor, skipActionLog:true });
+    }
+    appendActionChatLog(actor, `攻撃ロール：ダメージ${Math.max(0,damage)} (6d${d6},4d${d4})>${displayNameRoleForUid(target)} (${currentDamageForUid(target)})`).catch(() => {});
+    await recordNpcAttackTarget(actor, target);
+    return { hit, damage, d6, d4 };
+  }
+
   async function resolveNpcCounterPromptsIfNeeded(){
     if (!state.isHost || !state.roomCode || !state.room?.computerMode) return;
     const map = state.room?.counterPromptState || {};
@@ -8851,7 +9348,16 @@
       const attackerUid = safeText(entry.attackerUid || "");
 
       if (roleId === "SHA_W3"){
-        if (!attackerUid || !isIdentityRevealedFor(attackerUid)) continue;
+        const attackerFaction = safeText(roleInfoByUid(attackerUid)?.faction || "");
+        const attackerIsRevealedRaider = !!attackerUid && isIdentityRevealedFor(attackerUid) && attackerFaction === "レイダー";
+        const attackerLikelyEnemy = npcEnemyLikelihoodByIntel(uid, attackerUid) >= 0.75 || isNpcCertainNotSameFactionByIntel(uid, attackerUid);
+        const blockedByGuardian = hasGuardianAngelShield(attackerUid);
+        const blockedByGordon = hasGordonBarrier(attackerUid);
+        if (!attackerUid || blockedByGuardian || blockedByGordon || (!attackerIsRevealedRaider && !attackerLikelyEnemy)){
+          await remove(ref(db, `rooms/${state.roomCode}/counterPromptState/${uid}`)).catch(() => {});
+          continue;
+        }
+        await npcAnnounceAbilityUse(uid, "反撃", attackerUid);
         await runWerewolfCounterAttackForUid(uid, attackerUid);
         await remove(ref(db, `rooms/${state.roomCode}/counterPromptState/${uid}`)).catch(() => {});
         continue;
@@ -8862,7 +9368,8 @@
         const attackerIsRevealedRaider = !!attackerUid
           && isIdentityRevealedFor(attackerUid)
           && safeText(attackerRole?.faction || "") === "レイダー";
-        const attackerIsCertainEnemy = isNpcCertainNotSameFactionByIntel(uid, attackerUid);
+        const attackerIsCertainEnemy = isNpcCertainNotSameFactionByIntel(uid, attackerUid)
+          || npcEnemyLikelihoodByIntel(uid, attackerUid) >= 0.75;
         const shouldUseVenom = attackerIsRevealedRaider || attackerIsCertainEnemy;
 
         if (!shouldUseVenom){
@@ -8870,6 +9377,7 @@
           continue;
         }
 
+        await npcAnnounceAbilityUse(uid, "反駁の猛毒", attackerUid);
         await revealIdentityToEquipmentForUid(uid);
         const roomRef = ref(db, `rooms/${state.roomCode}`);
         await runTransaction(roomRef, (cur) => {
@@ -8935,7 +9443,7 @@
       const targetUid = chooseNpcTargetForCard(uid, { purpose:"first_aid", includeSelf:true });
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
-      await setDamageToPlayer(targetUid, 7, "first_aid_set");
+      await setDamageToPlayer(targetUid, 7, "first_aid_set", { actorUid:uid });
       return;
     }
     if (name === "恩恵"){
@@ -8944,7 +9452,8 @@
       await npcAnnounceSelectedPlayer(uid, targetUid);
       const eye = 1 + Math.floor(Math.random() * 6);
       await emitCardDiceEvent({ kind:"blessing", uid, d6:eye });
-      await healDamageToPlayer(targetUid, eye, "card_blessing_heal");
+      await healDamageToPlayer(targetUid, eye, "card_blessing_heal", { actorUid:uid, skipActionLog:true });
+      appendActionChatLog(uid, `[恩恵] (6d${eye}) ${actionDeltaText(-eye)}>${actionTargetWithDamage(targetUid, -eye)}`).catch(() => {});
       return;
     }
     if (name === "吸血コウモリ"){
@@ -8952,8 +9461,13 @@
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
       await recordFactionRelationInferenceFromRevealedTarget(uid, targetUid, "enemy", "card_attack_target_revealed");
-      if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
-      await healDamageToPlayer(uid, 1, "card_vampire_bat_heal");
+      let dmg = 0;
+      if (!hasEquipmentByName(targetUid, "いにしえの聖杯")){
+        dmg = 2;
+        await addDamageToPlayer(targetUid, 2, { actorUid:uid, skipActionLog:true });
+      }
+      await healDamageToPlayer(uid, 1, "card_vampire_bat_heal", { actorUid:uid, skipActionLog:true });
+      appendActionChatLog(uid, `[吸血コウモリ] ${actionDeltaText(-1)}>${actionTargetWithDamage(uid, -1)}, ${actionDeltaText(dmg)}>${actionTargetWithDamage(targetUid, dmg)}`).catch(() => {});
       return;
     }
     if (name === "三つ目の黒犬"){
@@ -8961,8 +9475,8 @@
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
       await recordFactionRelationInferenceFromRevealedTarget(uid, targetUid, "enemy", "card_attack_target_revealed");
-      if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
-      if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 2);
+      if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2, { actorUid:uid });
+      if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 2, { actorUid:uid });
       return;
     }
     if (name === "呪いの人形"){
@@ -8973,9 +9487,9 @@
       const eye = 1 + Math.floor(Math.random() * 6);
       await emitCardDiceEvent({ kind:"curse_doll", uid, d6:eye });
       if (eye <= 4){
-        if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 3);
+        if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 3, { actorUid:uid });
       } else if (!hasEquipmentByName(uid, "いにしえの聖杯")){
-        await addDamageToPlayer(uid, 3);
+        await addDamageToPlayer(uid, 3, { actorUid:state.userId });
       }
       return;
     }
@@ -8983,7 +9497,7 @@
       const canChooseYes = role?.faction === "レイダー";
       if (canChooseYes && chooseYes){
         await revealIdentityToEquipmentForUid(uid);
-        await setDamageToPlayer(uid, 0, "card_kohrin_heal");
+        await setDamageToPlayer(uid, 0, "card_kohrin_heal", { actorUid:uid });
       }
       return;
     }
@@ -8991,7 +9505,7 @@
       const canChooseYes = role?.faction === "シャドウ";
       if (canChooseYes && chooseYes){
         await revealIdentityToEquipmentForUid(uid);
-        await setDamageToPlayer(uid, 0, "card_kohrin_heal");
+        await setDamageToPlayer(uid, 0, "card_kohrin_heal", { actorUid:uid });
       }
       return;
     }
@@ -8999,7 +9513,7 @@
       const canChooseYes = (role?.initial === "A" || role?.initial === "U");
       if (canChooseYes && chooseYes){
         await revealIdentityToEquipmentForUid(uid, identityPromptRevealOptions(name));
-        await setDamageToPlayer(uid, 0, "card_kohrin_heal");
+        await setDamageToPlayer(uid, 0, "card_kohrin_heal", { actorUid:uid });
       }
       return;
     }
@@ -9010,7 +9524,7 @@
       return;
     }
     if (name === "いやしの聖水"){
-      await healDamageToPlayer(uid, 2, "card_holy_water_heal");
+      await healDamageToPlayer(uid, 2, "card_holy_water_heal", { actorUid:uid });
       return;
     }
     if (name === "裁きの閃光"){
@@ -9020,7 +9534,7 @@
     if (name === "人魚の涙"){
       const topUids = maxDamageAlivePlayerIds();
       for (const targetUid of topUids){
-        await healDamageToPlayer(targetUid, 3, "card_mermaid_tears_heal");
+        await healDamageToPlayer(targetUid, 3, "card_mermaid_tears_heal", { actorUid:uid });
       }
       return;
     }
@@ -9291,7 +9805,8 @@
         const targetName = safeText(playerById(targetUid)?.name || "プレイヤー");
         await showNpcSpeech(uid, `${targetName}さんに2ダメージ！`, 1500);
         await recordFactionRelationInferenceFromRevealedTarget(uid, targetUid, "enemy", "room3_damage_target_revealed");
-        await addDamageToPlayer(targetUid, 2, { source:"room3" });
+        await addDamageToPlayer(targetUid, 2, { source:"room3", actorUid:uid, skipActionLog:true });
+        appendActionChatLog(uid, `市庁舎 ${actionDeltaText(2)}>${actionTargetWithDamage(targetUid, 2)}`).catch(() => {});
         await recordNpcAttackTarget(uid, targetUid);
         return;
       }
@@ -9299,7 +9814,8 @@
       const myDamage = clampDamage(damageCache?.[uid]);
       if (myDamage > 0){
         await showNpcSpeech(uid, "1回復します！", 1500);
-        await healDamageToPlayer(uid, 1, "room3_heal");
+        await healDamageToPlayer(uid, 1, "room3_heal", { actorUid:uid, skipActionLog:true });
+        appendActionChatLog(uid, `市庁舎 ${actionDeltaText(-1)}>${actionTargetWithDamage(uid, -1)}`).catch(() => {});
         return;
       }
 
@@ -9320,7 +9836,8 @@
       const targetName = safeText(playerById(healTargetUid)?.name || "プレイヤー");
       await showNpcSpeech(uid, `${targetName}を1回復！`, 1500);
       await recordFactionRelationInferenceFromRevealedTarget(uid, healTargetUid, "same", "room3_heal_target_revealed");
-      await healDamageToPlayer(healTargetUid, 1, "room3_heal");
+      await healDamageToPlayer(healTargetUid, 1, "room3_heal", { actorUid:uid, skipActionLog:true });
+      appendActionChatLog(uid, `市庁舎 ${actionDeltaText(-1)}>${actionTargetWithDamage(healTargetUid, -1)}`).catch(() => {});
     }
   }
 
@@ -9351,6 +9868,46 @@
     try {
       await waitMs(NPC_TURN_PACING.turnStartDelayMs);
       if (turnCycleKey() !== turnKey) return;
+      const turnRoleId = safeText(roleIdForUid(turnUid) || "");
+
+      if (["RAI_E2","RAI_F1","RAI_F2"].includes(turnRoleId) && !npcRoleAbilityUsedByUid(turnRoleId, turnUid) && !isAbilitySealedForPlayer(turnUid, turnRoleId)){
+        const certainShadowUid = npcKnownEnemyTarget(turnUid, { rivalFaction:"シャドウ", threshold:0.75 });
+        if (certainShadowUid){
+          await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"npc_start_role" });
+          if (turnRoleId === "RAI_E2"){
+            await npcAnnounceAbilityUse(turnUid, "封印の鎖", certainShadowUid);
+            await set(ref(db, `rooms/${state.roomCode}/erikaSealedTargets/${certainShadowUid}`), true);
+          } else if (turnRoleId === "RAI_F1"){
+            const eye = 1 + Math.floor(Math.random() * 6);
+            await emitCardDiceEvent({ kind:"role_felix", uid: turnUid, d6: eye });
+            await waitMs(1000);
+            await addDamageToPlayer(certainShadowUid, eye, { actorUid:turnUid, skipActionLog:true });
+            await npcAnnounceAbilityUse(turnUid, "アストラル・メイス", certainShadowUid, { delta:eye, useCurrentDamage:true });
+          } else if (turnRoleId === "RAI_F2"){
+            await npcAnnounceAbilityUse(turnUid, "スラム街の天使", certainShadowUid);
+            await setDamageToPlayer(certainShadowUid, 7, "felicia_set");
+          }
+          await markNpcRoleAbilityUsed(turnRoleId, turnUid);
+        }
+      }
+
+      if (turnRoleId === "SHA_U2" && !npcRoleAbilityUsedByUid("SHA_U2", turnUid) && !isAbilitySealedForPlayer(turnUid, "SHA_U2")){
+        const meteorTarget = latestPlayers
+          .filter((p) => p.id !== turnUid && !isPlayerEliminated(p.id))
+          .filter((p) => [6,7].includes(markerRoomId(markerCache?.[p.id])))
+          .filter((p) => !hasGordonBarrier(p.id))
+          .map((p) => p.id)
+          .find((uid) => {
+            const revealed = revealedFactionForUid(uid);
+            return revealed === "レイダー" || isNpcCertainNotSameFactionByIntel(turnUid, uid) || npcEnemyLikelihoodByIntel(turnUid, uid) >= 0.9;
+          }) || "";
+        if (meteorTarget){
+          await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"npc_uranus_start" });
+          await addDamageToPlayer(meteorTarget, 3, { actorUid:turnUid, skipActionLog:true });
+          await npcAnnounceAbilityUse(turnUid, "メテオストライク", meteorTarget, { delta:3, useCurrentDamage:true });
+          await markNpcRoleAbilityUsed("SHA_U2", turnUid);
+        }
+      }
 
       const currentTurn = turnState() || {};
       if (!currentTurn.moveDone){
@@ -9383,6 +9940,10 @@
             secondMotion,
             at: Date.now()
           });
+          const moveRollText = hasCompass
+            ? `移動ロール：合計${d6 + d4} (6d${d6},4d${d4}) / 合計${secondD6 + secondD4} (6d${secondD6},4d${secondD4})`
+            : `移動ロール：合計${d6 + d4} (6d${d6},4d${d4})`;
+          appendActionChatLog(turnUid, moveRollText).catch(() => {});
           await waitMs(hasCompass ? 3200 : 900);
           await waitMs(NPC_TURN_PACING.diceAfterMs);
           const roomA = diceTotalToRoomId(d6 + d4);
@@ -9392,6 +9953,27 @@
           if (targetRoomId) await placePlayerMarkerInRoom(turnUid, targetRoomId);
         }
         await update(ref(db, `rooms/${state.roomCode}/turn`), { moveDone:true, moveAt:Date.now() });
+      }
+
+      if (turnRoleId === "RAI_E1" && isIdentityRevealedFor(turnUid) && !turnState()?.emiTeleportUsed){
+        const inRangeBefore = [...attackRangeTargetUidsFor(turnUid)].filter((uid) => revealedFactionForUid(uid) === "シャドウ" || npcEnemyLikelihoodByIntel(turnUid, uid) >= 0.9);
+        if (!inRangeBefore.length){
+          const nowRoom = markerRoomId(markerCache?.[turnUid]);
+          const adj = adjacentOuterRoomIds(nowRoom);
+          for (const rid of adj){
+            const targets = latestPlayers
+              .filter((p) => p.id !== turnUid && !isPlayerEliminated(p.id))
+              .filter((p) => markerRoomId(markerCache?.[p.id]) === Number(rid))
+              .map((p) => p.id)
+              .filter((uid) => revealedFactionForUid(uid) === "シャドウ" || npcEnemyLikelihoodByIntel(turnUid, uid) >= 0.9);
+            if (!targets.length) continue;
+            await npcAnnounceAbilityUse(turnUid, "テレポート");
+            await emitRoleFlashEvent("RAI_E1", "emi_teleport", 1800);
+            await placePlayerMarkerInRoom(turnUid, rid);
+            await update(ref(db, `rooms/${state.roomCode}/turn`), { emiTeleportUsed:true, updatedAt:Date.now() });
+            break;
+          }
+        }
       }
 
       await waitMs(NPC_TURN_PACING.phaseIntervalMs);
@@ -9437,35 +10019,83 @@
           }
           const targetName = safeText(playerById(targetUid)?.name || "");
           await showNpcSpeech(turnUid, `${targetName}さんを攻撃！`, 700);
+          const attackRes = await npcPerformAttackRoll(turnUid, targetUid);
 
-          const centerX = window.innerWidth / 2;
-          const centerY = window.innerHeight / 2;
-          const d6 = 1 + Math.floor(Math.random() * 6);
-          const d4 = 1 + Math.floor(Math.random() * 4);
-          const motion = createDiceMotion(window.innerWidth, window.innerHeight, centerX, centerY);
-          await set(ref(db, `rooms/${state.roomCode}/diceEvents/attack`), {
-            uid: turnUid,
-            targetUid,
-            gatlingTargetUids:[],
-            x: centerX,
-            y: centerY,
-            d6,
-            d4,
-            masamuneMode:false,
-            vendettaMode:false,
-            motion,
-            at: Date.now()
-          });
-          await waitMs(900);
-          const hit = didAttackRollSucceed(d6, d4, { masamuneMode:false, vendettaMode:false });
-          await waitMs(NPC_TURN_PACING.attackAfterMs);
-          if (hit){
-            const dmg = calcAttackDamageFromRoll(turnUid, d6, d4, { targetUid });
-            if (dmg > 0) await addDamageToPlayer(targetUid, dmg, { source:"attack" });
+          if (!attackRes.hit && turnRoleId === "RAI_G2" && hasEquipmentByName(turnUid, "エクスカリバー")
+            && !isAbilitySealedForPlayer(turnUid, "RAI_G2")
+            && (revealedFactionForUid(targetUid) === "シャドウ" || npcEnemyLikelihoodByIntel(turnUid, targetUid) >= 0.75)){
+            await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"galahad_reroll" });
+            await npcAnnounceAbilityUse(turnUid, "魔剣の伝承者", targetUid);
+            await npcPerformAttackRoll(turnUid, targetUid);
           }
-          await recordNpcAttackTarget(turnUid, targetUid);
+
+          if (turnRoleId === "SHA_U3" && !isAbilitySealedForPlayer(turnUid, "SHA_U3") && !isAttackAbilityUsedThisTurn("SHA_U3")
+            && (revealedFactionForUid(targetUid) === "レイダー" || isNpcCertainNotSameFactionByIntel(turnUid, targetUid) || npcEnemyLikelihoodByIntel(turnUid, targetUid) >= 0.9)){
+            markAttackAbilityUsedThisTurn("SHA_U3");
+            await npcAnnounceAbilityUse(turnUid, "デル・フリス");
+            const secondPool = [...attackRangeTargetUidsFor(turnUid)]
+              .filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
+            const raiderPriority = secondPool.filter((uid) => revealedFactionForUid(uid) === "レイダー" || npcEnemyLikelihoodByIntel(turnUid, uid) >= 0.9);
+            const secondTarget = safeText((raiderPriority.length ? raiderPriority : [])[0] || "");
+            if (secondTarget){
+              await npcPerformAttackRoll(turnUid, secondTarget);
+            }
+          }
+
+          if (turnRoleId === "SHA_V2" && clampDamage(damageCache?.[turnUid]) >= 5 && attackRes.hit && !isAbilitySealedForPlayer(turnUid, "SHA_V2")){
+            await emitRoleFlashEvent("SHA_V2", "vampire_heal");
+            await healDamageToPlayer(turnUid, 2, "vampire_role_heal", { actorUid:turnUid, skipActionLog:true });
+            await npcAnnounceAbilityUse(turnUid, "吸血", turnUid, { delta:-2, useCurrentDamage:true });
+          }
         }
         await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
+      }
+
+      if (turnRoleId === "RAI_E3" && !isAbilitySealedForPlayer(turnUid, "RAI_E3") && !npcRoleAbilityUsedByUid("RAI_E3", turnUid)){
+        const actorRoom = markerRoomId(markerCache?.[turnUid]);
+        const sameRoom = latestPlayers.filter((p) => p.id !== turnUid && !isPlayerEliminated(p.id) && markerRoomId(markerCache?.[p.id]) === actorRoom);
+        const roomHasKnownRaider = sameRoom.some((p) => revealedFactionForUid(p.id) === "レイダー" || npcEnemyLikelihoodByIntel(turnUid, p.id) < 0.25);
+        if (roomHasKnownRaider){
+          const friend = sameRoom
+            .map((p) => ({ uid:p.id, dmg:clampDamage(damageCache?.[p.id]), enemy:npcEnemyLikelihoodByIntel(turnUid, p.id) }))
+            .filter((row) => row.enemy < 0.5 && row.dmg > 0)
+            .sort((a,b) => b.dmg - a.dmg)[0];
+          if (friend?.uid){
+            const eye = 1 + Math.floor(Math.random() * 4);
+            await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"emma_heal" });
+            await emitCardDiceEvent({ kind:"role_emma", uid: turnUid, d4: eye });
+            await waitMs(1000);
+            await healDamageToPlayer(friend.uid, eye, "emma_ability_heal", { actorUid:turnUid, skipActionLog:true });
+            await npcAnnounceAbilityUse(turnUid, "癒しの光", friend.uid, { delta:-eye, useCurrentDamage:true });
+            await markNpcRoleAbilityUsed("RAI_E3", turnUid);
+          }
+        }
+      }
+
+      if (turnRoleId === "RAI_G1" && !isAbilitySealedForPlayer(turnUid, "RAI_G1") && !state.room?.abilityUsage?.gordon?.[turnUid]){
+        const dmg = clampDamage(damageCache?.[turnUid]);
+        if (dmg >= 10 && dmg <= 14){
+          if (!isIdentityRevealedFor(turnUid)){
+            await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"npc_gordon_barrier" });
+          }
+          await npcAnnounceAbilityUse(turnUid, "絶対無敵バリア");
+          await set(ref(db, `rooms/${state.roomCode}/gordonBarrier/${turnUid}`), true);
+          await set(ref(db, `rooms/${state.roomCode}/abilityUsage/gordon/${turnUid}`), true);
+        }
+      }
+
+      if (turnRoleId === "SHA_W1" && !isAbilitySealedForPlayer(turnUid, "SHA_W1") && !state.room?.abilityUsage?.wight?.[turnUid]){
+        const eliminated = eliminatedPlayerCount();
+        const knownEnemy = npcKnownEnemyTarget(turnUid, { rivalFaction:"レイダー", threshold:0.75 });
+        if (eliminated > 0 && knownEnemy && Math.random() < 0.5){
+          await npcAnnounceAbilityUse(turnUid, "亡者の王");
+          await set(ref(db, `rooms/${state.roomCode}/abilityUsage/wight/${turnUid}`), true);
+          await update(ref(db, `rooms/${state.roomCode}/turn`), {
+            repeatTurnRemaining: eliminated,
+            repeatTurnTotal: eliminated,
+            updatedAt: Date.now()
+          });
+        }
       }
 
       await waitMs(NPC_TURN_PACING.phaseIntervalMs);
@@ -9476,6 +10106,7 @@
       scheduleNpcTurnRetry(NPC_TURN_PACING.retryMs);
     }
   }
+
 
 
   function nameFromSecondChar(name){
@@ -10043,14 +10674,18 @@
         delete temporaryRoleTagByUid[p.id];
       }
       const tempBubbleText = safeText(temporaryRoleTagByUid?.[p.id]?.text || "");
-      const npcBubbleText = safeText(activeNpcSpeechByUid?.[p.id] || "");
+      const npcBubble = activeNpcSpeechByUid?.[p.id] || null;
+      const npcBubbleText = safeText(npcBubble?.text || "");
+      const npcBubbleStyle = safeText(npcBubble?.style || "");
       const greenBubbleText = safeText(activeGreenReplies?.[p.id] || "");
       const bubbleText = safeText(tempBubbleText || npcBubbleText || greenBubbleText);
       if (bubbleText){
         const bubble = document.createElement("div");
         bubble.className = "position-bubble";
         const isGreenReplyBubble = !!greenBubbleText && !tempBubbleText && !npcBubbleText;
-        bubble.classList.toggle("white-text", !isGreenReplyBubble);
+        bubble.classList.toggle("white-text", !isGreenReplyBubble && !npcBubbleStyle);
+        if (npcBubbleStyle === "raider") bubble.classList.add("faction-raider");
+        if (npcBubbleStyle === "shadow") bubble.classList.add("faction-shadow");
         bubble.textContent = bubbleText;
         chipWrap.appendChild(bubble);
       }
@@ -10120,6 +10755,10 @@
           uids: [...justEliminatedUids],
           at: Date.now()
         };
+        for (const uid of justEliminatedUids){
+          const name = safeText(playerById(uid)?.name || "プレイヤー");
+          appendActionChatLog(uid, `脱落:${name}`).catch(() => {});
+        }
       }
 
       if (myRoleId === "CIT_B3" && attackDefeatedUids.length && !isMyIdentityRevealed() && !bruceAutoRevealTimer && !isMyAbilitySealed()){
@@ -10138,6 +10777,35 @@
 
       if (justEliminatedUids.includes(state.userId) && isMyRole("RAI_G3") && !isRoleAbilityUsed("RAI_G3")){
         setRoleAbilitySelectionState({ roleId:"RAI_G3", actorUid: state.userId }).catch(() => {});
+      }
+
+      if (state.isHost && state.roomCode && state.room?.computerMode){
+        for (const uid of justEliminatedUids){
+          if (!isNpcPlayerUid(uid)) continue;
+          if (safeText(roleIdForUid(uid) || "") !== "RAI_G3") continue;
+          if (state.room?.abilityUsage?.godwin?.[uid]) continue;
+          const eliminatedOthers = latestPlayers.filter((p) => p.id !== uid && isPlayerEliminated(p.id));
+          const raiderTarget = eliminatedOthers.find((p) => safeText(roleInfoByUid(p.id)?.faction || "") === "レイダー");
+          if (!raiderTarget) continue;
+          const selectedUid = safeText(raiderTarget.id || "");
+          if (!selectedUid) continue;
+          npcAnnounceAbilityUse(uid, "蘇生装置TYPE-G", selectedUid).catch(() => {});
+          runTransaction(ref(db, `rooms/${state.roomCode}`), (cur) => {
+            if (!cur) return cur;
+            cur.damage = cur.damage || {};
+            cur.damage[selectedUid] = clampDamage(7);
+            recycleRevivedPlayerEquipIntoDeck(cur, selectedUid);
+            cur.markers = cur.markers || {};
+            delete cur.markers[selectedUid];
+            cur.godwinRevivePendingMove = cur.godwinRevivePendingMove || {};
+            cur.godwinRevivePendingMove[selectedUid] = true;
+            if (cur.deckState && typeof cur.deckState === "object"){
+              cur.deckState.updatedAt = Date.now();
+            }
+            return cur;
+          }).catch(() => {});
+          set(ref(db, `rooms/${state.roomCode}/abilityUsage/godwin/${uid}`), true).catch(() => {});
+        }
       }
 
       if (activeRoleAbilitySelection?.roleId === "RAI_G3" && isRoleAbilityUsed("RAI_G3")){
@@ -10410,7 +11078,7 @@
         npcSpeechInitialized = true;
         npcSpeechSeenAt = at || 0;
         if (row?.uid && row?.text && Number(row?.expiresAt || 0) > Date.now()){
-          activeNpcSpeechByUid = { [safeText(row.uid)]: safeText(row.text) };
+          activeNpcSpeechByUid = { [safeText(row.uid)]: { text:safeText(row.text), style:safeText(row.style || "") } };
         }
         renderPositionLine();
         return;
@@ -10426,18 +11094,19 @@
       const expiresAt = Number(row?.expiresAt || 0);
       const uid = safeText(row?.uid || "");
       const text = safeText(row?.text || "");
+      const style = safeText(row?.style || "");
       if (!uid || !text || (expiresAt && expiresAt <= Date.now())){
         activeNpcSpeechByUid = {};
         renderPositionLine();
         return;
       }
-      activeNpcSpeechByUid = { [uid]: text };
+      activeNpcSpeechByUid = { [uid]: { text, style } };
       renderPositionLine();
       const timeoutMs = Math.max(0, expiresAt - Date.now());
       if (timeoutMs > 0){
         setTimeout(() => {
           if (!activeNpcSpeechByUid[uid]) return;
-          if (activeNpcSpeechByUid[uid] !== text) return;
+          if (safeText(activeNpcSpeechByUid?.[uid]?.text || "") !== text) return;
           activeNpcSpeechByUid = {};
           renderPositionLine();
         }, timeoutMs + 20);
@@ -10556,6 +11225,9 @@
       if (cur.guardianAngelShield && cur.guardianAngelShield[nextPlayerId]){
         delete cur.guardianAngelShield[nextPlayerId];
       }
+      if (cur.gordonBarrier && cur.gordonBarrier[nextPlayerId]){
+        delete cur.gordonBarrier[nextPlayerId];
+      }
       advanced = true;
       return cur;
     });
@@ -10667,6 +11339,18 @@
       if (diceRollOverlay) diceRollOverlay.innerHTML = '';
       openZoomFromDeckCard(drawn, "green", { closeOnBackdrop:false, showCloseButton:false });
       openGreenShareDock(drawn, { attackRangeOnly: viaParasol });
+    }
+
+    if (drawn){
+      const cardName = safeText(drawn?.name || "カード");
+      const cardEffect = safeText(drawn?.effect || "");
+      const selectionCards = new Set(["応急手当", "恩恵", "吸血コウモリ", "三つ目の黒犬", "呪いの人形"]);
+      const skipBasic = type === "green" || selectionCards.has(cardName);
+      if (!skipBasic){
+        const themeLabel = type === "white" ? "白" : (type === "black" ? "黒" : "緑");
+        const tail = (type === "green" && cardEffect) ? ` ${cardEffect}` : "";
+        appendActionChatLog(state.userId, `${themeLabel}ドロー：[${cardName}]${tail}`).catch(() => {});
+      }
     }
 
     scheduleDeckRebuildIfEmpty(type).catch(() => {});
@@ -11807,14 +12491,24 @@
     if (!uid || !state.roomCode || add <= 0) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) + add));
+    if (!!options?.skipActionLog) return;
+    const targetName = displayNameForUid(uid);
+    const source = safeText(options?.source || "");
+    const srcLabel = actionSourceLabel(source);
+    const src = srcLabel ? `(${srcLabel})` : "";
+    appendActionChatLog(safeText(options?.actorUid || state.userId), `ダメージ${src}:${targetName}さんに${add}`).catch(() => {});
   }
 
-  async function healDamageToPlayer(uid, amount, source = ""){
+  async function healDamageToPlayer(uid, amount, source = "", options = {}){
     const heal = Math.max(0, Number(amount) || 0);
     if (!uid || !state.roomCode || heal <= 0) return;
     if (!isGordonBarrierHpChangeAllowed(uid, source)) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) - heal));
+    if (!!options?.skipActionLog) return;
+    const targetName = displayNameForUid(uid);
+    const src = actionSourceLabel(source || "");
+    appendActionChatLog(safeText(options?.actorUid || state.userId), `回復${src ? `(${src})` : ""}:${targetName}さんを${heal}`).catch(() => {});
   }
 
   async function fullRecoverPlayer(uid){
@@ -11829,10 +12523,14 @@
   }
 
 
-  async function setDamageToPlayer(uid, damage, source = ""){
+  async function setDamageToPlayer(uid, damage, source = "", options = {}){
     if (!uid || !state.roomCode) return;
     if (!isGordonBarrierHpChangeAllowed(uid, source)) return;
     await set(ref(db, `rooms/${state.roomCode}/damage/${uid}`), clampDamage(damage));
+    if (!!options?.skipActionLog) return;
+    const targetName = displayNameForUid(uid);
+    const src = actionSourceLabel(source || "");
+    appendActionChatLog(safeText(options?.actorUid || state.userId), `ダメージ設定${src ? `(${src})` : ""}:${targetName}さん=${clampDamage(damage)}`).catch(() => {});
   }
 
   async function enableRepeatTurnOnce(){
@@ -12432,6 +13130,11 @@
             pendingAttackResultMeta.allowExcaliburButton = false;
           }
         }
+        for (const row of resolvedRows){
+          const rowUid = safeText(row.uid || "");
+          const dmg = Math.max(0, Number(row.damage || 0));
+          appendActionChatLog(state.userId, `攻撃ロール：ダメージ${dmg} (6d${finalD6},4d${finalD4})>${displayNameRoleForUid(rowUid)} (${currentDamageForUid(rowUid)})`).catch(() => {});
+        }
         const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
         const pendingTurnKey = turnCycleKey();
         pendingAttackResolution = { rows: resolvedRows, applied:false, turnKey: pendingTurnKey, meta: normalizeAttackResultMeta(pendingAttackResultMeta) };
@@ -12755,7 +13458,7 @@
     showRoomActionPopAt(clientX, clientY, "", async () => {
       await emitRoleFlashEvent("SHA_U2", "meteor_strike");
       await new Promise(resolve => setTimeout(resolve, 1800));
-      await addDamageToPlayer(uid, 3);
+      await addDamageToPlayer(uid, 3, { actorUid:state.userId });
       uranusMeteorResolved = true;
       renderMarkers();
     }, {
@@ -12794,7 +13497,8 @@
           await updateTurnRoomActionState({ room3ActionUsed:true });
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
-          await healDamageToPlayer(uid, 1, "room3_heal");
+          await healDamageToPlayer(uid, 1, "room3_heal", { actorUid:uid, skipActionLog:true });
+        appendActionChatLog(uid, `市庁舎 ${actionDeltaText(-1)}>${actionTargetWithDamage(uid, -1)}`).catch(() => {});
           renderMarkers();
         }, {
           yesLabel: "1回復する",
@@ -12808,7 +13512,8 @@
             showTurnHint("");
             await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "enemy", "room3_damage_target_revealed");
             await new Promise(resolve => setTimeout(resolve, 1000));
-            await addDamageToPlayer(uid, 2);
+            await addDamageToPlayer(uid, 2, { source:"room3", actorUid:state.userId, skipActionLog:true });
+            appendActionChatLog(state.userId, `市庁舎 ${actionDeltaText(2)}>${actionTargetWithDamage(uid, 2)}`).catch(() => {});
             renderMarkers();
           }
         });
@@ -12880,7 +13585,8 @@
           showTurnHint("");
           await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "same", "room3_heal_target_revealed");
           await new Promise(resolve => setTimeout(resolve, 1000));
-          await healDamageToPlayer(uid, 1, "room3_heal");
+          await healDamageToPlayer(uid, 1, "room3_heal", { actorUid:uid, skipActionLog:true });
+        appendActionChatLog(uid, `市庁舎 ${actionDeltaText(-1)}>${actionTargetWithDamage(uid, -1)}`).catch(() => {});
           renderMarkers();
         }, {
           yesLabel: "1回復する",
@@ -12894,7 +13600,8 @@
             showTurnHint("");
             await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "enemy", "room3_damage_target_revealed");
             await new Promise(resolve => setTimeout(resolve, 1000));
-            await addDamageToPlayer(uid, 2);
+            await addDamageToPlayer(uid, 2, { source:"room3", actorUid:state.userId, skipActionLog:true });
+            appendActionChatLog(state.userId, `市庁舎 ${actionDeltaText(2)}>${actionTargetWithDamage(uid, 2)}`).catch(() => {});
             renderMarkers();
           }
         });
@@ -13319,6 +14026,10 @@
   const btnKickNo = document.getElementById('btnKickNo');
 
   const hostSettingsBtn = document.getElementById('hostSettingsBtn');
+  const actionChatBtn = document.getElementById('actionChatBtn');
+  const actionChatBackdrop = document.getElementById('actionChatBackdrop');
+  const actionChatBody = document.getElementById('actionChatBody');
+  const actionChatCloseBtn = document.getElementById('actionChatCloseBtn');
   const startPop = document.getElementById('startPop');
   const btnStartPopClose = document.getElementById('btnStartPopClose');
   const btnGameStart = document.getElementById('btnGameStart');
@@ -13826,6 +14537,7 @@
 
   function updateHostUI(){
     refreshRoomLabels();
+    const showActionChat = state.isHost && isNpcActionChatMode();
     if (state.isHost){
       hostSettingsBtn.classList.add('visible');
       roomGuideBtn.classList.remove('visible');
@@ -13836,6 +14548,8 @@
       roomGuideBtn.classList.add('visible');
       roomGuideBtn.classList.remove('host-position');
     }
+    actionChatBtn?.classList.toggle('visible', showActionChat);
+    if (!showActionChat) actionChatBackdrop?.classList.add('hidden');
     helpBtn.classList.add('visible');
   }
 
@@ -13843,6 +14557,7 @@
     const roomRef = ref(db, `rooms/${state.roomCode}`);
     onValue(roomRef, snap => {
       state.room = snap.val() || {};
+      updateHostUI();
       restorePendingAttackResolutionFromRoom();
       restoreAttackLootPendingFromRoom();
       if (isGameStarted() && !currentTurnPlayerId() && state.isHost){
@@ -13861,6 +14576,7 @@
       syncDavidOverlayFloatingButtons();
       ensureDavidOverlayVisibleForAll();
       renderMarkers();
+      renderActionChatLog();
       syncPendingMoveChoiceOwnership();
       restorePendingMoveChoiceFromSeat();
       updateCardInteractivity();
@@ -13887,6 +14603,11 @@
     const handsRef = ref(db, `rooms/${state.roomCode}/hands`);
     onValue(handsRef, snap => {
       state.hands = snap.val() || {};
+      for (const [uid, hand] of Object.entries(state.hands || {})){
+        const rid = safeText(hand?.roleId || "");
+        const rname = safeText(ROLE_BY_ID?.[rid]?.name || "");
+        if (rname) lastKnownRoleNameByUid[safeText(uid)] = rname;
+      }
       renderHands();
       tryRestorePendingGreenSession();
       tryRestorePendingCardTargetSession().catch(() => {});
@@ -13928,6 +14649,7 @@
     }
     greenShareActions?.classList.remove("hidden");
     const responder = playerById(safeText(msg.to || ""));
+    appendGreenHistoryLogFromResponse(msg);
     setGreenSessionState({
       phase:"confirm",
       card: greenShareCard || msg.card || null,
@@ -14250,6 +14972,13 @@
         .sort((a,b) => a.seatIndex - b.seatIndex);
 
       latestPlayers = players;
+      for (const p of players){
+        const uid = safeText(p.id || "");
+        if (!uid) continue;
+        const name = safeText(p.name || "");
+        if (name) lastKnownNameByUid[uid] = name;
+      }
+      updateHostUI();
       tryRestorePendingGreenSession();
       tryRestorePendingCardTargetSession().catch(() => {});
       if (activeRoleAbilitySelection){
@@ -14983,6 +15712,16 @@
     if (!state.isHost) return;
     startPop.classList.toggle('hidden');
   });
+  actionChatBtn?.addEventListener('click', () => {
+    if (!state.isHost || !isNpcActionChatMode()) return;
+    renderActionChatLog();
+    actionChatBackdrop?.classList.remove('hidden');
+  });
+  actionChatCloseBtn?.addEventListener('click', () => actionChatBackdrop?.classList.add('hidden'));
+  actionChatBackdrop?.addEventListener('click', (e) => {
+    if (e.target !== actionChatBackdrop) return;
+    actionChatBackdrop.classList.add('hidden');
+  });
   btnStartPopClose.addEventListener('click', () => startPop.classList.add('hidden'));
   btnHostDice?.addEventListener('click', async () => {
     if (!state.isHost) return;
@@ -15025,6 +15764,7 @@
       remove(ref(db, `${base}/npcSpeech`)),
       remove(ref(db, `${base}/greenReveals`)),
       remove(ref(db, `${base}/greenRequests`)),
+      remove(ref(db, `${base}/actionChatLog`)),
       remove(ref(db, `${base}/roleAbilitySelection`)),
       remove(ref(db, `${base}/turn`)),
       remove(ref(db, `${base}/attackResolutionPending`)),
