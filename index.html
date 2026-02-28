@@ -9072,12 +9072,13 @@ ${targetName}さん...` : "";
     if (!askerFaction || askerFaction === "シチズン") return;
     const ans = safeText(answerId || "");
     const cardText = safeText(cardObj?.effect || cardObj?.text || "");
-    const changedRows = [];
+    let changedByUid = new Map();
 
     await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
       const next = cur && typeof cur === "object" ? cur : {};
       next.factionHints = next.factionHints || {};
       next.factionHints[asker] = next.factionHints[asker] || {};
+      const localChangedByUid = new Map();
 
       const setHintStatus = (uid, patch = {}) => {
         const prevHint = next.factionHints[asker][uid] || {};
@@ -9085,7 +9086,12 @@ ${targetName}さん...` : "";
         const after = normalizeFactionStatusMap({ ...before, ...patch });
         const nextHint = { ...prevHint, ...hintFromFactionStatus(after, askerFaction) };
         next.factionHints[asker][uid] = nextHint;
-        changedRows.push({ uid, prevHint, nextHint });
+        const row = localChangedByUid.get(uid);
+        if (row){
+          row.nextHint = nextHint;
+        } else {
+          localChangedByUid.set(uid, { uid, prevHint, nextHint });
+        }
       };
 
       const revealCard = isRevealIdentityGreenCard(cardObj);
@@ -9150,14 +9156,11 @@ ${targetName}さん...` : "";
         }
       }
 
+      changedByUid = localChangedByUid;
       return next;
     });
 
-    const dedup = new Map();
-    for (const row of changedRows){
-      dedup.set(row.uid, row);
-    }
-    for (const row of dedup.values()){
+    for (const row of changedByUid.values()){
       appendFactionInferenceChangeLog(asker, row.uid, row.prevHint, row.nextHint, { cardText });
     }
   }
