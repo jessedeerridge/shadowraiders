@@ -8634,11 +8634,11 @@ ${targetName}さん...` : "";
     appendActionChatLog(safeText(msg?.from || options?.actorUid || responderUid || state.userId), line).catch(() => {});
   }
 
-  async function appendActionChatLog(uid, actionText){
+  async function appendActionChatLog(uid, actionText, options = {}){
     const actorUid = safeText(uid || state.userId || "");
     const action = safeText(actionText || "").trim();
     if (!state.roomCode || !actorUid || !action) return;
-    if (!isNpcActionChatMode()) return;
+    if (!isNpcActionChatMode() && !options?.force) return;
     const name = displayNameForUid(actorUid);
     const roleName = roleNameForUid(actorUid);
     if (!isActionLogPlaceholderText(name, "name")) lastKnownNameByUid[actorUid] = name;
@@ -8745,7 +8745,7 @@ ${targetName}さん...` : "";
     if (!deltas.length) return;
     const prefix = cardText ? `[${cardText}] ` : "";
     const targetName = safeText(playerById(target)?.name || "プレイヤー");
-    appendActionChatLog(observer, `${prefix}更新記録 ${targetName}: ${deltas.join(" / ")}`).catch(() => {});
+    appendActionChatLog(observer, `${prefix}更新記録 ${targetName}: ${deltas.join(" / ")}`, { force:true }).catch(() => {});
   }
 
   async function grantEquipmentToPlayer(uid, cardObj, theme){
