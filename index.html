@@ -8684,6 +8684,25 @@ ${targetName}さん...` : "";
   function factionPercentMapFromHint(hint){
     const map = { "レイダー":34, "シャドウ":33, "シチズン":33 };
     const row = hint && typeof hint === "object" ? hint : {};
+    const markRow = row.greenMarks && typeof row.greenMarks === "object" ? row.greenMarks : null;
+    if (markRow){
+      const scoreFromMark = (mark) => {
+        const v = safeText(mark || "");
+        if (v === "yes") return 100;
+        if (v === "no") return 0;
+        if (v === "maybe") return 50;
+        return null;
+      };
+      const order = ["レイダー","シャドウ","シチズン"];
+      let hasMark = false;
+      for (const faction of order){
+        const score = scoreFromMark(markRow[faction]);
+        if (score == null) continue;
+        hasMark = true;
+        map[faction] = score;
+      }
+      if (hasMark) return map;
+    }
     const confirmed = safeText(row.confirmedFaction || "");
     if (confirmed && map[confirmed] != null){
       for (const key of Object.keys(map)) map[key] = (key === confirmed) ? 100 : 0;
@@ -8979,6 +8998,11 @@ ${targetName}さん...` : "";
     if (attackedMeCount > 0 && !!hint?.sameConfirmed && !hint?.sameImpossible){
       likelihood = Math.max(likelihood, 0.85);
     }
+    const reverseHint = state.room?.npcIntel?.factionHints?.[target]?.[observer] || null;
+    const reverseConfirmedFaction = safeText(reverseHint?.confirmedFaction || "");
+    if (attackedMeCount > 0 && reverseConfirmedFaction && reverseConfirmedFaction === observerFaction){
+      likelihood = Math.max(likelihood, 0.95);
+    }
     return Math.max(0, Math.min(1, likelihood));
   }
 
@@ -9000,6 +9024,160 @@ ${targetName}さん...` : "";
     return null;
   }
 
+  function greenQuestionTypeForInference(cardObj){
+    const text = safeText(cardObj?.effect || cardObj?.text || "");
+    const compact = text.replace(/[\s　]+/g, "");
+    if (compact.includes("同陣営") && compact.includes("シチズン")) return "same_or_citizen";
+    if (compact.includes("敵陣営") && compact.includes("シチズン")) return "enemy_or_citizen";
+    if (compact.includes("同陣営")) return "same";
+    if (compact.includes("敵陣営")) return "enemy";
+    if (compact.includes("レイダーかシャドウ")) return "raider_or_shadow";
+    if (text.includes("シチズン？")) return "citizen";
+    return "other";
+  }
+
+  function isFivePlayerNpcGreenInferenceRule(){
+    const rule = factionRuleForCurrentPlayers();
+    return Number(rule?.["レイダー"] || 0) === 2
+      && Number(rule?.["シャドウ"] || 0) === 2
+      && Number(rule?.["シチズン"] || 0) === 1;
+  }
+
+  function factionMarkToPossibleFactionSet(askerFaction, marks){
+    const faction = safeText(askerFaction || "");
+    const rivalFaction = faction === "レイダー" ? "シャドウ" : faction === "シャドウ" ? "レイダー" : "";
+    const row = marks && typeof marks === "object" ? marks : {};
+    const toState = (v) => {
+      const m = safeText(v || "");
+      if (m === "yes" || m === "no" || m === "maybe") return m;
+      return "invalid";
+    };
+    const same = toState(row.same);
+    const enemy = toState(row.enemy);
+    const citizen = toState(row.citizen);
+    const possible = new Set();
+    if (same !== "no" && faction) possible.add(faction);
+    if (enemy !== "no" && rivalFaction) possible.add(rivalFaction);
+    if (citizen !== "no") possible.add("シチズン");
+    if (!possible.size){
+      if (faction) possible.add(faction);
+      if (rivalFaction) possible.add(rivalFaction);
+      possible.add("シチズン");
+    }
+    return possible;
+  }
+
+  function buildNpcHintFromMarks(prevHint, askerFaction, marks, extra = {}){
+    const faction = safeText(askerFaction || "");
+    const rivalFaction = faction === "レイダー" ? "シャドウ" : faction === "シャドウ" ? "レイダー" : "";
+    const row = marks && typeof marks === "object" ? marks : {};
+    const normalized = {
+      same: ["yes","no","maybe"].includes(row.same) ? row.same : "invalid",
+      enemy: ["yes","no","maybe"].includes(row.enemy) ? row.enemy : "invalid",
+      citizen: ["yes","no","maybe"].includes(row.citizen) ? row.citizen : "invalid"
+    };
+    const possibleFactions = [...factionMarkToPossibleFactionSet(faction, normalized)];
+    let confirmedFaction = "";
+    if (normalized.same === "yes") confirmedFaction = faction;
+    else if (normalized.enemy === "yes") confirmedFaction = rivalFaction;
+    else if (normalized.citizen === "yes") confirmedFaction = "シチズン";
+    return {
+      ...(prevHint || {}),
+      ...extra,
+      greenMarks: {
+        "レイダー": faction === "レイダー" ? normalized.same : faction === "シャドウ" ? normalized.enemy : "invalid",
+        "シャドウ": faction === "シャドウ" ? normalized.same : faction === "レイダー" ? normalized.enemy : "invalid",
+        "シチズン": normalized.citizen
+      },
+      possibleFactions,
+      samePossible: normalized.same !== "no",
+      sameImpossible: normalized.same === "no",
+      sameConfirmed: normalized.same === "yes",
+      enemyCertain: normalized.enemy === "yes",
+      confirmedFaction: confirmedFaction || safeText(prevHint?.confirmedFaction || ""),
+      at: Date.now()
+    };
+  }
+
+  function isNpcPendingEnemyOrCitizenHint(hint){
+    if (!hint || typeof hint !== "object") return false;
+    const marks = hint.greenMarks || {};
+    const raiderMark = safeText(marks["レイダー"] || "");
+    const shadowMark = safeText(marks["シャドウ"] || "");
+    const citizenMark = safeText(marks["シチズン"] || "");
+    const enemyMaybe = raiderMark === "maybe" || shadowMark === "maybe" || !hint?.enemyCertain;
+    return !!hint?.sameImpossible && enemyMaybe && citizenMark === "maybe";
+  }
+
+  async function applyFivePlayerNpcGreenInference(asker, target, cardObj, answerId){
+    const askerFaction = safeText(roleInfoByUid(asker)?.faction || "");
+    if (!askerFaction || askerFaction === "シチズン") return false;
+    const qType = greenQuestionTypeForInference(cardObj);
+    const ans = safeText(answerId || "");
+    if (ans !== "yes" && ans !== "no") return false;
+    if (!["same","enemy","enemy_or_citizen","same_or_citizen","citizen","raider_or_shadow"].includes(qType)) return false;
+
+    const prevHintsMap = state.room?.npcIntel?.factionHints?.[asker] || {};
+    const updates = new Map();
+    const setHint = (uid, marks, reason) => {
+      const prev = prevHintsMap?.[uid] || null;
+      updates.set(uid, {
+        prev,
+        next: buildNpcHintFromMarks(prev, askerFaction, marks, { confirmedBy: reason })
+      });
+    };
+
+    if (qType === "same" && ans === "yes"){
+      setHint(target, { same:"yes", enemy:"no", citizen:"no" }, "green_same_yes");
+      for (const p of latestPlayers){
+        const uid = safeText(p?.id || "");
+        if (!uid || uid === asker || uid === target || isPlayerEliminated(uid)) continue;
+        setHint(uid, { same:"no", enemy:"maybe", citizen:"maybe" }, "green_same_yes_others");
+      }
+    } else if (qType === "same" && ans === "no"){
+      setHint(target, { same:"no", enemy:"maybe", citizen:"maybe" }, "green_same_no");
+    } else if (qType === "enemy" && ans === "yes"){
+      setHint(target, { same:"no", enemy:"yes", citizen:"no" }, "green_enemy_yes");
+    } else if (qType === "enemy_or_citizen" && ans === "yes"){
+      setHint(target, { same:"no", enemy:"maybe", citizen:"maybe" }, "green_enemy_or_citizen_yes");
+    } else {
+      const targetPrev = prevHintsMap?.[target] || null;
+      if (!isNpcPendingEnemyOrCitizenHint(targetPrev)) return false;
+      if (qType === "same_or_citizen" && ans === "yes"){
+        setHint(target, { same:"no", enemy:"no", citizen:"yes" }, "green_same_or_citizen_yes");
+        for (const p of latestPlayers){
+          const uid = safeText(p?.id || "");
+          if (!uid || uid === asker || uid === target || isPlayerEliminated(uid)) continue;
+          const row = prevHintsMap?.[uid] || null;
+          if (!isNpcPendingEnemyOrCitizenHint(row)) continue;
+          setHint(uid, { same:"no", enemy:"yes", citizen:"no" }, "green_citizen_fixed_others_enemy");
+        }
+      } else if (qType === "citizen" && ans === "no"){
+        setHint(target, { same:"no", enemy:"yes", citizen:"no" }, "green_citizen_no");
+      } else if (qType === "raider_or_shadow" && ans === "yes"){
+        setHint(target, { same:"no", enemy:"yes", citizen:"no" }, "green_raider_or_shadow_yes");
+      } else {
+        return false;
+      }
+    }
+
+    if (!updates.size) return false;
+    await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
+      const next = cur && typeof cur === "object" ? cur : {};
+      next.factionHints = next.factionHints || {};
+      next.factionHints[asker] = next.factionHints[asker] || {};
+      for (const [uid, row] of updates.entries()){
+        const prev = next.factionHints[asker][uid] || {};
+        next.factionHints[asker][uid] = { ...prev, ...(row?.next || {}) };
+      }
+      return next;
+    });
+    for (const [uid, row] of updates.entries()){
+      appendFactionInferenceChangeLog(asker, uid, row?.prev || null, row?.next || null);
+    }
+    return true;
+  }
+
   async function recordNpcFactionInference(fromUid, toUid, cardObj, answerId, revealedRoleId=""){
     const asker = safeText(fromUid || "");
     const target = safeText(toUid || "");
@@ -9009,6 +9187,11 @@ ${targetName}さん...` : "";
     if (!askerFaction || askerFaction === "シチズン") return;
     const ans = safeText(answerId || "");
     if (ans !== "yes" && ans !== "reveal_identity" && ans !== "no") return;
+
+    if (isFivePlayerNpcGreenInferenceRule()){
+      const handled = await applyFivePlayerNpcGreenInference(asker, target, cardObj, ans);
+      if (handled) return;
+    }
 
     const prevHint = state.room?.npcIntel?.factionHints?.[asker]?.[target] || null;
     const revealCard = isRevealIdentityGreenCard(cardObj);
