@@ -5313,6 +5313,7 @@
         }
       }
       equipCache = next;
+      overwriteInferenceByRevealedIdentity().catch(() => {});
       renderEquipmentDock();
       evaluateAutoIdentityRevealTrigger();
     });
@@ -8736,6 +8737,65 @@ ${targetName}さん...` : "";
     const targetName = safeText(playerById(target)?.name || "プレイヤー");
     const line = `推論>${targetName} [レイダー:${percentLabel(after["レイダー"])} / シャドウ:${percentLabel(after["シャドウ"])} / シチズン:${percentLabel(after["シチズン"])}]`;
     appendActionChatLog(observer, line).catch(() => {});
+  }
+
+
+  async function overwriteInferenceByRevealedIdentity(){
+    if (!state.roomCode) return;
+    const revealedTargets = [];
+    for (const [uid, row] of Object.entries(equipCache || {})){
+      const rid = safeText(row?.identity?.roleId || "");
+      const revealedAt = Number(row?.identity?.revealedAt || 0);
+      const faction = safeText(ROLE_BY_ID?.[rid]?.faction || "");
+      if (!uid || !revealedAt || !faction) continue;
+      const fixed = normalizeFactionPercentMap({
+        "レイダー": faction === "レイダー" ? 100 : 0,
+        "シャドウ": faction === "シャドウ" ? 100 : 0,
+        "シチズン": faction === "シチズン" ? 100 : 0
+      });
+      revealedTargets.push({ uid: safeText(uid), fixed });
+    }
+    if (!revealedTargets.length) return;
+
+    await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
+      const next = cur && typeof cur === "object" ? cur : {};
+      const prevMap = next.greenInference && typeof next.greenInference === "object" ? next.greenInference : {};
+      const observerSet = new Set();
+      for (const uid of Object.keys(prevMap || {})) observerSet.add(safeText(uid));
+      for (const uid of Object.keys(cur?.users || {})) observerSet.add(safeText(uid));
+      for (const uid of Object.keys(cur?.hands || {})) observerSet.add(safeText(uid));
+      for (const row of Object.values(cur?.tables || {})){
+        const uid = safeText(row?.playerId || "");
+        if (uid) observerSet.add(uid);
+      }
+      for (const p of latestPlayers){
+        const uid = safeText(p?.id || "");
+        if (uid) observerSet.add(uid);
+      }
+      const observers = [...observerSet].filter(Boolean);
+      if (!observers.length) return next;
+
+      next.greenInference = next.greenInference || {};
+      let changed = false;
+      for (const observerUid of observers){
+        next.greenInference[observerUid] = next.greenInference[observerUid] || {};
+        for (const target of revealedTargets){
+          const prev = factionPercentMapFromHint(next.greenInference[observerUid][target.uid] || null);
+          const same = (prev["レイダー"] === target.fixed["レイダー"]
+            && prev["シャドウ"] === target.fixed["シャドウ"]
+            && prev["シチズン"] === target.fixed["シチズン"]);
+          if (same) continue;
+          next.greenInference[observerUid][target.uid] = {
+            ...target.fixed,
+            at: Date.now(),
+            fixedBy: "identity_revealed"
+          };
+          changed = true;
+        }
+      }
+      if (!changed) return cur;
+      return next;
+    });
   }
 
   async function grantEquipmentToPlayer(uid, cardObj, theme){
