@@ -8402,6 +8402,10 @@
       motion,
       at: Date.now()
     });
+    const moveRollText = compass
+      ? `移動ロール：合計${d6 + d4} (6d${d6},4d${d4}) / 合計${secondD6 + secondD4} (6d${secondD6},4d${secondD4})`
+      : `移動ロール：合計${d6 + d4} (6d${d6},4d${d4})`;
+    appendActionChatLog(state.userId, moveRollText).catch(() => {});
   }
 
 
@@ -8473,36 +8477,63 @@ ${targetName}さん...` : "";
     return !!state.room?.computerMode && npcHumanPlayerCount() <= 1;
   }
 
+  function isActionLogPlaceholderText(text, kind = "name"){
+    const v = safeText(text || "");
+    if (!v) return true;
+    if (kind === "name"){
+      return v === "プレイヤー" || v.includes("プレイヤー名") || v.includes("[プレイヤー名]");
+    }
+    return v === "?" || v.includes("正体名");
+  }
+
   function displayNameForUid(uid){
     const targetUid = safeText(uid || "");
     if (!targetUid) return "プレイヤー";
     const fromPlayers = safeText(playerById(targetUid)?.name || "");
-    if (fromPlayers) return fromPlayers;
+    if (!isActionLogPlaceholderText(fromPlayers, "name")) return fromPlayers;
     for (const row of Object.values(state.room?.tables || {})){
       if (safeText(row?.playerId || "") !== targetUid) continue;
       const n = safeText(row?.playerName || "");
-      if (n) return n;
+      if (!isActionLogPlaceholderText(n, "name")) return n;
     }
-    return safeText(lastKnownNameByUid[targetUid] || "プレイヤー");
+    const cached = safeText(lastKnownNameByUid[targetUid] || "");
+    if (!isActionLogPlaceholderText(cached, "name")) return cached;
+    return "プレイヤー";
   }
 
   function roleNameForUid(uid){
     const targetUid = safeText(uid || "");
     const roleId = safeText(state.room?.hands?.[targetUid]?.roleId || state.hands?.[targetUid]?.roleId || "");
     const name = safeText(ROLE_BY_ID?.[roleId]?.name || roleInfoByUid(targetUid)?.name || "");
-    if (name) return name;
-    return safeText(lastKnownRoleNameByUid[targetUid] || "?");
+    if (!isActionLogPlaceholderText(name, "role")) return name;
+    const cached = safeText(lastKnownRoleNameByUid[targetUid] || "");
+    if (!isActionLogPlaceholderText(cached, "role")) return cached;
+    return "?";
+  }
+
+  function actionSourceLabel(sourceRaw){
+    const src = safeText(sourceRaw || "");
+    if (!src) return "";
+    const map = {
+      card_blessing_heal: "恩恵",
+      card_vampire_bat_heal: "吸血コウモリ",
+      card_holy_water_heal: "いやしの聖水",
+      card_mermaid_tears_heal: "人魚の涙",
+      first_aid_set: "応急手当",
+      felicia_set: "スラム街の天使"
+    };
+    return safeText(map[src] || src);
   }
 
   async function appendActionChatLog(uid, actionText){
-    const actorUid = safeText(uid || "");
+    const actorUid = safeText(uid || state.userId || "");
     const action = safeText(actionText || "").trim();
     if (!state.roomCode || !actorUid || !action) return;
     if (!isNpcActionChatMode()) return;
     const name = displayNameForUid(actorUid);
     const roleName = roleNameForUid(actorUid);
-    if (name) lastKnownNameByUid[actorUid] = name;
-    if (roleName && roleName !== "?") lastKnownRoleNameByUid[actorUid] = roleName;
+    if (!isActionLogPlaceholderText(name, "name")) lastKnownNameByUid[actorUid] = name;
+    if (!isActionLogPlaceholderText(roleName, "role")) lastKnownRoleNameByUid[actorUid] = roleName;
     const key = `${Date.now()}_${Math.random().toString(16).slice(2,8)}`;
     const path = `rooms/${state.roomCode}/actionChatLog/${key}`;
     await set(ref(db, path), {
@@ -8517,7 +8548,7 @@ ${targetName}さん...` : "";
   function renderActionChatLog(){
     if (!actionChatBody) return;
     const rows = Object.values(state.room?.actionChatLog || {})
-      .filter((row) => !!row && !!safeText(row.playerName || "") && !!safeText(row.action || ""))
+      .filter((row) => !!row && !!safeText(row.action || ""))
       .sort((a,b) => Number(a?.at || 0) - Number(b?.at || 0));
     actionChatBody.innerHTML = "";
     if (!rows.length){
@@ -8530,8 +8561,11 @@ ${targetName}さん...` : "";
     for (const row of rows){
       const line = document.createElement("div");
       line.className = "action-chat-row";
-      const playerName = safeText(row.playerName || "プレイヤー");
-      const roleName = safeText(row.roleName || "?");
+      const uid = safeText(row.uid || "");
+      const rawName = safeText(row.playerName || "");
+      const rawRole = safeText(row.roleName || "");
+      const playerName = isActionLogPlaceholderText(rawName, "name") ? displayNameForUid(uid) : rawName;
+      const roleName = isActionLogPlaceholderText(rawRole, "role") ? roleNameForUid(uid) : rawRole;
       const action = safeText(row.action || "");
       line.textContent = `${playerName}[${roleName}]：${action}`;
       actionChatBody.appendChild(line);
@@ -11184,8 +11218,13 @@ ${targetName}さん...` : "";
     if (drawn){
       const cardName = safeText(drawn?.name || "カード");
       const cardEffect = safeText(drawn?.effect || "");
-      const tail = (type === "green" && cardEffect) ? `（質問:${cardEffect}）` : "";
-      appendActionChatLog(state.userId, `ドロー:${cardName}${tail}`).catch(() => {});
+      const selectionCards = new Set(["応急手当", "恩恵", "吸血コウモリ", "三つ目の黒犬", "呪いの人形"]);
+      const skipBasic = type === "green" || selectionCards.has(cardName);
+      if (!skipBasic){
+        const themeLabel = type === "white" ? "白" : (type === "black" ? "黒" : "緑");
+        const tail = (type === "green" && cardEffect) ? ` ${cardEffect}` : "";
+        appendActionChatLog(state.userId, `${themeLabel}ドロー：[${cardName}]${tail}`).catch(() => {});
+      }
     }
 
     scheduleDeckRebuildIfEmpty(type).catch(() => {});
@@ -12329,7 +12368,8 @@ ${targetName}さん...` : "";
     if (!!options?.skipActionLog) return;
     const targetName = displayNameForUid(uid);
     const source = safeText(options?.source || "");
-    const src = source ? `(${source})` : "";
+    const srcLabel = actionSourceLabel(source);
+    const src = srcLabel ? `(${srcLabel})` : "";
     appendActionChatLog(safeText(options?.actorUid || state.userId), `ダメージ${src}:${targetName}さんに${add}`).catch(() => {});
   }
 
@@ -12341,7 +12381,7 @@ ${targetName}さん...` : "";
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) - heal));
     if (!!options?.skipActionLog) return;
     const targetName = displayNameForUid(uid);
-    const src = safeText(source || "");
+    const src = actionSourceLabel(source || "");
     appendActionChatLog(state.userId, `回復${src ? `(${src})` : ""}:${targetName}さんを${heal}`).catch(() => {});
   }
 
@@ -12363,7 +12403,8 @@ ${targetName}さん...` : "";
     await set(ref(db, `rooms/${state.roomCode}/damage/${uid}`), clampDamage(damage));
     if (!!options?.skipActionLog) return;
     const targetName = displayNameForUid(uid);
-    appendActionChatLog(state.userId, `ダメージ設定${safeText(source||"") ? `(${safeText(source)})` : ""}:${targetName}さん=${clampDamage(damage)}`).catch(() => {});
+    const src = actionSourceLabel(source || "");
+    appendActionChatLog(state.userId, `ダメージ設定${src ? `(${src})` : ""}:${targetName}さん=${clampDamage(damage)}`).catch(() => {});
   }
 
   async function enableRepeatTurnOnce(){
@@ -13074,7 +13115,6 @@ ${targetName}さん...` : "";
       runSingleRoll({ motion: options.motion || null, finalD6, finalD4 });
 
       const placeMarkerTimer = setTimeout(async () => {
-        appendActionChatLog(state.userId, `移動ロール：合計${finalD6 + finalD4} (6d${finalD6},4d${finalD4})`).catch(() => {});
         if (applyMove) await placeMarkerByDice(finalD6 + finalD4);
         if (applyMove && state.roomCode && isMyTurn()){
           await update(ref(db, `rooms/${state.roomCode}/turn`), {
@@ -13102,7 +13142,6 @@ ${targetName}さん...` : "";
       startAfterMs: 2980,
       onStop: () => {
         if (!applyMove) return;
-        appendActionChatLog(state.userId, `移動ロール：合計${finalD6 + finalD4} (6d${finalD6},4d${finalD4}) / 合計${secondD6 + secondD4} (6d${secondD6},4d${secondD4})`).catch(() => {});
         const roomA = diceTotalToRoomId(finalD6 + finalD4);
         const roomB = diceTotalToRoomId(secondD6 + secondD4);
         saveMySeatMoveChoice({
