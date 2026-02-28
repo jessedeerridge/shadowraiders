@@ -4058,7 +4058,14 @@
     if (!state.roomCode || !msg?.from || !msg?.requestId || !opt?.id) return;
     const answerLabel = safeText(overrideLabel || opt.label || "");
     const q = safeText(msg?.card?.effect || msg?.card?.text || "");
-    appendActionChatLog(state.userId, `[${q}] 1>${actionTargetWithDamage(msg?.to || state.userId, 1)} ${answerLabel || safeText(opt?.id || "")}`).catch(() => {});
+    const greenLog = greenHistoryLogLine({
+      responderUid: state.userId,
+      cardText: q,
+      answerLabel: answerLabel || safeText(opt?.id || ""),
+      answerId: safeText(opt?.id || ""),
+      useCurrentDamage: false
+    });
+    if (greenLog) appendActionChatLog(state.userId, greenLog).catch(() => {});
     const responseRoleId = (opt.id === "reveal_identity") ? safeText(state.hands?.[state.userId]?.roleId || "") : "";
     let requesterUid = safeText(msg.from || "");
     try {
@@ -8549,6 +8556,48 @@ ${targetName}さん...` : "";
     return `${displayNameForUid(uid)} (${total})`;
   }
 
+  function displayNameBracketRoleForUid(uid){
+    return `${displayNameForUid(uid)} [${displayRoleOrHiddenForUid(uid)}]`;
+  }
+
+  function clampProjectedDamageValue(base, delta){
+    return clampDamage(Number(base || 0) + Number(delta || 0));
+  }
+
+  function greenAnswerDeltaForLog(cardText, answerId, targetUid){
+    const text = safeText(cardText || "");
+    const aid = safeText(answerId || "");
+    if (aid === "take_damage") return 1;
+    if (aid !== "yes") return null;
+    if (text.includes("1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ")){
+      const cur = currentDamageForUid(targetUid);
+      return cur <= 0 ? 1 : -1;
+    }
+    if (text.includes("❿に移動せよ")){
+      const nowRoom = markerRoomId(markerCache?.[targetUid]);
+      return nowRoom === 7 ? 1 : null;
+    }
+    const m = text.match(/(\d+)ダメージ受けよ/);
+    const dmg = m ? Number(m[1] || 0) : 0;
+    return dmg > 0 ? dmg : null;
+  }
+
+  function greenHistoryLogLine({ responderUid, cardText, answerLabel, answerId, useCurrentDamage=false } = {}){
+    const uid = safeText(responderUid || "");
+    const q = safeText(cardText || "");
+    const answer = safeText(answerLabel || answerId || "");
+    if (!uid || !q) return "";
+    const delta = greenAnswerDeltaForLog(q, answerId, uid);
+    const target = displayNameBracketRoleForUid(uid);
+    if (delta == null){
+      return `[${q}] >${target} ${answer}`.trim();
+    }
+    const damageText = useCurrentDamage
+      ? ` (${currentDamageForUid(uid)})`
+      : ` (${clampProjectedDamageValue(currentDamageForUid(uid), delta)})`;
+    return `[${q}] ${actionDeltaText(delta)}>${target} ${answer}${damageText}`.trim();
+  }
+
   async function appendActionChatLog(uid, actionText){
     const actorUid = safeText(uid || state.userId || "");
     const action = safeText(actionText || "").trim();
@@ -8594,7 +8643,6 @@ ${targetName}さん...` : "";
       line.textContent = `${playerName}[${roleName}]：${action}`;
       actionChatBody.appendChild(line);
     }
-    actionChatBody.scrollTop = actionChatBody.scrollHeight;
   }
 
   function factionPercentMapFromHint(hint){
@@ -8752,6 +8800,15 @@ ${targetName}さん...` : "";
     }
     await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${responderUid}`)).catch(() => {});
     await applyNpcGreenAnswerEffect(responderUid, payload.card, opt.id);
+    const q = safeText(payload?.card?.effect || payload?.card?.text || "");
+    const greenLog = greenHistoryLogLine({
+      responderUid,
+      cardText: q,
+      answerLabel: safeText(opt?.label || opt?.id || ""),
+      answerId: safeText(opt?.id || ""),
+      useCurrentDamage: true
+    });
+    if (greenLog) appendActionChatLog(responderUid, greenLog).catch(() => {});
     return { answerId: opt.id, roleId };
   }
 
