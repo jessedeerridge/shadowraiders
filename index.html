@@ -4066,7 +4066,7 @@
       answerId: safeText(opt?.id || ""),
       useCurrentDamage: false
     });
-    if (greenLog) appendActionChatLog(state.userId, greenLog).catch(() => {});
+    if (greenLog) appendActionChatLog(safeText(msg?.from || state.userId), greenLog).catch(() => {});
     const responseRoleId = (opt.id === "reveal_identity") ? safeText(state.hands?.[state.userId]?.roleId || "") : "";
     let requesterUid = safeText(msg.from || "");
     try {
@@ -8465,15 +8465,28 @@
     return "";
   }
 
-  async function npcAnnounceAbilityUse(uid, abilityName = "", targetUid = ""){
+  async function npcAnnounceAbilityUse(uid, abilityName = "", targetUid = "", options = {}){
     const actorUid = safeText(uid || "");
     const name = safeText(abilityName || "").trim();
+    const target = safeText(targetUid || "");
     if (!actorUid || !name) return;
-    const targetName = safeText(playerById(targetUid)?.name || "");
+    const targetName = safeText(playerById(target)?.name || "");
     const line2 = targetName ? `
 ${targetName}さん...` : "";
     await showNpcSpeech(actorUid, `${name}！！${line2}`, 1200, { style:npcSpeechStyleByFaction(actorUid) });
-    const logTail = targetName ? `（${targetName}さん）` : "";
+
+    const hasDelta = Number.isFinite(Number(options?.delta));
+    if (target && hasDelta){
+      const delta = Number(options.delta || 0);
+      const useCurrent = !!options?.useCurrentDamage;
+      const dmgText = useCurrent
+        ? currentDamageForUid(target)
+        : clampProjectedDamageValue(currentDamageForUid(target), delta);
+      appendActionChatLog(actorUid, `${name} ${actionDeltaText(delta)}>${displayNameRoleForUid(target)} (${dmgText})`);
+      return;
+    }
+
+    const logTail = target ? `>${displayNameRoleForUid(target)}` : "";
     appendActionChatLog(actorUid, `${name}${logTail}`);
   }
 
@@ -8618,7 +8631,7 @@ ${targetName}さん...` : "";
     });
     if (!line) return;
     greenHistoryLoggedRequestIds.add(requestId);
-    appendActionChatLog(responderUid || state.userId, line).catch(() => {});
+    appendActionChatLog(safeText(msg?.from || options?.actorUid || responderUid || state.userId), line).catch(() => {});
   }
 
   async function appendActionChatLog(uid, actionText){
@@ -9865,11 +9878,11 @@ ${targetName}さん...` : "";
             await npcAnnounceAbilityUse(turnUid, "封印の鎖", certainShadowUid);
             await set(ref(db, `rooms/${state.roomCode}/erikaSealedTargets/${certainShadowUid}`), true);
           } else if (turnRoleId === "RAI_F1"){
-            await npcAnnounceAbilityUse(turnUid, "アストラル・メイス", certainShadowUid);
             const eye = 1 + Math.floor(Math.random() * 6);
             await emitCardDiceEvent({ kind:"role_felix", uid: turnUid, d6: eye });
             await waitMs(1000);
-            await addDamageToPlayer(certainShadowUid, eye);
+            await addDamageToPlayer(certainShadowUid, eye, { actorUid:turnUid, skipActionLog:true });
+            await npcAnnounceAbilityUse(turnUid, "アストラル・メイス", certainShadowUid, { delta:eye, useCurrentDamage:true });
           } else if (turnRoleId === "RAI_F2"){
             await npcAnnounceAbilityUse(turnUid, "スラム街の天使", certainShadowUid);
             await setDamageToPlayer(certainShadowUid, 7, "felicia_set");
@@ -9890,8 +9903,8 @@ ${targetName}さん...` : "";
           }) || "";
         if (meteorTarget){
           await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"npc_uranus_start" });
-          await npcAnnounceAbilityUse(turnUid, "メテオストライク", meteorTarget);
-          await addDamageToPlayer(meteorTarget, 3);
+          await addDamageToPlayer(meteorTarget, 3, { actorUid:turnUid, skipActionLog:true });
+          await npcAnnounceAbilityUse(turnUid, "メテオストライク", meteorTarget, { delta:3, useCurrentDamage:true });
           await markNpcRoleAbilityUsed("SHA_U2", turnUid);
         }
       }
@@ -10030,9 +10043,9 @@ ${targetName}さん...` : "";
           }
 
           if (turnRoleId === "SHA_V2" && clampDamage(damageCache?.[turnUid]) >= 5 && attackRes.hit && !isAbilitySealedForPlayer(turnUid, "SHA_V2")){
-            await npcAnnounceAbilityUse(turnUid, "吸血");
             await emitRoleFlashEvent("SHA_V2", "vampire_heal");
-            await healDamageToPlayer(turnUid, 2, "vampire_role_heal");
+            await healDamageToPlayer(turnUid, 2, "vampire_role_heal", { actorUid:turnUid, skipActionLog:true });
+            await npcAnnounceAbilityUse(turnUid, "吸血", turnUid, { delta:-2, useCurrentDamage:true });
           }
         }
         await update(ref(db, `rooms/${state.roomCode}/turn`), { attackDone:true, attackAt:Date.now() });
@@ -10050,10 +10063,10 @@ ${targetName}さん...` : "";
           if (friend?.uid){
             const eye = 1 + Math.floor(Math.random() * 4);
             await revealIdentityToEquipmentForUid(turnUid, { revealedBy:"emma_heal" });
-            await npcAnnounceAbilityUse(turnUid, "癒しの光", friend.uid);
             await emitCardDiceEvent({ kind:"role_emma", uid: turnUid, d4: eye });
             await waitMs(1000);
-            await healDamageToPlayer(friend.uid, eye, "emma_ability_heal");
+            await healDamageToPlayer(friend.uid, eye, "emma_ability_heal", { actorUid:turnUid, skipActionLog:true });
+            await npcAnnounceAbilityUse(turnUid, "癒しの光", friend.uid, { delta:-eye, useCurrentDamage:true });
             await markNpcRoleAbilityUsed("RAI_E3", turnUid);
           }
         }
