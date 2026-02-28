@@ -2497,6 +2497,7 @@
   let greenInboxInitialized = false;
   let greenReplySeenAt = 0;
   let greenReplyInitialized = false;
+  const greenHistoryLoggedRequestIds = new Set();
   let npcSpeechInitialized = false;
   let npcSpeechSeenAt = 0;
   let activeNpcSpeechByUid = {};
@@ -5003,6 +5004,7 @@
     }
     greenShareActions?.classList.remove("hidden");
     const responder = playerById(safeText(msg.to || ""));
+    appendGreenHistoryLogFromResponse(msg);
     await setGreenSessionState({
       phase:"confirm",
       card: greenShareCard || msg.card || null,
@@ -8585,17 +8587,38 @@ ${targetName}さん...` : "";
   function greenHistoryLogLine({ responderUid, cardText, answerLabel, answerId, useCurrentDamage=false } = {}){
     const uid = safeText(responderUid || "");
     const q = safeText(cardText || "");
-    const answer = safeText(answerLabel || answerId || "");
+    const aid = safeText(answerId || "");
+    const answer = (aid === "reveal_identity") ? "" : safeText(answerLabel || aid || "");
     if (!uid || !q) return "";
-    const delta = greenAnswerDeltaForLog(q, answerId, uid);
+    const delta = greenAnswerDeltaForLog(q, aid, uid);
     const target = displayNameBracketRoleForUid(uid);
     if (delta == null){
-      return `[${q}] >${target} ${answer}`.trim();
+      return `[${q}] >${target}${answer ? ` ${answer}` : ""}`.trim();
     }
     const damageText = useCurrentDamage
       ? ` (${currentDamageForUid(uid)})`
       : ` (${clampProjectedDamageValue(currentDamageForUid(uid), delta)})`;
-    return `[${q}] ${actionDeltaText(delta)}>${target} ${answer}${damageText}`.trim();
+    return `[${q}] ${actionDeltaText(delta)}>${target}${answer ? ` ${answer}` : ""}${damageText}`.trim();
+  }
+
+  function appendGreenHistoryLogFromResponse(msg, options = {}){
+    const requestId = safeText(msg?.requestId || "");
+    if (!requestId) return;
+    if (greenHistoryLoggedRequestIds.has(requestId)) return;
+    const responderUid = safeText(msg?.to || options?.responderUid || "");
+    const q = safeText(msg?.card?.effect || msg?.card?.text || options?.cardText || "");
+    const answerLabel = safeText(msg?.answerLabel || options?.answerLabel || "");
+    const answerId = safeText(msg?.answerId || options?.answerId || "");
+    const line = greenHistoryLogLine({
+      responderUid,
+      cardText: q,
+      answerLabel,
+      answerId,
+      useCurrentDamage: true
+    });
+    if (!line) return;
+    greenHistoryLoggedRequestIds.add(requestId);
+    appendActionChatLog(responderUid || state.userId, line).catch(() => {});
   }
 
   async function appendActionChatLog(uid, actionText){
@@ -14613,6 +14636,7 @@ ${targetName}さん...` : "";
     }
     greenShareActions?.classList.remove("hidden");
     const responder = playerById(safeText(msg.to || ""));
+    appendGreenHistoryLogFromResponse(msg);
     setGreenSessionState({
       phase:"confirm",
       card: greenShareCard || msg.card || null,
