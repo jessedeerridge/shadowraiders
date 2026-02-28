@@ -22,6 +22,7 @@
   .btn{padding:6px 10px;border:1px solid #ddd;border-radius:6px;background:#f8f8f8;cursor:pointer;}
   .btn.primary{background:#111;color:#fff;border-color:#111;}
   .btn.ghost{background:transparent;}
+  .btn.host-green-toggle-on{background:#16a34a;color:#fff;border-color:#16a34a;}
   .btn.danger{background:#ef4444;color:#fff;border-color:#ef4444;}
   .hidden{display:none;}
   #lobby{padding:20px;border-top:1px solid #eee; position:relative; z-index:2;}
@@ -2037,6 +2038,7 @@
     <span class="small">開始後は座席変更できません。</span>
   </div>
   <div class="start-pop-actions">
+    <button id="btnFirstRoundGreen" class="btn ghost">1周緑 OFF</button>
     <button id="btnHostDice" class="btn ghost">ダイス</button>
     <button id="btnResetRoom" class="btn ghost">リセット</button>
     <button id="btnGameStart" class="btn primary">スタート</button>
@@ -2275,6 +2277,10 @@
     return false;
   }
   function canDrawTypeNormally(type){
+    if (isOpeningGreenOnlyTurn()){
+      if (type !== "green") return false;
+      return canDrawSharedDeckNow();
+    }
     const allowed = allowedTypesByRoom(state.currentRoomId);
     if (!allowed.includes(type)) return false;
     return canDrawSharedDeckNow();
@@ -5043,6 +5049,7 @@
     await notifyGreenCloseToResponder();
     await clearPendingGreenBubble();
     closeZoom();
+    await maybeAutoEndOpeningGreenTurn();
   });
 
   function openZoomContent(contentEl, { closeOnBackdrop=true, showCloseButton=true, closeOnAnyClick=false, stageClass="" } = {}){
@@ -5184,6 +5191,14 @@
     }
     return !!zoomBackdrop?.classList.contains("hidden");
   }
+  async function maybeAutoEndOpeningGreenTurn(){
+    if (!isMyTurn()) return;
+    if (!isOpeningGreenOnlyTurn()) return;
+    const turn = turnState() || {};
+    if (!turn.deckDrawDone || !!turn.attackDone) return;
+    await doEndTurn();
+  }
+
   function closeZoom(){
     zoomBackdrop.classList.add("hidden");
     zoomBackdrop.classList.remove("passthrough");
@@ -5229,6 +5244,7 @@
       }
       await clearPendingGreenBubble();
       closeZoom();
+      await maybeAutoEndOpeningGreenTurn();
       if (shouldCloseEquipExpand){
         closeEquipExpand();
       }
@@ -7710,15 +7726,25 @@
     return pairs[Math.floor(Math.random() * pairs.length)];
   }
 
+  function isOpeningGreenOnlyTurn(uid = ""){
+    const t = turnState() || {};
+    const currentUid = safeText(t.currentPlayerId || "");
+    const targetUid = safeText(uid || currentUid);
+    if (!targetUid || currentUid !== targetUid) return false;
+    return Number(t.openingGreenTurnsLeft || 0) > 0;
+  }
+
   function canUseMoveDice(){
     if (!isMyTurn()) return false;
     if (isDavidAbilityPending()) return false;
     if (mustResolveUranusMeteorStrike()) return false;
+    if (isOpeningGreenOnlyTurn()) return false;
     return !turnState()?.moveDone;
   }
 
   function canUseAttackDice(){
     if (!isMyTurn()) return false;
+    if (isOpeningGreenOnlyTurn()) return false;
     return !!turnState()?.moveDone && !turnState()?.attackDone;
   }
 
@@ -10040,13 +10066,17 @@ ${targetName}さん...` : "";
       if (turnCycleKey() !== turnKey) return;
       const roomAfterMove = markerRoomId(markerCache?.[turnUid]);
       if (!turnState()?.deckDrawDone){
-        await executeNpcRoomAction(turnUid, roomAfterMove);
+        if (isOpeningGreenOnlyTurn(turnUid)){
+          await npcDrawFromRoom(turnUid, 5);
+        } else {
+          await executeNpcRoomAction(turnUid, roomAfterMove);
+        }
         await update(ref(db, `rooms/${state.roomCode}/turn`), { deckDrawDone:true });
       }
 
       await waitMs(NPC_TURN_PACING.phaseIntervalMs);
       if (turnCycleKey() !== turnKey) return;
-      if (!turnState()?.attackDone){
+      if (!turnState()?.attackDone && !isOpeningGreenOnlyTurn(turnUid)){
         const targets = [...attackRangeTargetUidsFor(turnUid)].filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
         let targetUid = chooseNpcAttackTarget(turnUid, targets);
         const attackerRole = roleInfoByUid(turnUid);
@@ -11192,15 +11222,19 @@ ${targetName}さん...` : "";
       if (cur.turn && cur.turn.currentPlayerId) return cur;
       const startPlayerId = safeText(cur.startPlayerId || "");
       if (!startPlayerId) return cur;
+      const openingGreenTurnsLeft = Number(cur.turn?.openingGreenTurnsLeft || 0) > 0
+        ? Number(cur.turn.openingGreenTurnsLeft || 0)
+        : (cur.firstRoundGreenOnlyMode ? Math.max(0, Number(cur.playerCountAtStart || (Array.isArray(cur.positionOrder) ? cur.positionOrder.length : 0) || 0)) : 0);
       cur.turn = {
         currentPlayerId: startPlayerId,
-        moveDone: false,
+        moveDone: openingGreenTurnsLeft > 0,
         attackDone: false,
         deckDrawDone: false,
         drawnTypes: { green:false, white:false, black:false },
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        openingGreenTurnsLeft,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         sealWisdomBonus: false,
@@ -11255,6 +11289,8 @@ ${targetName}さん...` : "";
       const rest = Math.max(0, Number(curTurn.repeatTurnRemaining || 0));
       const total = Math.max(0, Number(curTurn.repeatTurnTotal || 0));
       const repeat = rest > 0 && !isEliminatedInRoom(curId);
+      const openingGreenTurnsLeft = Math.max(0, Number(curTurn.openingGreenTurnsLeft || 0));
+      const nextOpeningGreenTurnsLeft = repeat ? openingGreenTurnsLeft : Math.max(0, openingGreenTurnsLeft - 1);
       const nextRepeatRemaining = repeat ? Math.max(0, rest - 1) : 0;
       const nextRepeatTotal = repeat ? Math.max(total, rest) : 0;
       let nextPlayerId = curId;
@@ -11270,13 +11306,14 @@ ${targetName}さん...` : "";
 
       cur.turn = {
         currentPlayerId: nextPlayerId,
-        moveDone: false,
+        moveDone: nextOpeningGreenTurnsLeft > 0,
         attackDone: false,
         deckDrawDone: false,
         drawnTypes: { green:false, white:false, black:false },
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        openingGreenTurnsLeft: nextOpeningGreenTurnsLeft,
         repeatTurnRemaining: nextRepeatRemaining,
         repeatTurnTotal: nextRepeatTotal,
         sealWisdomBonus: false,
@@ -14093,6 +14130,7 @@ ${targetName}さん...` : "";
   const startPop = document.getElementById('startPop');
   const btnStartPopClose = document.getElementById('btnStartPopClose');
   const btnGameStart = document.getElementById('btnGameStart');
+  const btnFirstRoundGreen = document.getElementById('btnFirstRoundGreen');
   const btnHostDice = document.getElementById('btnHostDice');
   const btnResetRoom = document.getElementById('btnResetRoom');
   const startBadge = document.getElementById('startBadge');
@@ -14625,6 +14663,7 @@ ${targetName}さん...` : "";
       }
       renderSeatTiles();
       refreshStartBadge();
+      refreshFirstRoundGreenButton();
       renderHands();
       updateSeatBoardVisibility();
       renderEquipmentDock();
@@ -15697,6 +15736,8 @@ ${targetName}さん...` : "";
 
     const positionOrder = shuffle(players.map(p => p.id));
     const startPlayerId = positionOrder[Math.floor(Math.random()*positionOrder.length)] || null;
+    const firstRoundGreenOnlyMode = !!roomData.firstRoundGreenOnlyMode;
+    const openingGreenTurnsLeft = firstRoundGreenOnlyMode ? n : 0;
     const freshDeckState = {
       green: { order: shuffle(toGreenOrder()), idx: 0 },
       white: { order: shuffle(toWhiteOrder()), idx: 0 },
@@ -15740,13 +15781,14 @@ ${targetName}さん...` : "";
       startPlayerId,
       turn: {
         currentPlayerId: startPlayerId,
-        moveDone: false,
+        moveDone: openingGreenTurnsLeft > 0,
         attackDone: false,
         deckDrawDone: false,
         drawnTypes: { green:false, white:false, black:false },
         movedByDiceRoomId: null,
         room3ActionUsed: false,
         room4StealUsed: false,
+        openingGreenTurnsLeft,
         repeatTurnRemaining: 0,
         repeatTurnTotal: 0,
         sealWisdomBonus: false,
@@ -15768,6 +15810,13 @@ ${targetName}さん...` : "";
     }
   }
 
+  function refreshFirstRoundGreenButton(){
+    if (!btnFirstRoundGreen) return;
+    const on = !!state.room?.firstRoundGreenOnlyMode;
+    btnFirstRoundGreen.textContent = on ? "1周緑 ON" : "1周緑 OFF";
+    btnFirstRoundGreen.classList.toggle("host-green-toggle-on", on);
+  }
+
   hostSettingsBtn.addEventListener('click', () => {
     if (!state.isHost) return;
     startPop.classList.toggle('hidden');
@@ -15783,6 +15832,12 @@ ${targetName}さん...` : "";
     actionChatBackdrop.classList.add('hidden');
   });
   btnStartPopClose.addEventListener('click', () => startPop.classList.add('hidden'));
+  btnFirstRoundGreen?.addEventListener('click', async () => {
+    if (!state.isHost || !state.roomCode) return;
+    if (isGameStarted()) return;
+    const next = !state.room?.firstRoundGreenOnlyMode;
+    await update(ref(db, `rooms/${state.roomCode}`), { firstRoundGreenOnlyMode: next });
+  });
   btnHostDice?.addEventListener('click', async () => {
     if (!state.isHost) return;
     await runCornerD6D4Roll();
