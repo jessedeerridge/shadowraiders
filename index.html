@@ -2599,6 +2599,8 @@
   let autoIdentityRevealTimer = null;
   let autoIdentityRevealTimerKey = "";
   let lastEliminationBatch = { uids: [], at: 0 };
+  const lastKnownNameByUid = {};
+  const lastKnownRoleNameByUid = {};
 
   const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
@@ -4703,8 +4705,13 @@
     updateCardInteractivity();
     renderTurnEndButton();
     try {
+      const cardName = safeText(card?.name || "カード");
+      const targetName = displayNameForUid(targetUid);
+      const drawPrefix = spec.theme === "white" ? "白ドロー" : spec.theme === "black" ? "黒ドロー" : "ドロー";
+      appendActionChatLog(state.userId, `${drawPrefix}［${cardName}］→${targetName}`).catch(() => {});
       await spec.resolver(targetUid);
     } finally {
+
       pendingCardTargetSelection = null;
       cardPlayerSelectActive = false;
       updateCardInteractivity();
@@ -4728,6 +4735,10 @@
       onlyAlive: !!spec.onlyAlive,
       nameSuffixForUid: spec.nameSuffixForUid,
       onSelect: async (uid, player) => {
+        const cardName = safeText(cardObj?.name || "カード");
+        const targetName = safeText(player?.name || displayNameForUid(uid));
+        const drawPrefix = spec.theme === "white" ? "白ドロー" : spec.theme === "black" ? "黒ドロー" : "ドロー";
+        appendActionChatLog(state.userId, `${drawPrefix}［${cardName}］→${targetName}`).catch(() => {});
         if (spec.instantCloseOnSelect){
           greenShareDock?.classList.add("hidden");
           cardPlayerSelectActive = false;
@@ -8463,8 +8474,25 @@ ${targetName}さん...` : "";
     return !!state.room?.computerMode && npcHumanPlayerCount() <= 1;
   }
 
+  function displayNameForUid(uid){
+    const targetUid = safeText(uid || "");
+    if (!targetUid) return "プレイヤー";
+    const fromPlayers = safeText(playerById(targetUid)?.name || "");
+    if (fromPlayers) return fromPlayers;
+    for (const row of Object.values(state.room?.tables || {})){
+      if (safeText(row?.playerId || "") !== targetUid) continue;
+      const n = safeText(row?.playerName || "");
+      if (n) return n;
+    }
+    return safeText(lastKnownNameByUid[targetUid] || "プレイヤー");
+  }
+
   function roleNameForUid(uid){
-    return safeText(roleInfoByUid(uid)?.name || "?");
+    const targetUid = safeText(uid || "");
+    const roleId = safeText(state.room?.hands?.[targetUid]?.roleId || state.hands?.[targetUid]?.roleId || "");
+    const name = safeText(ROLE_BY_ID?.[roleId]?.name || roleInfoByUid(targetUid)?.name || "");
+    if (name) return name;
+    return safeText(lastKnownRoleNameByUid[targetUid] || "?");
   }
 
   async function appendActionChatLog(uid, actionText){
@@ -8472,8 +8500,10 @@ ${targetName}さん...` : "";
     const action = safeText(actionText || "").trim();
     if (!state.roomCode || !actorUid || !action) return;
     if (!isNpcActionChatMode()) return;
-    const name = safeText(playerById(actorUid)?.name || "プレイヤー");
+    const name = displayNameForUid(actorUid);
     const roleName = roleNameForUid(actorUid);
+    if (name) lastKnownNameByUid[actorUid] = name;
+    if (roleName && roleName !== "?") lastKnownRoleNameByUid[actorUid] = roleName;
     const key = `${Date.now()}_${Math.random().toString(16).slice(2,8)}`;
     const path = `rooms/${state.roomCode}/actionChatLog/${key}`;
     await set(ref(db, path), {
@@ -9141,6 +9171,7 @@ ${targetName}さん...` : "";
       at: Date.now()
     });
     await waitMs(900);
+    appendActionChatLog(actor, `攻撃ロール：6d${d6},4d${d4}`).catch(() => {});
     const hit = didAttackRollSucceed(d6, d4, { masamuneMode:false, vendettaMode:false });
     await waitMs(NPC_TURN_PACING.attackAfterMs);
     let damage = 0;
@@ -9750,6 +9781,10 @@ ${targetName}さん...` : "";
             secondMotion,
             at: Date.now()
           });
+          const moveRollText = hasCompass
+            ? `移動ロール：6d${d6},4d${d4} / 6d${secondD6},4d${secondD4}`
+            : `移動ロール：6d${d6},4d${d4}`;
+          appendActionChatLog(turnUid, moveRollText).catch(() => {});
           await waitMs(hasCompass ? 3200 : 900);
           await waitMs(NPC_TURN_PACING.diceAfterMs);
           const roomA = diceTotalToRoomId(d6 + d4);
@@ -12858,6 +12893,7 @@ ${targetName}さん...` : "";
       Promise.resolve().then(async () => {
         const attackSucceeded = didAttackRollSucceed(finalD6, finalD4, { masamuneMode, vendettaMode });
         setAttackRollResultLabel(attackSucceeded);
+        appendActionChatLog(state.userId, `攻撃ロール：6d${finalD6},4d${finalD4}`).catch(() => {});
         if (!applyDamage) return;
         const gatlingTargets = Array.isArray(options.gatlingTargetUids)
           ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
@@ -13032,6 +13068,7 @@ ${targetName}さん...` : "";
       runSingleRoll({ motion: options.motion || null, finalD6, finalD4 });
 
       const placeMarkerTimer = setTimeout(async () => {
+        appendActionChatLog(state.userId, `移動ロール：6d${finalD6},4d${finalD4}`).catch(() => {});
         if (applyMove) await placeMarkerByDice(finalD6 + finalD4);
         if (applyMove && state.roomCode && isMyTurn()){
           await update(ref(db, `rooms/${state.roomCode}/turn`), {
@@ -13059,6 +13096,7 @@ ${targetName}さん...` : "";
       startAfterMs: 2980,
       onStop: () => {
         if (!applyMove) return;
+        appendActionChatLog(state.userId, `移動ロール：6d${finalD6},4d${finalD4} / 6d${secondD6},4d${secondD4}`).catch(() => {});
         const roomA = diceTotalToRoomId(finalD6 + finalD4);
         const roomB = diceTotalToRoomId(secondD6 + secondD4);
         saveMySeatMoveChoice({
@@ -14390,6 +14428,11 @@ ${targetName}さん...` : "";
     const handsRef = ref(db, `rooms/${state.roomCode}/hands`);
     onValue(handsRef, snap => {
       state.hands = snap.val() || {};
+      for (const [uid, hand] of Object.entries(state.hands || {})){
+        const rid = safeText(hand?.roleId || "");
+        const rname = safeText(ROLE_BY_ID?.[rid]?.name || "");
+        if (rname) lastKnownRoleNameByUid[safeText(uid)] = rname;
+      }
       renderHands();
       tryRestorePendingGreenSession();
       tryRestorePendingCardTargetSession().catch(() => {});
@@ -14753,6 +14796,12 @@ ${targetName}さん...` : "";
         .sort((a,b) => a.seatIndex - b.seatIndex);
 
       latestPlayers = players;
+      for (const p of players){
+        const uid = safeText(p.id || "");
+        if (!uid) continue;
+        const name = safeText(p.name || "");
+        if (name) lastKnownNameByUid[uid] = name;
+      }
       updateHostUI();
       tryRestorePendingGreenSession();
       tryRestorePendingCardTargetSession().catch(() => {});
