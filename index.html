@@ -2601,6 +2601,7 @@
   let lastEliminationBatch = { uids: [], at: 0 };
   const lastKnownNameByUid = {};
   const lastKnownRoleNameByUid = {};
+  let lastAttackRollLogContext = null;
 
   const AUTO_IDENTITY_REVEAL_BY = "auto_endgame_batch";
   const DAVID_WIN_GEAR_NAMES = new Set(["銀のロザリオ", "神秘のコンパス", "幸運のブローチ", "幸福のブローチ", "いにしえの聖杯"]);
@@ -4057,7 +4058,7 @@
     if (!state.roomCode || !msg?.from || !msg?.requestId || !opt?.id) return;
     const answerLabel = safeText(overrideLabel || opt.label || "");
     const q = safeText(msg?.card?.effect || msg?.card?.text || "");
-    appendActionChatLog(state.userId, `緑カード回答:Q=${q} / A=${answerLabel || safeText(opt?.id || "")}`).catch(() => {});
+    appendActionChatLog(state.userId, `緑ドロー：[${q}]>${displayNameForUid(msg?.to || state.userId)}　${answerLabel || safeText(opt?.id || "")}`).catch(() => {});
     const responseRoleId = (opt.id === "reveal_identity") ? safeText(state.hands?.[state.userId]?.roleId || "") : "";
     let requesterUid = safeText(msg.from || "");
     try {
@@ -4603,7 +4604,8 @@
         instantCloseOnSelect:true,
         resolver: async (uid) => {
           await waitMs(1000);
-          await setDamageToPlayer(uid, 7, "first_aid_set");
+          await setDamageToPlayer(uid, 7, "first_aid_set", { skipActionLog:true });
+          appendActionChatLog(state.userId, `白ドロー：[応急手当] 7に設定>${displayNameForUid(uid)}`).catch(() => {});
         }
       };
     }
@@ -4617,7 +4619,8 @@
           await emitCardDiceEvent({ kind:"blessing", uid:state.userId, d6:eye });
           await runCornerD6Roll(eye);
           await waitMs(1000);
-          await healDamageToPlayer(uid, eye, "card_blessing_heal");
+          await healDamageToPlayer(uid, eye, "card_blessing_heal", { skipActionLog:true });
+          appendActionChatLog(state.userId, `白ドロー：[恩恵] (6d${eye}) ${eye}回復>${displayNameForUid(uid)}`).catch(() => {});
         }
       };
     }
@@ -4629,10 +4632,13 @@
         resolver: async (uid) => {
           await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "enemy", "card_attack_target_revealed");
           await waitMs(1000);
+          let dmg = 0;
           if (!hasEquipmentByName(uid, "いにしえの聖杯")){
-            await addDamageToPlayer(uid, 2);
+            await addDamageToPlayer(uid, 2, { skipActionLog:true });
+            dmg = 2;
           }
-          await healDamageToPlayer(state.userId, 1, "card_vampire_bat_heal");
+          await healDamageToPlayer(state.userId, 1, "card_vampire_bat_heal", { skipActionLog:true });
+          appendActionChatLog(state.userId, `黒ドロー：[吸血コウモリ] 1回復>${displayNameForUid(state.userId)}, ${dmg}ダメージ>${displayNameForUid(uid)}`).catch(() => {});
         }
       };
     }
@@ -4705,10 +4711,6 @@
     updateCardInteractivity();
     renderTurnEndButton();
     try {
-      const cardName = safeText(card?.name || "カード");
-      const targetName = displayNameForUid(targetUid);
-      const drawPrefix = spec.theme === "white" ? "白ドロー" : spec.theme === "black" ? "黒ドロー" : "ドロー";
-      appendActionChatLog(state.userId, `${drawPrefix}［${cardName}］→${targetName}`).catch(() => {});
       await spec.resolver(targetUid);
     } finally {
 
@@ -4735,10 +4737,6 @@
       onlyAlive: !!spec.onlyAlive,
       nameSuffixForUid: spec.nameSuffixForUid,
       onSelect: async (uid, player) => {
-        const cardName = safeText(cardObj?.name || "カード");
-        const targetName = safeText(player?.name || displayNameForUid(uid));
-        const drawPrefix = spec.theme === "white" ? "白ドロー" : spec.theme === "black" ? "黒ドロー" : "ドロー";
-        appendActionChatLog(state.userId, `${drawPrefix}［${cardName}］→${targetName}`).catch(() => {});
         if (spec.instantCloseOnSelect){
           greenShareDock?.classList.add("hidden");
           cardPlayerSelectActive = false;
@@ -4822,6 +4820,7 @@
         };
         await set(ref(db, `rooms/${state.roomCode}/greenRequests/${requestId}`), payload);
         await set(ref(db, `rooms/${state.roomCode}/greenInbox/${p.id}`), payload);
+        appendActionChatLog(state.userId, `緑ドロー：[${safeText(greenShareCard?.effect || greenShareCard?.text || "")}]>${displayNameForUid(p.id)}　回答待ち`).catch(() => {});
 
         pendingGreenRequestId = requestId;
         renderGreenWaitingSelection(p.id, p.name, firstChar(p.name || ""), safeText(p.color || ""));
@@ -9171,14 +9170,14 @@ ${targetName}さん...` : "";
       at: Date.now()
     });
     await waitMs(900);
-    appendActionChatLog(actor, `攻撃ロール：6d${d6},4d${d4}`).catch(() => {});
     const hit = didAttackRollSucceed(d6, d4, { masamuneMode:false, vendettaMode:false });
     await waitMs(NPC_TURN_PACING.attackAfterMs);
     let damage = 0;
     if (hit){
       damage = calcAttackDamageFromRoll(actor, d6, d4, { targetUid:target });
-      if (damage > 0) await addDamageToPlayer(target, damage, { source:"attack", actorUid: actor });
+      if (damage > 0) await addDamageToPlayer(target, damage, { source:"attack", actorUid: actor, skipActionLog:true });
     }
+    appendActionChatLog(actor, `攻撃ロール：ダメージ${Math.max(0,damage)} (6d${d6},4d${d4})>${displayNameForUid(target)}`).catch(() => {});
     await recordNpcAttackTarget(actor, target);
     return { hit, damage, d6, d4 };
   }
@@ -9782,8 +9781,8 @@ ${targetName}さん...` : "";
             at: Date.now()
           });
           const moveRollText = hasCompass
-            ? `移動ロール：6d${d6},4d${d4} / 6d${secondD6},4d${secondD4}`
-            : `移動ロール：6d${d6},4d${d4}`;
+            ? `移動ロール：合計${d6 + d4} (6d${d6},4d${d4}) / 合計${secondD6 + secondD4} (6d${secondD6},4d${secondD4})`
+            : `移動ロール：合計${d6 + d4} (6d${d6},4d${d4})`;
           appendActionChatLog(turnUid, moveRollText).catch(() => {});
           await waitMs(hasCompass ? 3200 : 900);
           await waitMs(NPC_TURN_PACING.diceAfterMs);
@@ -12327,19 +12326,21 @@ ${targetName}さん...` : "";
     if (!uid || !state.roomCode || add <= 0) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) + add));
-    const targetName = safeText(playerById(uid)?.name || "プレイヤー");
+    if (!!options?.skipActionLog) return;
+    const targetName = displayNameForUid(uid);
     const source = safeText(options?.source || "");
     const src = source ? `(${source})` : "";
     appendActionChatLog(safeText(options?.actorUid || state.userId), `ダメージ${src}:${targetName}さんに${add}`).catch(() => {});
   }
 
-  async function healDamageToPlayer(uid, amount, source = ""){
+  async function healDamageToPlayer(uid, amount, source = "", options = {}){
     const heal = Math.max(0, Number(amount) || 0);
     if (!uid || !state.roomCode || heal <= 0) return;
     if (!isGordonBarrierHpChangeAllowed(uid, source)) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) - heal));
-    const targetName = safeText(playerById(uid)?.name || "プレイヤー");
+    if (!!options?.skipActionLog) return;
+    const targetName = displayNameForUid(uid);
     const src = safeText(source || "");
     appendActionChatLog(state.userId, `回復${src ? `(${src})` : ""}:${targetName}さんを${heal}`).catch(() => {});
   }
@@ -12356,11 +12357,12 @@ ${targetName}さん...` : "";
   }
 
 
-  async function setDamageToPlayer(uid, damage, source = ""){
+  async function setDamageToPlayer(uid, damage, source = "", options = {}){
     if (!uid || !state.roomCode) return;
     if (!isGordonBarrierHpChangeAllowed(uid, source)) return;
     await set(ref(db, `rooms/${state.roomCode}/damage/${uid}`), clampDamage(damage));
-    const targetName = safeText(playerById(uid)?.name || "プレイヤー");
+    if (!!options?.skipActionLog) return;
+    const targetName = displayNameForUid(uid);
     appendActionChatLog(state.userId, `ダメージ設定${safeText(source||"") ? `(${safeText(source)})` : ""}:${targetName}さん=${clampDamage(damage)}`).catch(() => {});
   }
 
@@ -12893,7 +12895,6 @@ ${targetName}さん...` : "";
       Promise.resolve().then(async () => {
         const attackSucceeded = didAttackRollSucceed(finalD6, finalD4, { masamuneMode, vendettaMode });
         setAttackRollResultLabel(attackSucceeded);
-        appendActionChatLog(state.userId, `攻撃ロール：6d${finalD6},4d${finalD4}`).catch(() => {});
         if (!applyDamage) return;
         const gatlingTargets = Array.isArray(options.gatlingTargetUids)
           ? options.gatlingTargetUids.map(uid => safeText(uid)).filter(Boolean)
@@ -12961,6 +12962,11 @@ ${targetName}さん...` : "";
           if (!attackSucceeded || hasZeroDamage){
             pendingAttackResultMeta.allowExcaliburButton = false;
           }
+        }
+        for (const row of resolvedRows){
+          const targetName = displayNameForUid(safeText(row.uid || ""));
+          const dmg = Math.max(0, Number(row.damage || 0));
+          appendActionChatLog(state.userId, `攻撃ロール：ダメージ${dmg} (6d${finalD6},4d${finalD4})>${targetName}`).catch(() => {});
         }
         const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
         const pendingTurnKey = turnCycleKey();
@@ -13068,7 +13074,7 @@ ${targetName}さん...` : "";
       runSingleRoll({ motion: options.motion || null, finalD6, finalD4 });
 
       const placeMarkerTimer = setTimeout(async () => {
-        appendActionChatLog(state.userId, `移動ロール：6d${finalD6},4d${finalD4}`).catch(() => {});
+        appendActionChatLog(state.userId, `移動ロール：合計${finalD6 + finalD4} (6d${finalD6},4d${finalD4})`).catch(() => {});
         if (applyMove) await placeMarkerByDice(finalD6 + finalD4);
         if (applyMove && state.roomCode && isMyTurn()){
           await update(ref(db, `rooms/${state.roomCode}/turn`), {
@@ -13096,7 +13102,7 @@ ${targetName}さん...` : "";
       startAfterMs: 2980,
       onStop: () => {
         if (!applyMove) return;
-        appendActionChatLog(state.userId, `移動ロール：6d${finalD6},4d${finalD4} / 6d${secondD6},4d${secondD4}`).catch(() => {});
+        appendActionChatLog(state.userId, `移動ロール：合計${finalD6 + finalD4} (6d${finalD6},4d${finalD4}) / 合計${secondD6 + secondD4} (6d${secondD6},4d${secondD4})`).catch(() => {});
         const roomA = diceTotalToRoomId(finalD6 + finalD4);
         const roomB = diceTotalToRoomId(secondD6 + secondD4);
         saveMySeatMoveChoice({
