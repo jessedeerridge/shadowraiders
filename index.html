@@ -5315,6 +5315,7 @@
       equipCache = next;
       renderEquipmentDock();
       evaluateAutoIdentityRevealTrigger();
+      syncNpcIntelByRevealedIdentities().catch(() => {});
     });
   }
   function isIdentityEquipItem(v){
@@ -8681,27 +8682,101 @@ ${targetName}さん...` : "";
     }
   }
 
-  function factionPercentMapFromHint(hint){
-    const map = { "レイダー":34, "シャドウ":33, "シチズン":33 };
+  const NPC_FACTIONS = ["レイダー", "シャドウ", "シチズン"];
+
+  function normalizeNpcFactionMarks(rawMarks){
+    const marks = {};
+    for (const faction of NPC_FACTIONS){
+      const raw = rawMarks?.[faction];
+      if (raw === 0 || raw === 100) marks[faction] = raw;
+      else marks[faction] = null;
+    }
+
+    const hundredCount = NPC_FACTIONS.filter((f) => marks[f] === 100).length;
+    if (hundredCount >= 2){
+      marks["シャドウ"] = 100;
+      marks["レイダー"] = 0;
+      marks["シチズン"] = 0;
+      return marks;
+    }
+
+    if (hundredCount === 1){
+      const confirmed = NPC_FACTIONS.find((f) => marks[f] === 100) || "";
+      for (const faction of NPC_FACTIONS){
+        if (faction !== confirmed) marks[faction] = 0;
+      }
+    }
+
+    const zeroCount = NPC_FACTIONS.filter((f) => marks[f] === 0).length;
+    if (zeroCount >= 2){
+      const undecided = NPC_FACTIONS.find((f) => marks[f] !== 0) || "";
+      if (undecided) marks[undecided] = 100;
+    }
+
+    if (NPC_FACTIONS.every((f) => marks[f] === 0)){
+      marks["シャドウ"] = 100;
+      marks["レイダー"] = 0;
+      marks["シチズン"] = 0;
+    }
+    return marks;
+  }
+
+  function npcFactionMarksFromHint(hint){
     const row = hint && typeof hint === "object" ? hint : {};
+    const rawMarks = row?.factionMarks && typeof row.factionMarks === "object" ? row.factionMarks : {};
+    if (Object.keys(rawMarks).length){
+      return normalizeNpcFactionMarks(rawMarks);
+    }
+    const map = { "レイダー":null, "シャドウ":null, "シチズン":null };
     const confirmed = safeText(row.confirmedFaction || "");
-    if (confirmed && map[confirmed] != null){
-      for (const key of Object.keys(map)) map[key] = (key === confirmed) ? 100 : 0;
-      return map;
+    if (map[confirmed] != null){
+      for (const key of NPC_FACTIONS) map[key] = (key === confirmed) ? 100 : 0;
+      return normalizeNpcFactionMarks(map);
     }
     const possible = Array.isArray(row.possibleFactions)
       ? [...new Set(row.possibleFactions.map((f) => safeText(f)).filter((f) => map[f] != null))]
       : [];
     if (possible.length){
-      for (const key of Object.keys(map)) map[key] = 0;
-      const base = Math.floor(100 / possible.length);
-      let rest = 100 - (base * possible.length);
-      for (const f of possible){
-        map[f] = base + (rest > 0 ? 1 : 0);
-        if (rest > 0) rest -= 1;
+      for (const key of NPC_FACTIONS){
+        if (!possible.includes(key)) map[key] = 0;
       }
     }
-    return map;
+    return normalizeNpcFactionMarks(map);
+  }
+
+
+  function applyFactionMarkInObject(hint, updates = {}){
+    const marks = npcFactionMarksFromHint(hint);
+    for (const [faction, value] of Object.entries(updates || {})){
+      if (!NPC_FACTIONS.includes(faction)) continue;
+      if (value === 0 || value === 100) marks[faction] = value;
+    }
+    return normalizeNpcFactionMarks(marks);
+  }
+  function hintMetaFromFactionMarks(marks, askerFaction = ""){
+    const normalized = normalizeNpcFactionMarks(marks || {});
+    const confirmedFaction = NPC_FACTIONS.find((f) => normalized[f] === 100) || "";
+    const possibleFactions = NPC_FACTIONS.filter((f) => normalized[f] !== 0);
+    const samePossible = !!askerFaction && normalized[askerFaction] !== 0;
+    const rivalFaction = askerFaction === "レイダー" ? "シャドウ" : askerFaction === "シャドウ" ? "レイダー" : "";
+    return {
+      factionMarks: normalized,
+      possibleFactions,
+      confirmedFaction,
+      samePossible,
+      sameImpossible: !!askerFaction && normalized[askerFaction] === 0,
+      sameConfirmed: !!askerFaction && normalized[askerFaction] === 100,
+      enemyCertain: !!rivalFaction && normalized[rivalFaction] === 100
+    };
+  }
+
+  function factionPercentMapFromHint(hint){
+    const marks = npcFactionMarksFromHint(hint);
+    return {
+      "レイダー": marks["レイダー"] == null ? "?" : marks["レイダー"],
+      "シャドウ": marks["シャドウ"] == null ? "?" : marks["シャドウ"],
+      "シチズン": marks["シチズン"] == null ? "?" : marks["シチズン"]
+    };
   }
 
   function appendFactionInferenceChangeLog(observerUid, targetUid, prevHint, nextHint){
@@ -8712,10 +8787,10 @@ ${targetName}さん...` : "";
     const after = factionPercentMapFromHint(nextHint || null);
     const deltas = [];
     for (const faction of ["レイダー", "シャドウ", "シチズン"]){
-      const diff = Number(after[faction] || 0) - Number(before[faction] || 0);
-      if (Math.abs(diff) < 5) continue;
-      const sign = diff > 0 ? "+" : "";
-      deltas.push(`${safeText(playerById(target)?.name || "プレイヤー")}→${faction}${sign}${diff}%`);
+      const b = before[faction];
+      const a = after[faction];
+      if (`${b}` === `${a}`) continue;
+      deltas.push(`${safeText(playerById(target)?.name || "プレイヤー")}→${faction}${b}%→${a}%`);
     }
     if (!deltas.length) return;
     appendActionChatLog(observer, deltas.join(" / ")).catch(() => {});
@@ -9000,6 +9075,69 @@ ${targetName}さん...` : "";
     return null;
   }
 
+  async function syncNpcIntelByRevealedIdentities(){
+    if (!state.roomCode) return;
+    const npcUids = latestPlayers
+      .map((p) => safeText(p.id || ""))
+      .filter((uid) => !!uid && isNpcPlayerUid(uid));
+    if (!npcUids.length) return;
+    await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
+      const next = cur && typeof cur === "object" ? cur : {};
+      next.factionHints = next.factionHints || {};
+      for (const observerUid of npcUids){
+        const observerFaction = safeText(roleInfoByUid(observerUid)?.faction || "");
+        next.factionHints[observerUid] = next.factionHints[observerUid] || {};
+
+        const revealedEnemy = [];
+        const revealedSame = [];
+        for (const pl of latestPlayers){
+          const targetUid = safeText(pl?.id || "");
+          if (!targetUid || targetUid === observerUid) continue;
+          const revealedFaction = safeText(revealedFactionForUid(targetUid) || "");
+          if (!revealedFaction) continue;
+          const prev = next.factionHints[observerUid][targetUid] || {};
+          next.factionHints[observerUid][targetUid] = {
+            ...prev,
+            ...hintMetaFromFactionMarks(applyFactionMarkInObject(prev, { [revealedFaction]:100 }), observerFaction),
+            confirmedBy: safeText(prev?.confirmedBy || "revealed_identity"),
+            at: Date.now()
+          };
+          if (observerFaction && revealedFaction === observerFaction) revealedSame.push(targetUid);
+          if (observerFaction === "レイダー" && revealedFaction === "シャドウ") revealedEnemy.push(targetUid);
+          if (observerFaction === "シャドウ" && revealedFaction === "レイダー") revealedEnemy.push(targetUid);
+        }
+
+        if (observerFaction && revealedSame.length){
+          for (const pl of latestPlayers){
+            const uid = safeText(pl?.id || "");
+            if (!uid || uid === observerUid || revealedSame.includes(uid)) continue;
+            const prev = next.factionHints[observerUid][uid] || {};
+            next.factionHints[observerUid][uid] = {
+              ...prev,
+              ...hintMetaFromFactionMarks(applyFactionMarkInObject(prev, { [observerFaction]:0 }), observerFaction),
+              at: Date.now()
+            };
+          }
+        }
+
+        const enemyFaction = observerFaction === "レイダー" ? "シャドウ" : observerFaction === "シャドウ" ? "レイダー" : "";
+        if (enemyFaction && revealedEnemy.length >= 2){
+          for (const pl of latestPlayers){
+            const uid = safeText(pl?.id || "");
+            if (!uid || uid === observerUid || revealedEnemy.includes(uid)) continue;
+            const prev = next.factionHints[observerUid][uid] || {};
+            next.factionHints[observerUid][uid] = {
+              ...prev,
+              ...hintMetaFromFactionMarks(applyFactionMarkInObject(prev, { [enemyFaction]:0 }), observerFaction),
+              at: Date.now()
+            };
+          }
+        }
+      }
+      return next;
+    });
+  }
+
   async function recordNpcFactionInference(fromUid, toUid, cardObj, answerId, revealedRoleId=""){
     const asker = safeText(fromUid || "");
     const target = safeText(toUid || "");
@@ -9011,22 +9149,32 @@ ${targetName}さん...` : "";
     if (ans !== "yes" && ans !== "reveal_identity" && ans !== "no") return;
 
     const prevHint = state.room?.npcIntel?.factionHints?.[asker]?.[target] || null;
+    const applyToHint = (hint, updates = {}) => {
+      const marks = npcFactionMarksFromHint(hint);
+      for (const [faction, value] of Object.entries(updates || {})){
+        if (!NPC_FACTIONS.includes(faction)) continue;
+        if (value === 0 || value === 100) marks[faction] = value;
+      }
+      return normalizeNpcFactionMarks(marks);
+    };
+
+    const ownFaction = askerFaction;
+    const allOthers = latestPlayers.map((p) => safeText(p.id || "")).filter((uid) => !!uid && uid !== asker);
+
+    let selfMarks = npcFactionMarksFromHint(prevHint);
+    let changed = false;
+
     const revealCard = isRevealIdentityGreenCard(cardObj);
     if (revealCard && ans === "reveal_identity"){
       const roleId = safeText(revealedRoleId || "");
       const revealedFaction = safeText(ROLE_BY_ID[roleId]?.faction || "");
       if (!revealedFaction) return;
-      const samePossible = revealedFaction === askerFaction;
-      const sameImpossible = !samePossible;
-      const rivalFaction = askerFaction === "レイダー" ? "シャドウ" : askerFaction === "シャドウ" ? "レイダー" : "";
+      selfMarks = applyToHint(prevHint, { [revealedFaction]: 100 });
+      changed = true;
+      const meta = hintMetaFromFactionMarks(selfMarks, ownFaction);
       const nextHint = {
         ...(prevHint || {}),
-        samePossible,
-        sameImpossible,
-        sameConfirmed: samePossible,
-        enemyCertain: !!rivalFaction && revealedFaction === rivalFaction,
-        possibleFactions: [revealedFaction],
-        confirmedFaction: revealedFaction,
+        ...meta,
         confirmedBy: "green_reveal_identity",
         at: Date.now()
       };
@@ -9045,30 +9193,53 @@ ${targetName}さん...` : "";
       return;
     }
 
-    const setAsked = greenFactionSetFromCard(cardObj, askerFaction);
-    if (!(setAsked instanceof Set)) return;
-    const allSet = new Set(["シチズン","レイダー","シャドウ"]);
-    const possible = new Set(ans === "no" ? [...allSet].filter(f => !setAsked.has(f)) : [...setAsked]);
-    const rivalFaction = askerFaction === "レイダー" ? "シャドウ" : askerFaction === "シャドウ" ? "レイダー" : "";
+    const text = safeText(cardObj?.effect || cardObj?.text || "");
+    const compact = text.replace(/[\s　]+/g, "");
+    const isRaiderQ = text.includes("レイダー？") && !compact.includes("シチズンかレイダー");
+    const isCitizenQ = text.includes("シチズン？") && !compact.includes("シチズンかシャドウ");
+    const isRaiderOrCitizenQ = compact.includes("シチズンかレイダー") || compact.includes("レイダーかシチズン");
+    const isRaiderOrShadowQ = compact.includes("レイダーかシャドウ") || compact.includes("シャドウかレイダー");
 
-    const prevPossible = Array.isArray(prevHint?.possibleFactions)
-      ? new Set(prevHint.possibleFactions.map((f) => safeText(f)).filter(Boolean))
-      : new Set(allSet);
-    const mergedPossible = new Set([...prevPossible].filter((f) => possible.has(f)));
-    const decidedPossible = mergedPossible.size ? mergedPossible : possible;
-    const samePossible = decidedPossible.has(askerFaction);
-    const sameImpossible = !samePossible;
-    const sameConfirmed = decidedPossible.size === 1 && decidedPossible.has(askerFaction);
-    const enemyCertain = !!rivalFaction && decidedPossible.size === 1 && decidedPossible.has(rivalFaction);
+    if (isRaiderQ && ans === "yes"){
+      selfMarks = applyToHint(prevHint, { "レイダー":100 });
+      changed = true;
+    } else if (isRaiderQ && ans === "no"){
+      selfMarks = applyToHint(prevHint, { "レイダー":0 });
+      changed = true;
+    } else if (isCitizenQ && ans === "yes"){
+      selfMarks = applyToHint(prevHint, { "シチズン":100 });
+      changed = true;
+    } else if (isCitizenQ && ans === "no"){
+      selfMarks = applyToHint(prevHint, { "シチズン":0 });
+      changed = true;
+    } else if (isRaiderOrCitizenQ && ans === "yes"){
+      selfMarks = applyToHint(prevHint, { "シャドウ":0 });
+      changed = true;
+    } else if (isRaiderOrCitizenQ && ans === "no"){
+      selfMarks = applyToHint(prevHint, { "シャドウ":100 });
+      changed = true;
+    } else if (isRaiderOrShadowQ && ans === "yes"){
+      selfMarks = applyToHint(prevHint, { "シチズン":0 });
+      changed = true;
+    } else if (isRaiderOrShadowQ && ans === "no"){
+      selfMarks = applyToHint(prevHint, { "シチズン":100 });
+      changed = true;
+    }
+    if (!changed) return;
+
     const nextHint = {
       ...(prevHint || {}),
-      possibleFactions: [...decidedPossible],
-      samePossible,
-      sameImpossible,
-      sameConfirmed,
-      enemyCertain,
+      ...hintMetaFromFactionMarks(selfMarks, ownFaction),
       at: Date.now()
     };
+
+    const alsoSetOthersZero = [];
+    if (isRaiderQ && ans === "yes" && ownFaction === "レイダー"){
+      for (const uid of allOthers){ if (uid !== target) alsoSetOthersZero.push({ uid, faction:"レイダー" }); }
+    }
+    if (isCitizenQ && ans === "yes"){
+      for (const uid of allOthers){ if (uid !== target) alsoSetOthersZero.push({ uid, faction:"シチズン" }); }
+    }
 
     await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
       const next = cur && typeof cur === "object" ? cur : {};
@@ -9079,9 +9250,33 @@ ${targetName}さん...` : "";
         ...prev,
         ...nextHint
       };
+      for (const row of alsoSetOthersZero){
+        const uid = safeText(row?.uid || "");
+        const faction = safeText(row?.faction || "");
+        if (!uid || !NPC_FACTIONS.includes(faction)) continue;
+        const otherPrev = next.factionHints[asker][uid] || {};
+        const otherMarks = applyToHint(otherPrev, { [faction]:0 });
+        next.factionHints[asker][uid] = {
+          ...otherPrev,
+          ...hintMetaFromFactionMarks(otherMarks, ownFaction),
+          at: Date.now()
+        };
+      }
       return next;
     });
     appendFactionInferenceChangeLog(asker, target, prevHint, nextHint);
+    for (const row of alsoSetOthersZero){
+      const uid = safeText(row?.uid || "");
+      if (!uid) continue;
+      const before = state.room?.npcIntel?.factionHints?.[asker]?.[uid] || null;
+      const afterMarks = applyToHint(before, { [safeText(row?.faction || "")]:0 });
+      const after = {
+        ...(before || {}),
+        ...hintMetaFromFactionMarks(afterMarks, ownFaction),
+        at: Date.now()
+      };
+      appendFactionInferenceChangeLog(asker, uid, before, after);
+    }
   }
 
 
@@ -9140,14 +9335,10 @@ ${targetName}さん...` : "";
         const sameImpossible = !!observerFaction && observerFaction !== inferredFaction;
         next.factionHints[observerUid] = next.factionHints[observerUid] || {};
         const prev = next.factionHints[observerUid][actor] || {};
+        const marksMeta = hintMetaFromFactionMarks(applyFactionMarkInObject(prev, { [inferredFaction]:100 }), observerFaction);
         next.factionHints[observerUid][actor] = {
           ...prev,
-          possibleFactions: [inferredFaction],
-          samePossible,
-          sameImpossible,
-          sameConfirmed: samePossible,
-          enemyCertain: !!observerFaction && isRivalFactionPair(observerFaction, inferredFaction),
-          confirmedFaction: inferredFaction,
+          ...marksMeta,
           confirmedBy: safeText(reason || (rel === "same" ? "revealed_target_same" : "revealed_target_enemy")),
           at: Date.now()
         };
@@ -9161,12 +9352,7 @@ ${targetName}さん...` : "";
       const prevHint = prevHintsMap?.[observerUid]?.[actor] || null;
       const nextHint = {
         ...(prevHint || {}),
-        possibleFactions: [inferredFaction],
-        samePossible: observerFaction === inferredFaction,
-        sameImpossible: observerFaction !== inferredFaction,
-        sameConfirmed: observerFaction === inferredFaction,
-        enemyCertain: isRivalFactionPair(observerFaction, inferredFaction),
-        confirmedFaction: inferredFaction,
+        ...hintMetaFromFactionMarks(applyFactionMarkInObject(prevHint, { [inferredFaction]:100 }), observerFaction),
         confirmedBy: safeText(reason || (rel === "same" ? "revealed_target_same" : "revealed_target_enemy")),
         at: Date.now()
       };
@@ -14612,6 +14798,7 @@ ${targetName}さん...` : "";
       tryRestorePendingGreenSession();
       tryRestorePendingCardTargetSession().catch(() => {});
       evaluateAutoIdentityRevealTrigger();
+      syncNpcIntelByRevealedIdentities().catch(() => {});
     });
   }
 
@@ -15010,6 +15197,7 @@ ${targetName}さん...` : "";
       renderPositionLine();
       renderLastAttackToMeHeader();
       evaluateAutoIdentityRevealTrigger();
+      syncNpcIntelByRevealedIdentities().catch(() => {});
     });
   }
 
