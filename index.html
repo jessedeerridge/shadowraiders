@@ -9158,6 +9158,8 @@ ${targetName}さん...` : "";
       if (isShadowOnly) put(target, "シャドウ", ans === "yes" ? 100 : 0);
       if (isCitizenOnly) put(target, "シチズン", ans === "yes" ? 100 : 0);
       if (isRaiderOrCitizen && ans === "yes") put(target, "シャドウ", 0);
+      if (isRaiderOrCitizen && ans === "no") put(target, "シャドウ", 100);
+      if (isShadowOrCitizen && ans === "yes") put(target, "レイダー", 0);
       if (isShadowOrCitizen && ans === "no") put(target, "レイダー", 100);
       if (isRaiderOrShadow && ans === "yes") put(target, "シチズン", 0);
       if (isRaiderOrShadow && ans === "no") put(target, "シチズン", 100);
