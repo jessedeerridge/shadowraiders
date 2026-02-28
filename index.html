@@ -4099,7 +4099,7 @@
     const text = safeText(msg?.card?.effect || msg?.card?.text || "");
 
     if (opt?.id === "take_damage"){
-      setTimeout(() => { addDamageToPlayer(state.userId, 1); }, 1000);
+      setTimeout(() => { addDamageToPlayer(state.userId, 1, { skipActionLog:true }); }, 1000);
       return;
     }
 
@@ -4109,21 +4109,21 @@
     if (text.includes("1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ")){
       setTimeout(() => {
         const cur = clampDamage(damageCache?.[state.userId]);
-        if (cur <= 0) addDamageToPlayer(state.userId, 1);
-        else healDamageToPlayer(state.userId, 1, "green_heal");
+        if (cur <= 0) addDamageToPlayer(state.userId, 1, { skipActionLog:true });
+        else healDamageToPlayer(state.userId, 1, "green_heal", { skipActionLog:true });
       }, 1000);
     } else if (!text.includes("❿に移動せよ")) {
       const damageMatch = text.match(/(\d+)ダメージ受けよ/);
       const damage = damageMatch ? Number(damageMatch[1] || 0) : 0;
       if (damage > 0){
-        setTimeout(() => { addDamageToPlayer(state.userId, damage); }, 1000);
+        setTimeout(() => { addDamageToPlayer(state.userId, damage, { skipActionLog:true }); }, 1000);
       }
     }
 
     if (text.includes("❿に移動せよ")){
       setTimeout(() => {
         const nowRoom = markerRoomId(markerCache?.[state.userId]);
-        if (nowRoom === 7) addDamageToPlayer(state.userId, 1);
+        if (nowRoom === 7) addDamageToPlayer(state.userId, 1, { skipActionLog:true });
         else placePlayerMarkerInRoom(state.userId, 7);
       }, 1000);
     }
@@ -8758,23 +8758,23 @@ ${targetName}さん...` : "";
   async function applyNpcGreenAnswerEffect(targetUid, cardObj, answerId){
     const text = safeText(cardObj?.effect || cardObj?.text || "");
     if (answerId === "take_damage"){
-      await addDamageToPlayer(targetUid, 1);
+      await addDamageToPlayer(targetUid, 1, { skipActionLog:true });
       return;
     }
     const isPositive = (answerId === "yes" || answerId === "reveal_identity");
     if (!isPositive) return;
     if (text.includes("1ダメージ回復せよ。ダメージが0なら、1ダメージ受けよ")){
       const cur = clampDamage(damageCache?.[targetUid]);
-      if (cur <= 0) await addDamageToPlayer(targetUid, 1);
-      else await healDamageToPlayer(targetUid, 1, "green_heal");
+      if (cur <= 0) await addDamageToPlayer(targetUid, 1, { skipActionLog:true });
+      else await healDamageToPlayer(targetUid, 1, "green_heal", { skipActionLog:true });
     } else if (!text.includes("❿に移動せよ")) {
       const m = text.match(/(\d+)ダメージ受けよ/);
       const dmg = m ? Number(m[1] || 0) : 0;
-      if (dmg > 0) await addDamageToPlayer(targetUid, dmg);
+      if (dmg > 0) await addDamageToPlayer(targetUid, dmg, { skipActionLog:true });
     }
     if (text.includes("❿に移動せよ")){
       const nowRoom = markerRoomId(markerCache?.[targetUid]);
-      if (nowRoom === 7) await addDamageToPlayer(targetUid, 1);
+      if (nowRoom === 7) await addDamageToPlayer(targetUid, 1, { skipActionLog:true });
       else await placePlayerMarkerInRoom(targetUid, 7);
     }
   }
@@ -8837,14 +8837,14 @@ ${targetName}さん...` : "";
     await remove(ref(db, `rooms/${state.roomCode}/greenInbox/${responderUid}`)).catch(() => {});
     await applyNpcGreenAnswerEffect(responderUid, payload.card, opt.id);
     const q = safeText(payload?.card?.effect || payload?.card?.text || "");
-    const greenLog = greenHistoryLogLine({
-      responderUid,
-      cardText: q,
+    appendGreenHistoryLogFromResponse({
+      requestId: safeText(payload?.requestId || ""),
+      from: safeText(payload?.from || ""),
+      to: responderUid,
+      card: payload?.card || null,
       answerLabel: safeText(opt?.label || opt?.id || ""),
-      answerId: safeText(opt?.id || ""),
-      useCurrentDamage: true
+      answerId: safeText(opt?.id || "")
     });
-    if (greenLog) appendActionChatLog(responderUid, greenLog).catch(() => {});
     return { answerId: opt.id, roleId };
   }
 
