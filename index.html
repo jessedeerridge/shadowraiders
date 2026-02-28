@@ -3325,7 +3325,7 @@
       targetUid
     });
     if (baseDamage <= 0) return;
-    await addDamageToPlayer(targetUid, baseDamage, { source:"attack" });
+    await addDamageToPlayer(targetUid, baseDamage, { source:"attack", actorUid: state.userId });
   }
 
   async function runWerewolfCounterAttackForUid(werewolfUid, attackerUid){
@@ -3353,7 +3353,7 @@
       targetUid
     });
     if (baseDamage <= 0) return;
-    await addDamageToPlayer(targetUid, baseDamage, { source:"attack" });
+    await addDamageToPlayer(targetUid, baseDamage, { source:"attack", actorUid: actorUid });
   }
 
   function renderCounterAbilityPrompt(){
@@ -4054,6 +4054,8 @@
   async function sendGreenResponse(msg, opt, overrideLabel=""){
     if (!state.roomCode || !msg?.from || !msg?.requestId || !opt?.id) return;
     const answerLabel = safeText(overrideLabel || opt.label || "");
+    const q = safeText(msg?.card?.effect || msg?.card?.text || "");
+    appendActionChatLog(state.userId, `緑カード回答:Q=${q} / A=${answerLabel || safeText(opt?.id || "")}`).catch(() => {});
     const responseRoleId = (opt.id === "reveal_identity") ? safeText(state.hands?.[state.userId]?.roleId || "") : "";
     let requesterUid = safeText(msg.from || "");
     try {
@@ -5878,13 +5880,15 @@
     if (!isEquipCard(cardObj)) return;
 
     const key = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const cardName = safeText(cardObj.name || "装備");
     const eRef = ref(db, `rooms/${state.roomCode}/equipment/${state.userId}/${key}`);
     await set(eRef, {
       theme: theme || "white",
-      name: safeText(cardObj.name),
+      name: cardName,
       effect: safeText(cardObj.effect),
       at: Date.now()
     });
+    appendActionChatLog(state.userId, `装備獲得:${cardName}`).catch(() => {});
   }
 
   async function setDeckToSingleCardForTest(theme, cardObj){
@@ -5942,6 +5946,10 @@
       if (revealedBy) next.revealedBy = revealedBy;
       return next;
     });
+    if (revealedNow){
+      const roleName = safeText(ROLE_BY_ID?.[safeText(my.roleId)]?.name || "?");
+      appendActionChatLog(state.userId, `カード公開:${roleName}`).catch(() => {});
+    }
     if (revealedNow && safeText(my.roleId) === "CIT_C2" && !isMyAbilitySealed()){
       await healDamageToPlayer(state.userId, 2, "carol_reveal_heal");
       if (isMyTurn()){
@@ -5962,8 +5970,10 @@
 
     const revealedBy = safeText(options.revealedBy || "");
     const eRef = ref(db, `rooms/${state.roomCode}/equipment/${targetUid}/identity`);
+    let revealedNow = false;
     await runTransaction(eRef, (cur) => {
       if (cur && cur.kind === "identity" && cur.roleId) return cur;
+      revealedNow = true;
       const next = {
         kind: "identity",
         roleId: String(hand.roleId),
@@ -5973,6 +5983,10 @@
       if (revealedBy) next.revealedBy = revealedBy;
       return next;
     });
+    if (revealedNow){
+      const roleName = safeText(ROLE_BY_ID?.[safeText(hand.roleId)]?.name || "?");
+      appendActionChatLog(targetUid, `カード公開:${roleName}`).catch(() => {});
+    }
   }
 
   function hasNonIdentityEquipment(uid){
@@ -7977,12 +7991,14 @@
   async function stealEquipmentFromPlayer(targetUid, sourceKey){
     if (!state.roomCode || !targetUid || !sourceKey) return false;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
+    let stolenName = "";
     const result = await runTransaction(roomRef, (cur) => {
       if (!cur) return cur;
       const targetRow = cur.equipment?.[targetUid];
       if (!targetRow) return cur;
       const item = targetRow[sourceKey];
       if (!item || item.kind === "identity") return cur;
+      stolenName = safeText(item.name || "装備");
 
       const oldCount = Math.max(1, Math.floor(Number(item.count ?? item.qty ?? item.quantity ?? 1) || 1));
       if (oldCount > 1){
@@ -8004,6 +8020,10 @@
       };
       return cur;
     });
+    if (!!result.committed){
+      const ownerName = safeText(playerById(targetUid)?.name || "プレイヤー");
+      appendActionChatLog(state.userId, `装備奪取:${ownerName}さんから${stolenName || "装備"}`).catch(() => {});
+    }
     return !!result.committed;
   }
 
@@ -8067,12 +8087,14 @@
   async function moveEquipmentCardBetweenPlayers(fromUid, toUid, sourceKey){
     if (!state.roomCode || !fromUid || !toUid || !sourceKey) return false;
     const roomRef = ref(db, `rooms/${state.roomCode}`);
+    let movedName = "";
     const result = await runTransaction(roomRef, (cur) => {
       if (!cur) return cur;
       const fromRow = cur.equipment?.[fromUid];
       if (!fromRow) return cur;
       const item = fromRow[sourceKey];
       if (!item || item.kind === "identity") return cur;
+      movedName = safeText(item.name || "装備");
 
       const oldCount = Math.max(1, Math.floor(Number(item.count ?? item.qty ?? item.quantity ?? 1) || 1));
       if (oldCount > 1){
@@ -8095,6 +8117,11 @@
       };
       return cur;
     });
+    if (!!result.committed){
+      const fromName = safeText(playerById(fromUid)?.name || "プレイヤー");
+      const toName = safeText(playerById(toUid)?.name || "プレイヤー");
+      appendActionChatLog(fromUid, `装備譲渡:${toName}さんへ${movedName || "装備"}（元:${fromName}）`).catch(() => {});
+    }
     return !!result.committed;
   }
 
@@ -9119,7 +9146,7 @@ ${targetName}さん...` : "";
     let damage = 0;
     if (hit){
       damage = calcAttackDamageFromRoll(actor, d6, d4, { targetUid:target });
-      if (damage > 0) await addDamageToPlayer(target, damage, { source:"attack" });
+      if (damage > 0) await addDamageToPlayer(target, damage, { source:"attack", actorUid: actor });
     }
     await recordNpcAttackTarget(actor, target);
     return { hit, damage, d6, d4 };
@@ -10534,6 +10561,10 @@ ${targetName}さん...` : "";
           uids: [...justEliminatedUids],
           at: Date.now()
         };
+        for (const uid of justEliminatedUids){
+          const name = safeText(playerById(uid)?.name || "プレイヤー");
+          appendActionChatLog(uid, `脱落:${name}`).catch(() => {});
+        }
       }
 
       if (myRoleId === "CIT_B3" && attackDefeatedUids.length && !isMyIdentityRevealed() && !bruceAutoRevealTimer && !isMyAbilitySealed()){
@@ -12261,6 +12292,10 @@ ${targetName}さん...` : "";
     if (!uid || !state.roomCode || add <= 0) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) + add));
+    const targetName = safeText(playerById(uid)?.name || "プレイヤー");
+    const source = safeText(options?.source || "");
+    const src = source ? `(${source})` : "";
+    appendActionChatLog(safeText(options?.actorUid || state.userId), `ダメージ${src}:${targetName}さんに${add}`).catch(() => {});
   }
 
   async function healDamageToPlayer(uid, amount, source = ""){
@@ -12269,6 +12304,9 @@ ${targetName}さん...` : "";
     if (!isGordonBarrierHpChangeAllowed(uid, source)) return;
     const dRef = ref(db, `rooms/${state.roomCode}/damage/${uid}`);
     await runTransaction(dRef, (cur) => clampDamage(Number(cur || 0) - heal));
+    const targetName = safeText(playerById(uid)?.name || "プレイヤー");
+    const src = safeText(source || "");
+    appendActionChatLog(state.userId, `回復${src ? `(${src})` : ""}:${targetName}さんを${heal}`).catch(() => {});
   }
 
   async function fullRecoverPlayer(uid){
@@ -12287,6 +12325,8 @@ ${targetName}さん...` : "";
     if (!uid || !state.roomCode) return;
     if (!isGordonBarrierHpChangeAllowed(uid, source)) return;
     await set(ref(db, `rooms/${state.roomCode}/damage/${uid}`), clampDamage(damage));
+    const targetName = safeText(playerById(uid)?.name || "プレイヤー");
+    appendActionChatLog(state.userId, `ダメージ設定${safeText(source||"") ? `(${safeText(source)})` : ""}:${targetName}さん=${clampDamage(damage)}`).catch(() => {});
   }
 
   async function enableRepeatTurnOnce(){
