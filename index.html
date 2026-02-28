@@ -9371,6 +9371,12 @@ ${targetName}さん...` : "";
     await set(ref(db, `rooms/${state.roomCode}/abilityUsage/${spec.usageKey}/${actorUid}`), value);
   }
 
+  async function revealNpcIdentityIfNeeded(uid, revealedBy = "npc_ability"){
+    const actorUid = safeText(uid || "");
+    if (!actorUid || isIdentityRevealedFor(actorUid)) return;
+    await revealIdentityToEquipmentForUid(actorUid, { revealedBy });
+  }
+
   function npcKnownEnemyTarget(actorUid, { rivalFaction = "", threshold = 0.9, roomId = 0, includeRevealedOnly = false } = {}){
     const actor = safeText(actorUid || "");
     if (!actor) return "";
@@ -9455,6 +9461,7 @@ ${targetName}さん...` : "";
           await remove(ref(db, `rooms/${state.roomCode}/counterPromptState/${uid}`)).catch(() => {});
           continue;
         }
+        await revealNpcIdentityIfNeeded(uid, "npc_werewolf_counter");
         await npcAnnounceAbilityUse(uid, "反撃", attackerUid);
         await runWerewolfCounterAttackForUid(uid, attackerUid);
         await remove(ref(db, `rooms/${state.roomCode}/counterPromptState/${uid}`)).catch(() => {});
@@ -10134,6 +10141,7 @@ ${targetName}さん...` : "";
           if (turnRoleId === "SHA_U3" && !isAbilitySealedForPlayer(turnUid, "SHA_U3") && !isAttackAbilityUsedThisTurn("SHA_U3")
             && (revealedFactionForUid(targetUid) === "レイダー" || isNpcCertainNotSameFactionByIntel(turnUid, targetUid) || npcEnemyLikelihoodByIntel(turnUid, targetUid) >= 0.9)){
             markAttackAbilityUsedThisTurn("SHA_U3");
+            await revealNpcIdentityIfNeeded(turnUid, "npc_ulster_second_attack");
             await npcAnnounceAbilityUse(turnUid, "デル・フリス");
             const secondPool = [...attackRangeTargetUidsFor(turnUid)]
               .filter((uid) => uid !== turnUid && !isPlayerEliminated(uid));
@@ -10146,6 +10154,7 @@ ${targetName}さん...` : "";
 
           if (turnRoleId === "SHA_V2" && clampDamage(damageCache?.[turnUid]) >= 5 && attackRes.hit && !isAbilitySealedForPlayer(turnUid, "SHA_V2")){
             await emitRoleFlashEvent("SHA_V2", "vampire_heal");
+            await revealNpcIdentityIfNeeded(turnUid, "npc_vampire_heal");
             await healDamageToPlayer(turnUid, 2, "vampire_role_heal", { actorUid:turnUid, skipActionLog:true });
             await npcAnnounceAbilityUse(turnUid, "吸血", turnUid, { delta:-2, useCurrentDamage:true });
           }
@@ -10190,6 +10199,7 @@ ${targetName}さん...` : "";
         const eliminated = eliminatedPlayerCount();
         const knownEnemy = npcKnownEnemyTarget(turnUid, { rivalFaction:"レイダー", threshold:0.75 });
         if (eliminated > 0 && knownEnemy && Math.random() < 0.5){
+          await revealNpcIdentityIfNeeded(turnUid, "npc_wight_ability");
           await npcAnnounceAbilityUse(turnUid, "亡者の王");
           await set(ref(db, `rooms/${state.roomCode}/abilityUsage/wight/${turnUid}`), true);
           await update(ref(db, `rooms/${state.roomCode}/turn`), {
@@ -10891,6 +10901,7 @@ ${targetName}さん...` : "";
           if (!raiderTarget) continue;
           const selectedUid = safeText(raiderTarget.id || "");
           if (!selectedUid) continue;
+          revealNpcIdentityIfNeeded(uid, "npc_godwin_revive").catch(() => {});
           npcAnnounceAbilityUse(uid, "蘇生装置TYPE-G", selectedUid).catch(() => {});
           runTransaction(ref(db, `rooms/${state.roomCode}`), (cur) => {
             if (!cur) return cur;
