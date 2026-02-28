@@ -3970,6 +3970,11 @@
     return !!(key && effectResolutionLocks[key]);
   }
 
+  function containsEitherPair(compactText, a, b){
+    const text = safeText(compactText || "");
+    return text.includes(`${a}か${b}`) || text.includes(`${b}か${a}`);
+  }
+
   function greenCardConditionMatched(cardObj){
     const text = safeText(cardObj?.effect || cardObj?.text || "");
     const compactText = text.replace(/[\s　]+/g, "");
@@ -3978,9 +3983,9 @@
 
     if (text.includes("A / B / C / E / U")) return ["A","B","C","E","U"].includes(role.initial) && Number(role.hp) <= 11;
     if (text.includes("D / F / G / V / W")) return ["D","F","G","V","W"].includes(role.initial) && Number(role.hp) >= 12;
-    if (compactText.includes("シチズンかシャドウ")) return role.faction === "シチズン" || role.faction === "シャドウ";
-    if (compactText.includes("シチズンかレイダー")) return role.faction === "シチズン" || role.faction === "レイダー";
-    if (compactText.includes("レイダーかシャドウ")) return role.faction === "レイダー" || role.faction === "シャドウ";
+    if (containsEitherPair(compactText, "シチズン", "シャドウ")) return role.faction === "シチズン" || role.faction === "シャドウ";
+    if (containsEitherPair(compactText, "シチズン", "レイダー")) return role.faction === "シチズン" || role.faction === "レイダー";
+    if (containsEitherPair(compactText, "レイダー", "シャドウ")) return role.faction === "レイダー" || role.faction === "シャドウ";
     if (text.includes("シャドウ？")) return role.faction === "シャドウ";
     if (text.includes("レイダー？")) return role.faction === "レイダー";
     if (text.includes("シチズン？")) return role.faction === "シチズン";
@@ -8849,9 +8854,9 @@ ${targetName}さん...` : "";
     if (!role) return null;
     if (text.includes("A / B / C / E / U")) return ["A","B","C","E","U"].includes(role.initial) && Number(role.hp) <= 11;
     if (text.includes("D / F / G / V / W")) return ["D","F","G","V","W"].includes(role.initial) && Number(role.hp) >= 12;
-    if (compactText.includes("シチズンかシャドウ")) return role.faction === "シチズン" || role.faction === "シャドウ";
-    if (compactText.includes("シチズンかレイダー")) return role.faction === "シチズン" || role.faction === "レイダー";
-    if (compactText.includes("レイダーかシャドウ")) return role.faction === "レイダー" || role.faction === "シャドウ";
+    if (containsEitherPair(compactText, "シチズン", "シャドウ")) return role.faction === "シチズン" || role.faction === "シャドウ";
+    if (containsEitherPair(compactText, "シチズン", "レイダー")) return role.faction === "シチズン" || role.faction === "レイダー";
+    if (containsEitherPair(compactText, "レイダー", "シャドウ")) return role.faction === "レイダー" || role.faction === "シャドウ";
     if (text.includes("シャドウ？")) return role.faction === "シャドウ";
     if (text.includes("レイダー？")) return role.faction === "レイダー";
     if (text.includes("シチズン？")) return role.faction === "シチズン";
@@ -9086,9 +9091,9 @@ ${targetName}さん...` : "";
     if (text.includes("シャドウ？")) return new Set(["シャドウ"]);
     if (text.includes("レイダー？")) return new Set(["レイダー"]);
     if (text.includes("シチズン？")) return new Set(["シチズン"]);
-    if (compact.includes("シチズンかシャドウ")) return new Set(["シチズン","シャドウ"]);
-    if (compact.includes("シチズンかレイダー")) return new Set(["シチズン","レイダー"]);
-    if (compact.includes("レイダーかシャドウ")) return new Set(["レイダー","シャドウ"]);
+    if (containsEitherPair(compact, "シチズン", "シャドウ")) return new Set(["シチズン","シャドウ"]);
+    if (containsEitherPair(compact, "シチズン", "レイダー")) return new Set(["シチズン","レイダー"]);
+    if (containsEitherPair(compact, "レイダー", "シャドウ")) return new Set(["レイダー","シャドウ"]);
     return null;
   }
 
@@ -9113,9 +9118,9 @@ ${targetName}さん...` : "";
     const isRaiderOnly = compact.includes("レイダー？") && !compact.includes("か");
     const isShadowOnly = compact.includes("シャドウ？") && !compact.includes("か");
     const isCitizenOnly = compact.includes("シチズン？") && !compact.includes("か");
-    const isRaiderOrCitizen = compact.includes("レイダーかシチズン");
-    const isShadowOrCitizen = compact.includes("シャドウかシチズン");
-    const isRaiderOrShadow = compact.includes("レイダーかシャドウ");
+    const isRaiderOrCitizen = containsEitherPair(compact, "レイダー", "シチズン");
+    const isShadowOrCitizen = containsEitherPair(compact, "シャドウ", "シチズン");
+    const isRaiderOrShadow = containsEitherPair(compact, "レイダー", "シャドウ");
     const revealCard = isRevealIdentityGreenCard(cardObj);
 
     const prevSnapshot = JSON.parse(JSON.stringify(state.room?.npcIntel?.greenInference?.[asker] || {}));
