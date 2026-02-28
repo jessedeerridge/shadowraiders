@@ -8682,26 +8682,60 @@ ${targetName}さん...` : "";
   }
 
   function factionPercentMapFromHint(hint){
-    const map = { "レイダー":34, "シャドウ":33, "シチズン":33 };
+    const base = { "レイダー":null, "シャドウ":null, "シチズン":null };
     const row = hint && typeof hint === "object" ? hint : {};
+    const certainty = row && typeof row.certainty === "object" ? row.certainty : null;
+    if (certainty){
+      for (const faction of Object.keys(base)){
+        const value = certainty[faction];
+        base[faction] = (value === 0 || value === 100) ? value : null;
+      }
+      return normalizeFactionCertainty(base);
+    }
     const confirmed = safeText(row.confirmedFaction || "");
-    if (confirmed && map[confirmed] != null){
-      for (const key of Object.keys(map)) map[key] = (key === confirmed) ? 100 : 0;
-      return map;
+    if (confirmed && base[confirmed] != null){
+      for (const key of Object.keys(base)) base[key] = (key === confirmed) ? 100 : 0;
+      return base;
     }
     const possible = Array.isArray(row.possibleFactions)
-      ? [...new Set(row.possibleFactions.map((f) => safeText(f)).filter((f) => map[f] != null))]
+      ? [...new Set(row.possibleFactions.map((f) => safeText(f)).filter((f) => base[f] != null))]
       : [];
-    if (possible.length){
-      for (const key of Object.keys(map)) map[key] = 0;
-      const base = Math.floor(100 / possible.length);
-      let rest = 100 - (base * possible.length);
-      for (const f of possible){
-        map[f] = base + (rest > 0 ? 1 : 0);
-        if (rest > 0) rest -= 1;
-      }
+    if (possible.length === 1){
+      for (const key of Object.keys(base)) base[key] = (key === possible[0]) ? 100 : 0;
+    } else if (possible.length === 2){
+      for (const key of Object.keys(base)) base[key] = possible.includes(key) ? null : 0;
     }
-    return map;
+    return normalizeFactionCertainty(base);
+  }
+
+  function certaintyValueLabel(value){
+    return (value === 0 || value === 100) ? `${value}%` : "?";
+  }
+
+  function normalizeFactionCertainty(certainty){
+    const next = { "レイダー":null, "シャドウ":null, "シチズン":null, ...(certainty || {}) };
+    const factions = ["レイダー", "シャドウ", "シチズン"];
+    const zeros = factions.filter((f) => next[f] === 0);
+    const hundreds = factions.filter((f) => next[f] === 100);
+    if (hundreds.length >= 2){
+      next["シャドウ"] = 100;
+      next["レイダー"] = 0;
+      next["シチズン"] = 0;
+      return next;
+    }
+    if (hundreds.length === 1){
+      for (const f of factions){
+        if (f !== hundreds[0]) next[f] = 0;
+      }
+      return next;
+    }
+    if (zeros.length >= 2){
+      const left = factions.find((f) => !zeros.includes(f));
+      if (left) next[left] = 100;
+      for (const f of zeros) next[f] = 0;
+      return next;
+    }
+    return next;
   }
 
   function appendFactionInferenceChangeLog(observerUid, targetUid, prevHint, nextHint){
@@ -8712,10 +8746,8 @@ ${targetName}さん...` : "";
     const after = factionPercentMapFromHint(nextHint || null);
     const deltas = [];
     for (const faction of ["レイダー", "シャドウ", "シチズン"]){
-      const diff = Number(after[faction] || 0) - Number(before[faction] || 0);
-      if (Math.abs(diff) < 5) continue;
-      const sign = diff > 0 ? "+" : "";
-      deltas.push(`${safeText(playerById(target)?.name || "プレイヤー")}→${faction}${sign}${diff}%`);
+      if (before[faction] === after[faction]) continue;
+      deltas.push(`${safeText(playerById(target)?.name || "プレイヤー")}→${faction}${certaintyValueLabel(after[faction])}`);
     }
     if (!deltas.length) return;
     appendActionChatLog(observer, deltas.join(" / ")).catch(() => {});
@@ -9000,6 +9032,65 @@ ${targetName}さん...` : "";
     return null;
   }
 
+  function applyFactionCertaintyMap(row, certainty, observerFaction=""){
+    const normalized = normalizeFactionCertainty(certainty);
+    const possibleFactions = ["レイダー", "シャドウ", "シチズン"].filter((f) => normalized[f] !== 0);
+    const confirmedFaction = ["レイダー", "シャドウ", "シチズン"].find((f) => normalized[f] === 100) || "";
+    const next = {
+      ...(row || {}),
+      certainty: normalized,
+      possibleFactions,
+      confirmedFaction,
+      samePossible: observerFaction ? normalized[observerFaction] !== 0 : false,
+      sameImpossible: observerFaction ? normalized[observerFaction] === 0 : false,
+      sameConfirmed: observerFaction ? normalized[observerFaction] === 100 : false,
+      enemyCertain: observerFaction ? ((observerFaction === "レイダー" && normalized["シャドウ"] === 100) || (observerFaction === "シャドウ" && normalized["レイダー"] === 100)) : false,
+      at: Date.now()
+    };
+    return next;
+  }
+
+  function snapshotFactionHintsForObserver(map){
+    const out = {};
+    for (const [uid, row] of Object.entries(map || {})){
+      out[safeText(uid)] = factionPercentMapFromHint(row);
+    }
+    return out;
+  }
+
+  function greenInferenceRulesKey(cardObj){
+    const text = safeText(cardObj?.effect || cardObj?.text || "");
+    const compact = text.replace(/[\s　]+/g, "");
+    if (text.includes("正体カードを見せよ")) return "reveal_identity";
+    if (text.includes("レイダー？")) return "raider_single";
+    if (text.includes("シャドウ？")) return "shadow_single";
+    if (text.includes("シチズン？")) return "citizen_single";
+    if (compact.includes("シチズンかレイダー")) return "raider_or_citizen";
+    if (compact.includes("シチズンかシャドウ")) return "shadow_or_citizen";
+    if (compact.includes("レイダーかシャドウ")) return "raider_or_shadow";
+    return "";
+  }
+
+  function applyZeroToOthersForFaction(hintsByTarget, targetUid, faction, observerFaction=""){
+    for (const uid of Object.keys(hintsByTarget || {})){
+      if (uid === targetUid) continue;
+      const certainty = factionPercentMapFromHint(hintsByTarget[uid]);
+      certainty[faction] = 0;
+      hintsByTarget[uid] = applyFactionCertaintyMap(hintsByTarget[uid], certainty, observerFaction);
+    }
+  }
+
+  function applyKnownFactionCountRule(hintsByTarget, faction, maxCount = 2, observerFaction=""){
+    const fixed = Object.entries(hintsByTarget || {}).filter(([, row]) => factionPercentMapFromHint(row)[faction] === 100).map(([uid]) => uid);
+    if (fixed.length < maxCount) return;
+    for (const uid of Object.keys(hintsByTarget || {})){
+      if (fixed.includes(uid)) continue;
+      const certainty = factionPercentMapFromHint(hintsByTarget[uid]);
+      certainty[faction] = 0;
+      hintsByTarget[uid] = applyFactionCertaintyMap(hintsByTarget[uid], certainty, observerFaction);
+    }
+  }
+
   async function recordNpcFactionInference(fromUid, toUid, cardObj, answerId, revealedRoleId=""){
     const asker = safeText(fromUid || "");
     const target = safeText(toUid || "");
@@ -9010,78 +9101,97 @@ ${targetName}さん...` : "";
     const ans = safeText(answerId || "");
     if (ans !== "yes" && ans !== "reveal_identity" && ans !== "no") return;
 
-    const prevHint = state.room?.npcIntel?.factionHints?.[asker]?.[target] || null;
-    const revealCard = isRevealIdentityGreenCard(cardObj);
-    if (revealCard && ans === "reveal_identity"){
-      const roleId = safeText(revealedRoleId || "");
-      const revealedFaction = safeText(ROLE_BY_ID[roleId]?.faction || "");
-      if (!revealedFaction) return;
-      const samePossible = revealedFaction === askerFaction;
-      const sameImpossible = !samePossible;
-      const rivalFaction = askerFaction === "レイダー" ? "シャドウ" : askerFaction === "シャドウ" ? "レイダー" : "";
-      const nextHint = {
-        ...(prevHint || {}),
-        samePossible,
-        sameImpossible,
-        sameConfirmed: samePossible,
-        enemyCertain: !!rivalFaction && revealedFaction === rivalFaction,
-        possibleFactions: [revealedFaction],
-        confirmedFaction: revealedFaction,
-        confirmedBy: "green_reveal_identity",
-        at: Date.now()
-      };
-      await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
-        const next = cur && typeof cur === "object" ? cur : {};
-        next.factionHints = next.factionHints || {};
-        next.factionHints[asker] = next.factionHints[asker] || {};
-        const prev = next.factionHints[asker][target] || {};
-        next.factionHints[asker][target] = {
-          ...prev,
-          ...nextHint
-        };
-        return next;
-      });
-      appendFactionInferenceChangeLog(asker, target, prevHint, nextHint);
-      return;
+    const prevHintsMap = state.room?.npcIntel?.factionHints?.[asker] || {};
+    const key = greenInferenceRulesKey(cardObj);
+    if (!key) return;
+    const allTargets = latestPlayers
+      .map((p) => safeText(p?.id || ""))
+      .filter((uid) => !!uid && uid !== asker);
+
+    const hinted = {};
+    for (const uid of allTargets){
+      hinted[uid] = { ...(prevHintsMap?.[uid] || {}) };
+      hinted[uid] = applyFactionCertaintyMap(hinted[uid], factionPercentMapFromHint(hinted[uid]), askerFaction);
     }
 
-    const setAsked = greenFactionSetFromCard(cardObj, askerFaction);
-    if (!(setAsked instanceof Set)) return;
-    const allSet = new Set(["シチズン","レイダー","シャドウ"]);
-    const possible = new Set(ans === "no" ? [...allSet].filter(f => !setAsked.has(f)) : [...setAsked]);
-    const rivalFaction = askerFaction === "レイダー" ? "シャドウ" : askerFaction === "シャドウ" ? "レイダー" : "";
-
-    const prevPossible = Array.isArray(prevHint?.possibleFactions)
-      ? new Set(prevHint.possibleFactions.map((f) => safeText(f)).filter(Boolean))
-      : new Set(allSet);
-    const mergedPossible = new Set([...prevPossible].filter((f) => possible.has(f)));
-    const decidedPossible = mergedPossible.size ? mergedPossible : possible;
-    const samePossible = decidedPossible.has(askerFaction);
-    const sameImpossible = !samePossible;
-    const sameConfirmed = decidedPossible.size === 1 && decidedPossible.has(askerFaction);
-    const enemyCertain = !!rivalFaction && decidedPossible.size === 1 && decidedPossible.has(rivalFaction);
-    const nextHint = {
-      ...(prevHint || {}),
-      possibleFactions: [...decidedPossible],
-      samePossible,
-      sameImpossible,
-      sameConfirmed,
-      enemyCertain,
-      at: Date.now()
+    const updateTarget = (faction, value) => {
+      const certainty = factionPercentMapFromHint(hinted[target]);
+      certainty[faction] = value;
+      hinted[target] = applyFactionCertaintyMap(hinted[target], certainty, askerFaction);
     };
 
+    if (key === "reveal_identity" && ans === "reveal_identity"){
+      const roleId = safeText(revealedRoleId || "");
+      const revealedFaction = safeText(ROLE_BY_ID[roleId]?.faction || "");
+      if (revealedFaction) updateTarget(revealedFaction, 100);
+    } else if (key === "raider_single"){
+      if (ans === "yes") updateTarget("レイダー", 100);
+      if (ans === "no") updateTarget("レイダー", 0);
+      if (ans === "yes" && askerFaction === "レイダー") applyZeroToOthersForFaction(hinted, target, "レイダー", askerFaction);
+    } else if (key === "shadow_single"){
+      if (ans === "yes") updateTarget("シャドウ", 100);
+      if (ans === "no") updateTarget("シャドウ", 0);
+      if (ans === "yes" && askerFaction === "シャドウ") applyZeroToOthersForFaction(hinted, target, "シャドウ", askerFaction);
+    } else if (key === "citizen_single"){
+      if (ans === "yes"){
+        updateTarget("シチズン", 100);
+        applyZeroToOthersForFaction(hinted, target, "シチズン", askerFaction);
+      }
+      if (ans === "no") updateTarget("シチズン", 0);
+    } else if (key === "raider_or_citizen"){
+      if (ans === "yes") updateTarget("シャドウ", 0);
+    } else if (key === "shadow_or_citizen"){
+      if (ans === "no") updateTarget("レイダー", 100);
+    } else if (key === "raider_or_shadow"){
+      if (ans === "yes") updateTarget("シチズン", 0);
+      if (ans === "no") updateTarget("シチズン", 100);
+    }
+
+    for (const uid of allTargets){
+      const revealedFaction = safeText(revealedFactionForUid(uid) || "");
+      if (!revealedFaction) continue;
+      const certainty = factionPercentMapFromHint(hinted[uid]);
+      certainty[revealedFaction] = 100;
+      hinted[uid] = applyFactionCertaintyMap(hinted[uid], certainty, askerFaction);
+    }
+    if (askerFaction === "レイダー" || askerFaction === "シャドウ"){
+      const sameFactionRevealed = allTargets.filter((uid) => revealedFactionForUid(uid) === askerFaction);
+      if (sameFactionRevealed.length >= 1){
+        for (const uid of allTargets){
+          if (sameFactionRevealed.includes(uid)) continue;
+          const certainty = factionPercentMapFromHint(hinted[uid]);
+          certainty[askerFaction] = 0;
+          hinted[uid] = applyFactionCertaintyMap(hinted[uid], certainty, askerFaction);
+        }
+      }
+    }
+    applyKnownFactionCountRule(hinted, "レイダー", 2, askerFaction);
+    applyKnownFactionCountRule(hinted, "シャドウ", 2, askerFaction);
+
+    const beforeSnapshot = snapshotFactionHintsForObserver(prevHintsMap);
     await runTransaction(ref(db, `rooms/${state.roomCode}/npcIntel`), (cur) => {
       const next = cur && typeof cur === "object" ? cur : {};
       next.factionHints = next.factionHints || {};
       next.factionHints[asker] = next.factionHints[asker] || {};
-      const prev = next.factionHints[asker][target] || {};
-      next.factionHints[asker][target] = {
-        ...prev,
-        ...nextHint
-      };
+      for (const uid of Object.keys(hinted)){
+        next.factionHints[asker][uid] = hinted[uid];
+      }
       return next;
     });
-    appendFactionInferenceChangeLog(asker, target, prevHint, nextHint);
+
+    const inferenceLines = [];
+    for (const uid of Object.keys(hinted)){
+      const before = beforeSnapshot[uid] || { "レイダー":null, "シャドウ":null, "シチズン":null };
+      const after = factionPercentMapFromHint(hinted[uid]);
+      const changed = ["レイダー", "シャドウ", "シチズン"].some((f) => before[f] !== after[f]);
+      if (!changed) continue;
+      inferenceLines.push(`${displayNameForUid(uid)} R:${certaintyValueLabel(after["レイダー"])} S:${certaintyValueLabel(after["シャドウ"])} C:${certaintyValueLabel(after["シチズン"])}`);
+    }
+    const cardText = safeText(cardObj?.effect || cardObj?.text || "");
+    const answerLabel = ans === "yes" ? "はい" : ans === "no" ? "いいえ" : "正体公開";
+    const baseLine = `[${cardText}] >${displayNameBracketRoleForUid(target)} ${answerLabel}`;
+    const reasoningLine = `推論: ${inferenceLines.length ? inferenceLines.join(" / ") : "変化なし"}`;
+    appendActionChatLog(asker, `${baseLine}\n${reasoningLine}`).catch(() => {});
   }
 
 
