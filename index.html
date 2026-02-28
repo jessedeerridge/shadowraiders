@@ -9049,6 +9049,24 @@ ${targetName}さん...` : "";
       if (revealCard && ans === "reveal_identity"){
         const revealedFaction = safeText(ROLE_BY_ID[safeText(revealedRoleId || "")]?.faction || "");
         if (revealedFaction) put(target, revealedFaction, 100);
+        if (revealedFaction === "シチズン"){
+          for (const p of latestPlayers){
+            const pid = safeText(p.id || "");
+            if (pid && pid !== target) put(pid, "シチズン", 0);
+          }
+        }
+        if (revealedFaction === "レイダー" && askerFaction === "レイダー"){
+          for (const p of latestPlayers){
+            const pid = safeText(p.id || "");
+            if (pid && pid !== asker && pid !== target) put(pid, "レイダー", 0);
+          }
+        }
+        if (revealedFaction === "シャドウ" && askerFaction === "シャドウ"){
+          for (const p of latestPlayers){
+            const pid = safeText(p.id || "");
+            if (pid && pid !== asker && pid !== target) put(pid, "シャドウ", 0);
+          }
+        }
       }
       if (isRaiderOnly) put(target, "レイダー", ans === "yes" ? 100 : 0);
       if (isShadowOnly) put(target, "シャドウ", ans === "yes" ? 100 : 0);
