@@ -9113,9 +9113,9 @@ ${targetName}さん...` : "";
     const isRaiderOnly = compact.includes("レイダー？") && !compact.includes("か");
     const isShadowOnly = compact.includes("シャドウ？") && !compact.includes("か");
     const isCitizenOnly = compact.includes("シチズン？") && !compact.includes("か");
-    const isRaiderOrCitizen = compact.includes("レイダーかシチズン");
-    const isShadowOrCitizen = compact.includes("シャドウかシチズン");
-    const isRaiderOrShadow = compact.includes("レイダーかシャドウ");
+    const isRaiderOrCitizen = compact.includes("レイダーかシチズン") || compact.includes("シチズンかレイダー");
+    const isShadowOrCitizen = compact.includes("シャドウかシチズン") || compact.includes("シチズンかシャドウ");
+    const isRaiderOrShadow = compact.includes("レイダーかシャドウ") || compact.includes("シャドウかレイダー");
     const revealCard = isRevealIdentityGreenCard(cardObj);
 
     const prevSnapshot = JSON.parse(JSON.stringify(state.room?.npcIntel?.greenInference?.[asker] || {}));
