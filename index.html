@@ -11218,13 +11218,9 @@ ${targetName}さん...` : "";
     if (drawn){
       const cardName = safeText(drawn?.name || "カード");
       const cardEffect = safeText(drawn?.effect || "");
-      const selectionCards = new Set(["応急手当", "恩恵", "吸血コウモリ", "三つ目の黒犬", "呪いの人形"]);
-      const skipBasic = type === "green" || selectionCards.has(cardName);
-      if (!skipBasic){
-        const themeLabel = type === "white" ? "白" : (type === "black" ? "黒" : "緑");
-        const tail = (type === "green" && cardEffect) ? ` ${cardEffect}` : "";
-        appendActionChatLog(state.userId, `${themeLabel}ドロー：[${cardName}]${tail}`).catch(() => {});
-      }
+      const themeLabel = type === "white" ? "白" : (type === "black" ? "黒" : "緑");
+      const tail = (type === "green" && cardEffect) ? ` ${cardEffect}` : "";
+      appendActionChatLog(state.userId, `${themeLabel}ドロー：[${cardName}]${tail}`).catch(() => {});
     }
 
     scheduleDeckRebuildIfEmpty(type).catch(() => {});
