@@ -4058,7 +4058,7 @@
     if (!state.roomCode || !msg?.from || !msg?.requestId || !opt?.id) return;
     const answerLabel = safeText(overrideLabel || opt.label || "");
     const q = safeText(msg?.card?.effect || msg?.card?.text || "");
-    appendActionChatLog(state.userId, `緑ドロー：[${q}]>${displayNameForUid(msg?.to || state.userId)}　${answerLabel || safeText(opt?.id || "")}`).catch(() => {});
+    appendActionChatLog(state.userId, `[${q}] 1>${actionTargetWithDamage(msg?.to || state.userId, 1)} ${answerLabel || safeText(opt?.id || "")}`).catch(() => {});
     const responseRoleId = (opt.id === "reveal_identity") ? safeText(state.hands?.[state.userId]?.roleId || "") : "";
     let requesterUid = safeText(msg.from || "");
     try {
@@ -4620,7 +4620,7 @@
           await runCornerD6Roll(eye);
           await waitMs(1000);
           await healDamageToPlayer(uid, eye, "card_blessing_heal", { skipActionLog:true });
-          appendActionChatLog(state.userId, `白ドロー：[恩恵] (6d${eye}) ${eye}回復>${displayNameForUid(uid)}`).catch(() => {});
+          appendActionChatLog(state.userId, `[恩恵] (6d${eye}) ${actionDeltaText(-eye)}>${actionTargetWithDamage(uid, -eye)}`).catch(() => {});
         }
       };
     }
@@ -4638,7 +4638,7 @@
             dmg = 2;
           }
           await healDamageToPlayer(state.userId, 1, "card_vampire_bat_heal", { skipActionLog:true });
-          appendActionChatLog(state.userId, `黒ドロー：[吸血コウモリ] 1回復>${displayNameForUid(state.userId)}, ${dmg}ダメージ>${displayNameForUid(uid)}`).catch(() => {});
+          appendActionChatLog(state.userId, `[吸血コウモリ] ${actionDeltaText(-1)}>${actionTargetWithDamage(state.userId, -1)}, ${actionDeltaText(dmg)}>${actionTargetWithDamage(uid, dmg)}`).catch(() => {});
         }
       };
     }
@@ -4670,7 +4670,7 @@
           await emitCardDiceEvent({ kind:"curse_doll", uid: state.userId, d6: eye });
           await waitMs(1000);
           if (eye <= 4){
-            if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 3);
+            if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 3, { actorUid:state.userId });
           } else if (!hasEquipmentByName(state.userId, "いにしえの聖杯")){
             await addDamageToPlayer(state.userId, 3);
           }
@@ -8525,6 +8525,30 @@ ${targetName}さん...` : "";
     return safeText(map[src] || src);
   }
 
+  function displayRoleOrHiddenForUid(uid){
+    const roleName = roleNameForUid(uid);
+    return roleName && roleName !== "?" ? roleName : "正体名";
+  }
+
+  function displayNameRoleForUid(uid){
+    return `${displayNameForUid(uid)}[${displayRoleOrHiddenForUid(uid)}]`;
+  }
+
+  function currentDamageForUid(uid){
+    return clampDamage(Number(state.room?.damage?.[uid] || 0));
+  }
+
+  function actionDeltaText(delta){
+    const v = Number(delta || 0);
+    if (!Number.isFinite(v) || v === 0) return "0";
+    return v > 0 ? `${v}` : `${v}`;
+  }
+
+  function actionTargetWithDamage(uid, delta){
+    const total = currentDamageForUid(uid);
+    return `${displayNameForUid(uid)} (${total})`;
+  }
+
   async function appendActionChatLog(uid, actionText){
     const actorUid = safeText(uid || state.userId || "");
     const action = safeText(actionText || "").trim();
@@ -9211,7 +9235,7 @@ ${targetName}さん...` : "";
       damage = calcAttackDamageFromRoll(actor, d6, d4, { targetUid:target });
       if (damage > 0) await addDamageToPlayer(target, damage, { source:"attack", actorUid: actor, skipActionLog:true });
     }
-    appendActionChatLog(actor, `攻撃ロール：ダメージ${Math.max(0,damage)} (6d${d6},4d${d4})>${displayNameForUid(target)}`).catch(() => {});
+    appendActionChatLog(actor, `攻撃ロール：ダメージ${Math.max(0,damage)} (6d${d6},4d${d4})>${displayNameRoleForUid(target)} (${currentDamageForUid(target)})`).catch(() => {});
     await recordNpcAttackTarget(actor, target);
     return { hit, damage, d6, d4 };
   }
@@ -9326,7 +9350,7 @@ ${targetName}さん...` : "";
       const targetUid = chooseNpcTargetForCard(uid, { purpose:"first_aid", includeSelf:true });
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
-      await setDamageToPlayer(targetUid, 7, "first_aid_set");
+      await setDamageToPlayer(targetUid, 7, "first_aid_set", { actorUid:uid });
       return;
     }
     if (name === "恩恵"){
@@ -9335,7 +9359,8 @@ ${targetName}さん...` : "";
       await npcAnnounceSelectedPlayer(uid, targetUid);
       const eye = 1 + Math.floor(Math.random() * 6);
       await emitCardDiceEvent({ kind:"blessing", uid, d6:eye });
-      await healDamageToPlayer(targetUid, eye, "card_blessing_heal");
+      await healDamageToPlayer(targetUid, eye, "card_blessing_heal", { actorUid:uid, skipActionLog:true });
+      appendActionChatLog(uid, `[恩恵] (6d${eye}) ${actionDeltaText(-eye)}>${actionTargetWithDamage(targetUid, -eye)}`).catch(() => {});
       return;
     }
     if (name === "吸血コウモリ"){
@@ -9343,8 +9368,13 @@ ${targetName}さん...` : "";
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
       await recordFactionRelationInferenceFromRevealedTarget(uid, targetUid, "enemy", "card_attack_target_revealed");
-      if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
-      await healDamageToPlayer(uid, 1, "card_vampire_bat_heal");
+      let dmg = 0;
+      if (!hasEquipmentByName(targetUid, "いにしえの聖杯")){
+        dmg = 2;
+        await addDamageToPlayer(targetUid, 2, { actorUid:uid, skipActionLog:true });
+      }
+      await healDamageToPlayer(uid, 1, "card_vampire_bat_heal", { actorUid:uid, skipActionLog:true });
+      appendActionChatLog(uid, `[吸血コウモリ] ${actionDeltaText(-1)}>${actionTargetWithDamage(uid, -1)}, ${actionDeltaText(dmg)}>${actionTargetWithDamage(targetUid, dmg)}`).catch(() => {});
       return;
     }
     if (name === "三つ目の黒犬"){
@@ -9352,8 +9382,8 @@ ${targetName}さん...` : "";
       if (!targetUid) return;
       await npcAnnounceSelectedPlayer(uid, targetUid);
       await recordFactionRelationInferenceFromRevealedTarget(uid, targetUid, "enemy", "card_attack_target_revealed");
-      if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2);
-      if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 2);
+      if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 2, { actorUid:uid });
+      if (!hasEquipmentByName(uid, "いにしえの聖杯")) await addDamageToPlayer(uid, 2, { actorUid:uid });
       return;
     }
     if (name === "呪いの人形"){
@@ -9364,9 +9394,9 @@ ${targetName}さん...` : "";
       const eye = 1 + Math.floor(Math.random() * 6);
       await emitCardDiceEvent({ kind:"curse_doll", uid, d6:eye });
       if (eye <= 4){
-        if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 3);
+        if (!hasEquipmentByName(targetUid, "いにしえの聖杯")) await addDamageToPlayer(targetUid, 3, { actorUid:uid });
       } else if (!hasEquipmentByName(uid, "いにしえの聖杯")){
-        await addDamageToPlayer(uid, 3);
+        await addDamageToPlayer(uid, 3, { actorUid:state.userId });
       }
       return;
     }
@@ -9374,7 +9404,7 @@ ${targetName}さん...` : "";
       const canChooseYes = role?.faction === "レイダー";
       if (canChooseYes && chooseYes){
         await revealIdentityToEquipmentForUid(uid);
-        await setDamageToPlayer(uid, 0, "card_kohrin_heal");
+        await setDamageToPlayer(uid, 0, "card_kohrin_heal", { actorUid:uid });
       }
       return;
     }
@@ -9382,7 +9412,7 @@ ${targetName}さん...` : "";
       const canChooseYes = role?.faction === "シャドウ";
       if (canChooseYes && chooseYes){
         await revealIdentityToEquipmentForUid(uid);
-        await setDamageToPlayer(uid, 0, "card_kohrin_heal");
+        await setDamageToPlayer(uid, 0, "card_kohrin_heal", { actorUid:uid });
       }
       return;
     }
@@ -9390,7 +9420,7 @@ ${targetName}さん...` : "";
       const canChooseYes = (role?.initial === "A" || role?.initial === "U");
       if (canChooseYes && chooseYes){
         await revealIdentityToEquipmentForUid(uid, identityPromptRevealOptions(name));
-        await setDamageToPlayer(uid, 0, "card_kohrin_heal");
+        await setDamageToPlayer(uid, 0, "card_kohrin_heal", { actorUid:uid });
       }
       return;
     }
@@ -9401,7 +9431,7 @@ ${targetName}さん...` : "";
       return;
     }
     if (name === "いやしの聖水"){
-      await healDamageToPlayer(uid, 2, "card_holy_water_heal");
+      await healDamageToPlayer(uid, 2, "card_holy_water_heal", { actorUid:uid });
       return;
     }
     if (name === "裁きの閃光"){
@@ -9411,7 +9441,7 @@ ${targetName}さん...` : "";
     if (name === "人魚の涙"){
       const topUids = maxDamageAlivePlayerIds();
       for (const targetUid of topUids){
-        await healDamageToPlayer(targetUid, 3, "card_mermaid_tears_heal");
+        await healDamageToPlayer(targetUid, 3, "card_mermaid_tears_heal", { actorUid:uid });
       }
       return;
     }
@@ -9682,7 +9712,8 @@ ${targetName}さん...` : "";
         const targetName = safeText(playerById(targetUid)?.name || "プレイヤー");
         await showNpcSpeech(uid, `${targetName}さんに2ダメージ！`, 1500);
         await recordFactionRelationInferenceFromRevealedTarget(uid, targetUid, "enemy", "room3_damage_target_revealed");
-        await addDamageToPlayer(targetUid, 2, { source:"room3" });
+        await addDamageToPlayer(targetUid, 2, { source:"room3", actorUid:uid, skipActionLog:true });
+        appendActionChatLog(uid, `市庁舎 ${actionDeltaText(2)}>${actionTargetWithDamage(targetUid, 2)}`).catch(() => {});
         await recordNpcAttackTarget(uid, targetUid);
         return;
       }
@@ -9690,7 +9721,8 @@ ${targetName}さん...` : "";
       const myDamage = clampDamage(damageCache?.[uid]);
       if (myDamage > 0){
         await showNpcSpeech(uid, "1回復します！", 1500);
-        await healDamageToPlayer(uid, 1, "room3_heal");
+        await healDamageToPlayer(uid, 1, "room3_heal", { actorUid:uid, skipActionLog:true });
+        appendActionChatLog(uid, `市庁舎 ${actionDeltaText(-1)}>${actionTargetWithDamage(uid, -1)}`).catch(() => {});
         return;
       }
 
@@ -9711,7 +9743,8 @@ ${targetName}さん...` : "";
       const targetName = safeText(playerById(healTargetUid)?.name || "プレイヤー");
       await showNpcSpeech(uid, `${targetName}を1回復！`, 1500);
       await recordFactionRelationInferenceFromRevealedTarget(uid, healTargetUid, "same", "room3_heal_target_revealed");
-      await healDamageToPlayer(healTargetUid, 1, "room3_heal");
+      await healDamageToPlayer(healTargetUid, 1, "room3_heal", { actorUid:uid, skipActionLog:true });
+      appendActionChatLog(uid, `市庁舎 ${actionDeltaText(-1)}>${actionTargetWithDamage(healTargetUid, -1)}`).catch(() => {});
     }
   }
 
@@ -11218,9 +11251,13 @@ ${targetName}さん...` : "";
     if (drawn){
       const cardName = safeText(drawn?.name || "カード");
       const cardEffect = safeText(drawn?.effect || "");
-      const themeLabel = type === "white" ? "白" : (type === "black" ? "黒" : "緑");
-      const tail = (type === "green" && cardEffect) ? ` ${cardEffect}` : "";
-      appendActionChatLog(state.userId, `${themeLabel}ドロー：[${cardName}]${tail}`).catch(() => {});
+      const selectionCards = new Set(["応急手当", "恩恵", "吸血コウモリ", "三つ目の黒犬", "呪いの人形"]);
+      const skipBasic = type === "green" || selectionCards.has(cardName);
+      if (!skipBasic){
+        const themeLabel = type === "white" ? "白" : (type === "black" ? "黒" : "緑");
+        const tail = (type === "green" && cardEffect) ? ` ${cardEffect}` : "";
+        appendActionChatLog(state.userId, `${themeLabel}ドロー：[${cardName}]${tail}`).catch(() => {});
+      }
     }
 
     scheduleDeckRebuildIfEmpty(type).catch(() => {});
@@ -12378,7 +12415,7 @@ ${targetName}さん...` : "";
     if (!!options?.skipActionLog) return;
     const targetName = displayNameForUid(uid);
     const src = actionSourceLabel(source || "");
-    appendActionChatLog(state.userId, `回復${src ? `(${src})` : ""}:${targetName}さんを${heal}`).catch(() => {});
+    appendActionChatLog(safeText(options?.actorUid || state.userId), `回復${src ? `(${src})` : ""}:${targetName}さんを${heal}`).catch(() => {});
   }
 
   async function fullRecoverPlayer(uid){
@@ -12400,7 +12437,7 @@ ${targetName}さん...` : "";
     if (!!options?.skipActionLog) return;
     const targetName = displayNameForUid(uid);
     const src = actionSourceLabel(source || "");
-    appendActionChatLog(state.userId, `ダメージ設定${src ? `(${src})` : ""}:${targetName}さん=${clampDamage(damage)}`).catch(() => {});
+    appendActionChatLog(safeText(options?.actorUid || state.userId), `ダメージ設定${src ? `(${src})` : ""}:${targetName}さん=${clampDamage(damage)}`).catch(() => {});
   }
 
   async function enableRepeatTurnOnce(){
@@ -13001,9 +13038,9 @@ ${targetName}さん...` : "";
           }
         }
         for (const row of resolvedRows){
-          const targetName = displayNameForUid(safeText(row.uid || ""));
+          const rowUid = safeText(row.uid || "");
           const dmg = Math.max(0, Number(row.damage || 0));
-          appendActionChatLog(state.userId, `攻撃ロール：ダメージ${dmg} (6d${finalD6},4d${finalD4})>${targetName}`).catch(() => {});
+          appendActionChatLog(state.userId, `攻撃ロール：ダメージ${dmg} (6d${finalD6},4d${finalD4})>${displayNameRoleForUid(rowUid)} (${currentDamageForUid(rowUid)})`).catch(() => {});
         }
         const dealtDamage = resolvedRows.some(row => Number(row.damage || 0) > 0);
         const pendingTurnKey = turnCycleKey();
@@ -13328,7 +13365,7 @@ ${targetName}さん...` : "";
     showRoomActionPopAt(clientX, clientY, "", async () => {
       await emitRoleFlashEvent("SHA_U2", "meteor_strike");
       await new Promise(resolve => setTimeout(resolve, 1800));
-      await addDamageToPlayer(uid, 3);
+      await addDamageToPlayer(uid, 3, { actorUid:state.userId });
       uranusMeteorResolved = true;
       renderMarkers();
     }, {
@@ -13367,7 +13404,8 @@ ${targetName}さん...` : "";
           await updateTurnRoomActionState({ room3ActionUsed:true });
           showTurnHint("");
           await new Promise(resolve => setTimeout(resolve, 1000));
-          await healDamageToPlayer(uid, 1, "room3_heal");
+          await healDamageToPlayer(uid, 1, "room3_heal", { actorUid:uid, skipActionLog:true });
+        appendActionChatLog(uid, `市庁舎 ${actionDeltaText(-1)}>${actionTargetWithDamage(uid, -1)}`).catch(() => {});
           renderMarkers();
         }, {
           yesLabel: "1回復する",
@@ -13381,7 +13419,8 @@ ${targetName}さん...` : "";
             showTurnHint("");
             await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "enemy", "room3_damage_target_revealed");
             await new Promise(resolve => setTimeout(resolve, 1000));
-            await addDamageToPlayer(uid, 2);
+            await addDamageToPlayer(uid, 2, { source:"room3", actorUid:state.userId, skipActionLog:true });
+            appendActionChatLog(state.userId, `市庁舎 ${actionDeltaText(2)}>${actionTargetWithDamage(uid, 2)}`).catch(() => {});
             renderMarkers();
           }
         });
@@ -13453,7 +13492,8 @@ ${targetName}さん...` : "";
           showTurnHint("");
           await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "same", "room3_heal_target_revealed");
           await new Promise(resolve => setTimeout(resolve, 1000));
-          await healDamageToPlayer(uid, 1, "room3_heal");
+          await healDamageToPlayer(uid, 1, "room3_heal", { actorUid:uid, skipActionLog:true });
+        appendActionChatLog(uid, `市庁舎 ${actionDeltaText(-1)}>${actionTargetWithDamage(uid, -1)}`).catch(() => {});
           renderMarkers();
         }, {
           yesLabel: "1回復する",
@@ -13467,7 +13507,8 @@ ${targetName}さん...` : "";
             showTurnHint("");
             await recordFactionRelationInferenceFromRevealedTarget(state.userId, uid, "enemy", "room3_damage_target_revealed");
             await new Promise(resolve => setTimeout(resolve, 1000));
-            await addDamageToPlayer(uid, 2);
+            await addDamageToPlayer(uid, 2, { source:"room3", actorUid:state.userId, skipActionLog:true });
+            appendActionChatLog(state.userId, `市庁舎 ${actionDeltaText(2)}>${actionTargetWithDamage(uid, 2)}`).catch(() => {});
             renderMarkers();
           }
         });
