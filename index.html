@@ -9113,8 +9113,8 @@ ${targetName}さん...` : "";
     const isRaiderOnly = compact.includes("レイダー？") && !compact.includes("か");
     const isShadowOnly = compact.includes("シャドウ？") && !compact.includes("か");
     const isCitizenOnly = compact.includes("シチズン？") && !compact.includes("か");
-    const isRaiderOrCitizen = compact.includes("レイダーかシチズン");
-    const isShadowOrCitizen = compact.includes("シャドウかシチズン");
+    const isRaiderOrCitizen = compact.includes("レイダーかシチズン") || compact.includes("シチズンかレイダー");
+    const isShadowOrCitizen = compact.includes("シャドウかシチズン") || compact.includes("シチズンかシャドウ");
     const isRaiderOrShadow = compact.includes("レイダーかシャドウ");
     const revealCard = isRevealIdentityGreenCard(cardObj);
 
