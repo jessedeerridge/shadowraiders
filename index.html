@@ -9100,6 +9100,16 @@ ${targetName}さん...` : "";
     return normalizeFactionPercentMap(next);
   }
 
+  function normalizeGreenInferenceAnswerId(cardObj, answerId){
+    const ans = safeText(answerId || "");
+    if (ans === "yes" || ans === "no" || ans === "reveal_identity") return ans;
+    const compact = safeText(cardObj?.effect || cardObj?.text || "").replace(/[\s\u3000]+/g, "");
+    if (compact.includes("装備を渡すか、1ダメージ受けよ") || compact.includes("装備を渡すか,1ダメージ受けよ")){
+      if (ans === "take_damage" || ans === "give_equip") return "yes";
+    }
+    return "";
+  }
+
   async function recordNpcFactionInference(fromUid, toUid, cardObj, answerId, revealedRoleId=""){
     const asker = safeText(fromUid || "");
     const target = safeText(toUid || "");
@@ -9107,8 +9117,8 @@ ${targetName}さん...` : "";
     if (!isNpcPlayerUid(asker)) return;
     const askerFaction = safeText(roleInfoByUid(asker)?.faction || "");
     if (!askerFaction) return;
-    const ans = safeText(answerId || "");
-    if (ans !== "yes" && ans !== "reveal_identity" && ans !== "no") return;
+    const ans = normalizeGreenInferenceAnswerId(cardObj, answerId);
+    if (!ans) return;
     const compact = safeText(cardObj?.effect || cardObj?.text || "").replace(/[\s\u3000]+/g, "");
     const isRaiderOnly = compact.includes("レイダー？") && !compact.includes("か");
     const isShadowOnly = compact.includes("シャドウ？") && !compact.includes("か");
