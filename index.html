@@ -2512,6 +2512,7 @@
   let greenSessionRestoring = false;
   let greenSessionSeenAt = 0;
   let pendingGreenSessionEntry = null;
+  let greenTurnEndButtonLockActive = false;
   let cardTargetSessionInitialized = false;
   let cardTargetSessionRestoring = false;
   let cardTargetSessionSeenAt = 0;
@@ -4039,6 +4040,19 @@
     zoomBackdrop?.classList.remove("green-reveal-active");
   }
 
+  function setGreenTurnEndButtonLock(enabled){
+    const next = !!enabled;
+    if (greenTurnEndButtonLockActive === next) return;
+    greenTurnEndButtonLockActive = next;
+    renderTurnEndButton();
+  }
+
+  function isGreenInteractionActive(){
+    if (zoomBackdrop?.classList.contains("hidden")) return false;
+    if (greenShareDock?.classList.contains("hidden")) return false;
+    return !!(pendingGreenRequestId || pendingGreenAnswerMsg || greenShareCard);
+  }
+
   function showGreenRevealPanel(roleId, responderId){
     const role = roleId ? ROLE_BY_ID[roleId] : null;
     if (!role || !greenRevealCardWrap || !greenRevealLabel || !greenRevealPanel) return;
@@ -4789,9 +4803,11 @@
   function openGreenShareDock(cardObj, { attackRangeOnly=false } = {}){
     greenShareCard = cardObj || null;
     if (!greenShareCard || !greenShareDock || !greenShareList){
+      setGreenTurnEndButtonLock(false);
       greenShareDock?.classList.add("hidden");
       return;
     }
+    setGreenTurnEndButtonLock(true);
 
     setGreenDockMeta({ title:"誰に渡しますか。", subtitle:"" });
     greenShareActions?.classList.add("hidden");
@@ -4860,6 +4876,7 @@
 
   function openGreenAnswerDock(msg){
     if (!greenShareDock || !greenShareList || !msg?.card) return;
+    setGreenTurnEndButtonLock(true);
     greenShareCard = msg.card;
     pendingGreenAnswerMsg = msg;
     setGreenSessionState({ phase:"answering", msg }).catch(() => {});
@@ -4941,6 +4958,7 @@
     greenShareDock?.classList.add("hidden");
     cardPlayerSelectActive = false;
     updateCardInteractivity();
+    setGreenTurnEndButtonLock(false);
     renderTurnEndButton();
     setGreenSessionState(null).catch(() => {});
     pendingGreenSessionEntry = null;
@@ -4950,6 +4968,7 @@
   function restoreGreenSessionUI(entry){
     const phase = safeText(entry?.phase || "");
     if (!phase) return;
+    setGreenTurnEndButtonLock(true);
     greenSessionRestoring = true;
     try {
       if (phase === "answering" && entry?.msg?.card){
@@ -6201,6 +6220,10 @@
   zoomStage.addEventListener("click", (e) => {
     const idCard = e.target.closest(".id72");
     if (!idCard) return;
+    if (isGreenInteractionActive()){
+      e.stopPropagation();
+      return;
+    }
     if (idCard.dataset.revealInteractive !== "1") return;
     if (isEquipSelectionLockActive()){
       e.stopPropagation();
@@ -8281,6 +8304,7 @@
     if (attackTurnEndChoicePending) return false;
     if (attackFlowUiLockActive) return false;
     if (suppressEndTurnButton) return false;
+    if (greenTurnEndButtonLockActive) return false;
     if (hpBoardAnimationActive) return false;
     if (hasUnresolvedAttackLootSelection()) return false;
     if (safeText(state.room?.roleAbilitySelection?.roleId || "") === "RAI_G3") return false;
