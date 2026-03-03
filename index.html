@@ -5604,6 +5604,7 @@
     };
     await setAttackLootPending(pendingAttackLoot);
     renderAttackLootPanel();
+    renderHpBoard();
   }
 
   async function createByronAttackLootPending(targetUids = []){
@@ -5620,6 +5621,7 @@
     };
     await setAttackLootPending(pendingAttackLoot);
     renderAttackLootPanel();
+    renderHpBoard();
   }
 
   function orderedPlayersForEquip(){
@@ -10322,6 +10324,8 @@ ${targetName}さん...` : "";
     const mine = normalizeAttackLootPayload(roomPending?.[state.userId] || null);
     pendingAttackLoot = mine;
     renderAttackLootPanel();
+    // 脱落者装備選択ポップの表示更新と競合しても、HPボードを最新状態に保つ。
+    renderHpBoard();
   }
 
   function restorePendingAttackResolutionFromSession(){
