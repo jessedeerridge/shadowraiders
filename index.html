@@ -10589,6 +10589,9 @@ ${targetName}さん...` : "";
       await recordNpcAttackTarget(attackTurnOwnerUid, attackedUid);
     }
     await addResolvedDamageToPlayers(pending.rows || [], { advanceTurnOnResolve: advanceTurnOnCounterResolve });
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await waitForHpBoardSwapAnimationEnd();
+
     if (endTurnAfterApply){
       ulsterExtraAttackPending = 0;
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -10601,8 +10604,6 @@ ${targetName}さん...` : "";
       return;
     }
 
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    await waitForHpBoardSwapAnimationEnd();
     if (ulsterExtraAttackPending > 0){
       ulsterExtraAttackPending = Math.max(0, ulsterExtraAttackPending - 1);
     }
