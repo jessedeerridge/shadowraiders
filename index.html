@@ -3089,6 +3089,9 @@
       return;
     }
 
+    const zoomAnchor = getZoomPrimaryCardEl();
+    if (placePopUnderAnchor(roomActionPop, zoomAnchor, { gap:10 })) return;
+
     const pad = 10;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
