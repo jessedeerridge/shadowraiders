@@ -13587,7 +13587,7 @@ ${targetName}さん...` : "";
       noLabel: "いいえ"
     });
   }
- function drawMarker({x,y,color,initial,uid,pulse=false,eliminated=false}){
+ function drawMarker({x,y,color,initial,uid,pulse=false,eliminated=false,emphasize=false}){
   const g = document.createElementNS("http://www.w3.org/2000/svg","g");
   g.setAttribute("data-uid", uid || "");
   if (uid && walpurgisSwapHiddenUids.has(uid)) g.classList.add("marker-swap-hidden");
@@ -13598,6 +13598,9 @@ ${targetName}さん...` : "";
     }
   }
   if (eliminated) g.classList.add("marker-eliminated");
+  if (emphasize){
+    g.setAttribute("transform", `translate(${x} ${y}) scale(1.6) translate(${-x} ${-y})`);
+  }
 
   const size = (uid && uid === state.userId) ? 17 : 16;
   const rx = 3;
@@ -13815,7 +13818,8 @@ ${targetName}さん...` : "";
         color: markerColor,
         initial: markerInitial,
         pulse: pulseTargets.has(uid),
-        eliminated
+        eliminated,
+        emphasize: uid === state.userId && isMyTurn() && !(turnState()?.moveDone)
       });
     }
     updateRoomChoiceUi();
