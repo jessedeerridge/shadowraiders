@@ -4365,6 +4365,9 @@
     let selectionBusy = false;
     const role = ROLE_BY_ID[roleId];
     if (!role) return;
+    if (roleId === "RAI_G3"){
+      closeEquipExpandIfOpen();
+    }
     activeRoleAbilitySelection = entry;
     const isActor = actorUid === state.userId;
     if (!!entry?.privateToActor && !isActor){
